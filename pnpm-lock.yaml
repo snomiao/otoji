@@ -5,12 +5,24 @@ settings:
   excludeLinksFromLockfile: false
 
 dependencies:
+  '@picovoice/pvrecorder-node':
+    specifier: ^1.2.1
+    version: 1.2.1
   crypto-js:
     specifier: ^3.1.9-1
     version: 3.3.0
   dotenv:
     specifier: ^16.3.1
     version: 16.3.1
+  mic:
+    specifier: ^2.1.2
+    version: 2.1.2
+  with-defer:
+    specifier: ^1.0.0
+    version: 1.0.0
+  with-defer-es:
+    specifier: ^1.0.2
+    version: 1.0.2
   ws:
     specifier: ^7.1.2
     version: 7.5.9
@@ -110,6 +122,11 @@ packages:
     dev: true
     optional: true
 
+  /@picovoice/pvrecorder-node@1.2.1:
+    resolution: {integrity: sha512-7TtRMh04PSVn542Oq1v/MGLFuNPdUrrv+f7qbCGOWRc8y6ox+FATigdQqLRbRey4kZWf40dNHQFdVPCk5ZcXnQ==}
+    engines: {node: '>=14.0.0'}
+    dev: false
+
   /@swc/helpers@0.5.2:
     resolution: {integrity: sha512-E4KcWTpoLHqwPHLxidpOqQbcrZVgi0rsmmZXUle1jXmJfuIf/UWpczUJ7MZZ5tlxytgJXyp0w4PGkkeLiuIdZw==}
     dependencies:
@@ -158,6 +175,10 @@ packages:
     dependencies:
       js-tokens: 4.0.0
     dev: true
+
+  /mic@2.1.2:
+    resolution: {integrity: sha512-rpl4tgdXX24sAzYwjRc5OZfGNAuhUIIjdd0cw8+Ubq7rp3iGhi40AdqcwurDWhEZADk60tPOxb3E2MpoeLeyxw==}
+    dev: false
 
   /nanoid@3.3.7:
     resolution: {integrity: sha512-eSRppjcPIatRIMC1U6UngP8XFcz8MQWGQdt1MTBQ7NaAmvXDfvNxbvWV3x2y6CdEUciCSsDHDQZbhYaB8QEo2g==}
@@ -278,6 +299,14 @@ packages:
       glob-to-regexp: 0.4.1
       graceful-fs: 4.2.11
     dev: true
+
+  /with-defer-es@1.0.2:
+    resolution: {integrity: sha512-Pmll/XTe+v3qFrUd0IBTQH2m0EtJxva7wi/YMXTCyI9sBsdVX6BJp2cuqHz58lTrcVlkFEk96sR4z+pjpqBuKA==}
+    dev: false
+
+  /with-defer@1.0.0:
+    resolution: {integrity: sha512-U4RvEJ+XgR5LnguENfI+KTpvb/QO/wllzXB8qfj+7p926qz3EPADAnWapF0gn1jXltt4EYM5Nq99x6ru5vMJfQ==}
+    dev: false
 
   /ws@7.5.9:
     resolution: {integrity: sha512-F+P9Jil7UiSKSkppIiD94dN07AwvFixvLIj1Og1Rl9GGMuNipJnV9JzjD6XuqmAeiswGvUmNLjr5cFuXwNS77Q==}

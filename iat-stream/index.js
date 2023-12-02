@@ -9,20 +9,20 @@
  * 错误码链接：https://www.xfyun.cn/document/error-code （code返回错误码时必看）
  * @author iflytek
  */
-import CryptoJS from "crypto-js";
 import "dotenv/config";
-import fs from "fs";
+import { PvRecorder } from "@picovoice/pvrecorder-node";
+// import fs from "fs";
 import WebSocket from "ws";
+import { getWssUrl } from "./getWssUrl";
 
 // 系统配置
-let config = {};
+export let config = {};
 config.host = "iat-api.xfyun.cn";
 config.hostUrl = "wss://iat-api.xfyun.cn/v2/iat";
 config.appid = process.env.IFLY_APPID.toString();
 config.apiSecret = process.env.IFLY_APISECRET.toString();
 config.apiKey = process.env.IFLY_APIKEY.toString();
-// config.file = "./test2.pcm"; //请填写您的音频文件路
-config.file = "./16k_10.pcm"; //请填写您的音频文件路
+// config.file = "./16k_10.pcm"; //请填写您的音频文件路
 config.uri = "/v2/iat";
 config.highWaterMark = 1280;
 // 帧定义
@@ -33,7 +33,7 @@ const FRAME = {
 };
 
 // 获取当前时间 RFC1123格式
-const date = new Date().toUTCString();
+export const date = new Date().toUTCString();
 // 设置当前临时状态为初始化
 let status = FRAME.STATUS_FIRST_FRAME;
 // 记录本次识别用sid
@@ -42,42 +42,29 @@ let currentSid = "";
 const iatResult = [];
 
 const wssUrl =
-  config.hostUrl +
-  "?authorization=" +
-  getAuthStr(date) +
-  "&date=" +
-  date +
-  "&host=" +
-  config.host;
-
-// 鉴权签名
-function getAuthStr(date) {
-  const signatureOrigin = `host: ${config.host}\ndate: ${date}\nGET ${config.uri} HTTP/1.1`;
-  const signatureSha = CryptoJS.HmacSHA256(signatureOrigin, config.apiSecret);
-  const signature = CryptoJS.enc.Base64.stringify(signatureSha);
-  const authorizationOrigin = `api_key="${config.apiKey}", algorithm="hmac-sha256", headers="host date request-line", signature="${signature}"`;
-  const authStr = CryptoJS.enc.Base64.stringify(
-    CryptoJS.enc.Utf8.parse(authorizationOrigin)
-  );
-  return authStr;
-}
+  getWssUrl();
 
 const ws = new WebSocket(wssUrl);
 
 // 连接建立完毕，读取数据进行识别
-ws.on("open", (event) => {
+ws.on("open", async (event) => {
   console.log("websocket connect!");
-  var readerStream = fs.createReadStream(config.file, {
-    highWaterMark: config.highWaterMark,
-  });
-  readerStream.on("data", function (chunk) {
-    send(chunk);
-  });
-  // 最终帧发送结束
-  readerStream.on("end", function () {
-    status = FRAME.STATUS_LAST_FRAME;
-    send("");
-  });
+
+
+  // var readerStream = fs.createReadStream(config.file, {
+  //   highWaterMark: config.highWaterMark,
+  // });
+  // readerStream.on("data", function (chunk) {
+  //   send(chunk);
+  // });
+  // // 最终帧发送结束
+  // readerStream.on("end", function () {
+  //   status = FRAME.STATUS_LAST_FRAME;
+  //   send("");
+  // });
+
+  //
+
 });
 
 // 得到识别结果后进行处理，仅供参考，具体业务具体对待
