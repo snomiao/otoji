@@ -1,0 +1,21 @@
+{
+  "name": "iat-ws",
+  "version": "1.0.0",
+  "description": "Drafting",
+  "main": "iat-ws-node.js",
+  "dependencies": {
+    "crypto-js": "^3.1.9-1",
+    "dotenv": "^16.3.1",
+    "ws": "^7.1.2"
+  },
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "author": "",
+  "license": "ISC",
+  "keywords": [],
+  "devDependencies": {
+    "next": "^14.0.3",
+    "react": "^18.2.0"
+  }
+}
