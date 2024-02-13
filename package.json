@@ -1,26 +1,16 @@
 {
-  "name": "iat-ws",
+  "name": "rtasr-ws",
   "version": "1.0.0",
-  "description": "Drafting",
-  "main": "iat-ws-node.js",
-  "type": "module",
-  "dependencies": {
-    "@picovoice/pvrecorder-node": "^1.2.1",
-    "crypto-js": "^3.1.9-1",
-    "dotenv": "^16.3.1",
-    "mic": "^2.1.2",
-    "with-defer": "^1.0.0",
-    "with-defer-es": "^1.0.2",
-    "ws": "^7.1.2"
-  },
+  "description": "",
+  "main": "rtasr-ws-node.js",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "author": "",
   "license": "ISC",
-  "keywords": [],
-  "devDependencies": {
-    "next": "^14.0.3",
-    "react": "^18.2.0"
+  "dependencies": {
+    "crypto-js": "^3.1.9-1",
+    "log4node": "^0.1.6",
+    "ws": "^7.1.2"
   }
 }

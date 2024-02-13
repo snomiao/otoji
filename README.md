@@ -1,6 +1,16 @@
 # iat
 
 realtime voice recognition
+## infra
+
+```mermaid
+sequenceDiagram
+    browser ->> browser: record voice to mp3
+    browser -) server: mp3
+    server ->> server: decode voice to pcm
+    server ->> api: pcm
+```
+
 
 ## input
 
@@ -21,3 +31,5 @@ record from user microphone
 ## output
 
 api provider: ifly
+
+s

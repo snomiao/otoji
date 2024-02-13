@@ -21,8 +21,8 @@ config.hostUrl = "wss://iat-api.xfyun.cn/v2/iat";
 config.appid = process.env.IFLY_APPID.toString();
 config.apiSecret = process.env.IFLY_APISECRET.toString();
 config.apiKey = process.env.IFLY_APIKEY.toString();
-// config.file = "./test2.pcm"; //请填写您的音频文件路
-config.file = "./16k_10.pcm"; //请填写您的音频文件路
+config.file = "./test2.pcm"; //请填写您的音频文件路
+// config.file = "./16k_10.pcm"; //请填写您的音频文件路
 config.uri = "/v2/iat";
 config.highWaterMark = 1280;
 // 帧定义
