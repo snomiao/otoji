@@ -1,6 +1,8 @@
-# iat
+# otoji (音字)
 
-realtime voice recognition
+realtime voice recognition — "音を字に".
+
+Pluggable RT ASR providers (iFlytek RTASR / CoLi / SenseVoice / …) with an optional LLM polish layer. See [`./docs/`](./docs/README.md) for the architecture and provider comparison.
 ## infra
 
 ```mermaid
