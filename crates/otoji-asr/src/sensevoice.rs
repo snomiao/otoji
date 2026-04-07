@@ -14,6 +14,40 @@ use std::process::Stdio;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::process::Command;
 
+/// Bundled Python helper, materialized to `~/.cache/otoji/sensevoice_listen.py`
+/// on first use so the binary works from any cwd.
+const HELPER_SOURCE: &str = include_str!("../../../scripts/sensevoice_listen.py");
+
+fn cache_dir() -> std::path::PathBuf {
+    std::env::var_os("OTOJI_CACHE_DIR")
+        .map(std::path::PathBuf::from)
+        .or_else(|| {
+            std::env::var_os("HOME").map(|h| {
+                let mut p = std::path::PathBuf::from(h);
+                p.push(".cache");
+                p.push("otoji");
+                p
+            })
+        })
+        .unwrap_or_else(|| std::path::PathBuf::from(".otoji-cache"))
+}
+
+fn ensure_helper_script() -> Result<String> {
+    let dir = cache_dir();
+    std::fs::create_dir_all(&dir)
+        .map_err(|e| OtojiError::Provider(format!("create cache dir: {e}")))?;
+    let path = dir.join("sensevoice_listen.py");
+    let needs_write = match std::fs::read_to_string(&path) {
+        Ok(existing) => existing != HELPER_SOURCE,
+        Err(_) => true,
+    };
+    if needs_write {
+        std::fs::write(&path, HELPER_SOURCE)
+            .map_err(|e| OtojiError::Provider(format!("write helper: {e}")))?;
+    }
+    Ok(path.to_string_lossy().into_owned())
+}
+
 #[derive(Debug, Clone)]
 pub struct SenseVoiceConfig {
     /// Path to the Python helper script.
@@ -29,15 +63,36 @@ pub struct SenseVoiceConfig {
 
 impl SenseVoiceConfig {
     pub fn from_env() -> Self {
+        let default_model_dir = {
+            let mut d = cache_dir();
+            d.push("sherpa-onnx-sense-voice-zh-en-ja-ko-yue-2024-07-17");
+            d.to_string_lossy().into_owned()
+        };
+        let default_script = ensure_helper_script().unwrap_or_else(|e| {
+            tracing::warn!("falling back to repo-relative helper path: {e}");
+            "scripts/sensevoice_listen.py".into()
+        });
+        // Default: use `uv run` so the helper gets a venv with sherpa-onnx,
+        // sounddevice and numpy installed on demand. Override with
+        // OTOJI_SENSEVOICE_PYTHON if you have your own environment.
         let python = std::env::var("OTOJI_SENSEVOICE_PYTHON")
             .map(|s| s.split_whitespace().map(String::from).collect::<Vec<_>>())
-            .unwrap_or_else(|_| vec!["python3".to_string()]);
+            .unwrap_or_else(|_| {
+                vec![
+                    "uv".into(),
+                    "run".into(),
+                    "--with".into(),
+                    "sherpa-onnx".into(),
+                    "--with".into(),
+                    "sounddevice".into(),
+                    "--with".into(),
+                    "numpy".into(),
+                    "python".into(),
+                ]
+            });
         Self {
-            script: std::env::var("OTOJI_SENSEVOICE_SCRIPT")
-                .unwrap_or_else(|_| "scripts/sensevoice_listen.py".into()),
-            model_dir: std::env::var("OTOJI_SENSEVOICE_DIR").unwrap_or_else(|_| {
-                "models/sherpa-onnx-sense-voice-zh-en-ja-ko-yue-2024-07-17".into()
-            }),
+            script: std::env::var("OTOJI_SENSEVOICE_SCRIPT").unwrap_or(default_script),
+            model_dir: std::env::var("OTOJI_SENSEVOICE_DIR").unwrap_or(default_model_dir),
             python,
             feed_stdin: false,
         }

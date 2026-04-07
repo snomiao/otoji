@@ -26,13 +26,57 @@ def emit(obj: dict) -> None:
     sys.stdout.write(json.dumps(obj, ensure_ascii=False) + "\n")
     sys.stdout.flush()
 
-def main() -> int:
-    model_dir = Path(os.environ.get("OTOJI_SENSEVOICE_DIR", "models/sherpa-onnx-sense-voice-zh-en-ja-ko-yue-2024-07-17"))
+MODEL_URL = (
+    "https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/"
+    "sherpa-onnx-sense-voice-zh-en-ja-ko-yue-2024-07-17.tar.bz2"
+)
+
+
+def ensure_model(model_dir: Path) -> None:
+    """Download + extract the SenseVoice model if it isn't already present."""
     model_path = model_dir / "model.int8.onnx"
     tokens_path = model_dir / "tokens.txt"
-    if not model_path.exists() or not tokens_path.exists():
-        emit({"type": "error", "message": f"sense voice model not found at {model_dir}"})
+    if model_path.exists() and tokens_path.exists():
+        return
+    import tarfile
+    import urllib.request
+
+    parent = model_dir.parent
+    parent.mkdir(parents=True, exist_ok=True)
+    archive = parent / "sense-voice.tar.bz2"
+    if not archive.exists():
+        emit({"type": "error", "message": f"downloading SenseVoice model (~234MB) → {archive}"})
+        with urllib.request.urlopen(MODEL_URL) as resp, open(archive, "wb") as f:
+            total = int(resp.headers.get("Content-Length") or 0)
+            read = 0
+            last_pct = -1
+            while True:
+                buf = resp.read(1024 * 1024)
+                if not buf:
+                    break
+                f.write(buf)
+                read += len(buf)
+                if total:
+                    pct = read * 100 // total
+                    if pct != last_pct and pct % 5 == 0:
+                        emit({"type": "error", "message": f"download {pct}%"})
+                        last_pct = pct
+    emit({"type": "error", "message": f"extracting {archive.name}"})
+    with tarfile.open(archive, "r:bz2") as tf:
+        tf.extractall(parent)
+    if not (model_path.exists() and tokens_path.exists()):
+        raise RuntimeError(f"model still missing after extract at {model_dir}")
+
+
+def main() -> int:
+    model_dir = Path(os.environ.get("OTOJI_SENSEVOICE_DIR", "models/sherpa-onnx-sense-voice-zh-en-ja-ko-yue-2024-07-17"))
+    try:
+        ensure_model(model_dir)
+    except Exception as e:
+        emit({"type": "error", "message": f"model fetch failed: {e}"})
         return 2
+    model_path = model_dir / "model.int8.onnx"
+    tokens_path = model_dir / "tokens.txt"
 
     try:
         import numpy as np
