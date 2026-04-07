@@ -62,6 +62,9 @@ pub enum AsrEvent {
         text: String,
         words: Vec<Word>,
     },
+    /// Non-fatal status message (device picked, model downloading, …).
+    /// Surfaced in the TUI header rather than the transcript body.
+    Status { message: String },
     /// Provider closed cleanly.
     Closed,
     /// Provider-side error message (does not necessarily terminate the stream).

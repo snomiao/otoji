@@ -45,7 +45,7 @@ def ensure_model(model_dir: Path) -> None:
     parent.mkdir(parents=True, exist_ok=True)
     archive = parent / "sense-voice.tar.bz2"
     if not archive.exists():
-        emit({"type": "error", "message": f"downloading SenseVoice model (~234MB) → {archive}"})
+        emit({"type": "status", "message": f"downloading SenseVoice model (~234MB) → {archive}"})
         with urllib.request.urlopen(MODEL_URL) as resp, open(archive, "wb") as f:
             total = int(resp.headers.get("Content-Length") or 0)
             read = 0
@@ -59,9 +59,9 @@ def ensure_model(model_dir: Path) -> None:
                 if total:
                     pct = read * 100 // total
                     if pct != last_pct and pct % 5 == 0:
-                        emit({"type": "error", "message": f"download {pct}%"})
+                        emit({"type": "status", "message": f"download {pct}%"})
                         last_pct = pct
-    emit({"type": "error", "message": f"extracting {archive.name}"})
+    emit({"type": "status", "message": f"extracting {archive.name}"})
     with tarfile.open(archive, "r:bz2") as tf:
         tf.extractall(parent)
     if not (model_path.exists() and tokens_path.exists()):
@@ -128,7 +128,7 @@ def main() -> int:
             emit({"type": "error", "message": f"no input device matching '{device_query}'"})
             return 4
         d = devices[chosen]
-        emit({"type": "error", "message": f"using input device [{chosen}] {d['name']}"})
+        emit({"type": "status", "message": f"using input device [{chosen}] {d['name']}"})
         out = sd.default.device[1] if isinstance(sd.default.device, (list, tuple)) else None
         sd.default.device = (chosen, out)
 

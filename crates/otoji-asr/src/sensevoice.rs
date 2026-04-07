@@ -118,6 +118,7 @@ enum HelperLine {
     Open,
     Partial { seg_id: Option<u64>, text: String },
     Final { seg_id: u64, text: String, #[serde(default)] lang: String },
+    Status { message: String },
     Error { message: String },
     Closed,
 }
@@ -190,6 +191,9 @@ impl AsrProvider for SenseVoice {
                                 }
                                 Ok(HelperLine::Final { seg_id, text, lang: _ }) => {
                                     let _ = events.send(AsrEvent::Final { seg_id, text, words: Vec::<Word>::new() }).await;
+                                }
+                                Ok(HelperLine::Status { message }) => {
+                                    let _ = events.send(AsrEvent::Status { message }).await;
                                 }
                                 Ok(HelperLine::Error { message }) => {
                                     let _ = events.send(AsrEvent::Error { message }).await;

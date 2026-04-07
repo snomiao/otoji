@@ -44,6 +44,7 @@ struct Segment {
 struct State {
     finals: BTreeMap<u64, Segment>,
     partial: Option<(u64, String)>,
+    status: Option<String>,
     error: Option<String>,
     closed: bool,
 }
@@ -157,6 +158,9 @@ async fn apply_event(
             }
             let _ = polish_tx.try_send((seg_id, text));
         }
+        AsrEvent::Status { message } => {
+            s.status = Some(message);
+        }
         AsrEvent::Closed => {
             s.closed = true;
             s.partial = None;
@@ -174,12 +178,35 @@ async fn draw<B: ratatui::backend::Backend>(
     let s = state.lock().await;
     terminal.draw(|f| {
         let area = f.area();
+
+        // Build the header line; if it doesn't fit on one row (with the
+        // status appended), wrap status onto a second row.
+        let state_label = if s.closed { "closed" } else { "listening" };
+        let counts = format!(
+            " · {} final · {} partial",
+            s.finals.len(),
+            s.partial.is_some() as usize,
+        );
+        let hint = "(q/esc to quit)";
+        let primary_text = format!("otoji · {state_label}{counts}    {hint}");
+        let primary_len = primary_text.chars().count() as u16;
+        let status_text = s.status.as_deref();
+        let inner_width = area.width.saturating_sub(2); // borders
+        let need_wrap = match status_text {
+            Some(st) => {
+                let combined = primary_len + 4 + st.chars().count() as u16;
+                combined > inner_width
+            }
+            None => false,
+        };
+        let header_height: u16 = if need_wrap { 4 } else { 3 };
+
         let chunks = Layout::default()
             .direction(Direction::Vertical)
-            .constraints([Constraint::Length(3), Constraint::Min(1)])
+            .constraints([Constraint::Length(header_height), Constraint::Min(1)])
             .split(area);
 
-        let header = Paragraph::new(Line::from(vec![
+        let primary_spans = vec![
             Span::styled(
                 "otoji ",
                 Style::default()
@@ -188,21 +215,35 @@ async fn draw<B: ratatui::backend::Backend>(
             ),
             Span::raw("· "),
             Span::styled(
-                if s.closed { "closed" } else { "listening" },
+                state_label,
                 Style::default().fg(if s.closed { Color::Red } else { Color::Green }),
             ),
-            Span::raw(format!(
-                " · {} final · {} partial",
-                s.finals.len(),
-                s.partial.is_some() as usize,
-            )),
+            Span::raw(counts),
             Span::raw("    "),
+            Span::styled(hint, Style::default().fg(Color::DarkGray)),
+        ];
+
+        let status_span = |st: &str| {
             Span::styled(
-                "(q/esc to quit)",
-                Style::default().fg(Color::DarkGray),
-            ),
-        ]))
-        .block(Block::default().borders(Borders::ALL).title("音字"));
+                format!("· {st}"),
+                Style::default().fg(Color::Cyan).add_modifier(Modifier::ITALIC),
+            )
+        };
+
+        let mut header_lines: Vec<Line> = Vec::new();
+        if let (Some(st), false) = (status_text, need_wrap) {
+            let mut spans = primary_spans.clone();
+            spans.push(Span::raw("    "));
+            spans.push(status_span(st));
+            header_lines.push(Line::from(spans));
+        } else {
+            header_lines.push(Line::from(primary_spans));
+            if let Some(st) = status_text {
+                header_lines.push(Line::from(vec![status_span(st)]));
+            }
+        }
+        let header = Paragraph::new(header_lines)
+            .block(Block::default().borders(Borders::ALL).title("音字"));
         f.render_widget(header, chunks[0]);
 
         let mut lines: Vec<Line> = Vec::new();
