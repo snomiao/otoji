@@ -59,6 +59,8 @@ pub struct SenseVoiceConfig {
     /// If true, pipe `AudioRx` PCM bytes into the helper's stdin instead of
     /// letting the helper open its own mic.
     pub feed_stdin: bool,
+    /// Optional input device selector (substring of name or numeric index).
+    pub input_device: Option<String>,
 }
 
 impl SenseVoiceConfig {
@@ -95,6 +97,7 @@ impl SenseVoiceConfig {
             model_dir: std::env::var("OTOJI_SENSEVOICE_DIR").unwrap_or(default_model_dir),
             python,
             feed_stdin: false,
+            input_device: std::env::var("OTOJI_INPUT_DEVICE").ok(),
         }
     }
 }
@@ -140,6 +143,9 @@ impl AsrProvider for SenseVoice {
             .env("OTOJI_SENSEVOICE_DIR", &self.cfg.model_dir)
             .stdout(Stdio::piped())
             .stderr(Stdio::inherit());
+        if let Some(dev) = &self.cfg.input_device {
+            command.env("OTOJI_INPUT_DEVICE", dev);
+        }
         if self.cfg.feed_stdin {
             command.env("OTOJI_INPUT_SOURCE", "stdin").stdin(Stdio::piped());
         }

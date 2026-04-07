@@ -42,8 +42,11 @@ enum AsrKind {
 
 #[derive(Subcommand)]
 enum Cmd {
-    /// Capture from the default microphone and stream to an ASR provider.
+    /// Capture from an input device and stream to an ASR provider.
     Listen {
+        /// Input device — substring of the device name or numeric index.
+        /// Omit to use the system default. Use `otoji devices` to list.
+        device: Option<String>,
         /// Which ASR provider to use.
         #[arg(long, value_enum, default_value_t = AsrKind::Sensevoice)]
         provider: AsrKind,
@@ -51,6 +54,8 @@ enum Cmd {
         #[arg(long, default_value_t = 40)]
         frame_ms: u32,
     },
+    /// List available audio input devices.
+    Devices,
     /// Replay a 16kHz mono PCM file as if it were live mic input.
     File {
         path: PathBuf,
@@ -78,31 +83,61 @@ async fn main() -> Result<()> {
         .init();
     let cli = Cli::parse();
     match cli.cmd {
-        Cmd::Listen { provider, frame_ms } => run_listen(provider, frame_ms).await,
+        Cmd::Listen { device, provider, frame_ms } => {
+            run_listen(provider, device, frame_ms).await
+        }
         Cmd::File { path, provider, frame_ms, burst } => {
             run_file(provider, path, frame_ms, !burst).await
         }
         Cmd::Speak { text, out } => run_speak(text, out).await,
+        Cmd::Devices => run_devices().await,
     }
 }
 
-async fn run_listen(kind: AsrKind, frame_ms: u32) -> Result<()> {
+async fn run_listen(kind: AsrKind, device: Option<String>, frame_ms: u32) -> Result<()> {
     match kind {
         AsrKind::Iflytek => {
             let cfg = IflytekRtasrConfig::from_env().context("RTASR config")?;
             let provider = IflytekRtasr::new(cfg);
             let (audio_tx, audio_rx) = otoji_audio::channel(64);
             let _stream = mic::start_default(frame_ms, audio_tx).context("mic")?;
+            if device.is_some() {
+                eprintln!(
+                    "warning: --provider iflytek currently always uses the system default device"
+                );
+            }
             drive(provider, audio_rx).await
         }
         AsrKind::Sensevoice => {
-            // SenseVoice helper opens its own mic; we still need an
-            // (unused) audio channel to satisfy the trait signature.
-            let provider = SenseVoice::new(SenseVoiceConfig::from_env());
+            let mut cfg = SenseVoiceConfig::from_env();
+            cfg.input_device = device;
+            let provider = SenseVoice::new(cfg);
             let (_audio_tx, audio_rx) = otoji_audio::channel(1);
             drive(provider, audio_rx).await
         }
     }
+}
+
+async fn run_devices() -> Result<()> {
+    use std::process::Command;
+    let cfg = SenseVoiceConfig::from_env();
+    let (cmd, args) = cfg.python.split_first().context("empty python command")?;
+    let status = Command::new(cmd)
+        .args(args)
+        .arg("-c")
+        .arg(concat!(
+            "import sounddevice as sd\n",
+            "for i, d in enumerate(sd.query_devices()):\n",
+            "    if d['max_input_channels'] > 0:\n",
+            "        mark = '*' if i == sd.default.device[0] else ' '\n",
+            "        print(f\"{mark} [{i:>2}] {d['name']} ({d['max_input_channels']}ch @ {int(d['default_samplerate'])}Hz)\")\n",
+        ))
+        .status()
+        .context("spawn device lister")?;
+    if !status.success() {
+        anyhow::bail!("device lister exited with {status}");
+    }
+    Ok(())
 }
 
 async fn run_file(kind: AsrKind, path: PathBuf, frame_ms: u32, realtime: bool) -> Result<()> {

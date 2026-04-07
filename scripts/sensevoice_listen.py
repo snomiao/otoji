@@ -95,19 +95,42 @@ def main() -> int:
         language="auto",
     )
 
-    # Optional: pick a specific input device by substring match (e.g. "BlackHole").
+    # Optional: pick a specific input device.
+    # Accepts: numeric index, substring of device name, "default"/"mic",
+    # or "system"/"loopback" (auto-pick BlackHole/Loopback/Soundflower).
     device_query = os.environ.get("OTOJI_INPUT_DEVICE")
     if device_query:
+        devices = sd.query_devices()
+        inputs = [(i, d) for i, d in enumerate(devices) if d["max_input_channels"] > 0]
         chosen = None
-        for i, d in enumerate(sd.query_devices()):
-            if d["max_input_channels"] > 0 and device_query.lower() in d["name"].lower():
-                chosen = i
-                emit({"type": "error", "message": f"using input device [{i}] {d['name']}"})
-                break
+        q = device_query.strip().lower()
+        if q in ("default", "mic", "microphone"):
+            chosen = sd.default.device[0] if isinstance(sd.default.device, (list, tuple)) else 0
+        elif q in ("system", "loopback", "system-audio"):
+            for i, d in inputs:
+                name = d["name"].lower()
+                if any(k in name for k in ("blackhole", "loopback", "soundflower", "vb-cable", "vb cable")):
+                    chosen = i
+                    break
+            if chosen is None:
+                emit({"type": "error", "message": "no loopback device found — install BlackHole (`brew install --cask blackhole-2ch`) and route system output through it"})
+                return 4
+        elif q.isdigit():
+            idx = int(q)
+            if any(i == idx for i, _ in inputs):
+                chosen = idx
+        else:
+            for i, d in inputs:
+                if q in d["name"].lower():
+                    chosen = i
+                    break
         if chosen is None:
             emit({"type": "error", "message": f"no input device matching '{device_query}'"})
             return 4
-        sd.default.device = (chosen, sd.default.device[1] if isinstance(sd.default.device, (list, tuple)) else None)
+        d = devices[chosen]
+        emit({"type": "error", "message": f"using input device [{chosen}] {d['name']}"})
+        out = sd.default.device[1] if isinstance(sd.default.device, (list, tuple)) else None
+        sd.default.device = (chosen, out)
 
     q: "queue.Queue[np.ndarray]" = queue.Queue()
 
