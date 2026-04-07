@@ -109,10 +109,21 @@ async fn run_listen(kind: AsrKind, device: Option<String>, frame_ms: u32) -> Res
             drive(provider, audio_rx).await
         }
         AsrKind::Sensevoice => {
+            // Capture in Rust via cpal so the `otoji` binary owns the mic
+            // permission prompt — Python subprocesses spawned via `uv run`
+            // do NOT inherit microphone access on macOS. The helper then
+            // reads PCM from its stdin instead of opening its own device.
             let mut cfg = SenseVoiceConfig::from_env();
-            cfg.input_device = device;
+            cfg.feed_stdin = true;
+            cfg.input_device = None;
             let provider = SenseVoice::new(cfg);
-            let (_audio_tx, audio_rx) = otoji_audio::channel(1);
+            let (audio_tx, audio_rx) = otoji_audio::channel(64);
+            let _stream = mic::start_default(frame_ms, audio_tx).context("mic")?;
+            if device.is_some() {
+                eprintln!(
+                    "warning: device selection is not yet wired through cpal; using system default"
+                );
+            }
             drive(provider, audio_rx).await
         }
     }
@@ -184,10 +195,57 @@ async fn drive<P: AsrProvider + 'static>(
         Ok(p) => Arc::new(p),
         Err(_) => Arc::new(NoopPolisher),
     };
+
+    // Tap the audio stream so the TUI can show a live RMS meter — this is
+    // also the easiest way to confirm cpal is delivering frames at all.
+    let (tap_tx, tap_rx) = otoji_audio::channel(64);
+    let meter_tx = event_tx.clone();
+    tokio::spawn(async move {
+        let mut audio_rx = audio_rx;
+        let mut sum_sq: f64 = 0.0;
+        let mut samples: u64 = 0;
+        let mut bytes_total: u64 = 0;
+        let mut last_emit = std::time::Instant::now();
+        let started = std::time::Instant::now();
+        let mut warned_silent = false;
+        let mut peak_rms: f64 = 0.0;
+        while let Some(chunk) = audio_rx.recv().await {
+            bytes_total += chunk.pcm.len() as u64;
+            for pair in chunk.pcm.chunks_exact(2) {
+                let s = i16::from_le_bytes([pair[0], pair[1]]) as f64 / 32768.0;
+                sum_sq += s * s;
+                samples += 1;
+            }
+            if tap_tx.send(chunk).await.is_err() {
+                break;
+            }
+            if last_emit.elapsed() >= std::time::Duration::from_millis(500) {
+                let rms = if samples > 0 { (sum_sq / samples as f64).sqrt() } else { 0.0 };
+                if rms > peak_rms {
+                    peak_rms = rms;
+                }
+                let bars = (rms * 200.0).clamp(0.0, 30.0) as usize;
+                let meter: String = "#".repeat(bars);
+                let mut msg = format!("mic [{meter:<30}] rms={rms:.4}");
+                if started.elapsed() >= std::time::Duration::from_secs(3) && peak_rms < 1e-5 {
+                    msg.push_str("  ⚠ all-zero — grant Microphone permission to your terminal app");
+                    warned_silent = true;
+                }
+                let _ = warned_silent;
+                let _ = meter_tx
+                    .send(otoji_core::AsrEvent::Status { message: msg })
+                    .await;
+                sum_sq = 0.0;
+                samples = 0;
+                last_emit = std::time::Instant::now();
+            }
+        }
+    });
+
     let provider = Arc::new(provider);
     let p2 = provider.clone();
     tokio::spawn(async move {
-        if let Err(e) = p2.run(audio_rx, event_tx).await {
+        if let Err(e) = p2.run(tap_rx, event_tx).await {
             tracing::error!("asr: {e}");
         }
     });
