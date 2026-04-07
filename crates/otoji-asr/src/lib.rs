@@ -13,6 +13,7 @@ use otoji_core::{AsrEvent, Result};
 use tokio::sync::mpsc;
 
 pub mod iflytek_rtasr;
+pub mod sensevoice;
 
 pub type AsrEventRx = mpsc::Receiver<AsrEvent>;
 pub type AsrEventTx = mpsc::Sender<AsrEvent>;

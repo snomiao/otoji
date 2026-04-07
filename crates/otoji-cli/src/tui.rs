@@ -124,10 +124,9 @@ async fn event_loop<B: ratatui::backend::Backend>(
                         if quit { return Ok(()); }
                     }
                 }
-                let s = state.lock().await;
-                if s.closed && s.partial.is_none() {
-                    return Ok(());
-                }
+                // After close we used to auto-quit immediately, which made
+                // file-replay sessions exit before the user could see the
+                // last segment. Stay on screen until the user presses q/esc.
             }
         }
     }

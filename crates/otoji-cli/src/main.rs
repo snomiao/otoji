@@ -12,7 +12,11 @@ mod tui;
 
 use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
-use otoji_asr::{iflytek_rtasr::{IflytekRtasr, IflytekRtasrConfig}, AsrProvider};
+use otoji_asr::{
+    iflytek_rtasr::{IflytekRtasr, IflytekRtasrConfig},
+    sensevoice::{SenseVoice, SenseVoiceConfig},
+    AsrProvider,
+};
 use otoji_audio::{file::stream_pcm_file, mic};
 use otoji_core::AudioFormat;
 use otoji_polish::{AnthropicPolisher, NoopPolisher, Polisher};
@@ -28,10 +32,21 @@ struct Cli {
     cmd: Cmd,
 }
 
+#[derive(clap::ValueEnum, Clone, Debug)]
+enum AsrKind {
+    /// iFlytek RTASR (cloud, requires IFLYTEK_APP_ID / IFLYTEK_API_KEY).
+    Iflytek,
+    /// SenseVoice via sherpa-onnx (local, no API keys).
+    Sensevoice,
+}
+
 #[derive(Subcommand)]
 enum Cmd {
-    /// Capture from the default microphone and stream to RTASR.
+    /// Capture from the default microphone and stream to an ASR provider.
     Listen {
+        /// Which ASR provider to use.
+        #[arg(long, value_enum, default_value_t = AsrKind::Sensevoice)]
+        provider: AsrKind,
         /// Frame size in milliseconds.
         #[arg(long, default_value_t = 40)]
         frame_ms: u32,
@@ -39,6 +54,8 @@ enum Cmd {
     /// Replay a 16kHz mono PCM file as if it were live mic input.
     File {
         path: PathBuf,
+        #[arg(long, value_enum, default_value_t = AsrKind::Sensevoice)]
+        provider: AsrKind,
         #[arg(long, default_value_t = 40)]
         frame_ms: u32,
         /// Disable real-time pacing (send as fast as possible).
@@ -61,23 +78,34 @@ async fn main() -> Result<()> {
         .init();
     let cli = Cli::parse();
     match cli.cmd {
-        Cmd::Listen { frame_ms } => run_listen(frame_ms).await,
-        Cmd::File { path, frame_ms, burst } => run_file(path, frame_ms, !burst).await,
+        Cmd::Listen { provider, frame_ms } => run_listen(provider, frame_ms).await,
+        Cmd::File { path, provider, frame_ms, burst } => {
+            run_file(provider, path, frame_ms, !burst).await
+        }
         Cmd::Speak { text, out } => run_speak(text, out).await,
     }
 }
 
-async fn run_listen(frame_ms: u32) -> Result<()> {
-    let cfg = IflytekRtasrConfig::from_env().context("RTASR config")?;
-    let provider = IflytekRtasr::new(cfg);
-    let (audio_tx, audio_rx) = otoji_audio::channel(64);
-    let _stream = mic::start_default(frame_ms, audio_tx).context("mic")?;
-    drive(provider, audio_rx).await
+async fn run_listen(kind: AsrKind, frame_ms: u32) -> Result<()> {
+    match kind {
+        AsrKind::Iflytek => {
+            let cfg = IflytekRtasrConfig::from_env().context("RTASR config")?;
+            let provider = IflytekRtasr::new(cfg);
+            let (audio_tx, audio_rx) = otoji_audio::channel(64);
+            let _stream = mic::start_default(frame_ms, audio_tx).context("mic")?;
+            drive(provider, audio_rx).await
+        }
+        AsrKind::Sensevoice => {
+            // SenseVoice helper opens its own mic; we still need an
+            // (unused) audio channel to satisfy the trait signature.
+            let provider = SenseVoice::new(SenseVoiceConfig::from_env());
+            let (_audio_tx, audio_rx) = otoji_audio::channel(1);
+            drive(provider, audio_rx).await
+        }
+    }
 }
 
-async fn run_file(path: PathBuf, frame_ms: u32, realtime: bool) -> Result<()> {
-    let cfg = IflytekRtasrConfig::from_env().context("RTASR config")?;
-    let provider = IflytekRtasr::new(cfg);
+async fn run_file(kind: AsrKind, path: PathBuf, frame_ms: u32, realtime: bool) -> Result<()> {
     let (audio_tx, audio_rx) = otoji_audio::channel(64);
     let p = path.clone();
     tokio::spawn(async move {
@@ -87,7 +115,17 @@ async fn run_file(path: PathBuf, frame_ms: u32, realtime: bool) -> Result<()> {
             tracing::error!("file source: {e}");
         }
     });
-    drive(provider, audio_rx).await
+    match kind {
+        AsrKind::Iflytek => {
+            let cfg = IflytekRtasrConfig::from_env().context("RTASR config")?;
+            drive(IflytekRtasr::new(cfg), audio_rx).await
+        }
+        AsrKind::Sensevoice => {
+            let mut cfg = SenseVoiceConfig::from_env();
+            cfg.feed_stdin = true;
+            drive(SenseVoice::new(cfg), audio_rx).await
+        }
+    }
 }
 
 async fn drive<P: AsrProvider + 'static>(
