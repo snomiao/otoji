@@ -228,7 +228,10 @@ async fn drive<P: AsrProvider + 'static>(
                 let meter: String = "#".repeat(bars);
                 let mut msg = format!("mic [{meter:<30}] rms={rms:.4}");
                 if started.elapsed() >= std::time::Duration::from_secs(3) && peak_rms < 1e-5 {
-                    msg.push_str("  ⚠ all-zero — grant Microphone permission to your terminal app");
+                    msg.push_str(
+                        "  ⚠ all-zero mic — grant Microphone permission to your terminal app, then restart it. \
+                         Open the pane:  open \"x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone\""
+                    );
                     warned_silent = true;
                 }
                 let _ = warned_silent;
