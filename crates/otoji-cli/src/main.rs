@@ -98,12 +98,88 @@ async fn main() -> Result<()> {
     }
 }
 
+/// Probe the default input for ~500ms and return true if any non-zero
+/// sample arrives. Used to detect the macOS "no mic permission for this
+/// process tree" case before we even render the TUI.
+async fn mic_has_audio() -> bool {
+    let (tx, mut rx) = otoji_audio::channel(16);
+    let stream = match mic::start_default(20, tx) {
+        Ok(s) => s,
+        Err(_) => return false,
+    };
+    let deadline = tokio::time::Instant::now() + std::time::Duration::from_millis(700);
+    let mut nonzero = false;
+    while tokio::time::Instant::now() < deadline {
+        match tokio::time::timeout(std::time::Duration::from_millis(100), rx.recv()).await {
+            Ok(Some(chunk)) => {
+                if chunk.pcm.iter().any(|&b| b != 0) {
+                    nonzero = true;
+                    break;
+                }
+            }
+            _ => {}
+        }
+    }
+    drop(stream);
+    nonzero
+}
+
+/// If we're stuck in a non-GUI process tree on macOS (e.g. spawned under
+/// PM2 or a daemonised parent), the kernel hands us all-zero audio. Detect
+/// that, then re-exec ourselves inside Terminal.app via osascript so the
+/// child inherits Terminal.app's microphone TCC grant.
+#[cfg(target_os = "macos")]
+async fn ensure_mic_permission_or_relaunch() -> Result<bool> {
+    if std::env::var_os("OTOJI_RELAUNCHED").is_some() {
+        return Ok(true);
+    }
+    if mic_has_audio().await {
+        return Ok(true);
+    }
+    eprintln!(
+        "otoji: this process tree has no microphone permission \
+         (mic returns silence). relaunching inside Terminal.app …"
+    );
+    // Build the original argv so Terminal.app re-runs the same command.
+    let argv: Vec<String> = std::env::args().collect();
+    let quoted = argv
+        .iter()
+        .map(|a| format!("'{}'", a.replace('\'', "'\\''")))
+        .collect::<Vec<_>>()
+        .join(" ");
+    let script = format!("export OTOJI_RELAUNCHED=1; exec {quoted}");
+    let osa = format!(
+        "tell application \"Terminal\"\n  activate\n  do script \"{}\"\nend tell",
+        script.replace('\\', "\\\\").replace('"', "\\\"")
+    );
+    let status = std::process::Command::new("osascript")
+        .arg("-e")
+        .arg(&osa)
+        .status()
+        .map_err(|e| anyhow::anyhow!("osascript: {e}"))?;
+    if !status.success() {
+        anyhow::bail!("failed to relaunch in Terminal.app: {status}");
+    }
+    eprintln!("otoji: launched in Terminal.app — see that window for the live transcript.");
+    Ok(false)
+}
+
+#[cfg(not(target_os = "macos"))]
+async fn ensure_mic_permission_or_relaunch() -> Result<bool> {
+    Ok(true)
+}
+
 async fn run_listen(
     kind: AsrKind,
     device: Option<String>,
     frame_ms: u32,
     plain: bool,
 ) -> Result<()> {
+    if matches!(kind, AsrKind::Sensevoice | AsrKind::Iflytek)
+        && !ensure_mic_permission_or_relaunch().await?
+    {
+        return Ok(());
+    }
     match kind {
         AsrKind::Iflytek => {
             let cfg = IflytekRtasrConfig::from_env().context("RTASR config")?;
