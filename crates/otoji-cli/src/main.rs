@@ -127,9 +127,21 @@ async fn run_devices() -> Result<()> {
         .arg("-c")
         .arg(concat!(
             "import sounddevice as sd\n",
-            "for i, d in enumerate(sd.query_devices()):\n",
+            "devs = list(enumerate(sd.query_devices()))\n",
+            "default_in = sd.default.device[0] if isinstance(sd.default.device, (list, tuple)) else 0\n",
+            "loopback_keywords = ('blackhole', 'loopback', 'soundflower', 'vb-cable', 'vb cable')\n",
+            "loopback = next((i for i, d in devs if d['max_input_channels'] > 0 and any(k in d['name'].lower() for k in loopback_keywords)), None)\n",
+            "print('aliases:')\n",
+            "print(f\"  default / mic       → [{default_in}] {devs[default_in][1]['name']}\")\n",
+            "if loopback is not None:\n",
+            "    print(f\"  system / loopback   → [{loopback}] {devs[loopback][1]['name']}\")\n",
+            "else:\n",
+            "    print('  system / loopback   → (none — install BlackHole: brew install --cask blackhole-2ch)')\n",
+            "print()\n",
+            "print('input devices:')\n",
+            "for i, d in devs:\n",
             "    if d['max_input_channels'] > 0:\n",
-            "        mark = '*' if i == sd.default.device[0] else ' '\n",
+            "        mark = '*' if i == default_in else ' '\n",
             "        print(f\"{mark} [{i:>2}] {d['name']} ({d['max_input_channels']}ch @ {int(d['default_samplerate'])}Hz)\")\n",
         ))
         .status()
