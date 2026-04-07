@@ -53,6 +53,10 @@ enum Cmd {
         /// Frame size in milliseconds.
         #[arg(long, default_value_t = 40)]
         frame_ms: u32,
+        /// Skip the ratatui TUI and emit AsrEvents as JSON lines on stdout.
+        /// Useful for piping into scripts and for headless testing.
+        #[arg(long)]
+        plain: bool,
     },
     /// List available audio input devices.
     Devices,
@@ -83,8 +87,8 @@ async fn main() -> Result<()> {
         .init();
     let cli = Cli::parse();
     match cli.cmd {
-        Cmd::Listen { device, provider, frame_ms } => {
-            run_listen(provider, device, frame_ms).await
+        Cmd::Listen { device, provider, frame_ms, plain } => {
+            run_listen(provider, device, frame_ms, plain).await
         }
         Cmd::File { path, provider, frame_ms, burst } => {
             run_file(provider, path, frame_ms, !burst).await
@@ -94,7 +98,12 @@ async fn main() -> Result<()> {
     }
 }
 
-async fn run_listen(kind: AsrKind, device: Option<String>, frame_ms: u32) -> Result<()> {
+async fn run_listen(
+    kind: AsrKind,
+    device: Option<String>,
+    frame_ms: u32,
+    plain: bool,
+) -> Result<()> {
     match kind {
         AsrKind::Iflytek => {
             let cfg = IflytekRtasrConfig::from_env().context("RTASR config")?;
@@ -124,9 +133,36 @@ async fn run_listen(kind: AsrKind, device: Option<String>, frame_ms: u32) -> Res
                     "warning: device selection is not yet wired through cpal; using system default"
                 );
             }
-            drive(provider, audio_rx).await
+            if plain {
+                drive_plain(provider, audio_rx).await
+            } else {
+                drive(provider, audio_rx).await
+            }
         }
     }
+}
+
+async fn drive_plain<P: AsrProvider + 'static>(
+    provider: P,
+    audio_rx: otoji_audio::AudioRx,
+) -> Result<()> {
+    let (event_tx, mut event_rx) = mpsc::channel(128);
+    let provider = Arc::new(provider);
+    let p2 = provider.clone();
+    tokio::spawn(async move {
+        if let Err(e) = p2.run(audio_rx, event_tx).await {
+            tracing::error!("asr: {e}");
+        }
+    });
+    while let Some(ev) = event_rx.recv().await {
+        if let Ok(line) = serde_json::to_string(&ev) {
+            println!("{line}");
+        }
+        if matches!(ev, otoji_core::AsrEvent::Closed) {
+            break;
+        }
+    }
+    Ok(())
 }
 
 async fn run_devices() -> Result<()> {
