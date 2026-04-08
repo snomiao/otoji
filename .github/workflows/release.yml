@@ -179,24 +179,20 @@ jobs:
         with:
           path: artifacts
 
-      - name: Lay out per-platform npm/<triple>/ directories
+      - name: Collect all .node binaries into the package root
         run: |
           set -euxo pipefail
           ls -R artifacts
-          npx --no-install napi create-npm-dir -t .
-          npx --no-install napi artifacts -d artifacts
-          ls -R npm
+          # Every artifact contains a single .node named otoji.<triple>.node;
+          # the generated index.js inspects process.platform/arch and requires
+          # the matching one. Bundling them all in one package keeps the npm
+          # surface to a single name and skips the per-platform sub-package
+          # publishing dance.
+          find artifacts -name "*.node" -exec cp -v {} . \;
+          ls -la *.node
 
-      # No NPM_TOKEN needed: npm OIDC trusted publishing auths via the
-      # workflow's id-token. Each package on npmjs.com must have a
-      # configured Trusted Publisher pointing at this repo + workflow.
-      - name: Publish per-platform packages with provenance
-        run: |
-          set -euxo pipefail
-          for dir in npm/*/; do
-            (cd "$dir" && npm publish --access public --tag latest --provenance)
-          done
-
-      - name: Publish umbrella package with provenance
-        run: |
-          npm publish --access public --tag latest --provenance
+      # OIDC trusted publishing — no NPM_TOKEN needed. The `otoji` package
+      # on npmjs.com must have a Trusted Publisher configured pointing at
+      # this repo + release.yml.
+      - name: Publish single umbrella package with provenance
+        run: npm publish --access public --tag latest --provenance
