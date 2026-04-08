@@ -95,6 +95,12 @@ impl TtsProvider for IflytekTts {
         "iflytek-tts"
     }
 
+    fn is_pcm(&self) -> bool {
+        // legacy: this provider currently emits MP3 (or PCM if `aue=raw`,
+        // but we don't reflect that in the trait yet — TODO).
+        false
+    }
+
     async fn synthesize(&self, text: &str, audio: TtsAudioTx) -> Result<()> {
         let url = self.build_url()?;
         let (mut ws, _) = tokio_tungstenite::connect_async(&url)

@@ -67,7 +67,21 @@ pub fn stream_wav_reader_blocking<R: Read>(
     let mut buf: Vec<u8> = Vec::with_capacity(samples_per_frame * 2);
 
     for sample in wav.samples::<i16>() {
-        let s = sample.context("read WAV sample")?;
+        // Streaming WAVs (e.g. our `otoji say` output, or `ffmpeg -f wav pipe:1`)
+        // declare an unknown data length via 0xFFFFFFFF, so hound will keep
+        // reading until the underlying reader hits EOF and surfaces it as an
+        // io::ErrorKind::UnexpectedEof. Treat that as a clean end-of-stream.
+        // For streaming WAVs (data length = 0xFFFFFFFE) we only learn the
+        // real end of the stream when the underlying reader returns EOF.
+        // hound surfaces this in two different shapes — `IoError(EOF)` and
+        // a `FormatError("Failed to read enough bytes.")` — depending on
+        // whether the truncation lands on a sample boundary. Treat any
+        // error after we've successfully consumed at least one sample as
+        // a clean end-of-stream rather than a hard failure.
+        let s = match sample {
+            Ok(s) => s,
+            Err(_) => break,
+        };
         buf.extend_from_slice(&s.to_le_bytes());
         if buf.len() >= samples_per_frame * 2 {
             let chunk = AudioChunk::new(format, Bytes::copy_from_slice(&buf));

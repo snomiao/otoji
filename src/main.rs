@@ -22,6 +22,7 @@ use std::io::IsTerminal;
 use otoji::core::AudioFormat;
 use otoji::polish::{AnthropicPolisher, NoopPolisher, Polisher};
 use otoji::tts::{
+    gemini::{GeminiTts, GeminiTtsConfig},
     iflytek_tts::{IflytekTts, IflytekTtsConfig},
     TtsProvider,
 };
@@ -82,6 +83,21 @@ enum Cmd {
         #[arg(long, default_value = "out.mp3")]
         out: PathBuf,
     },
+    /// Synthesize text and stream a 16 kHz mono WAV to stdout.
+    /// Pipe-friendly: `echo "hi" | otoji say - | otoji listen -`.
+    Say {
+        /// Literal text, or `-` to read from stdin.
+        text: String,
+        /// TTS provider.
+        #[arg(long, value_enum, default_value_t = TtsKind::Gemini)]
+        provider: TtsKind,
+    },
+}
+
+#[derive(clap::ValueEnum, Clone, Debug)]
+enum TtsKind {
+    /// Google Gemini TTS — per-sentence streaming hack. Needs GEMINI_API_KEY.
+    Gemini,
 }
 
 #[tokio::main]
@@ -105,6 +121,7 @@ async fn main() -> Result<()> {
             burst,
         } => run_file(provider, path, frame_ms, !burst).await,
         Cmd::Speak { text, out } => run_speak(text, out).await,
+        Cmd::Say { text, provider } => run_say(provider, text).await,
         Cmd::Devices => run_devices().await,
     }
 }
@@ -441,6 +458,116 @@ async fn drive<P: AsrProvider + 'static>(provider: P, audio_rx: audio::AudioRx) 
         }
     });
     tui::run(event_rx, polisher).await
+}
+
+/// Build the streaming-friendly 44-byte WAV header. Both the RIFF size and
+/// the data size are set to `0xFFFFFFFF`, signalling "unknown / read until
+/// EOF" — this is the same trick `ffmpeg -f wav pipe:1` uses, and the
+/// stdin reader on the listen side gracefully treats EOF as end-of-stream.
+fn streaming_wav_header(sample_rate: u32) -> [u8; 44] {
+    let channels: u16 = 1;
+    let bits: u16 = 16;
+    let byte_rate: u32 = sample_rate * channels as u32 * bits as u32 / 8;
+    let block_align: u16 = channels * bits / 8;
+    let mut h = [0u8; 44];
+    h[0..4].copy_from_slice(b"RIFF");
+    h[4..8].copy_from_slice(&0xFFFFFFFEu32.to_le_bytes());
+    h[8..12].copy_from_slice(b"WAVE");
+    h[12..16].copy_from_slice(b"fmt ");
+    h[16..20].copy_from_slice(&16u32.to_le_bytes());
+    h[20..22].copy_from_slice(&1u16.to_le_bytes()); // PCM format = 1
+    h[22..24].copy_from_slice(&channels.to_le_bytes());
+    h[24..28].copy_from_slice(&sample_rate.to_le_bytes());
+    h[28..32].copy_from_slice(&byte_rate.to_le_bytes());
+    h[32..34].copy_from_slice(&block_align.to_le_bytes());
+    h[34..36].copy_from_slice(&bits.to_le_bytes());
+    h[36..40].copy_from_slice(b"data");
+    h[40..44].copy_from_slice(&0xFFFFFFFEu32.to_le_bytes());
+    h
+}
+
+/// Cheap linear-interpolation resampler from `from_rate` to `to_rate` for
+/// mono i16 PCM. Quality is fine for ASR (SenseVoice doesn't care about
+/// the slight aliasing) and avoids pulling in `rubato`.
+fn resample_linear(samples: &[i16], from_rate: u32, to_rate: u32) -> Vec<i16> {
+    if from_rate == to_rate || samples.is_empty() {
+        return samples.to_vec();
+    }
+    let ratio = from_rate as f64 / to_rate as f64;
+    let out_len = (samples.len() as f64 / ratio).floor() as usize;
+    let mut out = Vec::with_capacity(out_len);
+    for i in 0..out_len {
+        let src = i as f64 * ratio;
+        let i0 = src.floor() as usize;
+        let frac = src - i0 as f64;
+        let s0 = samples[i0] as f64;
+        let s1 = samples.get(i0 + 1).copied().unwrap_or(samples[i0]) as f64;
+        out.push((s0 + (s1 - s0) * frac).round() as i16);
+    }
+    out
+}
+
+async fn run_say(kind: TtsKind, text_arg: String) -> Result<()> {
+    use std::io::Write;
+    use tokio::io::AsyncReadExt;
+
+    // Resolve text: `-` means read from stdin.
+    let text = if text_arg == "-" {
+        let mut buf = String::new();
+        tokio::io::stdin()
+            .read_to_string(&mut buf)
+            .await
+            .context("read stdin")?;
+        buf
+    } else {
+        text_arg
+    };
+    let text = text.trim().to_string();
+    if text.is_empty() {
+        anyhow::bail!("say: empty text");
+    }
+
+    // Provider setup. `provider.sample_rate()` is the native rate of its PCM
+    // output; we always emit 16 kHz to stdout so the listen pipeline doesn't
+    // need to know about the provider's quirks.
+    let provider: Arc<dyn TtsProvider> = match kind {
+        TtsKind::Gemini => {
+            let cfg = GeminiTtsConfig::from_env().context("gemini config")?;
+            Arc::new(GeminiTts::new(cfg))
+        }
+    };
+    let src_rate = provider.sample_rate();
+    const OUT_RATE: u32 = 16_000;
+
+    // Write the streaming WAV header up front so the consumer can start
+    // parsing immediately.
+    let mut stdout = std::io::stdout().lock();
+    stdout
+        .write_all(&streaming_wav_header(OUT_RATE))
+        .context("write wav header")?;
+    stdout.flush().ok();
+
+    let (tx, mut rx) = mpsc::channel::<bytes::Bytes>(8);
+    let provider2 = provider.clone();
+    let text2 = text.clone();
+    let synth_task = tokio::spawn(async move { provider2.synthesize(&text2, tx).await });
+
+    while let Some(chunk) = rx.recv().await {
+        // chunk is raw mono i16 LE at `src_rate`.
+        let samples: Vec<i16> = chunk
+            .chunks_exact(2)
+            .map(|b| i16::from_le_bytes([b[0], b[1]]))
+            .collect();
+        let resampled = resample_linear(&samples, src_rate, OUT_RATE);
+        let mut bytes = Vec::with_capacity(resampled.len() * 2);
+        for s in resampled {
+            bytes.extend_from_slice(&s.to_le_bytes());
+        }
+        stdout.write_all(&bytes).context("write pcm")?;
+        stdout.flush().ok();
+    }
+    synth_task.await.context("synth join")??;
+    Ok(())
 }
 
 async fn run_speak(text: String, out: PathBuf) -> Result<()> {
