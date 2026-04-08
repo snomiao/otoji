@@ -8,6 +8,10 @@ publish = true
 publish_allow_dirty = false
 # Skip publishing on every push; only when the release PR is merged.
 release = true
+# Skip `cargo publish --verify`. Verification would compile sherpa-onnx-sys
+# (a heavy C++ build) just to validate the published tarball, which is
+# pointless when CI already builds the crate on every push.
+publish_no_verify = true
 
 [changelog]
 header = """# Changelog

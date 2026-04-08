@@ -17,9 +17,9 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - host: macos-14
+          - host: macos-latest
             target: aarch64-apple-darwin
-          - host: macos-13
+          - host: macos-latest
             target: x86_64-apple-darwin
           - host: ubuntu-latest
             target: x86_64-unknown-linux-gnu
