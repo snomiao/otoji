@@ -1,0 +1,51 @@
+name: smoke-published
+
+# Manually-triggered: pulls `otoji@<version>` from npm on each supported
+# platform and verifies the native binding loads + exposes the expected
+# API. Use this after `release-npm` to confirm cross-platform compat.
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "npm dist-tag or version (default: latest)"
+        required: false
+        default: "latest"
+
+jobs:
+  smoke:
+    name: ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-14, macos-13, ubuntu-latest, windows-latest]
+    steps:
+      - uses: oven-sh/setup-bun@v2
+
+      - name: Install otoji@${{ github.event.inputs.version }}
+        shell: bash
+        run: |
+          set -euxo pipefail
+          mkdir -p smoke && cd smoke
+          bun init -y
+          bun add otoji@${{ github.event.inputs.version }}
+          ls node_modules | grep otoji
+
+      - name: Require + sanity-check API
+        shell: bash
+        working-directory: smoke
+        run: |
+          bun -e '
+            const m = require("otoji");
+            console.log("loaded:", Object.keys(m));
+            if (typeof m.polishText !== "function") {
+              console.error("polishText missing");
+              process.exit(1);
+            }
+            if (typeof m.transcribePcm !== "function") {
+              console.error("transcribePcm missing");
+              process.exit(1);
+            }
+            console.log("ok");
+          '
