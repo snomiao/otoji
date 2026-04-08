@@ -1,12 +1,12 @@
 //! Microphone capture via cpal. Resamples to 16k mono i16 PCM with a simple
 //! linear strategy and pushes ~`frame_ms` chunks to the channel.
 
-use crate::AudioTx;
+use super::AudioTx;
+use crate::core::{AudioChunk, AudioFormat};
 use anyhow::{anyhow, Result};
 use bytes::Bytes;
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use cpal::{Sample, SampleFormat};
-use otoji_core::{AudioChunk, AudioFormat};
 use std::sync::{Arc, Mutex};
 
 const TARGET_RATE: u32 = 16_000;

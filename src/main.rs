@@ -12,15 +12,15 @@ mod tui;
 
 use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
-use otoji_asr::{
+use otoji::asr::{
     iflytek_rtasr::{IflytekRtasr, IflytekRtasrConfig},
     sensevoice::{SenseVoice, SenseVoiceConfig},
     AsrProvider,
 };
-use otoji_audio::{file::stream_pcm_file, mic};
-use otoji_core::AudioFormat;
-use otoji_polish::{AnthropicPolisher, NoopPolisher, Polisher};
-use otoji_tts::{iflytek_tts::{IflytekTts, IflytekTtsConfig}, TtsProvider};
+use otoji::audio::{self, file::stream_pcm_file, mic};
+use otoji::core::AudioFormat;
+use otoji::polish::{AnthropicPolisher, NoopPolisher, Polisher};
+use otoji::tts::{iflytek_tts::{IflytekTts, IflytekTtsConfig}, TtsProvider};
 use std::path::PathBuf;
 use std::sync::Arc;
 use tokio::sync::mpsc;
@@ -43,6 +43,7 @@ enum AsrKind {
 #[derive(Subcommand)]
 enum Cmd {
     /// Capture from an input device and stream to an ASR provider.
+    #[command(alias = "l")]
     Listen {
         /// Input device — substring of the device name or numeric index.
         /// Omit to use the system default. Use `otoji devices` to list.
@@ -102,7 +103,7 @@ async fn main() -> Result<()> {
 /// sample arrives. Used to detect the macOS "no mic permission for this
 /// process tree" case before we even render the TUI.
 async fn mic_has_audio() -> bool {
-    let (tx, mut rx) = otoji_audio::channel(16);
+    let (tx, mut rx) = audio::channel(16);
     let stream = match mic::start_default(20, tx) {
         Ok(s) => s,
         Err(_) => return false,
@@ -184,7 +185,7 @@ async fn run_listen(
         AsrKind::Iflytek => {
             let cfg = IflytekRtasrConfig::from_env().context("RTASR config")?;
             let provider = IflytekRtasr::new(cfg);
-            let (audio_tx, audio_rx) = otoji_audio::channel(64);
+            let (audio_tx, audio_rx) = audio::channel(64);
             let _stream = mic::start_default(frame_ms, audio_tx).context("mic")?;
             if device.is_some() {
                 eprintln!(
@@ -194,15 +195,12 @@ async fn run_listen(
             drive(provider, audio_rx).await
         }
         AsrKind::Sensevoice => {
-            // Capture in Rust via cpal so the `otoji` binary owns the mic
-            // permission prompt — Python subprocesses spawned via `uv run`
-            // do NOT inherit microphone access on macOS. The helper then
-            // reads PCM from its stdin instead of opening its own device.
-            let mut cfg = SenseVoiceConfig::from_env();
-            cfg.feed_stdin = true;
-            cfg.input_device = None;
+            // Pure-Rust SenseVoice via the sherpa-onnx crate. PCM is captured
+            // by cpal in this process and forwarded directly to the worker
+            // thread that owns the recognizer.
+            let cfg = SenseVoiceConfig::from_env();
             let provider = SenseVoice::new(cfg);
-            let (audio_tx, audio_rx) = otoji_audio::channel(64);
+            let (audio_tx, audio_rx) = audio::channel(64);
             let _stream = mic::start_default(frame_ms, audio_tx).context("mic")?;
             if device.is_some() {
                 eprintln!(
@@ -220,7 +218,7 @@ async fn run_listen(
 
 async fn drive_plain<P: AsrProvider + 'static>(
     provider: P,
-    audio_rx: otoji_audio::AudioRx,
+    audio_rx: audio::AudioRx,
 ) -> Result<()> {
     let (event_tx, mut event_rx) = mpsc::channel(128);
     let provider = Arc::new(provider);
@@ -234,7 +232,7 @@ async fn drive_plain<P: AsrProvider + 'static>(
         if let Ok(line) = serde_json::to_string(&ev) {
             println!("{line}");
         }
-        if matches!(ev, otoji_core::AsrEvent::Closed) {
+        if matches!(ev, otoji::core::AsrEvent::Closed) {
             break;
         }
     }
@@ -242,41 +240,54 @@ async fn drive_plain<P: AsrProvider + 'static>(
 }
 
 async fn run_devices() -> Result<()> {
-    use std::process::Command;
-    let cfg = SenseVoiceConfig::from_env();
-    let (cmd, args) = cfg.python.split_first().context("empty python command")?;
-    let status = Command::new(cmd)
-        .args(args)
-        .arg("-c")
-        .arg(concat!(
-            "import sounddevice as sd\n",
-            "devs = list(enumerate(sd.query_devices()))\n",
-            "default_in = sd.default.device[0] if isinstance(sd.default.device, (list, tuple)) else 0\n",
-            "loopback_keywords = ('blackhole', 'loopback', 'soundflower', 'vb-cable', 'vb cable')\n",
-            "loopback = next((i for i, d in devs if d['max_input_channels'] > 0 and any(k in d['name'].lower() for k in loopback_keywords)), None)\n",
-            "print('aliases:')\n",
-            "print(f\"  default / mic       → [{default_in}] {devs[default_in][1]['name']}\")\n",
-            "if loopback is not None:\n",
-            "    print(f\"  system / loopback   → [{loopback}] {devs[loopback][1]['name']}\")\n",
-            "else:\n",
-            "    print('  system / loopback   → (none — install BlackHole: brew install --cask blackhole-2ch)')\n",
-            "print()\n",
-            "print('input devices:')\n",
-            "for i, d in devs:\n",
-            "    if d['max_input_channels'] > 0:\n",
-            "        mark = '*' if i == default_in else ' '\n",
-            "        print(f\"{mark} [{i:>2}] {d['name']} ({d['max_input_channels']}ch @ {int(d['default_samplerate'])}Hz)\")\n",
-        ))
-        .status()
-        .context("spawn device lister")?;
-    if !status.success() {
-        anyhow::bail!("device lister exited with {status}");
+    use cpal::traits::{DeviceTrait, HostTrait};
+    let host = cpal::default_host();
+    let default_name = host
+        .default_input_device()
+        .and_then(|d| d.name().ok())
+        .unwrap_or_default();
+    let loopback_keywords = ["blackhole", "loopback", "soundflower", "vb-cable", "vb cable"];
+
+    let inputs: Vec<cpal::Device> = host
+        .input_devices()
+        .context("enumerate input devices")?
+        .collect();
+
+    println!("aliases:");
+    println!("  default / mic       → {default_name}");
+    let loopback = inputs
+        .iter()
+        .find_map(|d| {
+            let n = d.name().ok()?;
+            let lower = n.to_lowercase();
+            loopback_keywords.iter().any(|k| lower.contains(k)).then_some(n)
+        });
+    match loopback {
+        Some(n) => println!("  system / loopback   → {n}"),
+        None => println!(
+            "  system / loopback   → (none — install BlackHole: brew install --cask blackhole-2ch)"
+        ),
+    }
+
+    println!("\ninput devices:");
+    for (i, d) in inputs.iter().enumerate() {
+        let name = d.name().unwrap_or_else(|_| "<unknown>".into());
+        let cfg = d.default_input_config().ok();
+        let mark = if name == default_name { "*" } else { " " };
+        match cfg {
+            Some(c) => println!(
+                "{mark} [{i:>2}] {name} ({}ch @ {}Hz)",
+                c.channels(),
+                c.sample_rate().0
+            ),
+            None => println!("{mark} [{i:>2}] {name}"),
+        }
     }
     Ok(())
 }
 
 async fn run_file(kind: AsrKind, path: PathBuf, frame_ms: u32, realtime: bool) -> Result<()> {
-    let (audio_tx, audio_rx) = otoji_audio::channel(64);
+    let (audio_tx, audio_rx) = audio::channel(64);
     let p = path.clone();
     tokio::spawn(async move {
         if let Err(e) =
@@ -291,8 +302,7 @@ async fn run_file(kind: AsrKind, path: PathBuf, frame_ms: u32, realtime: bool) -
             drive(IflytekRtasr::new(cfg), audio_rx).await
         }
         AsrKind::Sensevoice => {
-            let mut cfg = SenseVoiceConfig::from_env();
-            cfg.feed_stdin = true;
+            let cfg = SenseVoiceConfig::from_env();
             drive(SenseVoice::new(cfg), audio_rx).await
         }
     }
@@ -300,7 +310,7 @@ async fn run_file(kind: AsrKind, path: PathBuf, frame_ms: u32, realtime: bool) -
 
 async fn drive<P: AsrProvider + 'static>(
     provider: P,
-    audio_rx: otoji_audio::AudioRx,
+    audio_rx: audio::AudioRx,
 ) -> Result<()> {
     let (event_tx, event_rx) = mpsc::channel(128);
     let polisher: Arc<dyn Polisher> = match AnthropicPolisher::from_env() {
@@ -310,7 +320,7 @@ async fn drive<P: AsrProvider + 'static>(
 
     // Tap the audio stream so the TUI can show a live RMS meter — this is
     // also the easiest way to confirm cpal is delivering frames at all.
-    let (tap_tx, tap_rx) = otoji_audio::channel(64);
+    let (tap_tx, tap_rx) = audio::channel(64);
     let meter_tx = event_tx.clone();
     tokio::spawn(async move {
         let mut audio_rx = audio_rx;
@@ -348,7 +358,7 @@ async fn drive<P: AsrProvider + 'static>(
                 }
                 let _ = warned_silent;
                 let _ = meter_tx
-                    .send(otoji_core::AsrEvent::Status { message: msg })
+                    .send(otoji::core::AsrEvent::Status { message: msg })
                     .await;
                 sum_sq = 0.0;
                 samples = 0;

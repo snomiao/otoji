@@ -1,9 +1,9 @@
 //! File-based audio source. Reads raw 16k mono PCM (or .wav with that format).
 
-use crate::AudioTx;
+use super::AudioTx;
+use crate::core::{AudioChunk, AudioFormat};
 use anyhow::{Context, Result};
 use bytes::Bytes;
-use otoji_core::{AudioChunk, AudioFormat};
 use std::path::Path;
 use std::time::Duration;
 use tokio::time::sleep;

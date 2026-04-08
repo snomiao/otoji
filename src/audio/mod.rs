@@ -3,7 +3,7 @@
 pub mod file;
 pub mod mic;
 
-use otoji_core::AudioChunk;
+use crate::core::AudioChunk;
 use tokio::sync::mpsc;
 
 /// Receiver side of an audio source. Sources push `AudioChunk`s and close when done.

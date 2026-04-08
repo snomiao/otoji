@@ -5,13 +5,13 @@
 //! Output: base64-encoded MP3 (or PCM, configurable) chunks in JSON frames.
 //! Docs: https://www.xfyun.cn/doc/tts/online_tts/API.html
 
-use crate::{TtsAudioTx, TtsProvider};
+use super::{TtsAudioTx, TtsProvider};
+use crate::core::{OtojiError, Result};
 use async_trait::async_trait;
 use base64::Engine;
 use bytes::Bytes;
 use futures_util::{SinkExt, StreamExt};
 use hmac::{Hmac, Mac};
-use otoji_core::{OtojiError, Result};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use sha2::Sha256;

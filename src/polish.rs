@@ -4,7 +4,7 @@
 //! returns a tidied sentence. See `docs/03-llm-polish-layer.md` for design.
 
 use async_trait::async_trait;
-use otoji_core::{OtojiError, Result};
+use crate::core::{OtojiError, Result};
 use serde::{Deserialize, Serialize};
 
 #[async_trait]

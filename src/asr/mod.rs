@@ -7,9 +7,9 @@
 //! - `coli` (via ListenHub)
 //! - `sensevoice` (FunASR self-host bridge)
 
+use crate::audio::AudioRx;
+use crate::core::{AsrEvent, Result};
 use async_trait::async_trait;
-use otoji_audio::AudioRx;
-use otoji_core::{AsrEvent, Result};
 use tokio::sync::mpsc;
 
 pub mod iflytek_rtasr;

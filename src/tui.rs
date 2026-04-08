@@ -18,8 +18,8 @@ use crossterm::execute;
 use crossterm::terminal::{
     disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen,
 };
-use otoji_core::AsrEvent;
-use otoji_polish::Polisher;
+use otoji::core::AsrEvent;
+use otoji::polish::Polisher;
 use ratatui::backend::CrosstermBackend;
 use ratatui::layout::{Constraint, Direction, Layout};
 use ratatui::style::{Color, Modifier, Style};
@@ -103,7 +103,7 @@ async fn event_loop<B: ratatui::backend::Backend>(
     state: Arc<Mutex<State>>,
     polish_tx: mpsc::Sender<(u64, String)>,
 ) -> Result<()> {
-    let mut tick = tokio::time::interval(Duration::from_millis(50));
+    let mut tick = tokio::time::interval(Duration::from_millis(16));
     loop {
         tokio::select! {
             maybe = events.recv() => {
@@ -260,13 +260,29 @@ async fn draw<B: ratatui::backend::Backend>(
             ]));
         }
         if let Some((id, partial)) = &s.partial {
+            // Blinking caret to convey live streaming.
+            let caret = if std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| (d.as_millis() / 500) % 2 == 0)
+                .unwrap_or(true)
+            {
+                "▏"
+            } else {
+                " "
+            };
             lines.push(Line::from(vec![
                 Span::styled(format!("[{id:>4}] "), Style::default().fg(Color::DarkGray)),
                 Span::styled(
                     format!("░ {partial}"),
                     Style::default()
-                        .fg(Color::DarkGray)
+                        .fg(Color::LightCyan)
                         .add_modifier(Modifier::ITALIC),
+                ),
+                Span::styled(
+                    caret.to_string(),
+                    Style::default()
+                        .fg(Color::LightCyan)
+                        .add_modifier(Modifier::BOLD),
                 ),
             ]));
         }

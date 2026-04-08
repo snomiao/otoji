@@ -7,13 +7,13 @@
 //! - End frame: text `{"end": true}`.
 //! - Result frames: JSON with `action: "result"` and a nested `data` JSON string.
 
-use crate::{AsrEventTx, AsrProvider};
+use super::{AsrEventTx, AsrProvider};
+use crate::audio::AudioRx;
+use crate::core::{AsrEvent, OtojiError, Result, Word};
 use async_trait::async_trait;
 use base64::Engine;
 use futures_util::{SinkExt, StreamExt};
 use hmac::{Hmac, Mac};
-use otoji_audio::AudioRx;
-use otoji_core::{AsrEvent, OtojiError, Result, Word};
 use serde::Deserialize;
 use sha1::Sha1;
 use tokio_tungstenite::tungstenite::Message;

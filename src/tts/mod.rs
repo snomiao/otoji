@@ -2,7 +2,7 @@
 
 use async_trait::async_trait;
 use bytes::Bytes;
-use otoji_core::Result;
+use crate::core::Result;
 use tokio::sync::mpsc;
 
 pub mod iflytek_tts;
