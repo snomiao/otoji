@@ -5,8 +5,11 @@ use async_trait::async_trait;
 use bytes::Bytes;
 use tokio::sync::mpsc;
 
+pub mod elevenlabs;
 pub mod gemini;
 pub mod iflytek_tts;
+pub mod openai;
+pub mod piper;
 
 pub type TtsAudioRx = mpsc::Receiver<Bytes>;
 pub type TtsAudioTx = mpsc::Sender<Bytes>;

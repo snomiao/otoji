@@ -212,6 +212,25 @@ fn worker_main(
     };
     config.model_config.num_threads = 2;
 
+    // Lazy load: don't pay the ~1GB SenseVoice model load cost until we
+    // actually have audio to decode. For `otoji listen -` with a tiny
+    // input that errors before any PCM arrives, this skips the load
+    // entirely; for the mic, it defers it until the user starts talking.
+    let first = loop {
+        match in_rx.recv() {
+            Ok(WorkerMsg::Eof) | Err(_) => {
+                let _ = out_tx.send(WorkerEvt::Closed);
+                return;
+            }
+            Ok(msg @ WorkerMsg::Pcm(_)) => break msg,
+        }
+    };
+
+    eprintln!(
+        "sensevoice: loading model from {} (~1GB, first run may take a few seconds) …",
+        cfg.model_dir
+    );
+    let load_started = std::time::Instant::now();
     let recognizer = match OfflineRecognizer::create(&config) {
         Some(r) => r,
         None => {
@@ -222,6 +241,10 @@ fn worker_main(
             return;
         }
     };
+    eprintln!(
+        "sensevoice: model loaded in {:.2}s",
+        load_started.elapsed().as_secs_f32()
+    );
     let _ = out_tx.send(WorkerEvt::Open);
 
     // VAD parameters in *samples* (matches the cpal mic crate's 16k mono PCM).
@@ -277,7 +300,15 @@ fn worker_main(
 
     let threshold = cfg.vad_threshold;
 
-    while let Ok(msg) = in_rx.recv() {
+    let mut pending_first = Some(first);
+    loop {
+        let msg = match pending_first.take() {
+            Some(m) => m,
+            None => match in_rx.recv() {
+                Ok(m) => m,
+                Err(_) => break,
+            },
+        };
         match msg {
             WorkerMsg::Eof => {
                 flush_block(

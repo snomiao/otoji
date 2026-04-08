@@ -22,8 +22,11 @@ use std::io::IsTerminal;
 use otoji::core::AudioFormat;
 use otoji::polish::{AnthropicPolisher, NoopPolisher, Polisher};
 use otoji::tts::{
+    elevenlabs::{ElevenLabsTts, ElevenLabsTtsConfig},
     gemini::{GeminiTts, GeminiTtsConfig},
     iflytek_tts::{IflytekTts, IflytekTtsConfig},
+    openai::{OpenAiTts, OpenAiTtsConfig},
+    piper::{PiperTts, PiperTtsConfig},
     TtsProvider,
 };
 use std::path::PathBuf;
@@ -88,16 +91,96 @@ enum Cmd {
     Say {
         /// Literal text, or `-` to read from stdin.
         text: String,
-        /// TTS provider.
-        #[arg(long, value_enum, default_value_t = TtsKind::Gemini)]
+        /// TTS provider. `auto` picks the best available: piper if a model
+        /// is on disk, otherwise the first env-key match (openai → 11labs
+        /// → gemini).
+        #[arg(long, value_enum, default_value_t = TtsKind::Auto)]
         provider: TtsKind,
     },
 }
 
 #[derive(clap::ValueEnum, Clone, Debug)]
 enum TtsKind {
+    /// Pick automatically: piper > openai > elevenlabs > gemini.
+    Auto,
+    /// Local Piper VITS via sherpa-onnx (default when model present).
+    Piper,
+    /// OpenAI TTS — needs OPENAI_API_KEY. Streams native 24kHz PCM.
+    Openai,
+    /// ElevenLabs TTS — needs ELEVENLABS_API_KEY. Streams native 16kHz PCM.
+    Elevenlabs,
     /// Google Gemini TTS — per-sentence streaming hack. Needs GEMINI_API_KEY.
     Gemini,
+    /// iFlytek TTS in PCM mode (`aue=raw`). Needs IFLYTEK_* env vars.
+    Iflytek,
+}
+
+fn resolve_tts(kind: TtsKind) -> Result<Arc<dyn TtsProvider>> {
+    let try_piper = || -> Option<Arc<dyn TtsProvider>> {
+        let cfg = PiperTtsConfig::from_env();
+        if !std::path::Path::new(&cfg.model_dir).is_dir() {
+            return None;
+        }
+        match PiperTts::create(cfg) {
+            Ok(p) => Some(Arc::new(p)),
+            Err(e) => {
+                eprintln!("piper init failed, falling back: {e}");
+                None
+            }
+        }
+    };
+    let try_openai = || -> Option<Arc<dyn TtsProvider>> {
+        OpenAiTtsConfig::from_env()
+            .ok()
+            .map(|c| Arc::new(OpenAiTts::new(c)) as Arc<dyn TtsProvider>)
+    };
+    let try_eleven = || -> Option<Arc<dyn TtsProvider>> {
+        ElevenLabsTtsConfig::from_env()
+            .ok()
+            .map(|c| Arc::new(ElevenLabsTts::new(c)) as Arc<dyn TtsProvider>)
+    };
+    let try_gemini = || -> Option<Arc<dyn TtsProvider>> {
+        GeminiTtsConfig::from_env()
+            .ok()
+            .map(|c| Arc::new(GeminiTts::new(c)) as Arc<dyn TtsProvider>)
+    };
+
+    match kind {
+        TtsKind::Auto => try_piper()
+            .or_else(try_openai)
+            .or_else(try_eleven)
+            .or_else(try_gemini)
+            .ok_or_else(|| {
+                anyhow::anyhow!(
+                    "no TTS provider available. Either install a Piper model:\n  \
+                     mkdir -p ~/.cache/otoji && curl -L https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-piper-en_US-amy-low.tar.bz2 \
+                     | tar -xj -C ~/.cache/otoji\n\
+                     or set one of OPENAI_API_KEY / ELEVENLABS_API_KEY / GEMINI_API_KEY"
+                )
+            }),
+        TtsKind::Piper => {
+            let cfg = PiperTtsConfig::from_env();
+            Ok(Arc::new(PiperTts::create(cfg).context("piper init")?))
+        }
+        TtsKind::Openai => {
+            let cfg = OpenAiTtsConfig::from_env().context("openai config")?;
+            Ok(Arc::new(OpenAiTts::new(cfg)))
+        }
+        TtsKind::Elevenlabs => {
+            let cfg = ElevenLabsTtsConfig::from_env().context("elevenlabs config")?;
+            Ok(Arc::new(ElevenLabsTts::new(cfg)))
+        }
+        TtsKind::Gemini => {
+            let cfg = GeminiTtsConfig::from_env().context("gemini config")?;
+            Ok(Arc::new(GeminiTts::new(cfg)))
+        }
+        TtsKind::Iflytek => {
+            let mut cfg = IflytekTtsConfig::from_env().context("iflytek config")?;
+            // `say` requires raw PCM. Force aue=raw regardless of env.
+            cfg.aue = "raw".into();
+            Ok(Arc::new(IflytekTts::new(cfg)))
+        }
+    }
 }
 
 #[tokio::main]
@@ -530,12 +613,15 @@ async fn run_say(kind: TtsKind, text_arg: String) -> Result<()> {
     // Provider setup. `provider.sample_rate()` is the native rate of its PCM
     // output; we always emit 16 kHz to stdout so the listen pipeline doesn't
     // need to know about the provider's quirks.
-    let provider: Arc<dyn TtsProvider> = match kind {
-        TtsKind::Gemini => {
-            let cfg = GeminiTtsConfig::from_env().context("gemini config")?;
-            Arc::new(GeminiTts::new(cfg))
-        }
-    };
+    let provider = resolve_tts(kind)?;
+    if !provider.is_pcm() {
+        anyhow::bail!(
+            "provider `{}` does not emit PCM, cannot be used with `otoji say`. \
+             Use `otoji speak` for the legacy MP3 path.",
+            provider.name()
+        );
+    }
+    eprintln!("say: using provider `{}`", provider.name());
     let src_rate = provider.sample_rate();
     const OUT_RATE: u32 = 16_000;
 

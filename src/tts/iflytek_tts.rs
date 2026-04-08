@@ -96,9 +96,12 @@ impl TtsProvider for IflytekTts {
     }
 
     fn is_pcm(&self) -> bool {
-        // legacy: this provider currently emits MP3 (or PCM if `aue=raw`,
-        // but we don't reflect that in the trait yet — TODO).
-        false
+        // `aue=raw` → 16k mono PCM, anything else (default `lame`) → MP3.
+        self.cfg.aue == "raw"
+    }
+
+    fn sample_rate(&self) -> u32 {
+        16_000
     }
 
     async fn synthesize(&self, text: &str, audio: TtsAudioTx) -> Result<()> {
