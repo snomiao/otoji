@@ -1,30 +1,30 @@
 name: release
 
-# Single workflow that drives every release-related concern.
+# End-to-end release pipeline.
 #
-# Flow per version:
+# Per version:
 #   1. Conventional commits land on main.
-#   2. `release-plz` opens a release PR (Cargo.toml + CHANGELOG bump).
-#   3. PR merge → `release-plz` publishes the source crate to crates.io
-#      (with --no-verify, so we don't pay for sherpa-onnx-sys C++ build
-#       just to validate metadata) and pushes a `vX.Y.Z` tag.
-#   4. The tag triggers the cross-platform napi build matrix.
-#   5. After every platform builds, the publish job lays out per-target
-#      sub-packages and runs `npm publish --provenance` for each plus
-#      the umbrella `otoji` package.
+#   2. release-plz opens a release PR (Cargo.toml + CHANGELOG bump).
+#   3. PR merge → release-plz publishes the source crate to crates.io
+#      (--no-verify, so we skip the heavy sherpa-onnx-sys C++ build),
+#      pushes a `vX.Y.Z` git tag, and emits the version as a job output.
+#   4. The reusable _build.yml runs the cross-platform napi matrix.
+#   5. The publish job lays out per-target sub-packages, syncs every
+#      version field to the released version, and runs `npm publish
+#      --provenance` for each `@otoji/core-<triple>` plus the umbrella
+#      `@otoji/core` package via OIDC trusted publishing.
 #
 # Required secrets:
 #   - CARGO_REGISTRY_TOKEN  (crates.io publish, used by release-plz)
 #
-# npm publishing uses OIDC trusted publishing — no NPM_TOKEN needed.
-# Each `otoji*` package on npmjs.com must have a Trusted Publisher
-# configured (https://docs.npmjs.com/trusted-publishers) pointing at
-# this repo + workflow file.
+# npm publishing uses OIDC — no NPM_TOKEN. Each `@otoji/core*` package on
+# npmjs.com must have a Trusted Publisher pointing at this repo + this
+# workflow file (https://docs.npmjs.com/trusted-publishers).
 #
 # Required repo settings:
-#   - Settings → Actions → General → Workflow permissions:
-#       * "Read and write permissions"
-#       * "Allow GitHub Actions to create and approve pull requests"
+#   Settings → Actions → General → Workflow permissions:
+#     * Read and write permissions
+#     * Allow GitHub Actions to create and approve pull requests
 
 on:
   push:
@@ -32,7 +32,7 @@ on:
   workflow_dispatch:
     inputs:
       force_npm:
-        description: "Force npm build + publish even if release-plz didn't cut a new version"
+        description: "Force npm build + publish even when release-plz didn't cut a new version"
         type: boolean
         default: false
 
@@ -46,7 +46,7 @@ env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
 
 jobs:
-  # ─── Step 1: bump Cargo.toml + publish source to crates.io ────────────
+  # ─── Step 1: Cargo.toml bump + crates.io publish ──────────────────────
   release-plz:
     name: release-plz (crates.io)
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
@@ -62,100 +62,41 @@ jobs:
           fetch-depth: 0
           token: ${{ secrets.GITHUB_TOKEN }}
       - uses: dtolnay/rust-toolchain@stable
-      - name: release-plz release-pr
-        uses: release-plz/action@v0.5
+
+      - uses: release-plz/action@v0.5
         with:
           command: release-pr
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
-      - name: release-plz release
-        id: release
+
+      - id: release
         uses: release-plz/action@v0.5
         with:
           command: release
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
-      - name: Extract published version
-        id: released
+
+      - id: released
+        name: Extract published version
         run: |
           set -euo pipefail
-          json='${{ steps.release.outputs.releases }}'
-          echo "release-plz output: $json"
-          if [ -z "$json" ] || [ "$json" = "null" ]; then
-            echo "version=" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-          version=$(echo "$json" | jq -r '.[0].version // empty')
-          echo "Released version: '$version'"
+          version=$(echo '${{ steps.release.outputs.releases }}' | jq -r '.[0].version // empty')
+          echo "Released version: '${version:-<none>}'"
           echo "version=$version" >> "$GITHUB_OUTPUT"
 
-  # ─── Step 2: cross-platform napi build ───────────────────────────────
-  # Runs after release-plz cuts a new crates.io version, OR on manual
-  # workflow_dispatch with `force_npm=true` (for re-running a failed
-  # publish without re-bumping the crate version).
+  # ─── Step 2: cross-platform napi build (reusable matrix) ─────────────
   build:
-    name: build ${{ matrix.target }}
     needs: release-plz
     if: |
       always() && (
         (needs.release-plz.result == 'success' && needs.release-plz.outputs.released_version != '')
         || (github.event_name == 'workflow_dispatch' && inputs.force_npm)
       )
-    runs-on: ${{ matrix.host }}
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - host: macos-latest
-            target: aarch64-apple-darwin
-          - host: macos-latest
-            target: x86_64-apple-darwin
-          - host: ubuntu-latest
-            target: x86_64-unknown-linux-gnu
-          - host: windows-latest
-            target: x86_64-pc-windows-msvc
-    steps:
-      - uses: actions/checkout@v4
+    uses: ./.github/workflows/_build.yml
 
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: ${{ matrix.target }}
-
-      - name: Install Linux build deps
-        if: runner.os == 'Linux'
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y cmake clang libasound2-dev pkg-config
-
-      - name: Install macOS build deps
-        if: runner.os == 'macOS'
-        run: brew install cmake || true
-
-      - name: Install Windows build deps
-        if: runner.os == 'Windows'
-        run: choco install -y cmake --installargs 'ADD_CMAKE_TO_PATH=System'
-        shell: pwsh
-
-      - uses: oven-sh/setup-bun@v2
-      - uses: Swatinem/rust-cache@v2
-        with:
-          key: release-${{ matrix.target }}
-
-      - run: bun install
-      - name: Build .node
-        run: bun run build -- --target ${{ matrix.target }}
-        shell: bash
-
-      - name: Upload artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: bindings-${{ matrix.target }}
-          path: "*.node"
-          if-no-files-found: error
-
-  # ─── Step 3: publish per-platform packages + umbrella ─────────────────
+  # ─── Step 3: per-platform sub-packages + umbrella publish ────────────
   publish:
     name: publish to npm
     needs: [release-plz, build]
@@ -169,28 +110,24 @@ jobs:
       - uses: oven-sh/setup-bun@v2
       - uses: actions/setup-node@v4
         with:
-          node-version: "latest"
-          registry-url: "https://registry.npmjs.org"
+          node-version: latest
+          registry-url: https://registry.npmjs.org
 
       - run: bun install
 
-      - name: Download all artifacts
-        uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v4
         with:
           path: artifacts
 
-      - name: Sync package.json + sub-packages to released version
+      - name: Sync versions to released_version
         env:
           VERSION: ${{ needs.release-plz.outputs.released_version }}
         run: |
           set -euxo pipefail
           if [ -z "${VERSION:-}" ]; then
-            echo "no released version (manual dispatch?); falling back to package.json"
             VERSION=$(node -p "require('./package.json').version")
           fi
           echo "Publishing version: $VERSION"
-          # Bump umbrella package.json version + every optionalDependency
-          # entry to match. This is what users see resolve at install time.
           node -e '
             const fs = require("fs");
             const v = process.env.VERSION;
@@ -201,25 +138,14 @@ jobs:
             }
             fs.writeFileSync("package.json", JSON.stringify(pkg, null, 2) + "\n");
           '
-          cat package.json
 
-      - name: Lay out per-platform npm/<triple>/ directories
+      - name: Lay out per-platform npm/<triple>/ dirs
         run: |
           set -euxo pipefail
-          ls -R artifacts
-          # `napi create-npm-dir` reads `napi.triples` from package.json and
-          # scaffolds npm/<triple>/{package.json,README.md} for each one.
-          # `napi artifacts -d artifacts` then walks artifacts/<dir>/*.node
-          # and drops each binary into its matching npm/<triple>/ folder
-          # (parsed from the filename suffix).
           npx --no-install napi create-npm-dir -t .
           npx --no-install napi artifacts -d artifacts
           ls -R npm
 
-      # OIDC trusted publishing — no NPM_TOKEN needed. Each per-platform
-      # `otoji-*` package and the umbrella `otoji` package must have a
-      # Trusted Publisher configured on npmjs.com pointing at this repo
-      # + release.yml.
       - name: Publish per-platform packages with provenance
         run: |
           set -euxo pipefail
