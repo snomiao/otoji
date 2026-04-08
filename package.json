@@ -7,9 +7,11 @@
     "type": "git",
     "url": "git+https://github.com/snomiao/otoji.git"
   },
-  "main": "index.js",
-  "types": "index.d.ts",
+  "main": "main.js",
+  "types": "main.d.ts",
   "files": [
+    "main.js",
+    "main.d.ts",
     "index.js",
     "index.d.ts",
     "*.node"
