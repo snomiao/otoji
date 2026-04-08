@@ -17,7 +17,8 @@ use otoji::asr::{
     sensevoice::{SenseVoice, SenseVoiceConfig},
     AsrProvider,
 };
-use otoji::audio::{self, file::stream_pcm_file, mic};
+use otoji::audio::{self, file::{stream_pcm_file, stream_wav_reader_blocking}, mic};
+use std::io::IsTerminal;
 use otoji::core::AudioFormat;
 use otoji::polish::{AnthropicPolisher, NoopPolisher, Polisher};
 use otoji::tts::{
@@ -184,6 +185,9 @@ async fn run_listen(
     frame_ms: u32,
     plain: bool,
 ) -> Result<()> {
+    if device.as_deref() == Some("-") {
+        return run_listen_stdin(kind, frame_ms, plain).await;
+    }
     if matches!(kind, AsrKind::Sensevoice | AsrKind::Iflytek)
         && !ensure_mic_permission_or_relaunch().await?
     {
@@ -222,6 +226,54 @@ async fn run_listen(
             }
         }
     }
+}
+
+async fn run_listen_stdin(kind: AsrKind, frame_ms: u32, plain_flag: bool) -> Result<()> {
+    if std::io::stdin().is_terminal() {
+        anyhow::bail!(
+            "`otoji listen -` expects WAV data on stdin, but stdin is a terminal. \
+             Try:  cat sample.wav | otoji listen -"
+        );
+    }
+    // Force plain whenever stdout is not a TTY (piping/redirecting), since the
+    // ratatui TUI would fight stdout. Honor the explicit --plain flag too.
+    let plain = plain_flag || !std::io::stdout().is_terminal();
+
+    let (audio_tx, audio_rx) = audio::channel(64);
+    let tx_for_blocking = audio_tx.clone();
+    drop(audio_tx);
+    let reader_handle = tokio::task::spawn_blocking(move || {
+        let stdin = std::io::stdin();
+        let lock = stdin.lock();
+        stream_wav_reader_blocking(lock, frame_ms, tx_for_blocking)
+    });
+
+    let result = match kind {
+        AsrKind::Iflytek => {
+            let cfg = IflytekRtasrConfig::from_env().context("RTASR config")?;
+            let provider = IflytekRtasr::new(cfg);
+            if plain {
+                drive_plain(provider, audio_rx).await
+            } else {
+                drive(provider, audio_rx).await
+            }
+        }
+        AsrKind::Sensevoice => {
+            let cfg = SenseVoiceConfig::from_env();
+            let provider = SenseVoice::new(cfg);
+            if plain {
+                drive_plain(provider, audio_rx).await
+            } else {
+                drive(provider, audio_rx).await
+            }
+        }
+    };
+    match reader_handle.await {
+        Ok(Ok(())) => {}
+        Ok(Err(e)) => eprintln!("stdin reader: {e:#}"),
+        Err(e) => eprintln!("stdin reader join: {e}"),
+    }
+    result
 }
 
 async fn drive_plain<P: AsrProvider + 'static>(

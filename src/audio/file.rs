@@ -2,8 +2,9 @@
 
 use super::AudioTx;
 use crate::core::{AudioChunk, AudioFormat};
-use anyhow::{Context, Result};
+use anyhow::{anyhow, Context, Result};
 use bytes::Bytes;
+use std::io::Read;
 use std::path::Path;
 use std::time::Duration;
 use tokio::time::sleep;
@@ -34,6 +35,51 @@ pub async fn stream_pcm_file(
         if realtime {
             sleep(frame_dur).await;
         }
+    }
+    Ok(())
+}
+
+/// Read a WAV stream from `reader` (typically `std::io::stdin().lock()`),
+/// validate it is 16kHz mono 16-bit PCM, and forward `frame_ms` chunks to `tx`.
+///
+/// This is a *synchronous* function intended to be called from
+/// `tokio::task::spawn_blocking`. It uses `tx.blocking_send` so the caller
+/// must ensure it runs on a blocking-friendly thread.
+pub fn stream_wav_reader_blocking<R: Read>(
+    reader: R,
+    frame_ms: u32,
+    tx: AudioTx,
+) -> Result<()> {
+    let mut wav = hound::WavReader::new(reader).context("parse WAV header from stdin")?;
+    let spec = wav.spec();
+    if spec.sample_rate != 16_000 || spec.channels != 1 || spec.bits_per_sample != 16 {
+        return Err(anyhow!(
+            "expected 16kHz mono 16-bit PCM WAV, got {}Hz {}ch {}-bit. \
+             Convert with: ffmpeg -i in.wav -ar 16000 -ac 1 -sample_fmt s16 out.wav",
+            spec.sample_rate,
+            spec.channels,
+            spec.bits_per_sample
+        ));
+    }
+
+    let format = AudioFormat::PCM16K_MONO;
+    let samples_per_frame = (16_000usize / 1000) * frame_ms as usize;
+    let mut buf: Vec<u8> = Vec::with_capacity(samples_per_frame * 2);
+
+    for sample in wav.samples::<i16>() {
+        let s = sample.context("read WAV sample")?;
+        buf.extend_from_slice(&s.to_le_bytes());
+        if buf.len() >= samples_per_frame * 2 {
+            let chunk = AudioChunk::new(format, Bytes::copy_from_slice(&buf));
+            if tx.blocking_send(chunk).is_err() {
+                return Ok(());
+            }
+            buf.clear();
+        }
+    }
+    if !buf.is_empty() {
+        let chunk = AudioChunk::new(format, Bytes::copy_from_slice(&buf));
+        let _ = tx.blocking_send(chunk);
     }
     Ok(())
 }
