@@ -77,6 +77,7 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
+      id-token: write
     steps:
       - uses: actions/checkout@v4
       - uses: oven-sh/setup-bun@v2
@@ -110,8 +111,7 @@ jobs:
         run: |
           set -euxo pipefail
           for dir in npm/*/; do
-            (cd "$dir" && npm publish --access public --tag latest) || \
-              (cd "$dir" && npm publish --access public --tag latest --provenance false)
+            (cd "$dir" && npm publish --access public --tag latest --provenance)
           done
 
       - name: Publish umbrella package
@@ -119,4 +119,4 @@ jobs:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
           NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: |
-          npm publish --access public --tag latest
+          npm publish --access public --tag latest --provenance
