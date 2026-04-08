@@ -13,3 +13,12 @@ index.js
 index.d.ts
 npm/
 bun.lock
+
+# wrangler local state
+.wrangler/
+
+# web build artifacts
+web/dist/
+web/dist-extension/
+web/dist-userscript/
+web/node_modules/

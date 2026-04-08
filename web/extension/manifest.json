@@ -1,0 +1,18 @@
+{
+  "manifest_version": 3,
+  "name": "otoji",
+  "version": "0.0.1",
+  "description": "Streaming speech-to-text with LLM polish. BYOK.",
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "otoji"
+  },
+  "permissions": ["storage", "activeTab"],
+  "host_permissions": [
+    "https://api.openai.com/*",
+    "https://api.anthropic.com/*",
+    "https://rtasr.xfyun.cn/*",
+    "https://tts-api.xfyun.cn/*"
+  ],
+  "icons": {}
+}
