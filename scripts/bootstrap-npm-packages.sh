@@ -75,7 +75,7 @@ Placeholder so the npm name exists. The real binding will be published by
 on the next conventional-commits release.
 MD
 
-  (cd "$dir" && npm publish --access public)
+  (cd "$dir" && npm publish --access public --tag placeholder)
   echo "  ✓ published $name@$PLACEHOLDER_VERSION"
 done
 
