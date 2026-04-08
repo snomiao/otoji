@@ -32,9 +32,14 @@ on:
         type: boolean
         default: false
 
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
 env:
   CARGO_TERM_COLOR: always
   CARGO_INCREMENTAL: "0"
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
 
 jobs:
   # ─── Step 1: bump Cargo.toml + publish source to crates.io ────────────
@@ -47,9 +52,6 @@ jobs:
       pull-requests: write
     outputs:
       released_version: ${{ steps.released.outputs.version }}
-    concurrency:
-      group: release-plz-${{ github.ref }}
-      cancel-in-progress: false
     steps:
       - uses: actions/checkout@v4
         with:

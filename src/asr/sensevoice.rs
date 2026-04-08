@@ -15,9 +15,7 @@ use super::{AsrEventTx, AsrProvider};
 use crate::audio::AudioRx;
 use crate::core::{AsrEvent, OtojiError, Result};
 use async_trait::async_trait;
-use sherpa_onnx::{
-    OfflineRecognizer, OfflineRecognizerConfig, OfflineSenseVoiceModelConfig,
-};
+use sherpa_onnx::{OfflineRecognizer, OfflineRecognizerConfig, OfflineSenseVoiceModelConfig};
 use std::sync::mpsc as smpsc;
 
 const SAMPLE_RATE: u32 = 16_000;
@@ -99,7 +97,6 @@ enum WorkerMsg {
 /// Events from the worker thread to the async side.
 enum WorkerEvt {
     Open,
-    Status(String),
     Partial { seg_id: u64, text: String },
     Final { seg_id: u64, text: String },
     Error(String),
@@ -158,7 +155,6 @@ impl AsrProvider for SenseVoice {
             while let Ok(evt) = out_rx.recv() {
                 let asr = match evt {
                     WorkerEvt::Open => AsrEvent::Open,
-                    WorkerEvt::Status(message) => AsrEvent::Status { message },
                     WorkerEvt::Partial { seg_id, text } => AsrEvent::Partial { seg_id, text },
                     WorkerEvt::Final { seg_id, text } => AsrEvent::Final {
                         seg_id,
@@ -246,7 +242,11 @@ fn worker_main(
         stream.accept_waveform(SAMPLE_RATE as i32, buf);
         recognizer.decode(&stream);
         let text = stream.get_result()?.text.trim().to_string();
-        if text.is_empty() { None } else { Some(text) }
+        if text.is_empty() {
+            None
+        } else {
+            Some(text)
+        }
     };
 
     let flush_block = |buf: &mut Vec<f32>,
@@ -263,7 +263,10 @@ fn worker_main(
             return;
         }
         if let Some(text) = decode(buf) {
-            let _ = out_tx.send(WorkerEvt::Final { seg_id: *seg_id, text });
+            let _ = out_tx.send(WorkerEvt::Final {
+                seg_id: *seg_id,
+                text,
+            });
             *seg_id += 1;
         }
         buf.clear();

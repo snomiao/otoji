@@ -49,10 +49,7 @@ struct State {
     closed: bool,
 }
 
-pub async fn run(
-    mut events: Receiver<AsrEvent>,
-    polisher: Arc<dyn Polisher>,
-) -> Result<()> {
+pub async fn run(mut events: Receiver<AsrEvent>, polisher: Arc<dyn Polisher>) -> Result<()> {
     let state = Arc::new(Mutex::new(State::default()));
     enable_raw_mode()?;
     let mut stdout = io::stdout();
@@ -226,7 +223,9 @@ async fn draw<B: ratatui::backend::Backend>(
         let status_span = |st: &str| {
             Span::styled(
                 format!("· {st}"),
-                Style::default().fg(Color::Cyan).add_modifier(Modifier::ITALIC),
+                Style::default()
+                    .fg(Color::Cyan)
+                    .add_modifier(Modifier::ITALIC),
             )
         };
 
@@ -249,13 +248,18 @@ async fn draw<B: ratatui::backend::Backend>(
         let mut lines: Vec<Line> = Vec::new();
         for seg in s.finals.values() {
             let style = if seg.polished.is_some() {
-                Style::default().fg(Color::White).add_modifier(Modifier::BOLD)
+                Style::default()
+                    .fg(Color::White)
+                    .add_modifier(Modifier::BOLD)
             } else {
                 Style::default().fg(Color::Gray)
             };
             let text = seg.polished.clone().unwrap_or_else(|| seg.raw.clone());
             lines.push(Line::from(vec![
-                Span::styled(format!("[{:>4}] ", seg.seg_id), Style::default().fg(Color::DarkGray)),
+                Span::styled(
+                    format!("[{:>4}] ", seg.seg_id),
+                    Style::default().fg(Color::DarkGray),
+                ),
                 Span::styled(text, style),
             ]));
         }

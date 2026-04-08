@@ -20,7 +20,10 @@ use otoji::asr::{
 use otoji::audio::{self, file::stream_pcm_file, mic};
 use otoji::core::AudioFormat;
 use otoji::polish::{AnthropicPolisher, NoopPolisher, Polisher};
-use otoji::tts::{iflytek_tts::{IflytekTts, IflytekTtsConfig}, TtsProvider};
+use otoji::tts::{
+    iflytek_tts::{IflytekTts, IflytekTtsConfig},
+    TtsProvider,
+};
 use std::path::PathBuf;
 use std::sync::Arc;
 use tokio::sync::mpsc;
@@ -88,12 +91,18 @@ async fn main() -> Result<()> {
         .init();
     let cli = Cli::parse();
     match cli.cmd {
-        Cmd::Listen { device, provider, frame_ms, plain } => {
-            run_listen(provider, device, frame_ms, plain).await
-        }
-        Cmd::File { path, provider, frame_ms, burst } => {
-            run_file(provider, path, frame_ms, !burst).await
-        }
+        Cmd::Listen {
+            device,
+            provider,
+            frame_ms,
+            plain,
+        } => run_listen(provider, device, frame_ms, plain).await,
+        Cmd::File {
+            path,
+            provider,
+            frame_ms,
+            burst,
+        } => run_file(provider, path, frame_ms, !burst).await,
         Cmd::Speak { text, out } => run_speak(text, out).await,
         Cmd::Devices => run_devices().await,
     }
@@ -111,14 +120,13 @@ async fn mic_has_audio() -> bool {
     let deadline = tokio::time::Instant::now() + std::time::Duration::from_millis(700);
     let mut nonzero = false;
     while tokio::time::Instant::now() < deadline {
-        match tokio::time::timeout(std::time::Duration::from_millis(100), rx.recv()).await {
-            Ok(Some(chunk)) => {
-                if chunk.pcm.iter().any(|&b| b != 0) {
-                    nonzero = true;
-                    break;
-                }
+        if let Ok(Some(chunk)) =
+            tokio::time::timeout(std::time::Duration::from_millis(100), rx.recv()).await
+        {
+            if chunk.pcm.iter().any(|&b| b != 0) {
+                nonzero = true;
+                break;
             }
-            _ => {}
         }
     }
     drop(stream);
@@ -246,7 +254,13 @@ async fn run_devices() -> Result<()> {
         .default_input_device()
         .and_then(|d| d.name().ok())
         .unwrap_or_default();
-    let loopback_keywords = ["blackhole", "loopback", "soundflower", "vb-cable", "vb cable"];
+    let loopback_keywords = [
+        "blackhole",
+        "loopback",
+        "soundflower",
+        "vb-cable",
+        "vb cable",
+    ];
 
     let inputs: Vec<cpal::Device> = host
         .input_devices()
@@ -255,13 +269,14 @@ async fn run_devices() -> Result<()> {
 
     println!("aliases:");
     println!("  default / mic       → {default_name}");
-    let loopback = inputs
-        .iter()
-        .find_map(|d| {
-            let n = d.name().ok()?;
-            let lower = n.to_lowercase();
-            loopback_keywords.iter().any(|k| lower.contains(k)).then_some(n)
-        });
+    let loopback = inputs.iter().find_map(|d| {
+        let n = d.name().ok()?;
+        let lower = n.to_lowercase();
+        loopback_keywords
+            .iter()
+            .any(|k| lower.contains(k))
+            .then_some(n)
+    });
     match loopback {
         Some(n) => println!("  system / loopback   → {n}"),
         None => println!(
@@ -308,10 +323,7 @@ async fn run_file(kind: AsrKind, path: PathBuf, frame_ms: u32, realtime: bool) -
     }
 }
 
-async fn drive<P: AsrProvider + 'static>(
-    provider: P,
-    audio_rx: audio::AudioRx,
-) -> Result<()> {
+async fn drive<P: AsrProvider + 'static>(provider: P, audio_rx: audio::AudioRx) -> Result<()> {
     let (event_tx, event_rx) = mpsc::channel(128);
     let polisher: Arc<dyn Polisher> = match AnthropicPolisher::from_env() {
         Ok(p) => Arc::new(p),
@@ -326,13 +338,11 @@ async fn drive<P: AsrProvider + 'static>(
         let mut audio_rx = audio_rx;
         let mut sum_sq: f64 = 0.0;
         let mut samples: u64 = 0;
-        let mut bytes_total: u64 = 0;
         let mut last_emit = std::time::Instant::now();
         let started = std::time::Instant::now();
         let mut warned_silent = false;
         let mut peak_rms: f64 = 0.0;
         while let Some(chunk) = audio_rx.recv().await {
-            bytes_total += chunk.pcm.len() as u64;
             for pair in chunk.pcm.chunks_exact(2) {
                 let s = i16::from_le_bytes([pair[0], pair[1]]) as f64 / 32768.0;
                 sum_sq += s * s;
@@ -342,7 +352,11 @@ async fn drive<P: AsrProvider + 'static>(
                 break;
             }
             if last_emit.elapsed() >= std::time::Duration::from_millis(500) {
-                let rms = if samples > 0 { (sum_sq / samples as f64).sqrt() } else { 0.0 };
+                let rms = if samples > 0 {
+                    (sum_sq / samples as f64).sqrt()
+                } else {
+                    0.0
+                };
                 if rms > peak_rms {
                     peak_rms = rms;
                 }

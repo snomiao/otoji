@@ -12,6 +12,9 @@ on:
         required: false
         default: "latest"
 
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+
 jobs:
   smoke:
     name: ${{ matrix.os }}
@@ -19,17 +22,17 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [macos-14, macos-13, ubuntu-latest, windows-latest]
+        os: [macos-latest, ubuntu-latest, windows-latest]
     steps:
       - uses: oven-sh/setup-bun@v2
 
-      - name: Install otoji@${{ github.event.inputs.version }}
+      - name: Install otoji@${{ inputs.version }}
         shell: bash
         run: |
           set -euxo pipefail
           mkdir -p smoke && cd smoke
           bun init -y
-          bun add otoji@${{ github.event.inputs.version }}
+          bun add otoji@${{ inputs.version }}
           ls node_modules | grep otoji
 
       - name: Require + sanity-check API
@@ -38,14 +41,13 @@ jobs:
         run: |
           bun -e '
             const m = require("otoji");
+            const want = ["polishText", "transcribePcm"];
             console.log("loaded:", Object.keys(m));
-            if (typeof m.polishText !== "function") {
-              console.error("polishText missing");
-              process.exit(1);
-            }
-            if (typeof m.transcribePcm !== "function") {
-              console.error("transcribePcm missing");
-              process.exit(1);
+            for (const k of want) {
+              if (typeof m[k] !== "function") {
+                console.error("missing export:", k);
+                process.exit(1);
+              }
             }
             console.log("ok");
           '

@@ -1,17 +1,86 @@
 name: ci
 
+# Pull-request and main-branch verification.
+#
+# main pushes intentionally only run the cheap lint job — release.yml
+# already drives the cross-platform napi build matrix on main, so we
+# avoid running the same matrix twice. PRs run the full set so we catch
+# binding regressions before merge.
+
 on:
+  pull_request:
   push:
     branches: [main]
-  pull_request:
+    paths-ignore:
+      - "**/*.md"
+      - "docs/**"
+      - "LICENSE"
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.head_ref || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 env:
   CARGO_TERM_COLOR: always
   CARGO_INCREMENTAL: "0"
+  # Opt out of the Node.js 20 deprecation warning on first-party actions.
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
 
 jobs:
-  build:
-    name: build ${{ matrix.target }}
+  # ─── Fast lint pass — runs on every push and PR ───────────────────────
+  lint:
+    name: fmt + clippy
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - name: Install build deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cmake clang libasound2-dev pkg-config
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: lint
+      - run: cargo fmt --all -- --check
+      - run: cargo clippy --all-targets --no-deps
+
+  # ─── Bin compile check across the three host OSes ─────────────────────
+  bin:
+    name: cargo build --bin otoji (${{ matrix.os }})
+    if: github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch'
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Install Linux build deps
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cmake clang libasound2-dev pkg-config
+
+      - name: Install Windows build deps
+        if: runner.os == 'Windows'
+        run: choco install -y cmake --installargs 'ADD_CMAKE_TO_PATH=System'
+        shell: pwsh
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: bin-${{ matrix.os }}
+
+      - run: cargo build --release --bin otoji
+
+  # ─── Cross-platform napi binding build matrix ─────────────────────────
+  napi:
+    name: napi build (${{ matrix.target }})
+    if: github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch'
     runs-on: ${{ matrix.host }}
     strategy:
       fail-fast: false
@@ -28,8 +97,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@stable
         with:
           targets: ${{ matrix.target }}
 
@@ -39,63 +107,40 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y cmake clang libasound2-dev pkg-config
 
-      - name: Install macOS build deps
-        if: runner.os == 'macOS'
-        run: |
-          brew install cmake || true
-
       - name: Install Windows build deps
         if: runner.os == 'Windows'
-        run: |
-          choco install -y cmake --installargs 'ADD_CMAKE_TO_PATH=System'
+        run: choco install -y cmake --installargs 'ADD_CMAKE_TO_PATH=System'
         shell: pwsh
 
       - uses: oven-sh/setup-bun@v2
       - uses: Swatinem/rust-cache@v2
         with:
-          key: ${{ matrix.target }}
+          key: napi-${{ matrix.target }}
 
-      - name: bun install
-        run: bun install --frozen-lockfile || bun install
-
-      - name: Build native binding
+      - run: bun install --frozen-lockfile || bun install
+      - name: Build .node
         run: bun run build -- --target ${{ matrix.target }}
         shell: bash
 
-      - name: Smoke-test the binding loads
-        if: runner.os != 'Windows'
+      - name: Smoke-test require()
+        shell: bash
         run: |
           ls -la *.node
-          bun -e 'const m = require("./index.js"); if (typeof m.polishText !== "function") { console.error("missing polishText"); process.exit(1); } console.log("ok:", Object.keys(m));'
+          bun -e '
+            const m = require("./index.js");
+            const want = ["polishText", "transcribePcm"];
+            for (const k of want) {
+              if (typeof m[k] !== "function") {
+                console.error("missing export:", k);
+                process.exit(1);
+              }
+            }
+            console.log("ok:", Object.keys(m));
+          '
 
-      - name: Smoke-test the binding loads (Windows)
-        if: runner.os == 'Windows'
-        run: |
-          dir *.node
-          bun -e "const m = require('./index.js'); if (typeof m.polishText !== 'function') { console.error('missing polishText'); process.exit(1); } console.log('ok:', Object.keys(m));"
-        shell: pwsh
-
-      - name: Upload .node artifact
-        uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v4
         with:
           name: bindings-${{ matrix.target }}
           path: "*.node"
           if-no-files-found: error
-
-  cli-build:
-    name: cargo build --bin otoji (${{ matrix.os }})
-    runs-on: ${{ matrix.os }}
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [ubuntu-latest, macos-latest]
-    steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-      - name: Install Linux build deps
-        if: runner.os == 'Linux'
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y cmake clang libasound2-dev pkg-config
-      - uses: Swatinem/rust-cache@v2
-      - run: cargo build --release --bin otoji
+          retention-days: 7

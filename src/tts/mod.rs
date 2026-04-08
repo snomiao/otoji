@@ -1,8 +1,8 @@
 //! otoji-tts — `TtsProvider` trait + iFlytek TTS implementation.
 
+use crate::core::Result;
 use async_trait::async_trait;
 use bytes::Bytes;
-use crate::core::Result;
 use tokio::sync::mpsc;
 
 pub mod iflytek_tts;

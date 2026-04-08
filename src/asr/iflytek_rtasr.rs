@@ -66,8 +66,8 @@ impl IflytekRtasr {
 
 /// Tiny shim so we can write `md5::Md5::digest_str(...)` symmetrically with sha1.
 mod md5 {
-    pub use ::md5::Md5;
     use ::md5::Digest;
+    pub use ::md5::Md5;
     pub trait DigestExt {
         fn digest_str(input: &str) -> Vec<u8>;
     }
@@ -100,7 +100,7 @@ impl AsrProvider for IflytekRtasr {
         let send_task = tokio::spawn(async move {
             while let Some(chunk) = audio.recv().await {
                 if sink
-                    .send(Message::Binary(chunk.pcm.to_vec().into()))
+                    .send(Message::Binary(chunk.pcm.to_vec()))
                     .await
                     .is_err()
                 {

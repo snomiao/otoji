@@ -68,12 +68,11 @@ impl IflytekTts {
         let date = chrono::Utc::now()
             .format("%a, %d %b %Y %H:%M:%S GMT")
             .to_string();
-        let signing_string =
-            format!("host: {host}\ndate: {date}\nGET {path} HTTP/1.1");
-        let mut mac = HmacSha256::new_from_slice(self.cfg.api_secret.as_bytes())
-            .expect("hmac key");
+        let signing_string = format!("host: {host}\ndate: {date}\nGET {path} HTTP/1.1");
+        let mut mac = HmacSha256::new_from_slice(self.cfg.api_secret.as_bytes()).expect("hmac key");
         mac.update(signing_string.as_bytes());
-        let signature = base64::engine::general_purpose::STANDARD.encode(mac.finalize().into_bytes());
+        let signature =
+            base64::engine::general_purpose::STANDARD.encode(mac.finalize().into_bytes());
         let authorization_origin = format!(
             "api_key=\"{}\", algorithm=\"hmac-sha256\", headers=\"host date request-line\", signature=\"{}\"",
             self.cfg.api_key, signature
@@ -115,7 +114,7 @@ impl TtsProvider for IflytekTts {
                 "status": 2,
             }
         });
-        ws.send(Message::Text(frame.to_string().into()))
+        ws.send(Message::Text(frame.to_string()))
             .await
             .map_err(|e| OtojiError::Transport(format!("ws send: {e}")))?;
 

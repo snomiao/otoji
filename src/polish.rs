@@ -3,8 +3,8 @@
 //! Takes raw ASR finals (with fillers, missing punctuation, ITN noise) and
 //! returns a tidied sentence. See `docs/03-llm-polish-layer.md` for design.
 
-use async_trait::async_trait;
 use crate::core::{OtojiError, Result};
+use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 
 #[async_trait]
@@ -134,9 +134,7 @@ impl Polisher for AnthropicPolisher {
         if !resp.status().is_success() {
             let status = resp.status();
             let body = resp.text().await.unwrap_or_default();
-            return Err(OtojiError::Provider(format!(
-                "anthropic {status}: {body}"
-            )));
+            return Err(OtojiError::Provider(format!("anthropic {status}: {body}")));
         }
         let parsed: AnthropicResponse = resp
             .json()
