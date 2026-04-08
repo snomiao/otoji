@@ -155,10 +155,10 @@ jobs:
           path: "*.node"
           if-no-files-found: error
 
-  # ─── Step 3: publish per-platform npm packages + umbrella ─────────────
+  # ─── Step 3: publish per-platform packages + umbrella ─────────────────
   publish:
     name: publish to npm
-    needs: build
+    needs: [release-plz, build]
     if: always() && needs.build.result == 'success'
     runs-on: ubuntu-latest
     permissions:
@@ -179,20 +179,53 @@ jobs:
         with:
           path: artifacts
 
-      - name: Collect all .node binaries into the package root
+      - name: Sync package.json + sub-packages to released version
+        env:
+          VERSION: ${{ needs.release-plz.outputs.released_version }}
+        run: |
+          set -euxo pipefail
+          if [ -z "${VERSION:-}" ]; then
+            echo "no released version (manual dispatch?); falling back to package.json"
+            VERSION=$(node -p "require('./package.json').version")
+          fi
+          echo "Publishing version: $VERSION"
+          # Bump umbrella package.json version + every optionalDependency
+          # entry to match. This is what users see resolve at install time.
+          node -e '
+            const fs = require("fs");
+            const v = process.env.VERSION;
+            const pkg = JSON.parse(fs.readFileSync("package.json", "utf8"));
+            pkg.version = v;
+            for (const k of Object.keys(pkg.optionalDependencies || {})) {
+              pkg.optionalDependencies[k] = v;
+            }
+            fs.writeFileSync("package.json", JSON.stringify(pkg, null, 2) + "\n");
+          '
+          cat package.json
+
+      - name: Lay out per-platform npm/<triple>/ directories
         run: |
           set -euxo pipefail
           ls -R artifacts
-          # Every artifact contains a single .node named otoji.<triple>.node;
-          # the generated index.js inspects process.platform/arch and requires
-          # the matching one. Bundling them all in one package keeps the npm
-          # surface to a single name and skips the per-platform sub-package
-          # publishing dance.
-          find artifacts -name "*.node" -exec cp -v {} . \;
-          ls -la *.node
+          # `napi create-npm-dir` reads `napi.triples` from package.json and
+          # scaffolds npm/<triple>/{package.json,README.md} for each one.
+          # `napi artifacts -d artifacts` then walks artifacts/<dir>/*.node
+          # and drops each binary into its matching npm/<triple>/ folder
+          # (parsed from the filename suffix).
+          npx --no-install napi create-npm-dir -t .
+          npx --no-install napi artifacts -d artifacts
+          ls -R npm
 
-      # OIDC trusted publishing — no NPM_TOKEN needed. The `otoji` package
-      # on npmjs.com must have a Trusted Publisher configured pointing at
-      # this repo + release.yml.
-      - name: Publish single umbrella package with provenance
+      # OIDC trusted publishing — no NPM_TOKEN needed. Each per-platform
+      # `otoji-*` package and the umbrella `otoji` package must have a
+      # Trusted Publisher configured on npmjs.com pointing at this repo
+      # + release.yml.
+      - name: Publish per-platform packages with provenance
+        run: |
+          set -euxo pipefail
+          for dir in npm/*/; do
+            (cd "$dir" && npm publish --access public --tag latest --provenance)
+          done
+
+      - name: Publish umbrella package with provenance
         run: npm publish --access public --tag latest --provenance
