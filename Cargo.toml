@@ -15,10 +15,16 @@ exclude = ["*.pcm", "test_*.md", "16k_*.md", "docs/", "scripts/"]
 [lib]
 name = "otoji"
 path = "src/lib.rs"
+crate-type = ["rlib", "cdylib"]
 
 [[bin]]
 name = "otoji"
 path = "src/main.rs"
+
+[features]
+default = []
+# Enable the napi-rs Node.js / Bun bindings exposed via src/napi.rs.
+node = ["dep:napi", "dep:napi-derive", "dep:napi-build"]
 
 [dependencies]
 tokio = { version = "1.40", features = ["full"] }
@@ -48,3 +54,10 @@ clap = { version = "4", features = ["derive", "env"] }
 hound = "3.5"
 chrono = "0.4"
 sherpa-onnx = "1.12"
+
+# Optional Node/Bun binding deps (enabled with `--features node`).
+napi = { version = "2", default-features = false, features = ["napi6", "async"], optional = true }
+napi-derive = { version = "2", optional = true }
+
+[build-dependencies]
+napi-build = { version = "2", optional = true }

@@ -1,0 +1,55 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  rust:
+    name: cargo check (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Install Linux build deps
+        if: matrix.os == 'ubuntu-latest'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cmake clang libasound2-dev pkg-config
+      - uses: Swatinem/rust-cache@v2
+      - name: cargo check
+        run: cargo check --all-targets
+      - name: cargo build --release (binary)
+        run: cargo build --release --bin otoji
+
+  node-bindings:
+    name: napi build (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: oven-sh/setup-bun@v2
+      - name: Install Linux build deps
+        if: matrix.os == 'ubuntu-latest'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cmake clang libasound2-dev pkg-config
+      - uses: Swatinem/rust-cache@v2
+      - run: bun install
+      - run: bun run build
+      - name: Smoke-test the binding loads
+        run: bun -e 'const m = require("./index.js"); if (typeof m.polishText !== "function") process.exit(1);'
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: otoji-${{ matrix.os }}.node
+          path: "*.node"

@@ -6,3 +6,10 @@ Cargo.lock
 tmp/
 out.mp3
 models/
+
+# napi-rs build artifacts
+*.node
+index.js
+index.d.ts
+npm/
+bun.lock
