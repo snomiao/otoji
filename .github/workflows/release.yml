@@ -25,8 +25,12 @@ name: release
 on:
   push:
     branches: [main]
-    tags: ["v*.*.*"]
   workflow_dispatch:
+    inputs:
+      force_npm:
+        description: "Force npm build + publish even if release-plz didn't cut a new version"
+        type: boolean
+        default: false
 
 env:
   CARGO_TERM_COLOR: always
@@ -41,6 +45,8 @@ jobs:
     permissions:
       contents: write
       pull-requests: write
+    outputs:
+      released_version: ${{ steps.released.outputs.version }}
     concurrency:
       group: release-plz-${{ github.ref }}
       cancel-in-progress: false
@@ -58,17 +64,39 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
       - name: release-plz release
+        id: release
         uses: release-plz/action@v0.5
         with:
           command: release
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+      - name: Extract published version
+        id: released
+        run: |
+          set -euo pipefail
+          json='${{ steps.release.outputs.releases }}'
+          echo "release-plz output: $json"
+          if [ -z "$json" ] || [ "$json" = "null" ]; then
+            echo "version=" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          version=$(echo "$json" | jq -r '.[0].version // empty')
+          echo "Released version: '$version'"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
 
-  # ─── Step 2: cross-platform napi build (only on tag / dispatch) ───────
+  # ─── Step 2: cross-platform napi build ───────────────────────────────
+  # Runs after release-plz cuts a new crates.io version, OR on manual
+  # workflow_dispatch with `force_npm=true` (for re-running a failed
+  # publish without re-bumping the crate version).
   build:
     name: build ${{ matrix.target }}
-    if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
+    needs: release-plz
+    if: |
+      always() && (
+        (needs.release-plz.result == 'success' && needs.release-plz.outputs.released_version != '')
+        || (github.event_name == 'workflow_dispatch' && inputs.force_npm)
+      )
     runs-on: ${{ matrix.host }}
     strategy:
       fail-fast: false
@@ -125,7 +153,7 @@ jobs:
   publish:
     name: publish to npm
     needs: build
-    if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
+    if: always() && needs.build.result == 'success'
     runs-on: ubuntu-latest
     permissions:
       contents: write
