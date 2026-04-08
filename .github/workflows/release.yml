@@ -15,7 +15,11 @@ name: release
 #
 # Required secrets:
 #   - CARGO_REGISTRY_TOKEN  (crates.io publish, used by release-plz)
-#   - NPM_TOKEN             (npm publish, used in the publish job)
+#
+# npm publishing uses OIDC trusted publishing — no NPM_TOKEN needed.
+# Each `otoji*` package on npmjs.com must have a Trusted Publisher
+# configured (https://docs.npmjs.com/trusted-publishers) pointing at
+# this repo + workflow file.
 #
 # Required repo settings:
 #   - Settings → Actions → General → Workflow permissions:
@@ -183,10 +187,10 @@ jobs:
           npx --no-install napi artifacts -d artifacts
           ls -R npm
 
+      # No NPM_TOKEN needed: npm OIDC trusted publishing auths via the
+      # workflow's id-token. Each package on npmjs.com must have a
+      # configured Trusted Publisher pointing at this repo + workflow.
       - name: Publish per-platform packages with provenance
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: |
           set -euxo pipefail
           for dir in npm/*/; do
@@ -194,8 +198,5 @@ jobs:
           done
 
       - name: Publish umbrella package with provenance
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: |
           npm publish --access public --tag latest --provenance
