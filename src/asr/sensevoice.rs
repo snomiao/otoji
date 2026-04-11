@@ -260,86 +260,80 @@ fn worker_main(
     )));
     let _ = out_tx.send(WorkerEvt::Open);
 
-    // VAD parameters in *samples* (matches the cpal mic crate's 16k mono PCM).
-    let silence_samples_needed = (cfg.vad_silence_ms as usize) * SAMPLE_RATE as usize / 1000;
+    // ── Sliding-window architecture ──
+    //
+    // Instead of VAD-flush-clear (which loses context and mis-cuts sentences),
+    // we keep a growing audio buffer and run two decode tracks:
+    //
+    //   Fast track (Partial): decode only the TAIL of the buffer (~3-5s).
+    //     Constant cost regardless of total buf length → ~140ms per decode
+    //     → streaming word-by-word experience.
+    //
+    //   Slow track (Final): decode the FULL buffer continuously.
+    //     SenseVoice adds sentence-ending punctuation (。！？) — when a
+    //     sentence is complete and stable across 2 consecutive decodes,
+    //     commit it as a Final. The buffer is NOT cleared — context is
+    //     preserved for subsequent decodes.
+    //
+    // Energy VAD is only used as a coarse "speech started" gate so we don't
+    // waste decode cycles on pure silence.
+
     let max_samples = (cfg.vad_max_ms as usize) * SAMPLE_RATE as usize / 1000;
-    let min_samples = SAMPLE_RATE as usize; // 1s — avoid emitting tiny fragments
-    let partial_samples_step = (cfg.partial_ms as usize) * SAMPLE_RATE as usize / 1000;
-    let partial_min_samples = (240 * SAMPLE_RATE as usize) / 1000;
+    let tail_samples = SAMPLE_RATE as usize * 4; // 4s tail for fast partial
+    let min_samples = SAMPLE_RATE as usize / 2; // 500ms minimum to decode
 
-    let mut buf: Vec<f32> = Vec::with_capacity(max_samples);
-    let mut silence_run: usize = 0;
-    let mut samples_since_partial: usize = 0;
+    let mut buf: Vec<f32> = Vec::new();
     let mut seg_id: u64 = 0;
-    let mut last_partial = String::new();
+    let mut committed_text = String::new(); // text already emitted as Final
+    let mut last_full_text = String::new(); // previous full-buf decode result
+    let mut last_partial_text = String::new();
+    let mut samples_since_decode: usize = 0;
+    let mut speech_active = false; // has speech started?
 
-    let decode = |buf: &[f32]| -> Option<String> {
+    // Adaptive energy threshold (same calibration as before — just used as
+    // a "speech started" gate, not for sentence cutting).
+    let configured_threshold = cfg.vad_threshold;
+    let calibration_samples = SAMPLE_RATE as usize * 2;
+    let mut calibration_count: usize = 0;
+    let mut calibration_rms: Vec<f32> = Vec::new();
+    let mut threshold: f32 = configured_threshold;
+    let mut calibrated = false;
+
+    // Long silence counter: if silence exceeds vad_silence_ms, force a
+    // full-buf decode + commit everything. This handles the case where the
+    // speaker truly stopped talking (topic change, end of conversation).
+    let silence_samples_needed = (cfg.vad_silence_ms as usize) * SAMPLE_RATE as usize / 1000;
+    let mut silence_run: usize = 0;
+
+    let decode = |audio: &[f32]| -> Option<String> {
+        if audio.len() < min_samples {
+            return None;
+        }
         let stream = recognizer.create_stream();
-        stream.accept_waveform(SAMPLE_RATE as i32, buf);
+        stream.accept_waveform(SAMPLE_RATE as i32, audio);
         recognizer.decode(&stream);
         let text = stream.get_result()?.text.trim().to_string();
-        // Reject pure-punctuation outputs ("." / "。" / etc) — SenseVoice
-        // emits these on near-silent audio and they're never useful.
         let has_content = text.chars().any(|c| {
             !c.is_ascii_punctuation()
                 && !c.is_ascii_whitespace()
                 && !matches!(c, '。' | '、' | '？' | '！' | '・')
         });
-        if !has_content {
-            None
+        if has_content { Some(text) } else { None }
+    };
+
+    // Find completed sentences: text ending with sentence-final punctuation.
+    // Returns (committed_prefix, remainder). The committed prefix contains
+    // one or more full sentences; the remainder is the incomplete tail.
+    fn split_sentences(text: &str) -> (String, String) {
+        // Find the last sentence-ending punctuation.
+        let ends: &[char] = &['。', '！', '？', '!', '?'];
+        if let Some(pos) = text.rfind(ends) {
+            let byte_end = pos + text[pos..].chars().next().map(|c| c.len_utf8()).unwrap_or(0);
+            (text[..byte_end].to_string(), text[byte_end..].trim().to_string())
         } else {
-            Some(text)
+            (String::new(), text.to_string())
         }
-    };
-
-    // flush_block: decode the accumulated audio and emit a Final.
-    //
-    // Previous versions held short (<4 char) decoded fragments as
-    // "pending_audio" and prepended them to the next utterance. QA showed
-    // this cross-contaminated adjacent plays and caused ~50% of utterances
-    // to be silently dropped. Now we simply emit every non-empty decode
-    // result — short fragments are preferable to lost utterances. The
-    // polish chain downstream can merge fragments if needed.
-    let flush_block = |buf: &mut Vec<f32>,
-                       silence_run: &mut usize,
-                       samples_since_partial: &mut usize,
-                       last_partial: &mut String,
-                       seg_id: &mut u64,
-                       out_tx: &smpsc::Sender<WorkerEvt>,
-                       _force: bool| {
-        if buf.len() < min_samples {
-            // Too short to decode reliably — discard.
-            buf.clear();
-            *silence_run = 0;
-            *samples_since_partial = 0;
-            last_partial.clear();
-            return;
-        }
-        let audio = buf.clone();
-        if let Some(text) = decode(buf) {
-            let _ = out_tx.send(WorkerEvt::Final {
-                seg_id: *seg_id,
-                text,
-                audio,
-            });
-            *seg_id += 1;
-        }
-        buf.clear();
-        *silence_run = 0;
-        *samples_since_partial = 0;
-        last_partial.clear();
-    };
-
-    // Adaptive VAD: collect per-block RMS values over the first ~2s, then
-    // use the *minimum* block RMS as the noise floor (the quietest block is
-    // most likely actual silence). This avoids the bug where music/speech at
-    // the start inflates the floor and suppresses all subsequent audio.
-    let configured_threshold = cfg.vad_threshold;
-    let calibration_samples = SAMPLE_RATE as usize * 2; // ~2s
-    let mut calibration_count: usize = 0;
-    let mut calibration_rms: Vec<f32> = Vec::new();
-    let mut threshold: f32 = configured_threshold;
-    let mut calibrated = false;
+    }
 
     let mut pending_first = Some(first);
     loop {
@@ -352,21 +346,33 @@ fn worker_main(
         };
         match msg {
             WorkerMsg::Eof => {
-                flush_block(
-                    &mut buf,
-                    &mut silence_run,
-                    &mut samples_since_partial,
-                    &mut last_partial,
-                    &mut seg_id,
-                    &out_tx,
-                    true, // force — end of stream
-                );
+                // Final flush: decode everything remaining and emit.
+                if buf.len() >= min_samples {
+                    if let Some(text) = decode(&buf) {
+                        let new_text = if text.len() > committed_text.len()
+                            && text.starts_with(&committed_text)
+                        {
+                            text[committed_text.len()..].trim().to_string()
+                        } else if text != committed_text {
+                            text.clone()
+                        } else {
+                            String::new()
+                        };
+                        if !new_text.is_empty() {
+                            let _ = out_tx.send(WorkerEvt::Final {
+                                seg_id,
+                                text: new_text,
+                                audio: buf.clone(),
+                            });
+                        }
+                    }
+                }
                 break;
             }
             WorkerMsg::Pcm(pcm_i16) => {
                 let block = i16_to_f32(&pcm_i16);
 
-                // Calibrate: collect per-block RMS for ~2s, pick the minimum.
+                // Calibrate noise floor from first ~2s.
                 if !calibrated {
                     let block_rms_val = rms(&block);
                     if block_rms_val > 0.0 {
@@ -378,10 +384,6 @@ fn worker_main(
                             .copied()
                             .reduce(f32::min)
                             .unwrap_or(0.0);
-                        // Threshold = 1.5× the quietest block, but at least configured min.
-                        // Was 3× but QA showed that made the VAD deaf to quiet speech
-                        // — blocks with RMS 0.001-0.002 were classified as silence when
-                        // the first 2s had loud content and set noise_floor ~0.0007.
                         threshold = (noise_floor * 1.5).max(configured_threshold);
                         let _ = out_tx.send(WorkerEvt::Status(format!(
                             "vad: noise_floor={noise_floor:.5}, threshold={threshold:.5}"
@@ -394,47 +396,114 @@ fn worker_main(
                 let block_rms = rms(&block);
                 let active = block_rms >= threshold;
 
-                // Debug: log when silence is accumulating during an utterance.
-                if !buf.is_empty() && !active {
-                    let silence_ms = (silence_run + block.len()) * 1000 / SAMPLE_RATE as usize;
-                    if silence_ms % 200 == 0 && silence_ms > 0 {
-                        let _ = out_tx.send(WorkerEvt::Status(format!(
-                            "vad: silence={silence_ms}ms (threshold={threshold:.5}, block_rms={block_rms:.5}, buf={}ms)",
-                            buf.len() * 1000 / SAMPLE_RATE as usize
-                        )));
+                // Gate: only start buffering once speech is detected.
+                if !speech_active && !active {
+                    continue;
+                }
+                speech_active = true;
+
+                buf.extend_from_slice(&block);
+                samples_since_decode += block.len();
+
+                if active {
+                    silence_run = 0;
+                } else {
+                    silence_run += block.len();
+                }
+
+                // Trim front if buf exceeds max (keep context, discard old).
+                if buf.len() > max_samples {
+                    let trim = buf.len() - max_samples;
+                    buf.drain(..trim);
+                    // Reset committed tracking since we lost the front.
+                    committed_text.clear();
+                    last_full_text.clear();
+                }
+
+                // ── Fast track: tail-only decode for streaming Partials ──
+                // Triggered whenever we have enough new audio. The tail
+                // decode is cheap (~140ms for 4s) so it runs frequently.
+                let enough_new = samples_since_decode >= SAMPLE_RATE as usize / 5; // ~200ms of new audio
+                if enough_new && buf.len() >= min_samples {
+                    samples_since_decode = 0;
+
+                    let tail_start = buf.len().saturating_sub(tail_samples);
+                    let tail = &buf[tail_start..];
+                    if let Some(tail_text) = decode(tail) {
+                        if tail_text != last_partial_text {
+                            last_partial_text = tail_text.clone();
+                            let _ = out_tx.send(WorkerEvt::Partial { seg_id, text: tail_text });
+                        }
+                    }
+
+                    // ── Slow track: full-buf decode for sentence detection ──
+                    // Only run when buf is large enough that the tail and full
+                    // decode would differ (i.e., buf > tail window). Otherwise
+                    // the fast track already decoded everything.
+                    if buf.len() > tail_samples + min_samples {
+                        if let Some(full_text) = decode(&buf) {
+                            // Check for completed sentences.
+                            let new_portion = if full_text.len() > committed_text.len()
+                                && full_text.starts_with(&committed_text)
+                            {
+                                full_text[committed_text.len()..].trim().to_string()
+                            } else {
+                                full_text.clone()
+                            };
+
+                            let (complete, _remainder) = split_sentences(&new_portion);
+                            // Stability check: sentence must appear in two
+                            // consecutive full decodes.
+                            if !complete.is_empty() && last_full_text.contains(&complete) {
+                                let audio = buf.clone();
+                                let _ = out_tx.send(WorkerEvt::Final {
+                                    seg_id,
+                                    text: complete.clone(),
+                                    audio,
+                                });
+                                seg_id += 1;
+                                committed_text = if full_text.starts_with(&committed_text) {
+                                    let commit_end = committed_text.len() + complete.len();
+                                    full_text[..commit_end.min(full_text.len())].to_string()
+                                } else {
+                                    full_text.clone()
+                                };
+                            }
+                            last_full_text = full_text;
+                        }
                     }
                 }
 
-                if active || !buf.is_empty() {
-                    buf.extend_from_slice(&block);
-                    samples_since_partial += block.len();
-                    if active {
-                        silence_run = 0;
-                    } else {
-                        silence_run += block.len();
-                    }
-                    if silence_run >= silence_samples_needed || buf.len() >= max_samples {
-                        flush_block(
-                            &mut buf,
-                            &mut silence_run,
-                            &mut samples_since_partial,
-                            &mut last_partial,
-                            &mut seg_id,
-                            &out_tx,
-                            false,
-                        );
-                    } else if cfg.partial_ms > 0
-                        && samples_since_partial >= partial_samples_step
-                        && buf.len() >= partial_min_samples
-                    {
-                        samples_since_partial = 0;
-                        if let Some(text) = decode(&buf) {
-                            if text != last_partial {
-                                last_partial = text.clone();
-                                let _ = out_tx.send(WorkerEvt::Partial { seg_id, text });
-                            }
+                // Force flush on long silence (speaker truly stopped).
+                if silence_run >= silence_samples_needed * 4 && buf.len() >= min_samples {
+                    if let Some(text) = decode(&buf) {
+                        let new_text = if text.len() > committed_text.len()
+                            && text.starts_with(&committed_text)
+                        {
+                            text[committed_text.len()..].trim().to_string()
+                        } else if text != committed_text {
+                            text.clone()
+                        } else {
+                            String::new()
+                        };
+                        if !new_text.is_empty() {
+                            let _ = out_tx.send(WorkerEvt::Final {
+                                seg_id,
+                                text: new_text,
+                                audio: buf.clone(),
+                            });
+                            seg_id += 1;
                         }
                     }
+                    // True long silence — speaker stopped. Clear buf to
+                    // save memory and reset for next utterance.
+                    buf.clear();
+                    committed_text.clear();
+                    last_full_text.clear();
+                    last_partial_text.clear();
+                    speech_active = false;
+                    silence_run = 0;
+                    samples_since_decode = 0;
                 }
             }
         }
