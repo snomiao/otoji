@@ -262,40 +262,36 @@ fn worker_main(
 
     // ── Sliding-window architecture ──
     //
-    // Instead of VAD-flush-clear (which loses context and mis-cuts sentences),
-    // we keep a growing audio buffer and run two decode tracks:
+    // Single continuous decode track: decode the full buffer after each batch
+    // of new audio. This gives both streaming Partials AND sentence detection
+    // from one decode pass — no separate fast/slow tracks.
     //
-    //   Fast track (Partial): decode only the TAIL of the buffer (~3-5s).
-    //     Constant cost regardless of total buf length → ~140ms per decode
-    //     → streaming word-by-word experience.
+    // - Partial: emitted whenever decoded text changes (uncommitted portion).
+    // - Final: emitted when SenseVoice adds sentence-ending punctuation
+    //   (。！？) and the sentence is stable across 2 consecutive decodes.
+    // - Context: buffer is NOT cleared on sentence commit. SenseVoice always
+    //   sees the full conversation history (up to max_ms).
+    // - Energy VAD: only used as a "speech started" gate so we don't waste
+    //   decode cycles on pure silence.
     //
-    //   Slow track (Final): decode the FULL buffer continuously.
-    //     SenseVoice adds sentence-ending punctuation (。！？) — when a
-    //     sentence is complete and stable across 2 consecutive decodes,
-    //     commit it as a Final. The buffer is NOT cleared — context is
-    //     preserved for subsequent decodes.
-    //
-    // Energy VAD is only used as a coarse "speech started" gate so we don't
-    // waste decode cycles on pure silence.
+    // Cost: decode time grows with buffer. At 22x RTF with 4 threads:
+    //   5s buf → 0.23s decode (4 updates/sec)
+    //  15s buf → 0.68s decode (1.5 updates/sec)
+    //  30s buf → 1.36s decode (0.7 updates/sec)
 
     let max_samples = (cfg.vad_max_ms as usize) * SAMPLE_RATE as usize / 1000;
-    let tail_samples = SAMPLE_RATE as usize * 4; // 4s tail for fast partial
-    let min_samples = SAMPLE_RATE as usize / 2; // 500ms minimum to decode
+    let min_samples = SAMPLE_RATE as usize; // 1s minimum to decode
 
     let mut buf: Vec<f32> = Vec::new();
     let mut seg_id: u64 = 0;
-    let mut committed_chars: usize = 0; // char count already emitted as Finals
-    let mut last_full_text = String::new(); // previous full-buf decode result
-    let mut prev_complete = String::new(); // previous completed-sentence prefix (for stability)
-    let mut last_partial_text = String::new();
+    let mut committed_chars: usize = 0;
+    let mut stable_count: u32 = 0; // consecutive decodes with same complete prefix
+    let mut prev_complete = String::new();
+    let mut last_decoded = String::new();
+    let mut last_partial_emitted = String::new();
+    let min_commit_chars: usize = 8; // don't commit tiny fragments
     let mut samples_since_decode: usize = 0;
-    let mut samples_since_slow: usize = 0;
-    // Slow track runs every slow_interval_samples of new audio.
-    // Too frequent = O(n²), too rare = delayed sentence commit.
-    // 3s is a good balance: a 30s buffer decodes in ~1.4s at 22x RTF,
-    // so we spend ~47% of wall time on slow decodes. Acceptable.
-    let slow_interval_samples = SAMPLE_RATE as usize * 3;
-    let mut speech_active = false; // has speech started?
+    let mut speech_active = false;
 
     // Adaptive energy threshold (same calibration as before — just used as
     // a "speech started" gate, not for sentence cutting).
@@ -420,76 +416,83 @@ fn worker_main(
                 if buf.len() > max_samples {
                     let trim = buf.len() - max_samples;
                     buf.drain(..trim);
-                    // Reset committed tracking since we lost the front.
                     committed_chars = 0;
-                    last_full_text.clear();
                     prev_complete.clear();
+                    last_decoded.clear();
+                    last_partial_emitted.clear();
                 }
 
-                // ── Fast track: tail-only decode for streaming Partials ──
-                // Triggered whenever we have enough new audio. The tail
-                // decode is cheap (~140ms for 4s) so it runs frequently.
-                let enough_new = samples_since_decode >= SAMPLE_RATE as usize / 5; // ~200ms of new audio
+                // ── Single decode track ──
+                // Decode full buf after enough new audio (≥200ms). One decode
+                // serves both Partial display AND sentence detection.
+                let enough_new = samples_since_decode >= SAMPLE_RATE as usize / 5;
                 if enough_new && buf.len() >= min_samples {
                     samples_since_decode = 0;
 
-                    let tail_start = buf.len().saturating_sub(tail_samples);
-                    let tail = &buf[tail_start..];
-                    if let Some(tail_text) = decode(tail) {
-                        if tail_text != last_partial_text {
-                            last_partial_text = tail_text.clone();
-                            let _ = out_tx.send(WorkerEvt::Partial { seg_id, text: tail_text });
+                    if let Some(text) = decode(&buf) {
+                        // Uncommitted portion = text beyond committed_chars.
+                        let chars: Vec<char> = text.chars().collect();
+                        let uncommitted: String = if committed_chars < chars.len() {
+                            chars[committed_chars..].iter().collect::<String>()
+                                .trim().to_string()
+                        } else {
+                            String::new()
+                        };
+
+                        // Emit Partial if the uncommitted text changed.
+                        if !uncommitted.is_empty() && uncommitted != last_partial_emitted {
+                            last_partial_emitted = uncommitted.clone();
+                            let _ = out_tx.send(WorkerEvt::Partial {
+                                seg_id,
+                                text: uncommitted.clone(),
+                            });
                         }
-                    }
 
-                    samples_since_slow += samples_since_decode;
-
-                    // ── Slow track: full-buf decode for sentence detection ──
-                    // Rate-limited to every ~3s of new audio to avoid O(n²).
-                    let run_slow = buf.len() > tail_samples + min_samples
-                        && samples_since_slow >= slow_interval_samples;
-                    if run_slow {
-                        samples_since_slow = 0;
-                        if let Some(full_text) = decode(&buf) {
-                            // Extract the uncommitted portion of the decoded text.
-                            // Use char offset — robust against SenseVoice revising
-                            // earlier text slightly between decodes.
-                            let chars: Vec<char> = full_text.chars().collect();
-                            let uncommitted: String = if committed_chars < chars.len() {
-                                chars[committed_chars..].iter().collect::<String>().trim().to_string()
-                            } else {
-                                String::new()
-                            };
-
-                            let (complete, _remainder) = split_sentences(&uncommitted);
-                            // Stability: the same completed prefix must appear in
-                            // two consecutive full decodes to avoid emitting while
-                            // SenseVoice is still revising.
-                            if !complete.is_empty() && complete == prev_complete {
-                                let audio = buf.clone();
+                        // Sentence detection: check for 。！？ in uncommitted.
+                        let (complete, _remainder) = split_sentences(&uncommitted);
+                        // Fuzzy stability: normalize (strip spaces + CJK punct
+                        // variants) before comparing. SenseVoice revises spacing
+                        // and minor chars between consecutive decodes.
+                        let norm = |s: &str| -> String {
+                            s.chars().filter(|c| {
+                                !c.is_ascii_whitespace()
+                                    && !matches!(*c, ' ' | '\u{3000}' | '、' | '，')
+                            }).collect()
+                        };
+                        let norm_complete = norm(&complete);
+                        let norm_prev = norm(&prev_complete);
+                        if !norm_complete.is_empty()
+                            && norm_complete.chars().count() >= min_commit_chars
+                            && norm_complete == norm_prev
+                        {
+                            stable_count += 1;
+                            if stable_count >= 2 {
                                 let _ = out_tx.send(WorkerEvt::Final {
                                     seg_id,
                                     text: complete.clone(),
-                                    audio,
+                                    audio: buf.clone(),
                                 });
                                 seg_id += 1;
                                 committed_chars += complete.chars().count();
+                                stable_count = 0;
                                 prev_complete.clear();
-                            } else {
-                                prev_complete = complete;
+                                last_partial_emitted.clear();
                             }
-                            last_full_text = full_text;
+                        } else {
+                            stable_count = 0;
+                            prev_complete = complete;
                         }
+                        last_decoded = text;
                     }
                 }
 
                 // Force flush on long silence (speaker truly stopped).
                 if silence_run >= silence_samples_needed * 4 && buf.len() >= min_samples {
-                    // Long silence — speaker stopped. Commit any remaining text.
                     if let Some(text) = decode(&buf) {
                         let chars: Vec<char> = text.chars().collect();
                         let remaining: String = if committed_chars < chars.len() {
-                            chars[committed_chars..].iter().collect::<String>().trim().to_string()
+                            chars[committed_chars..].iter().collect::<String>()
+                                .trim().to_string()
                         } else {
                             String::new()
                         };
@@ -504,9 +507,9 @@ fn worker_main(
                     }
                     buf.clear();
                     committed_chars = 0;
-                    last_full_text.clear();
                     prev_complete.clear();
-                    last_partial_text.clear();
+                    last_decoded.clear();
+                    last_partial_emitted.clear();
                     speech_active = false;
                     silence_run = 0;
                     samples_since_decode = 0;
