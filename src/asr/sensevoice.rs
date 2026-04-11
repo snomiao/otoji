@@ -285,11 +285,10 @@ fn worker_main(
     let mut buf: Vec<f32> = Vec::new();
     let mut seg_id: u64 = 0;
     let mut committed_chars: usize = 0;
-    let mut stable_count: u32 = 0; // consecutive decodes with same complete prefix
-    let mut prev_complete = String::new();
     let mut last_decoded = String::new();
     let mut last_partial_emitted = String::new();
-    let min_commit_chars: usize = 8; // don't commit tiny fragments
+    let min_commit_chars: usize = 10;
+    let mut samples_since_commit: usize = usize::MAX; // cooldown after commit
     let mut samples_since_decode: usize = 0;
     let mut speech_active = false;
 
@@ -405,6 +404,7 @@ fn worker_main(
 
                 buf.extend_from_slice(&block);
                 samples_since_decode += block.len();
+                samples_since_commit += block.len();
 
                 if active {
                     silence_run = 0;
@@ -417,15 +417,20 @@ fn worker_main(
                     let trim = buf.len() - max_samples;
                     buf.drain(..trim);
                     committed_chars = 0;
-                    prev_complete.clear();
+                    // (no stability state to clear)
                     last_decoded.clear();
                     last_partial_emitted.clear();
                 }
 
                 // ── Single decode track ──
-                // Decode full buf after enough new audio (≥200ms). One decode
-                // serves both Partial display AND sentence detection.
-                let enough_new = samples_since_decode >= SAMPLE_RATE as usize / 5;
+                // Adaptive interval: decode less often as buf grows, so we
+                // don't spend 100% CPU on decode and fall behind realtime.
+                //   buf < 3s  → decode every 200ms (fast startup)
+                //   buf = 12s → decode every ~1.5s (0.55s decode + headroom)
+                // Formula: max(200ms, buf_len / 8). At 12s buf: 1.5s interval.
+                let min_interval = SAMPLE_RATE as usize / 5; // 200ms = 3200 samples
+                let adaptive_interval = (buf.len() / 8).max(min_interval);
+                let enough_new = samples_since_decode >= adaptive_interval;
                 if enough_new && buf.len() >= min_samples {
                     samples_since_decode = 0;
 
@@ -448,39 +453,42 @@ fn worker_main(
                             });
                         }
 
-                        // Sentence detection: check for 。！？ in uncommitted.
+                        // Sentence detection: commit immediately when a
+                        // sentence-ending punctuation (。！？) appears and
+                        // the sentence has enough content. No stability check
+                        // — SenseVoice revises text too much between decodes
+                        // for exact matching to work. The polish chain
+                        // downstream corrects minor transcription errors.
                         let (complete, _remainder) = split_sentences(&uncommitted);
-                        // Fuzzy stability: normalize (strip spaces + CJK punct
-                        // variants) before comparing. SenseVoice revises spacing
-                        // and minor chars between consecutive decodes.
-                        let norm = |s: &str| -> String {
-                            s.chars().filter(|c| {
-                                !c.is_ascii_whitespace()
-                                    && !matches!(*c, ' ' | '\u{3000}' | '、' | '，')
-                            }).collect()
-                        };
-                        let norm_complete = norm(&complete);
-                        let norm_prev = norm(&prev_complete);
-                        if !norm_complete.is_empty()
-                            && norm_complete.chars().count() >= min_commit_chars
-                            && norm_complete == norm_prev
-                        {
-                            stable_count += 1;
-                            if stable_count >= 2 {
-                                let _ = out_tx.send(WorkerEvt::Final {
-                                    seg_id,
-                                    text: complete.clone(),
-                                    audio: buf.clone(),
-                                });
-                                seg_id += 1;
-                                committed_chars += complete.chars().count();
-                                stable_count = 0;
-                                prev_complete.clear();
-                                last_partial_emitted.clear();
+                        // Cooldown: after a commit + buf trim, require 3s of
+                        // genuinely new audio before the next commit. Without
+                        // this, the 5s context tail re-triggers commits on old
+                        // content in a tight loop.
+                        let cooldown_ok = samples_since_commit >= SAMPLE_RATE as usize * 3;
+                        if cooldown_ok && complete.chars().count() >= min_commit_chars {
+                            let _ = out_tx.send(WorkerEvt::Final {
+                                seg_id,
+                                text: complete.clone(),
+                                audio: buf.clone(),
+                            });
+                            seg_id += 1;
+                            // Trim buf to last ~5s for context, then
+                            // pre-commit the remaining tail so old content
+                            // isn't re-emitted.
+                            let keep = SAMPLE_RATE as usize * 5;
+                            if buf.len() > keep {
+                                buf.drain(..buf.len() - keep);
                             }
-                        } else {
-                            stable_count = 0;
-                            prev_complete = complete;
+                            // Decode the remaining tail and mark all of it
+                            // as committed. This anchors committed_chars to
+                            // the tail content so only genuinely new audio
+                            // produces uncommitted text.
+                            committed_chars = decode(&buf)
+                                .map(|t| t.chars().count())
+                                .unwrap_or(0);
+                            samples_since_commit = 0;
+                            last_partial_emitted.clear();
+                            last_decoded.clear();
                         }
                         last_decoded = text;
                     }
@@ -507,7 +515,7 @@ fn worker_main(
                     }
                     buf.clear();
                     committed_chars = 0;
-                    prev_complete.clear();
+                    // (no stability state to clear)
                     last_decoded.clear();
                     last_partial_emitted.clear();
                     speech_active = false;
