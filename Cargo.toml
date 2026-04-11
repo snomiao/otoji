@@ -58,6 +58,8 @@ sherpa-onnx = "1.12"
 # Optional Node/Bun binding deps (enabled with `--features node`).
 napi = { version = "2", default-features = false, features = ["napi6", "async"], optional = true }
 napi-derive = { version = "2", optional = true }
+exec = "0.3.1"
+similar = "2"
 
 [build-dependencies]
 napi-build = { version = "2", optional = true }

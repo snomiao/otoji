@@ -201,6 +201,7 @@ fn parse_result_payload(raw: &str) -> Option<AsrEvent> {
             seg_id,
             text,
             words,
+            audio: None,
         }
     } else {
         AsrEvent::Partial { seg_id, text }

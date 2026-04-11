@@ -61,6 +61,11 @@ pub enum AsrEvent {
         seg_id: u64,
         text: String,
         words: Vec<Word>,
+        /// Raw PCM audio for this segment (16kHz mono f32, -1.0..1.0).
+        /// Preserved for multimodal polish (e.g. Gemini). `None` when the
+        /// ASR provider doesn't retain original audio (cloud providers).
+        #[serde(skip)]
+        audio: Option<Vec<f32>>,
     },
     /// Non-fatal status message (device picked, model downloading, …).
     /// Surfaced in the TUI header rather than the transcript body.

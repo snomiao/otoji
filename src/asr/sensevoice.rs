@@ -60,12 +60,22 @@ impl SenseVoiceConfig {
         Self {
             model_dir: std::env::var("OTOJI_SENSEVOICE_DIR").unwrap_or(default_model_dir),
             language: std::env::var("OTOJI_SENSEVOICE_LANG").unwrap_or_else(|_| "auto".into()),
-            partial_ms: env_u32("OTOJI_PARTIAL_MS", 300),
+            // Each partial re-runs SenseVoice on the *entire* utterance buffer,
+            // so cost grows O(n²) with utterance length. 300ms cadence pegged
+            // a single thread at >100% CPU for ~10s utterances and pushed the
+            // pipeline below realtime on M-series. 1500ms keeps the live UX
+            // feeling responsive while running ~5x faster overall. Set to 0
+            // to disable partial decoding entirely (recommended for headless
+            // `--plain` consumers that only care about Final events).
+            partial_ms: env_u32("OTOJI_PARTIAL_MS", 1500),
             vad_threshold: std::env::var("OTOJI_VAD_THRESHOLD")
                 .ok()
                 .and_then(|s| s.parse().ok())
-                .unwrap_or(0.012),
-            vad_silence_ms: env_u32("OTOJI_VAD_SILENCE_MS", 600),
+                .unwrap_or(0.0005),
+            // QA matrix (docs/07-otoji-listen-qa.md) found 750ms is the Pareto
+            // optimum: 20% lower TTFB than 1000ms with identical capture and
+            // accuracy. Going to 500ms hurts capture by ~5 points.
+            vad_silence_ms: env_u32("OTOJI_VAD_SILENCE_MS", 750),
             vad_max_ms: env_u32("OTOJI_VAD_MAX_MS", 12_000),
         }
     }
@@ -98,7 +108,8 @@ enum WorkerMsg {
 enum WorkerEvt {
     Open,
     Partial { seg_id: u64, text: String },
-    Final { seg_id: u64, text: String },
+    Final { seg_id: u64, text: String, audio: Vec<f32> },
+    Status(String),
     Error(String),
     Closed,
 }
@@ -156,11 +167,13 @@ impl AsrProvider for SenseVoice {
                 let asr = match evt {
                     WorkerEvt::Open => AsrEvent::Open,
                     WorkerEvt::Partial { seg_id, text } => AsrEvent::Partial { seg_id, text },
-                    WorkerEvt::Final { seg_id, text } => AsrEvent::Final {
+                    WorkerEvt::Final { seg_id, text, audio } => AsrEvent::Final {
                         seg_id,
                         text,
                         words: Vec::new(),
+                        audio: Some(audio),
                     },
+                    WorkerEvt::Status(message) => AsrEvent::Status { message },
                     WorkerEvt::Error(message) => AsrEvent::Error { message },
                     WorkerEvt::Closed => break,
                 };
@@ -210,7 +223,7 @@ fn worker_main(
         language: Some(cfg.language.clone()),
         use_itn: true,
     };
-    config.model_config.num_threads = 2;
+    config.model_config.num_threads = env_u32("OTOJI_NUM_THREADS", 4) as i32;
 
     // Lazy load: don't pay the ~1GB SenseVoice model load cost until we
     // actually have audio to decode. For `otoji listen -` with a tiny
@@ -226,10 +239,10 @@ fn worker_main(
         }
     };
 
-    eprintln!(
-        "sensevoice: loading model from {} (~1GB, first run may take a few seconds) …",
+    let _ = out_tx.send(WorkerEvt::Status(format!(
+        "sensevoice: loading model from {} …",
         cfg.model_dir
-    );
+    )));
     let load_started = std::time::Instant::now();
     let recognizer = match OfflineRecognizer::create(&config) {
         Some(r) => r,
@@ -241,16 +254,16 @@ fn worker_main(
             return;
         }
     };
-    eprintln!(
+    let _ = out_tx.send(WorkerEvt::Status(format!(
         "sensevoice: model loaded in {:.2}s",
         load_started.elapsed().as_secs_f32()
-    );
+    )));
     let _ = out_tx.send(WorkerEvt::Open);
 
     // VAD parameters in *samples* (matches the cpal mic crate's 16k mono PCM).
     let silence_samples_needed = (cfg.vad_silence_ms as usize) * SAMPLE_RATE as usize / 1000;
     let max_samples = (cfg.vad_max_ms as usize) * SAMPLE_RATE as usize / 1000;
-    let min_samples = SAMPLE_RATE as usize / 4; // 250ms
+    let min_samples = SAMPLE_RATE as usize; // 1s — avoid emitting tiny fragments
     let partial_samples_step = (cfg.partial_ms as usize) * SAMPLE_RATE as usize / 1000;
     let partial_min_samples = (240 * SAMPLE_RATE as usize) / 1000;
 
@@ -265,30 +278,49 @@ fn worker_main(
         stream.accept_waveform(SAMPLE_RATE as i32, buf);
         recognizer.decode(&stream);
         let text = stream.get_result()?.text.trim().to_string();
-        if text.is_empty() {
+        // Reject pure-punctuation outputs ("." / "。" / etc) — SenseVoice
+        // emits these on near-silent audio and they're never useful.
+        let has_content = text.chars().any(|c| {
+            !c.is_ascii_punctuation()
+                && !c.is_ascii_whitespace()
+                && !matches!(c, '。' | '、' | '？' | '！' | '・')
+        });
+        if !has_content {
             None
         } else {
             Some(text)
         }
     };
 
+    // flush_block: decode the accumulated audio and emit a Final.
+    //
+    // Previous versions held short (<4 char) decoded fragments as
+    // "pending_audio" and prepended them to the next utterance. QA showed
+    // this cross-contaminated adjacent plays and caused ~50% of utterances
+    // to be silently dropped. Now we simply emit every non-empty decode
+    // result — short fragments are preferable to lost utterances. The
+    // polish chain downstream can merge fragments if needed.
     let flush_block = |buf: &mut Vec<f32>,
                        silence_run: &mut usize,
                        samples_since_partial: &mut usize,
                        last_partial: &mut String,
                        seg_id: &mut u64,
-                       out_tx: &smpsc::Sender<WorkerEvt>| {
+                       out_tx: &smpsc::Sender<WorkerEvt>,
+                       _force: bool| {
         if buf.len() < min_samples {
+            // Too short to decode reliably — discard.
             buf.clear();
             *silence_run = 0;
             *samples_since_partial = 0;
             last_partial.clear();
             return;
         }
+        let audio = buf.clone();
         if let Some(text) = decode(buf) {
             let _ = out_tx.send(WorkerEvt::Final {
                 seg_id: *seg_id,
                 text,
+                audio,
             });
             *seg_id += 1;
         }
@@ -298,7 +330,16 @@ fn worker_main(
         last_partial.clear();
     };
 
-    let threshold = cfg.vad_threshold;
+    // Adaptive VAD: collect per-block RMS values over the first ~2s, then
+    // use the *minimum* block RMS as the noise floor (the quietest block is
+    // most likely actual silence). This avoids the bug where music/speech at
+    // the start inflates the floor and suppresses all subsequent audio.
+    let configured_threshold = cfg.vad_threshold;
+    let calibration_samples = SAMPLE_RATE as usize * 2; // ~2s
+    let mut calibration_count: usize = 0;
+    let mut calibration_rms: Vec<f32> = Vec::new();
+    let mut threshold: f32 = configured_threshold;
+    let mut calibrated = false;
 
     let mut pending_first = Some(first);
     loop {
@@ -318,13 +359,52 @@ fn worker_main(
                     &mut last_partial,
                     &mut seg_id,
                     &out_tx,
+                    true, // force — end of stream
                 );
                 break;
             }
             WorkerMsg::Pcm(pcm_i16) => {
                 let block = i16_to_f32(&pcm_i16);
+
+                // Calibrate: collect per-block RMS for ~2s, pick the minimum.
+                if !calibrated {
+                    let block_rms_val = rms(&block);
+                    if block_rms_val > 0.0 {
+                        calibration_rms.push(block_rms_val);
+                    }
+                    calibration_count += block.len();
+                    if calibration_count >= calibration_samples {
+                        let noise_floor = calibration_rms.iter()
+                            .copied()
+                            .reduce(f32::min)
+                            .unwrap_or(0.0);
+                        // Threshold = 1.5× the quietest block, but at least configured min.
+                        // Was 3× but QA showed that made the VAD deaf to quiet speech
+                        // — blocks with RMS 0.001-0.002 were classified as silence when
+                        // the first 2s had loud content and set noise_floor ~0.0007.
+                        threshold = (noise_floor * 1.5).max(configured_threshold);
+                        let _ = out_tx.send(WorkerEvt::Status(format!(
+                            "vad: noise_floor={noise_floor:.5}, threshold={threshold:.5}"
+                        )));
+                        calibration_rms = Vec::new();
+                        calibrated = true;
+                    }
+                }
+
                 let block_rms = rms(&block);
                 let active = block_rms >= threshold;
+
+                // Debug: log when silence is accumulating during an utterance.
+                if !buf.is_empty() && !active {
+                    let silence_ms = (silence_run + block.len()) * 1000 / SAMPLE_RATE as usize;
+                    if silence_ms % 200 == 0 && silence_ms > 0 {
+                        let _ = out_tx.send(WorkerEvt::Status(format!(
+                            "vad: silence={silence_ms}ms (threshold={threshold:.5}, block_rms={block_rms:.5}, buf={}ms)",
+                            buf.len() * 1000 / SAMPLE_RATE as usize
+                        )));
+                    }
+                }
+
                 if active || !buf.is_empty() {
                     buf.extend_from_slice(&block);
                     samples_since_partial += block.len();
@@ -341,8 +421,10 @@ fn worker_main(
                             &mut last_partial,
                             &mut seg_id,
                             &out_tx,
+                            false,
                         );
-                    } else if samples_since_partial >= partial_samples_step
+                    } else if cfg.partial_ms > 0
+                        && samples_since_partial >= partial_samples_step
                         && buf.len() >= partial_min_samples
                     {
                         samples_since_partial = 0;

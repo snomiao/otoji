@@ -12,7 +12,7 @@ use napi::bindgen_prelude::*;
 use napi::Task;
 use napi_derive::napi;
 
-use crate::polish::{AnthropicPolisher, Polisher};
+use crate::polish::{AnthropicPolisher, PolishInput, Polisher};
 
 #[napi(object)]
 pub struct PolishOptions {
@@ -29,7 +29,11 @@ pub async fn polish_text(opts: PolishOptions) -> Result<String> {
         .unwrap_or_else(|| "claude-haiku-4-5-20251001".into());
     let polisher = AnthropicPolisher::new(opts.api_key, model);
     polisher
-        .polish(&opts.raw, opts.prev.as_deref())
+        .polish(PolishInput {
+            text: &opts.raw,
+            prev: opts.prev.as_deref(),
+            audio: None,
+        })
         .await
         .map_err(|e| Error::from_reason(format!("polish: {e}")))
 }

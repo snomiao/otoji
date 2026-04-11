@@ -6,6 +6,7 @@ Cargo.lock
 tmp/
 out.mp3
 models/
+.claude/
 
 # napi-rs build artifacts
 *.node

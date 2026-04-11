@@ -20,7 +20,9 @@ use otoji::asr::{
 use otoji::audio::{self, file::{stream_pcm_file, stream_wav_reader_blocking}, mic};
 use std::io::IsTerminal;
 use otoji::core::AudioFormat;
-use otoji::polish::{AnthropicPolisher, NoopPolisher, Polisher};
+use otoji::polish::{
+    AnthropicPolisher, DeferredPolisher, GeminiPolisher, NoopPolisher, OpenAiPolisher, Polisher,
+};
 use otoji::tts::{
     elevenlabs::{ElevenLabsTts, ElevenLabsTtsConfig},
     gemini::{GeminiTts, GeminiTtsConfig},
@@ -34,7 +36,11 @@ use std::sync::Arc;
 use tokio::sync::mpsc;
 
 #[derive(Parser)]
-#[command(name = "otoji", about = "音字 — realtime speech ⇄ text")]
+#[command(
+    name = "otoji",
+    about = "音字 — realtime speech ⇄ text",
+    version = env!("OTOJI_LONG_VERSION"),
+)]
 struct Cli {
     #[command(subcommand)]
     cmd: Cmd,
@@ -183,8 +189,107 @@ fn resolve_tts(kind: TtsKind) -> Result<Arc<dyn TtsProvider>> {
     }
 }
 
+/// Auto-rebuild and re-exec when source files are newer than the binary.
+/// Works for both `cargo install` and `target/debug` builds — as long as
+/// the source tree (CARGO_MANIFEST_DIR at compile time) still exists on disk.
+fn maybe_rebuild_and_reexec() {
+    // Prevent infinite re-exec loops.
+    if std::env::var_os("OTOJI_REBUILDING").is_some() {
+        return;
+    }
+
+    let manifest_dir = env!("CARGO_MANIFEST_DIR");
+    let manifest_path = std::path::Path::new(manifest_dir);
+    if !manifest_path.join("Cargo.toml").exists() {
+        return; // source tree gone, skip
+    }
+
+    let exe = match std::env::current_exe().and_then(|p| p.canonicalize()) {
+        Ok(p) => p,
+        Err(_) => return,
+    };
+
+    let exe_mtime = match exe.metadata().and_then(|m| m.modified()) {
+        Ok(t) => t,
+        Err(_) => return,
+    };
+
+    // Walk src/ for any file newer than the binary.
+    let src_dir = manifest_path.join("src");
+    if !walkdir(&src_dir, &exe_mtime) {
+        return;
+    }
+
+    // Determine build mode: if binary is under target/, use cargo build;
+    // otherwise (e.g. ~/.cargo/bin), use cargo install --path.
+    let target_dir = manifest_path.join("target");
+    let is_dev = exe.starts_with(&target_dir);
+
+    eprint!("otoji: source changed, rebuilding… ");
+    let output = if is_dev {
+        std::process::Command::new("cargo")
+            .arg("build")
+            .current_dir(manifest_dir)
+            .env("OTOJI_REBUILDING", "1")
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::piped())
+            .output()
+    } else {
+        std::process::Command::new("cargo")
+            .args(["install", "--path", manifest_dir])
+            .env("OTOJI_REBUILDING", "1")
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::piped())
+            .output()
+    };
+    match output {
+        Ok(o) if o.status.success() => {
+            eprintln!("ok");
+            let new_exe = std::env::current_exe()
+                .and_then(|p| p.canonicalize())
+                .unwrap_or(exe);
+            let args: Vec<String> = std::env::args().collect();
+            let err = exec::execvp(&new_exe, &args);
+            eprintln!("otoji: re-exec failed: {err}");
+        }
+        Ok(o) => {
+            eprintln!("failed (exit {})", o.status);
+            // Show cargo errors so the user knows what to fix.
+            let msg = String::from_utf8_lossy(&o.stderr);
+            for line in msg.lines().filter(|l| l.starts_with("error")) {
+                eprintln!("  {line}");
+            }
+        }
+        Err(e) => eprintln!("failed ({e})"),
+    }
+}
+
+fn walkdir(dir: &std::path::Path, threshold: &std::time::SystemTime) -> bool {
+    let entries = match std::fs::read_dir(dir) {
+        Ok(e) => e,
+        Err(_) => return false,
+    };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path.is_dir() {
+            if walkdir(&path, threshold) {
+                return true;
+            }
+        } else if let Ok(meta) = path.metadata() {
+            if let Ok(mtime) = meta.modified() {
+                if mtime > *threshold {
+                    return true;
+                }
+            }
+        }
+    }
+    false
+}
+
 #[tokio::main]
 async fn main() -> Result<()> {
+    maybe_rebuild_and_reexec();
+
     tracing_subscriber::fmt()
         .with_env_filter(tracing_subscriber::EnvFilter::from_default_env())
         .with_writer(std::io::stderr)
@@ -477,15 +582,115 @@ async fn run_file(kind: AsrKind, path: PathBuf, frame_ms: u32, realtime: bool) -
 
 async fn drive<P: AsrProvider + 'static>(provider: P, audio_rx: audio::AudioRx) -> Result<()> {
     let (event_tx, event_rx) = mpsc::channel(128);
-    let polisher: Arc<dyn Polisher> = match AnthropicPolisher::from_env() {
-        Ok(p) => Arc::new(p),
-        Err(_) => Arc::new(NoopPolisher),
+    // Polish resolution: Gemini multimodal (if key) → OpenAI GPT-4o (if key)
+    // → Ollama probe → auto-start Ollama/MLX in background.
+    let polisher: Arc<dyn Polisher> = {
+        // 1. Gemini multimodal — best quality (audio+text), cloud opt-in.
+        if let Ok(p) = GeminiPolisher::from_env() {
+            eprintln!("polish: using gemini-multimodal (audio+text)");
+            Arc::new(p)
+        }
+        // 2. OpenAI GPT-4o — fastest cloud, best accuracy, with conversation caching.
+        else if let Ok(key) = std::env::var("OPENAI_API_KEY") {
+            let model = std::env::var("OTOJI_POLISH_MODEL")
+                .unwrap_or_else(|_| "gpt-4o".into());
+            eprintln!("polish: using openai {model} (with history caching)");
+            Arc::new(OpenAiPolisher::new("https://api.openai.com/v1", key, model))
+        }
+        // 3. Ollama / local OpenAI-compat — already running?
+        else if let Ok(p) = OpenAiPolisher::from_env() {
+            let base_url = p.base_url.clone();
+            let model = p.model.clone();
+            if let Ok(p) = p.probe().await {
+                eprintln!("polish: using {} (model={})", p.base_url, p.model);
+                ensure_ollama_model(&p.base_url, &p.model).await;
+                Arc::new(p)
+            }
+            // 3. Anthropic — cloud fallback if key is set.
+            else if let Ok(p) = AnthropicPolisher::from_env() {
+                eprintln!("polish: using anthropic (model={})", p.model);
+                Arc::new(p)
+            }
+            // 4. Auto-start local LLM in background. Try Ollama first, then MLX.
+            else if which_ollama() || which_mlx() {
+                let deferred = Arc::new(DeferredPolisher::new());
+                let d2 = deferred.clone();
+                let has_ollama = which_ollama();
+                let has_mlx = which_mlx();
+                let status_tx = event_tx.clone();
+                tokio::spawn(async move {
+                    // Try Ollama first.
+                    if has_ollama {
+                        let _ = status_tx
+                            .send(otoji::core::AsrEvent::Status {
+                                message: "polish: starting ollama…".into(),
+                            })
+                            .await;
+                        if let Ok(()) = start_ollama(&base_url, &model, &status_tx).await {
+                            let p = OpenAiPolisher::new(&base_url, "", &model);
+                            if let Ok(p) = p.probe().await {
+                                // Verify the model actually loads by doing a test call.
+                                let test = otoji::polish::PolishInput {
+                                    text: "test",
+                                    prev: None,
+                                    audio: None,
+                                };
+                                if p.polish(test).await.is_ok() {
+                                    let _ = status_tx
+                                        .send(otoji::core::AsrEvent::Status {
+                                            message: format!("polish: ollama ready (model={})", p.model),
+                                        })
+                                        .await;
+                                    d2.activate(Arc::new(p)).await;
+                                    return;
+                                }
+                            }
+                        }
+                        let _ = status_tx
+                            .send(otoji::core::AsrEvent::Status {
+                                message: "polish: ollama failed, trying mlx…".into(),
+                            })
+                            .await;
+                    }
+
+                    // Fallback to MLX.
+                    if has_mlx {
+                        if let Ok((mlx_url, mlx_model)) = start_mlx(&status_tx).await {
+                            let p = OpenAiPolisher::new(&mlx_url, "", &mlx_model);
+                            d2.activate(Arc::new(p)).await;
+                            let _ = status_tx
+                                .send(otoji::core::AsrEvent::Status {
+                                    message: format!("polish: mlx ready (model={mlx_model})"),
+                                })
+                                .await;
+                            return;
+                        }
+                    }
+
+                    let _ = status_tx
+                        .send(otoji::core::AsrEvent::Status {
+                            message: "polish: no local LLM available".into(),
+                        })
+                        .await;
+                });
+                deferred
+            } else {
+                eprintln!("polish: no provider (install ollama or mlx_lm, or set GEMINI_API_KEY / ANTHROPIC_API_KEY)");
+                Arc::new(NoopPolisher)
+            }
+        } else {
+            Arc::new(NoopPolisher)
+        }
     };
 
-    // Tap the audio stream so the TUI can show a live RMS meter — this is
-    // also the easiest way to confirm cpal is delivering frames at all.
+    // Shared live settings: gain/vad toggleable from TUI at runtime.
+    let live = Arc::new(tui::LiveSettings::new());
+
+    // Tap the audio stream so the TUI can show a live RMS meter.
+    // Also applies software gain from LiveSettings.
     let (tap_tx, tap_rx) = audio::channel(64);
     let meter_tx = event_tx.clone();
+    let live_audio = live.clone();
     tokio::spawn(async move {
         let mut audio_rx = audio_rx;
         let mut sum_sq: f64 = 0.0;
@@ -494,7 +699,19 @@ async fn drive<P: AsrProvider + 'static>(provider: P, audio_rx: audio::AudioRx) 
         let started = std::time::Instant::now();
         let mut warned_silent = false;
         let mut peak_rms: f64 = 0.0;
-        while let Some(chunk) = audio_rx.recv().await {
+        while let Some(mut chunk) = audio_rx.recv().await {
+            // Apply software gain.
+            let gain = live_audio.gain() as f64;
+            if (gain - 1.0).abs() > 0.01 {
+                let mut amplified = Vec::with_capacity(chunk.pcm.len());
+                for pair in chunk.pcm.chunks_exact(2) {
+                    let s = i16::from_le_bytes([pair[0], pair[1]]) as f64 * gain;
+                    let clamped = s.clamp(i16::MIN as f64, i16::MAX as f64) as i16;
+                    amplified.extend_from_slice(&clamped.to_le_bytes());
+                }
+                chunk = otoji::core::AudioChunk::new(chunk.format, bytes::Bytes::from(amplified));
+            }
+
             for pair in chunk.pcm.chunks_exact(2) {
                 let s = i16::from_le_bytes([pair[0], pair[1]]) as f64 / 32768.0;
                 sum_sq += s * s;
@@ -540,7 +757,7 @@ async fn drive<P: AsrProvider + 'static>(provider: P, audio_rx: audio::AudioRx) 
             tracing::error!("asr: {e}");
         }
     });
-    tui::run(event_rx, polisher).await
+    tui::run(event_rx, polisher, live).await
 }
 
 /// Build the streaming-friendly 44-byte WAV header. Both the RIFF size and
@@ -671,4 +888,183 @@ async fn run_speak(text: String, out: PathBuf) -> Result<()> {
     task.await??;
     eprintln!("wrote {}", out.display());
     Ok(())
+}
+
+// ── Local LLM auto-start helpers ─────────────────────────────────────
+
+/// Check if a binary is on PATH.
+fn which(bin: &str) -> bool {
+    std::process::Command::new(bin)
+        .arg("--version")
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .status()
+        .map(|s| s.success())
+        .unwrap_or(false)
+}
+
+fn which_ollama() -> bool { which("ollama") }
+fn which_mlx() -> bool {
+    std::process::Command::new("python3")
+        .args(["-c", "import mlx_lm"])
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .status()
+        .map(|s| s.success())
+        .unwrap_or(false)
+}
+
+/// Start `ollama serve` as a detached background process, wait for it to
+/// become reachable, then ensure the model is pulled.
+async fn start_ollama(
+    base_url: &str,
+    model: &str,
+    status_tx: &mpsc::Sender<otoji::core::AsrEvent>,
+) -> std::result::Result<(), ()> {
+    // Spawn ollama serve detached (stdout/stderr to /dev/null so it doesn't
+    // interfere with the TUI).
+    let _child = match std::process::Command::new("ollama")
+        .arg("serve")
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .stdin(std::process::Stdio::null())
+        .spawn()
+    {
+        Ok(c) => c,
+        Err(e) => {
+            let _ = status_tx
+                .send(otoji::core::AsrEvent::Status {
+                    message: format!("polish: failed to start ollama: {e}"),
+                })
+                .await;
+            return Err(());
+        }
+    };
+    // Note: we intentionally don't store the child handle. ollama serve
+    // forks its own server process and the child exits quickly, or it
+    // stays running and we let it outlive otoji.
+
+    // Wait for the server to become reachable (up to 30s).
+    let client = reqwest::Client::new();
+    let models_url = format!("{base_url}/models");
+    let deadline = tokio::time::Instant::now() + std::time::Duration::from_secs(30);
+    loop {
+        if tokio::time::Instant::now() > deadline {
+            let _ = status_tx
+                .send(otoji::core::AsrEvent::Status {
+                    message: "polish: ollama did not start in 30s".into(),
+                })
+                .await;
+            return Err(());
+        }
+        if let Ok(resp) = client
+            .get(&models_url)
+            .timeout(std::time::Duration::from_secs(2))
+            .send()
+            .await
+        {
+            if resp.status().is_success() {
+                break;
+            }
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+    }
+
+    // Ensure the model is available. `ollama pull` is a no-op if already downloaded.
+    ensure_ollama_model(base_url, model).await;
+    let _ = status_tx
+        .send(otoji::core::AsrEvent::Status {
+            message: format!("polish: ollama model {model} ready"),
+        })
+        .await;
+    Ok(())
+}
+
+/// Start `mlx_lm.server` in the background and wait for it to become reachable.
+/// MLX works natively on Apple Silicon (M1-M5) via the Metal framework, making
+/// it the best local LLM option when Ollama's ggml Metal shaders fail.
+async fn start_mlx(
+    status_tx: &mpsc::Sender<otoji::core::AsrEvent>,
+) -> std::result::Result<(String, String), ()> {
+    // Default MLX model — small, fast, good at text correction.
+    let model = std::env::var("OTOJI_MLX_MODEL")
+        .unwrap_or_else(|_| "mlx-community/Qwen2.5-1.5B-Instruct-4bit".into());
+    let port = "11435"; // Avoid conflicting with Ollama's 11434.
+    let base_url = format!("http://localhost:{port}/v1");
+
+    let _ = status_tx
+        .send(otoji::core::AsrEvent::Status {
+            message: format!("polish: starting mlx_lm.server (model={model})…"),
+        })
+        .await;
+
+    let _child = match std::process::Command::new("python3")
+        .args(["-m", "mlx_lm.server", "--model", &model, "--port", port])
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .stdin(std::process::Stdio::null())
+        .spawn()
+    {
+        Ok(c) => c,
+        Err(e) => {
+            let _ = status_tx
+                .send(otoji::core::AsrEvent::Status {
+                    message: format!("polish: mlx_lm.server failed to start: {e}"),
+                })
+                .await;
+            return Err(());
+        }
+    };
+
+    // Wait for server to become reachable (model loading can take 10-30s).
+    let client = reqwest::Client::new();
+    let models_url = format!("{base_url}/models");
+    let deadline = tokio::time::Instant::now() + std::time::Duration::from_secs(60);
+    loop {
+        if tokio::time::Instant::now() > deadline {
+            let _ = status_tx
+                .send(otoji::core::AsrEvent::Status {
+                    message: "polish: mlx_lm.server did not start in 60s".into(),
+                })
+                .await;
+            return Err(());
+        }
+        if let Ok(resp) = client
+            .get(&models_url)
+            .timeout(std::time::Duration::from_secs(2))
+            .send()
+            .await
+        {
+            if resp.status().is_success() {
+                break;
+            }
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(1000)).await;
+    }
+
+    Ok((base_url, model))
+}
+
+/// Pull a model via `ollama pull` if not already present. Non-blocking —
+/// runs the pull command as a subprocess.
+async fn ensure_ollama_model(base_url: &str, model: &str) {
+    // Quick check: does the model already exist?
+    let client = reqwest::Client::new();
+    let url = format!("{base_url}/models");
+    if let Ok(resp) = client.get(&url).send().await {
+        if let Ok(body) = resp.text().await {
+            if body.contains(model) {
+                return; // already pulled
+            }
+        }
+    }
+
+    // Pull in background subprocess (ollama pull shows progress on stderr,
+    // but we pipe it to null to avoid TUI corruption).
+    let _ = tokio::process::Command::new("ollama")
+        .args(["pull", model])
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .status()
+        .await;
 }
