@@ -458,11 +458,13 @@ async function runOnce(args: Args, cfg: Config, plays: Play[], runDir: string): 
 
     const wav = readFileSync(wavPath);
     bytesWritten = wav.length - 44; // approximate PCM size
-    process.stderr.write(`concat WAV: ${(bytesWritten / 32000).toFixed(1)}s (${wav.length} bytes), writing to stdin…\n`);
-    if (!listen.stdin.write(wav)) {
-      await new Promise<void>((res) => listen.stdin!.once("drain", () => res()));
-    }
-    listen.stdin.end();
+    const audioDur = bytesWritten / 32000;
+    process.stderr.write(`concat WAV: ${audioDur.toFixed(1)}s (${wav.length} bytes), writing to stdin (realtime paced)…\n`);
+    // Real-time paced write: the sliding-window architecture does
+    // continuous decoding and needs audio to arrive at ~1x speed.
+    // Burst-dumping all audio floods the decode loop with O(n²) work.
+    await pacedWrite(listen.stdin!, wav, 40);
+    listen.stdin!.end();
   } else {
     for (const p of plays) {
       if (stopping) break;

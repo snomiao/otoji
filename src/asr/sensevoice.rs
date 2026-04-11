@@ -289,6 +289,12 @@ fn worker_main(
     let mut prev_complete = String::new(); // previous completed-sentence prefix (for stability)
     let mut last_partial_text = String::new();
     let mut samples_since_decode: usize = 0;
+    let mut samples_since_slow: usize = 0;
+    // Slow track runs every slow_interval_samples of new audio.
+    // Too frequent = O(n²), too rare = delayed sentence commit.
+    // 3s is a good balance: a 30s buffer decodes in ~1.4s at 22x RTF,
+    // so we spend ~47% of wall time on slow decodes. Acceptable.
+    let slow_interval_samples = SAMPLE_RATE as usize * 3;
     let mut speech_active = false; // has speech started?
 
     // Adaptive energy threshold (same calibration as before — just used as
@@ -436,11 +442,14 @@ fn worker_main(
                         }
                     }
 
+                    samples_since_slow += samples_since_decode;
+
                     // ── Slow track: full-buf decode for sentence detection ──
-                    // Only run when buf is large enough that the tail and full
-                    // decode would differ (i.e., buf > tail window). Otherwise
-                    // the fast track already decoded everything.
-                    if buf.len() > tail_samples + min_samples {
+                    // Rate-limited to every ~3s of new audio to avoid O(n²).
+                    let run_slow = buf.len() > tail_samples + min_samples
+                        && samples_since_slow >= slow_interval_samples;
+                    if run_slow {
+                        samples_since_slow = 0;
                         if let Some(full_text) = decode(&buf) {
                             // Extract the uncommitted portion of the decoded text.
                             // Use char offset — robust against SenseVoice revising
