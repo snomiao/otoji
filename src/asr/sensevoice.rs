@@ -284,8 +284,9 @@ fn worker_main(
 
     let mut buf: Vec<f32> = Vec::new();
     let mut seg_id: u64 = 0;
-    let mut committed_text = String::new(); // text already emitted as Final
+    let mut committed_chars: usize = 0; // char count already emitted as Finals
     let mut last_full_text = String::new(); // previous full-buf decode result
+    let mut prev_complete = String::new(); // previous completed-sentence prefix (for stability)
     let mut last_partial_text = String::new();
     let mut samples_since_decode: usize = 0;
     let mut speech_active = false; // has speech started?
@@ -347,21 +348,19 @@ fn worker_main(
         match msg {
             WorkerMsg::Eof => {
                 // Final flush: decode everything remaining and emit.
+                // EOF: emit any uncommitted text.
                 if buf.len() >= min_samples {
                     if let Some(text) = decode(&buf) {
-                        let new_text = if text.len() > committed_text.len()
-                            && text.starts_with(&committed_text)
-                        {
-                            text[committed_text.len()..].trim().to_string()
-                        } else if text != committed_text {
-                            text.clone()
+                        let chars: Vec<char> = text.chars().collect();
+                        let remaining: String = if committed_chars < chars.len() {
+                            chars[committed_chars..].iter().collect::<String>().trim().to_string()
                         } else {
                             String::new()
                         };
-                        if !new_text.is_empty() {
+                        if !remaining.is_empty() {
                             let _ = out_tx.send(WorkerEvt::Final {
                                 seg_id,
-                                text: new_text,
+                                text: remaining,
                                 audio: buf.clone(),
                             });
                         }
@@ -416,8 +415,9 @@ fn worker_main(
                     let trim = buf.len() - max_samples;
                     buf.drain(..trim);
                     // Reset committed tracking since we lost the front.
-                    committed_text.clear();
+                    committed_chars = 0;
                     last_full_text.clear();
+                    prev_complete.clear();
                 }
 
                 // ── Fast track: tail-only decode for streaming Partials ──
@@ -442,19 +442,21 @@ fn worker_main(
                     // the fast track already decoded everything.
                     if buf.len() > tail_samples + min_samples {
                         if let Some(full_text) = decode(&buf) {
-                            // Check for completed sentences.
-                            let new_portion = if full_text.len() > committed_text.len()
-                                && full_text.starts_with(&committed_text)
-                            {
-                                full_text[committed_text.len()..].trim().to_string()
+                            // Extract the uncommitted portion of the decoded text.
+                            // Use char offset — robust against SenseVoice revising
+                            // earlier text slightly between decodes.
+                            let chars: Vec<char> = full_text.chars().collect();
+                            let uncommitted: String = if committed_chars < chars.len() {
+                                chars[committed_chars..].iter().collect::<String>().trim().to_string()
                             } else {
-                                full_text.clone()
+                                String::new()
                             };
 
-                            let (complete, _remainder) = split_sentences(&new_portion);
-                            // Stability check: sentence must appear in two
-                            // consecutive full decodes.
-                            if !complete.is_empty() && last_full_text.contains(&complete) {
+                            let (complete, _remainder) = split_sentences(&uncommitted);
+                            // Stability: the same completed prefix must appear in
+                            // two consecutive full decodes to avoid emitting while
+                            // SenseVoice is still revising.
+                            if !complete.is_empty() && complete == prev_complete {
                                 let audio = buf.clone();
                                 let _ = out_tx.send(WorkerEvt::Final {
                                     seg_id,
@@ -462,12 +464,10 @@ fn worker_main(
                                     audio,
                                 });
                                 seg_id += 1;
-                                committed_text = if full_text.starts_with(&committed_text) {
-                                    let commit_end = committed_text.len() + complete.len();
-                                    full_text[..commit_end.min(full_text.len())].to_string()
-                                } else {
-                                    full_text.clone()
-                                };
+                                committed_chars += complete.chars().count();
+                                prev_complete.clear();
+                            } else {
+                                prev_complete = complete;
                             }
                             last_full_text = full_text;
                         }
@@ -476,30 +476,27 @@ fn worker_main(
 
                 // Force flush on long silence (speaker truly stopped).
                 if silence_run >= silence_samples_needed * 4 && buf.len() >= min_samples {
+                    // Long silence — speaker stopped. Commit any remaining text.
                     if let Some(text) = decode(&buf) {
-                        let new_text = if text.len() > committed_text.len()
-                            && text.starts_with(&committed_text)
-                        {
-                            text[committed_text.len()..].trim().to_string()
-                        } else if text != committed_text {
-                            text.clone()
+                        let chars: Vec<char> = text.chars().collect();
+                        let remaining: String = if committed_chars < chars.len() {
+                            chars[committed_chars..].iter().collect::<String>().trim().to_string()
                         } else {
                             String::new()
                         };
-                        if !new_text.is_empty() {
+                        if !remaining.is_empty() {
                             let _ = out_tx.send(WorkerEvt::Final {
                                 seg_id,
-                                text: new_text,
+                                text: remaining,
                                 audio: buf.clone(),
                             });
                             seg_id += 1;
                         }
                     }
-                    // True long silence — speaker stopped. Clear buf to
-                    // save memory and reset for next utterance.
                     buf.clear();
-                    committed_text.clear();
+                    committed_chars = 0;
                     last_full_text.clear();
+                    prev_complete.clear();
                     last_partial_text.clear();
                     speech_active = false;
                     silence_run = 0;
