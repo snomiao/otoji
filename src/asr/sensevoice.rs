@@ -287,7 +287,7 @@ fn worker_main(
     let mut committed_chars: usize = 0;
     let mut last_decoded = String::new();
     let mut last_partial_emitted = String::new();
-    let min_commit_chars: usize = 10;
+    let min_commit_chars: usize = 20;
     let mut samples_since_commit: usize = usize::MAX; // cooldown after commit
     let mut samples_since_decode: usize = 0;
     let mut speech_active = false;
@@ -328,7 +328,7 @@ fn worker_main(
     // one or more full sentences; the remainder is the incomplete tail.
     fn split_sentences(text: &str) -> (String, String) {
         // Find the last sentence-ending punctuation.
-        let ends: &[char] = &['。', '！', '？', '!', '?'];
+        let ends: &[char] = &['。', '！', '？', '.', '!', '?'];
         if let Some(pos) = text.rfind(ends) {
             let byte_end = pos + text[pos..].chars().next().map(|c| c.len_utf8()).unwrap_or(0);
             (text[..byte_end].to_string(), text[byte_end..].trim().to_string())

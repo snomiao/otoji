@@ -301,7 +301,7 @@ async fn main() -> Result<()> {
             provider,
             frame_ms,
             plain,
-        } => run_listen(provider, device, frame_ms, plain).await,
+        } => run_listen(provider, device, frame_ms, plain || !std::io::stdout().is_terminal()).await,
         Cmd::File {
             path,
             provider,
