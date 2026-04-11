@@ -76,7 +76,10 @@ impl SenseVoiceConfig {
             // optimum: 20% lower TTFB than 1000ms with identical capture and
             // accuracy. Going to 500ms hurts capture by ~5 points.
             vad_silence_ms: env_u32("OTOJI_VAD_SILENCE_MS", 750),
-            vad_max_ms: env_u32("OTOJI_VAD_MAX_MS", 12_000),
+            // 30s gives SenseVoice enough context to place sentence-ending
+            // punctuation accurately. Below 15s, the model often adds premature
+            // 。mid-speech because it can't see enough context.
+            vad_max_ms: env_u32("OTOJI_VAD_MAX_MS", 30_000),
         }
     }
 }
@@ -284,11 +287,34 @@ fn worker_main(
 
     let mut buf: Vec<f32> = Vec::new();
     let mut seg_id: u64 = 0;
-    let mut committed_chars: usize = 0;
+    // Sentence-level commit tracking: store hashes of committed sentence
+    // bodies (normalized) so we can dedupe across SenseVoice text revisions.
+    let mut committed_sentence_norms: Vec<String> = Vec::new();
     let mut last_decoded = String::new();
     let mut last_partial_emitted = String::new();
-    let min_commit_chars: usize = 20;
-    let mut samples_since_commit: usize = usize::MAX; // cooldown after commit
+    let min_commit_chars: usize = 15;
+    let mut samples_since_commit: usize = usize::MAX;
+
+    fn normalize_sentence(s: &str) -> String {
+        s.chars().filter(|c| {
+            !c.is_ascii_whitespace()
+                && !matches!(*c, ' ' | '\u{3000}' | '、' | '，' | '。' | '.' | '？' | '?' | '！' | '!')
+        }).collect()
+    }
+    fn split_into_sentences(text: &str) -> Vec<String> {
+        let ends: &[char] = &['。', '！', '？', '.', '!', '?'];
+        let mut out = Vec::new();
+        let mut start = 0;
+        for (i, c) in text.char_indices() {
+            if ends.contains(&c) {
+                let end = i + c.len_utf8();
+                out.push(text[start..end].trim().to_string());
+                start = end;
+            }
+        }
+        // Don't include trailing incomplete sentence.
+        out
+    }
     let mut samples_since_decode: usize = 0;
     let mut speech_active = false;
 
@@ -352,16 +378,17 @@ fn worker_main(
                 // EOF: emit any uncommitted text.
                 if buf.len() >= min_samples {
                     if let Some(text) = decode(&buf) {
-                        let chars: Vec<char> = text.chars().collect();
-                        let remaining: String = if committed_chars < chars.len() {
-                            chars[committed_chars..].iter().collect::<String>().trim().to_string()
-                        } else {
-                            String::new()
-                        };
-                        if !remaining.is_empty() {
+                        let trim_text = text.trim().to_string();
+                        let trim_norm = normalize_sentence(&trim_text);
+                        let already = committed_sentence_norms.iter().any(|c| {
+                            let (short, long) = if c.len() < trim_norm.len() { (c, &trim_norm) } else { (&trim_norm, c) };
+                            if short.len() == 0 { return false; }
+                            long.contains(short.as_str())
+                        });
+                        if !already && !trim_text.is_empty() {
                             let _ = out_tx.send(WorkerEvt::Final {
                                 seg_id,
-                                text: remaining,
+                                text: trim_text,
                                 audio: buf.clone(),
                             });
                         }
@@ -416,10 +443,10 @@ fn worker_main(
                 if buf.len() > max_samples {
                     let trim = buf.len() - max_samples;
                     buf.drain(..trim);
-                    committed_chars = 0;
-                    // (no stability state to clear)
                     last_decoded.clear();
                     last_partial_emitted.clear();
+                    // Keep committed_sentence_norms — they continue to dedupe
+                    // even as buf rolls forward.
                 }
 
                 // ── Single decode track ──
@@ -435,60 +462,68 @@ fn worker_main(
                     samples_since_decode = 0;
 
                     if let Some(text) = decode(&buf) {
-                        // Uncommitted portion = text beyond committed_chars.
-                        let chars: Vec<char> = text.chars().collect();
-                        let uncommitted: String = if committed_chars < chars.len() {
-                            chars[committed_chars..].iter().collect::<String>()
-                                .trim().to_string()
-                        } else {
-                            String::new()
-                        };
+                        // Sentence-level diff: split decode into sentences,
+                        // find the first one not in committed_sentence_norms,
+                        // emit it as Final. Partial = trailing incomplete part.
+                        let sentences = split_into_sentences(&text);
 
-                        // Emit Partial if the uncommitted text changed.
-                        if !uncommitted.is_empty() && uncommitted != last_partial_emitted {
-                            last_partial_emitted = uncommitted.clone();
-                            let _ = out_tx.send(WorkerEvt::Partial {
-                                seg_id,
-                                text: uncommitted.clone(),
+                        // Find the trailing incomplete sentence (after last 。)
+                        let last_end = {
+                            let ends: &[char] = &['。', '！', '？', '.', '!', '?'];
+                            text.rfind(ends)
+                                .map(|p| p + text[p..].chars().next().map(|c| c.len_utf8()).unwrap_or(0))
+                                .unwrap_or(0)
+                        };
+                        let trailing = text[last_end..].trim().to_string();
+
+                        // Emit any new uncommitted sentences as Finals.
+                        let cooldown_ok = samples_since_commit >= SAMPLE_RATE as usize * 2;
+                        for sentence in &sentences {
+                            let norm = normalize_sentence(sentence);
+                            if norm.chars().count() < min_commit_chars {
+                                continue;
+                            }
+                            // Already committed (fuzzy match: any committed
+                            // sentence shares >70% chars with this one).
+                            let already = committed_sentence_norms.iter().any(|c| {
+                                // Quick fuzzy: shorter is contained in longer
+                                // OR LCS-like overlap > 70%
+                                let (short, long) = if c.len() < norm.len() { (c, &norm) } else { (&norm, c) };
+                                if short.len() == 0 { return false; }
+                                if long.contains(short.as_str()) { return true; }
+                                // Char-set overlap as cheap fuzzy match
+                                let common: usize = short.chars().filter(|ch| long.contains(*ch)).count();
+                                common * 100 / short.chars().count() > 70
                             });
+                            if !already && cooldown_ok {
+                                let _ = out_tx.send(WorkerEvt::Final {
+                                    seg_id,
+                                    text: sentence.clone(),
+                                    audio: buf.clone(),
+                                });
+                                seg_id += 1;
+                                committed_sentence_norms.push(norm);
+                                // Cap memory: keep last 50 committed sentences
+                                if committed_sentence_norms.len() > 50 {
+                                    committed_sentence_norms.remove(0);
+                                }
+                                samples_since_commit = 0;
+                            }
                         }
 
-                        // Sentence detection: commit immediately when a
-                        // sentence-ending punctuation (。！？) appears and
-                        // the sentence has enough content. No stability check
-                        // — SenseVoice revises text too much between decodes
-                        // for exact matching to work. The polish chain
-                        // downstream corrects minor transcription errors.
-                        let (complete, _remainder) = split_sentences(&uncommitted);
-                        // Cooldown: after a commit + buf trim, require 3s of
-                        // genuinely new audio before the next commit. Without
-                        // this, the 5s context tail re-triggers commits on old
-                        // content in a tight loop.
-                        let cooldown_ok = samples_since_commit >= SAMPLE_RATE as usize * 3;
-                        if cooldown_ok && complete.chars().count() >= min_commit_chars {
-                            let _ = out_tx.send(WorkerEvt::Final {
+                        // Emit Partial = trailing incomplete sentence (or full
+                        // text if no committed sentences exist yet).
+                        let partial_text = if trailing.is_empty() {
+                            String::new()
+                        } else {
+                            trailing
+                        };
+                        if !partial_text.is_empty() && partial_text != last_partial_emitted {
+                            last_partial_emitted = partial_text.clone();
+                            let _ = out_tx.send(WorkerEvt::Partial {
                                 seg_id,
-                                text: complete.clone(),
-                                audio: buf.clone(),
+                                text: partial_text,
                             });
-                            seg_id += 1;
-                            // Trim buf to last ~5s for context, then
-                            // pre-commit the remaining tail so old content
-                            // isn't re-emitted.
-                            let keep = SAMPLE_RATE as usize * 5;
-                            if buf.len() > keep {
-                                buf.drain(..buf.len() - keep);
-                            }
-                            // Decode the remaining tail and mark all of it
-                            // as committed. This anchors committed_chars to
-                            // the tail content so only genuinely new audio
-                            // produces uncommitted text.
-                            committed_chars = decode(&buf)
-                                .map(|t| t.chars().count())
-                                .unwrap_or(0);
-                            samples_since_commit = 0;
-                            last_partial_emitted.clear();
-                            last_decoded.clear();
                         }
                         last_decoded = text;
                     }
@@ -497,25 +532,23 @@ fn worker_main(
                 // Force flush on long silence (speaker truly stopped).
                 if silence_run >= silence_samples_needed * 4 && buf.len() >= min_samples {
                     if let Some(text) = decode(&buf) {
-                        let chars: Vec<char> = text.chars().collect();
-                        let remaining: String = if committed_chars < chars.len() {
-                            chars[committed_chars..].iter().collect::<String>()
-                                .trim().to_string()
-                        } else {
-                            String::new()
-                        };
-                        if !remaining.is_empty() {
+                        let trim_text = text.trim().to_string();
+                        let trim_norm = normalize_sentence(&trim_text);
+                        let already = committed_sentence_norms.iter().any(|c| {
+                            let (short, long) = if c.len() < trim_norm.len() { (c, &trim_norm) } else { (&trim_norm, c) };
+                            !short.is_empty() && long.contains(short.as_str())
+                        });
+                        if !already && !trim_text.is_empty() {
                             let _ = out_tx.send(WorkerEvt::Final {
                                 seg_id,
-                                text: remaining,
+                                text: trim_text,
                                 audio: buf.clone(),
                             });
                             seg_id += 1;
                         }
                     }
                     buf.clear();
-                    committed_chars = 0;
-                    // (no stability state to clear)
+                    committed_sentence_norms.clear();
                     last_decoded.clear();
                     last_partial_emitted.clear();
                     speech_active = false;
