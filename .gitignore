@@ -8,6 +8,14 @@ out.mp3
 models/
 .claude/
 
+# test/sample audio files (kept locally, not in repo)
+*.pcm
+*.wav
+test-audio/
+fixtures/
+16k_10.md
+test_1.md
+
 # napi-rs build artifacts
 *.node
 index.js
