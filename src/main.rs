@@ -75,6 +75,13 @@ enum Cmd {
     },
     /// List available audio input devices.
     Devices,
+    /// Stream mic audio as 16 kHz mono WAV to stdout.
+    /// Pipe-friendly: `otoji mic | otoji listen -`.
+    Mic {
+        /// Frame size in milliseconds.
+        #[arg(long, default_value_t = 40)]
+        frame_ms: u32,
+    },
     /// Replay a 16kHz mono PCM file as if it were live mic input.
     File {
         path: PathBuf,
@@ -311,6 +318,7 @@ async fn main() -> Result<()> {
         Cmd::Speak { text, out } => run_speak(text, out).await,
         Cmd::Say { text, provider } => run_say(provider, text).await,
         Cmd::Devices => run_devices().await,
+        Cmd::Mic { frame_ms } => run_mic(frame_ms).await,
     }
 }
 
@@ -553,6 +561,29 @@ async fn run_devices() -> Result<()> {
                 c.sample_rate().0
             ),
             None => println!("{mark} [{i:>2}] {name}"),
+        }
+    }
+    Ok(())
+}
+
+/// Stream mic audio to stdout as a 16 kHz mono WAV. The denoise pipeline
+/// (RNNoise) runs before output so downstream consumers see clean audio.
+/// Use: `otoji mic | otoji listen -` or `otoji mic > recording.wav`.
+async fn run_mic(frame_ms: u32) -> Result<()> {
+    if !ensure_mic_permission_or_relaunch().await? {
+        return Ok(());
+    }
+    let (audio_tx, mut audio_rx) = audio::channel(64);
+    let _stream = mic::start_default(frame_ms, audio_tx).context("mic")?;
+
+    use std::io::Write;
+    let mut out = std::io::stdout().lock();
+    out.write_all(&streaming_wav_header(16_000))
+        .context("write wav header")?;
+
+    while let Some(chunk) = audio_rx.recv().await {
+        if out.write_all(&chunk.pcm).is_err() {
+            break; // stdout closed (pipe broken)
         }
     }
     Ok(())
