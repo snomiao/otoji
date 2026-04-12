@@ -322,56 +322,10 @@ async fn main() -> Result<()> {
     }
 }
 
-/// Probe the default input for ~500ms and return true if any non-zero
-/// sample arrives. Used to detect the macOS "no mic permission for this
-/// process tree" case before we even render the TUI.
-async fn mic_has_audio() -> bool {
-    let (tx, mut rx) = audio::channel(16);
-    let stream = match mic::start_default(20, tx) {
-        Ok(s) => s,
-        Err(_) => return false,
-    };
-    let deadline = tokio::time::Instant::now() + std::time::Duration::from_millis(700);
-    let mut nonzero = false;
-    while tokio::time::Instant::now() < deadline {
-        if let Ok(Some(chunk)) =
-            tokio::time::timeout(std::time::Duration::from_millis(100), rx.recv()).await
-        {
-            if chunk.pcm.iter().any(|&b| b != 0) {
-                nonzero = true;
-                break;
-            }
-        }
-    }
-    drop(stream);
-    nonzero
-}
-
-/// Check mic permission. If silent (macOS TCC denied), print instructions
-/// and bail — no more Terminal.app relaunch which broke pipes.
-async fn ensure_mic_permission() -> Result<()> {
-    if mic_has_audio().await {
-        return Ok(());
-    }
-    let terminal_app = std::env::var("TERM_PROGRAM")
-        .unwrap_or_else(|_| "unknown".into());
-    eprintln!("otoji: microphone returns silence — permission denied.");
-    eprintln!("  Detected terminal: {terminal_app}");
-    eprintln!();
-    eprintln!("  If \"{terminal_app}\" is NOT in the Microphone list:");
-    eprintln!("    Click \"+\" → find and add it → turn the toggle ON.");
-    eprintln!("  If it IS already ON:");
-    eprintln!("    Quit {terminal_app} completely (Cmd+Q) and reopen it.");
-    eprintln!("    (toggling OFF then ON again also works)");
-    #[cfg(target_os = "macos")]
-    {
-        eprintln!();
-        let _ = std::process::Command::new("open")
-            .arg("x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone")
-            .status();
-    }
-    anyhow::bail!("no microphone permission");
-}
+// No more pre-flight mic permission check. Just open the mic directly —
+// macOS will show the permission dialog on first access. If the user
+// grants it, audio starts flowing immediately. If denied, the VAD sees
+// silence and the TUI shows rms=0.0000 (the warning is in the RMS meter).
 
 async fn run_listen(
     kind: AsrKind,
@@ -383,7 +337,7 @@ async fn run_listen(
         return run_listen_stdin(kind, frame_ms, plain).await;
     }
     if matches!(kind, AsrKind::Sensevoice | AsrKind::Iflytek) {
-        ensure_mic_permission().await?;
+        // mic permission is handled by the OS on first access
     }
     match kind {
         AsrKind::Iflytek => {
@@ -549,7 +503,7 @@ async fn run_devices() -> Result<()> {
 /// (RNNoise) runs before output so downstream consumers see clean audio.
 /// Use: `otoji mic | otoji listen -` or `otoji mic > recording.wav`.
 async fn run_mic(frame_ms: u32) -> Result<()> {
-    ensure_mic_permission().await?;
+    // mic permission is handled by the OS on first access
     let (audio_tx, mut audio_rx) = audio::channel(64);
     let _stream = mic::start_default(frame_ms, audio_tx).context("mic")?;
 
