@@ -353,18 +353,19 @@ async fn ensure_mic_permission() -> Result<()> {
     if mic_has_audio().await {
         return Ok(());
     }
-    // Detect which terminal app the user is running so we can tell them
-    // exactly what to enable.
     let terminal_app = std::env::var("TERM_PROGRAM")
-        .unwrap_or_else(|_| "your terminal app".into());
+        .unwrap_or_else(|_| "unknown".into());
     eprintln!("otoji: microphone returns silence — permission denied.");
+    eprintln!("  Detected terminal: {terminal_app}");
     eprintln!();
-    eprintln!("  Turn ON the toggle for \"{terminal_app}\" in the settings window,");
-    eprintln!("  then restart {terminal_app} and run otoji again.");
+    eprintln!("  If \"{terminal_app}\" is NOT in the Microphone list:");
+    eprintln!("    Click \"+\" → find and add it → turn the toggle ON.");
+    eprintln!("  If it IS already ON:");
+    eprintln!("    Quit {terminal_app} completely (Cmd+Q) and reopen it.");
+    eprintln!("    (toggling OFF then ON again also works)");
     #[cfg(target_os = "macos")]
     {
         eprintln!();
-        eprintln!("  Opening System Settings → Microphone …");
         let _ = std::process::Command::new("open")
             .arg("x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone")
             .status();
