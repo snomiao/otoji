@@ -318,6 +318,8 @@ fn worker_main(
         out
     }
     let mut samples_since_decode: usize = 0;
+    let mut active_blocks: usize = 0;
+    let mut total_blocks: usize = 0;
     let mut speech_active = false;
 
     // Adaptive energy threshold (same calibration as before — just used as
@@ -461,7 +463,16 @@ fn worker_main(
                 }
                 speech_active = true;
 
-                buf.extend_from_slice(&block);
+                // Noise gate: zero out blocks below threshold so SenseVoice
+                // doesn't hallucinate on background noise.
+                if calibrated && !active {
+                    let zeros = vec![0.0f32; block.len()];
+                    buf.extend_from_slice(&zeros);
+                } else {
+                    buf.extend_from_slice(&block);
+                }
+                total_blocks += 1;
+                if active { active_blocks += 1; }
                 samples_since_decode += block.len();
                 samples_since_commit += block.len();
 
@@ -490,7 +501,10 @@ fn worker_main(
                 let min_interval = SAMPLE_RATE as usize / 5; // 200ms = 3200 samples
                 let adaptive_interval = (buf.len() / 8).max(min_interval);
                 let enough_new = samples_since_decode >= adaptive_interval;
-                if enough_new && buf.len() >= min_samples {
+                // Skip decode if buffer is mostly noise (< 20% active blocks).
+                // Prevents hallucinations on noise-dominated segments.
+                let speech_ratio = if total_blocks > 0 { active_blocks * 100 / total_blocks } else { 100 };
+                if enough_new && buf.len() >= min_samples && speech_ratio >= 20 {
                     samples_since_decode = 0;
 
                     if let Some(text) = decode(&buf) {
@@ -607,6 +621,8 @@ fn worker_main(
                     speech_active = false;
                     silence_run = 0;
                     samples_since_decode = 0;
+                    active_blocks = 0;
+                    total_blocks = 0;
                 }
             }
         }
