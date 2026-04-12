@@ -507,22 +507,32 @@ fn worker_main(
                         };
                         let trailing = text[last_end..].trim().to_string();
 
+                        // Anti-premature commit: SenseVoice often adds 。
+                        // mid-utterance because it can't see what's coming
+                        // next. Only commit a sentence if there's MORE content
+                        // after it (proving the 。 isn't at the end of the
+                        // current decode window). The very last sentence —
+                        // which might be premature — waits for the next
+                        // decode cycle when more audio has arrived.
+                        let commit_count = if !trailing.is_empty() {
+                            sentences.len()
+                        } else {
+                            // Hold back the last sentence — its 。 might be
+                            // premature. Wait until next decode confirms it.
+                            sentences.len().saturating_sub(1)
+                        };
+
                         // Emit any new uncommitted sentences as Finals.
                         let cooldown_ok = samples_since_commit >= SAMPLE_RATE as usize * 2;
-                        for sentence in &sentences {
+                        for sentence in sentences.iter().take(commit_count) {
                             let norm = normalize_sentence(sentence);
                             if norm.chars().count() < min_commit_chars {
                                 continue;
                             }
-                            // Already committed (fuzzy match: any committed
-                            // sentence shares >70% chars with this one).
                             let already = committed_sentence_norms.iter().any(|c| {
-                                // Quick fuzzy: shorter is contained in longer
-                                // OR LCS-like overlap > 70%
                                 let (short, long) = if c.len() < norm.len() { (c, &norm) } else { (&norm, c) };
                                 if short.len() == 0 { return false; }
                                 if long.contains(short.as_str()) { return true; }
-                                // Char-set overlap as cheap fuzzy match
                                 let common: usize = short.chars().filter(|ch| long.contains(*ch)).count();
                                 common * 100 / short.chars().count() > 70
                             });
