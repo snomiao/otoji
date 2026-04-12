@@ -354,17 +354,14 @@ async fn ensure_mic_permission() -> Result<()> {
         return Ok(());
     }
     eprintln!("otoji: microphone returns silence — permission likely denied.");
-    eprintln!();
-    eprintln!("  Grant mic access to your terminal app:");
-    eprintln!("    System Settings → Privacy & Security → Microphone");
-    eprintln!("    → enable for Terminal / iTerm2 / your terminal");
-    eprintln!();
+    eprintln!("  Enable mic access for your terminal app, then restart it and try again.");
     #[cfg(target_os = "macos")]
-    eprintln!("  Or open the pane directly:");
-    #[cfg(target_os = "macos")]
-    eprintln!("    open \"x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone\"");
-    eprintln!();
-    eprintln!("  Then restart your terminal and try again.");
+    {
+        eprintln!("  Opening System Settings → Microphone …");
+        let _ = std::process::Command::new("open")
+            .arg("x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone")
+            .status();
+    }
     anyhow::bail!("no microphone permission");
 }
 
