@@ -293,7 +293,7 @@ fn worker_main(
     let mut committed_sentence_norms: Vec<String> = Vec::new();
     let mut last_decoded = String::new();
     let mut last_partial_emitted = String::new();
-    let min_commit_chars: usize = 15;
+    let min_commit_chars: usize = 8;
     let mut samples_since_commit: usize = usize::MAX;
 
     fn normalize_sentence(s: &str) -> String {
@@ -376,22 +376,52 @@ fn worker_main(
         match msg {
             WorkerMsg::Eof => {
                 // Final flush: decode everything remaining and emit.
-                // EOF: emit any uncommitted text.
+                // EOF: emit any uncommitted sentences.
                 if buf.len() >= min_samples {
                     if let Some(text) = decode(&buf) {
-                        let trim_text = text.trim().to_string();
-                        let trim_norm = normalize_sentence(&trim_text);
-                        let already = committed_sentence_norms.iter().any(|c| {
-                            let (short, long) = if c.len() < trim_norm.len() { (c, &trim_norm) } else { (&trim_norm, c) };
-                            if short.len() == 0 { return false; }
-                            long.contains(short.as_str())
-                        });
-                        if !already && !trim_text.is_empty() {
-                            let _ = out_tx.send(WorkerEvt::Final {
-                                seg_id,
-                                text: trim_text,
-                                audio: buf.clone(),
+                        let sentences = split_into_sentences(&text);
+                        for sentence in &sentences {
+                            let norm = normalize_sentence(sentence);
+                            if norm.chars().count() < min_commit_chars { continue; }
+                            let already = committed_sentence_norms.iter().any(|c| {
+                                let (short, long) = if c.len() < norm.len() { (c, &norm) } else { (&norm, c) };
+                                if short.is_empty() { return false; }
+                                if long.contains(short.as_str()) { return true; }
+                                let common: usize = short.chars().filter(|ch| long.contains(*ch)).count();
+                                common * 100 / short.chars().count() > 70
                             });
+                            if !already {
+                                let _ = out_tx.send(WorkerEvt::Final {
+                                    seg_id,
+                                    text: sentence.clone(),
+                                    audio: buf.clone(),
+                                });
+                                seg_id += 1;
+                                committed_sentence_norms.push(norm);
+                            }
+                        }
+                        // Also emit the trailing incomplete sentence if it's
+                        // long enough and not already committed.
+                        let last_end = {
+                            let ends: &[char] = &['。', '！', '？', '.', '!', '?'];
+                            text.rfind(ends)
+                                .map(|p| p + text[p..].chars().next().map(|c| c.len_utf8()).unwrap_or(0))
+                                .unwrap_or(0)
+                        };
+                        let trailing = text[last_end..].trim().to_string();
+                        let trailing_norm = normalize_sentence(&trailing);
+                        if trailing_norm.chars().count() >= min_commit_chars {
+                            let already = committed_sentence_norms.iter().any(|c| {
+                                let (short, long) = if c.len() < trailing_norm.len() { (c, &trailing_norm) } else { (&trailing_norm, c) };
+                                !short.is_empty() && long.contains(short.as_str())
+                            });
+                            if !already {
+                                let _ = out_tx.send(WorkerEvt::Final {
+                                    seg_id,
+                                    text: trailing,
+                                    audio: buf.clone(),
+                                });
+                            }
                         }
                     }
                 }
