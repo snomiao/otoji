@@ -511,18 +511,17 @@ fn worker_main(
                             }
                         }
 
-                        // Emit Partial = trailing incomplete sentence (or full
-                        // text if no committed sentences exist yet).
-                        let partial_text = if trailing.is_empty() {
-                            String::new()
-                        } else {
-                            trailing
-                        };
-                        if !partial_text.is_empty() && partial_text != last_partial_emitted {
-                            last_partial_emitted = partial_text.clone();
+                        // Emit Partial = full decoded text. This always shows
+                        // what the recognizer currently hears, so the user
+                        // gets streaming word-by-word feedback. Final events
+                        // mark which sentences have been "committed" — the
+                        // display layer can dedupe if needed.
+                        let _ = trailing; // unused for now
+                        if !text.is_empty() && text != last_partial_emitted {
+                            last_partial_emitted = text.clone();
                             let _ = out_tx.send(WorkerEvt::Partial {
                                 seg_id,
-                                text: partial_text,
+                                text: text.clone(),
                             });
                         }
                         last_decoded = text;
