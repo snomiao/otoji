@@ -291,6 +291,7 @@ fn worker_main(
     // Sentence-level commit tracking: store hashes of committed sentence
     // bodies (normalized) so we can dedupe across SenseVoice text revisions.
     let mut committed_sentence_norms: Vec<String> = Vec::new();
+    let mut prev_held_sentence_norm = String::new(); // last sentence we held back (for 2-cycle stability)
     let mut last_decoded = String::new();
     let mut last_partial_emitted = String::new();
     let min_commit_chars: usize = 8;
@@ -507,19 +508,31 @@ fn worker_main(
                         };
                         let trailing = text[last_end..].trim().to_string();
 
-                        // Anti-premature commit: SenseVoice often adds 。
-                        // mid-utterance because it can't see what's coming
-                        // next. Only commit a sentence if there's MORE content
-                        // after it (proving the 。 isn't at the end of the
-                        // current decode window). The very last sentence —
-                        // which might be premature — waits for the next
-                        // decode cycle when more audio has arrived.
-                        let commit_count = if !trailing.is_empty() {
+                        // Anti-premature commit: SenseVoice can add 。
+                        // mid-utterance. Determine if the LAST sentence's
+                        // 。 is real or premature:
+                        //   - If text has trailing content after 。 → confirmed
+                        //   - If audio is currently silent (≥300ms) → real pause
+                        //   - If buf is ≥75% of max → commit before trim drops it
+                        //   - Otherwise → premature, hold for next decode
+                        let silent_now = silence_run >= SAMPLE_RATE as usize * 3 / 10;
+                        let buf_pressure = buf.len() * 4 >= max_samples * 3;
+                        // 2-cycle stability: same trailing sentence appeared
+                        // last decode AND this decode → commit it.
+                        let last_sent_norm = sentences.last()
+                            .map(|s| normalize_sentence(s))
+                            .unwrap_or_default();
+                        let stable_held = !last_sent_norm.is_empty()
+                            && last_sent_norm == prev_held_sentence_norm;
+                        let commit_count = if !trailing.is_empty() || silent_now || buf_pressure || stable_held {
                             sentences.len()
                         } else {
-                            // Hold back the last sentence — its 。 might be
-                            // premature. Wait until next decode confirms it.
                             sentences.len().saturating_sub(1)
+                        };
+                        prev_held_sentence_norm = if commit_count < sentences.len() {
+                            last_sent_norm
+                        } else {
+                            String::new()
                         };
 
                         // Emit any new uncommitted sentences as Finals.
