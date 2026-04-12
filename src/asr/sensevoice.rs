@@ -493,14 +493,12 @@ fn worker_main(
                 }
 
                 // ── Single decode track ──
-                // Adaptive interval: decode less often as buf grows, so we
-                // don't spend 100% CPU on decode and fall behind realtime.
-                //   buf < 3s  → decode every 200ms (fast startup)
-                //   buf = 12s → decode every ~1.5s (0.55s decode + headroom)
-                // Formula: max(200ms, buf_len / 8). At 12s buf: 1.5s interval.
-                let min_interval = SAMPLE_RATE as usize / 5; // 200ms = 3200 samples
-                let adaptive_interval = (buf.len() / 8).max(min_interval);
-                let enough_new = samples_since_decode >= adaptive_interval;
+                // Decode after every ~1s of new audio. This gives responsive
+                // Partials regardless of buffer length. If decode takes longer
+                // than 1s (buf > ~22s at 22x RTF), we naturally fall behind
+                // and the interval self-extends via the recv() blocking.
+                let decode_interval = SAMPLE_RATE as usize; // 1s = 16000 samples
+                let enough_new = samples_since_decode >= decode_interval;
                 // Skip decode if buffer is mostly noise (< 20% active blocks).
                 // Prevents hallucinations on noise-dominated segments.
                 let speech_ratio = if total_blocks > 0 { active_blocks * 100 / total_blocks } else { 100 };

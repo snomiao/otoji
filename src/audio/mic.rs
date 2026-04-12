@@ -1,5 +1,10 @@
-//! Microphone capture via cpal. Resamples to 16k mono i16 PCM with a simple
-//! linear strategy and pushes ~`frame_ms` chunks to the channel.
+//! Microphone capture via cpal with RNNoise denoising.
+//!
+//! Pipeline: cpal input → downmix mono → resample 48kHz → RNNoise denoise
+//! → resample 16kHz → chunk → channel.
+//!
+//! RNNoise operates at 48kHz with 480-sample frames. We resample the mic
+//! input to 48kHz, run RNNoise, then resample down to 16kHz for SenseVoice.
 
 use super::AudioTx;
 use crate::core::{AudioChunk, AudioFormat};
@@ -7,9 +12,24 @@ use anyhow::{anyhow, Result};
 use bytes::Bytes;
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use cpal::{Sample, SampleFormat};
+use nnnoiseless::DenoiseState;
 use std::sync::{Arc, Mutex};
 
 const TARGET_RATE: u32 = 16_000;
+const RNNOISE_RATE: u32 = 48_000;
+const RNNOISE_FRAME: usize = 480; // RNNoise fixed frame size at 48kHz
+
+/// Internal state shared between the cpal callback and the denoise pipeline.
+struct CaptureState {
+    /// Buffer of 48kHz f32 mono samples waiting to be denoised.
+    pre_denoise: Vec<f32>,
+    /// RNNoise state. Created once, reused across frames.
+    denoise: Box<DenoiseState<'static>>,
+    /// Buffer of 16kHz i16 samples ready to be chunked into AudioChunks.
+    post_denoise: Vec<i16>,
+    /// Target chunk size in bytes (frame_ms worth of 16k mono s16).
+    chunk_target: usize,
+}
 
 /// Start capturing from the default input device. The returned `Stream` must
 /// be kept alive (drop = stop).
@@ -25,62 +45,96 @@ pub fn start_default(frame_ms: u32, tx: AudioTx) -> Result<cpal::Stream> {
         (TARGET_RATE as usize / 1000) * (AudioFormat::PCM16K_MONO.bytes_per_sample());
     let chunk_target = bytes_per_ms_target * frame_ms as usize;
 
-    let buf: Arc<Mutex<Vec<i16>>> = Arc::new(Mutex::new(Vec::with_capacity(chunk_target)));
-    let buf_cb = buf.clone();
-    let tx_cb = tx.clone();
+    let state = Arc::new(Mutex::new(CaptureState {
+        pre_denoise: Vec::with_capacity(RNNOISE_FRAME * 4),
+        denoise: DenoiseState::new(),
+        post_denoise: Vec::with_capacity(chunk_target),
+        chunk_target,
+    }));
 
     let err_fn = |e| tracing::error!("cpal stream error: {e}");
+
+    let state_cb = state.clone();
+    let tx_cb = tx.clone();
+    let process_f32 = move |data: &[f32]| {
+        let mono = downmix_f32_to_mono(data, in_channels);
+        // Resample to 48kHz for RNNoise.
+        let at48k = linear_resample(&mono, in_rate, RNNOISE_RATE);
+
+        let mut s = state_cb.lock().unwrap();
+        s.pre_denoise.extend_from_slice(&at48k);
+
+        // Process complete 480-sample frames through RNNoise.
+        while s.pre_denoise.len() >= RNNOISE_FRAME {
+            let frame: Vec<f32> = s.pre_denoise.drain(..RNNOISE_FRAME).collect();
+            let mut out = vec![0.0f32; RNNOISE_FRAME];
+            s.denoise.process_frame(&mut out, &frame);
+
+            // Resample 48kHz → 16kHz.
+            let at16k = linear_resample(&out, RNNOISE_RATE, TARGET_RATE);
+            let pcm: Vec<i16> = at16k
+                .into_iter()
+                .map(|v| (v.clamp(-32768.0, 32767.0)) as i16)
+                .collect();
+            s.post_denoise.extend(pcm);
+        }
+
+        // Emit complete chunks.
+        while s.post_denoise.len() * 2 >= s.chunk_target {
+            let n = s.chunk_target / 2;
+            let drain: Vec<i16> = s.post_denoise.drain(..n).collect();
+            let bytes = i16_slice_to_le_bytes(&drain);
+            let _ = tx_cb.try_send(AudioChunk::new(
+                AudioFormat::PCM16K_MONO,
+                Bytes::from(bytes),
+            ));
+        }
+    };
 
     let stream = match config.sample_format() {
         SampleFormat::F32 => device.build_input_stream(
             &config.into(),
-            move |data: &[f32], _| {
-                let mono = downmix_f32_to_mono(data, in_channels);
-                let resampled = linear_resample(&mono, in_rate, TARGET_RATE);
-                let mut pcm: Vec<i16> = resampled
-                    .into_iter()
-                    .map(|s| (s.clamp(-1.0, 1.0) * i16::MAX as f32) as i16)
-                    .collect();
-                let mut g = buf_cb.lock().unwrap();
-                g.append(&mut pcm);
-                while g.len() * 2 >= chunk_target {
-                    let drain: Vec<i16> = g.drain(..(chunk_target / 2)).collect();
-                    let bytes = i16_slice_to_le_bytes(&drain);
-                    let _ = tx_cb.try_send(AudioChunk::new(
-                        AudioFormat::PCM16K_MONO,
-                        Bytes::from(bytes),
-                    ));
-                }
-            },
+            move |data: &[f32], _| process_f32(data),
             err_fn,
             None,
         )?,
-        SampleFormat::I16 => device.build_input_stream(
-            &config.into(),
-            move |data: &[i16], _| {
-                let mono_f: Vec<f32> = downmix_i16_to_mono(data, in_channels)
+        SampleFormat::I16 => {
+            let process = move |data: &[i16], _: &_| {
+                let floats: Vec<f32> = downmix_i16_to_mono(data, in_channels)
                     .into_iter()
                     .map(|s| s.to_float_sample())
                     .collect();
-                let resampled = linear_resample(&mono_f, in_rate, TARGET_RATE);
-                let mut pcm: Vec<i16> = resampled
-                    .into_iter()
-                    .map(|s| (s.clamp(-1.0, 1.0) * i16::MAX as f32) as i16)
-                    .collect();
-                let mut g = buf_cb.lock().unwrap();
-                g.append(&mut pcm);
-                while g.len() * 2 >= chunk_target {
-                    let drain: Vec<i16> = g.drain(..(chunk_target / 2)).collect();
+                // Resample to 48kHz for RNNoise.
+                let at48k = linear_resample(&floats, in_rate, RNNOISE_RATE);
+
+                let mut s = state.lock().unwrap();
+                s.pre_denoise.extend_from_slice(&at48k);
+
+                while s.pre_denoise.len() >= RNNOISE_FRAME {
+                    let frame: Vec<f32> = s.pre_denoise.drain(..RNNOISE_FRAME).collect();
+                    let mut out = vec![0.0f32; RNNOISE_FRAME];
+                    s.denoise.process_frame(&mut out, &frame);
+
+                    let at16k = linear_resample(&out, RNNOISE_RATE, TARGET_RATE);
+                    let pcm: Vec<i16> = at16k
+                        .into_iter()
+                        .map(|v| (v.clamp(-32768.0, 32767.0)) as i16)
+                        .collect();
+                    s.post_denoise.extend(pcm);
+                }
+
+                while s.post_denoise.len() * 2 >= s.chunk_target {
+                    let n = s.chunk_target / 2;
+                    let drain: Vec<i16> = s.post_denoise.drain(..n).collect();
                     let bytes = i16_slice_to_le_bytes(&drain);
-                    let _ = tx_cb.try_send(AudioChunk::new(
+                    let _ = tx.try_send(AudioChunk::new(
                         AudioFormat::PCM16K_MONO,
                         Bytes::from(bytes),
                     ));
                 }
-            },
-            err_fn,
-            None,
-        )?,
+            };
+            device.build_input_stream(&config.into(), process, err_fn, None)?
+        }
         fmt => return Err(anyhow!("unsupported sample format: {fmt:?}")),
     };
     stream.play()?;
