@@ -72,10 +72,11 @@ impl SenseVoiceConfig {
                 .ok()
                 .and_then(|s| s.parse().ok())
                 .unwrap_or(0.0005),
-            // QA matrix (docs/07-otoji-listen-qa.md) found 750ms is the Pareto
-            // optimum: 20% lower TTFB than 1000ms with identical capture and
-            // accuracy. Going to 500ms hurts capture by ~5 points.
-            vad_silence_ms: env_u32("OTOJI_VAD_SILENCE_MS", 750),
+            // Trailing silence (ms) that force-flushes the current buffer as
+            // a Final. This is the "speaker stopped talking" cutoff —
+            // independent of SenseVoice's punctuation-based commits. 3s is a
+            // natural conversational pause; shorter values cut mid-sentence.
+            vad_silence_ms: env_u32("OTOJI_VAD_SILENCE_MS", 3000),
             // 30s gives SenseVoice enough context to place sentence-ending
             // punctuation accurately. Below 15s, the model often adds premature
             // 。mid-speech because it can't see enough context.
@@ -529,7 +530,7 @@ fn worker_main(
                 }
 
                 // Force flush on long silence (speaker truly stopped).
-                if silence_run >= silence_samples_needed * 4 && buf.len() >= min_samples {
+                if silence_run >= silence_samples_needed && buf.len() >= min_samples {
                     if let Some(text) = decode(&buf) {
                         let trim_text = text.trim().to_string();
                         let trim_norm = normalize_sentence(&trim_text);
