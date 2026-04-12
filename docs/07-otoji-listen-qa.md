@@ -155,6 +155,27 @@ preroll. All fixes applied (partial_ms default, VAD threshold 1.5×, base
    recognizer never falls behind live mic input even with partial decoding
    enabled.
 
+## Noise robustness (Gemini TTS multilang, pink noise)
+
+```sh
+# Generate noisy variant:
+ffmpeg -i clean.wav -f lavfi -t DUR -i "anoisesrc=d=DUR:c=pink:r=16000:a=VOL" \
+  -filter_complex "amix=inputs=2:duration=first" -ar 16000 -ac 1 out.wav
+# VOL = 10^(-SNR/20): SNR30→0.0316, SNR20→0.1, SNR10→0.316, SNR5→0.562
+```
+
+| SNR | condition | coverage | precision | F1 |
+|---|---|---|---|---|
+| clean | — | 71.0% | 99.4% | 82.8% |
+| 30dB | quiet room | 47.1% | 51.5% | 49.2% |
+| 20dB | office | 24.9% | 61.8% | 35.5% |
+| 10dB | cafe | 35.7% | 97.5% | 52.3% |
+| 5dB | street | 45.7% | 95.3% | 61.8% |
+
+Key: moderate noise (20–30dB) is the worst regime — SenseVoice hallucinates
+plausible-sounding garbage. Very high noise silences the model (lower
+coverage but high precision).
+
 ## Known gaps
 
 - **Speaker mode unverified.** Acoustic-loop runs need a Terminal session
