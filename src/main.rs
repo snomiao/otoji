@@ -347,49 +347,25 @@ async fn mic_has_audio() -> bool {
     nonzero
 }
 
-/// If we're stuck in a non-GUI process tree on macOS (e.g. spawned under
-/// PM2 or a daemonised parent), the kernel hands us all-zero audio. Detect
-/// that, then re-exec ourselves inside Terminal.app via osascript so the
-/// child inherits Terminal.app's microphone TCC grant.
-#[cfg(target_os = "macos")]
-async fn ensure_mic_permission_or_relaunch() -> Result<bool> {
-    if std::env::var_os("OTOJI_RELAUNCHED").is_some() {
-        return Ok(true);
-    }
+/// Check mic permission. If silent (macOS TCC denied), print instructions
+/// and bail — no more Terminal.app relaunch which broke pipes.
+async fn ensure_mic_permission() -> Result<()> {
     if mic_has_audio().await {
-        return Ok(true);
+        return Ok(());
     }
-    eprintln!(
-        "otoji: this process tree has no microphone permission \
-         (mic returns silence). relaunching inside Terminal.app …"
-    );
-    // Build the original argv so Terminal.app re-runs the same command.
-    let argv: Vec<String> = std::env::args().collect();
-    let quoted = argv
-        .iter()
-        .map(|a| format!("'{}'", a.replace('\'', "'\\''")))
-        .collect::<Vec<_>>()
-        .join(" ");
-    let script = format!("export OTOJI_RELAUNCHED=1; exec {quoted}");
-    let osa = format!(
-        "tell application \"Terminal\"\n  activate\n  do script \"{}\"\nend tell",
-        script.replace('\\', "\\\\").replace('"', "\\\"")
-    );
-    let status = std::process::Command::new("osascript")
-        .arg("-e")
-        .arg(&osa)
-        .status()
-        .map_err(|e| anyhow::anyhow!("osascript: {e}"))?;
-    if !status.success() {
-        anyhow::bail!("failed to relaunch in Terminal.app: {status}");
-    }
-    eprintln!("otoji: launched in Terminal.app — see that window for the live transcript.");
-    Ok(false)
-}
-
-#[cfg(not(target_os = "macos"))]
-async fn ensure_mic_permission_or_relaunch() -> Result<bool> {
-    Ok(true)
+    eprintln!("otoji: microphone returns silence — permission likely denied.");
+    eprintln!();
+    eprintln!("  Grant mic access to your terminal app:");
+    eprintln!("    System Settings → Privacy & Security → Microphone");
+    eprintln!("    → enable for Terminal / iTerm2 / your terminal");
+    eprintln!();
+    #[cfg(target_os = "macos")]
+    eprintln!("  Or open the pane directly:");
+    #[cfg(target_os = "macos")]
+    eprintln!("    open \"x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone\"");
+    eprintln!();
+    eprintln!("  Then restart your terminal and try again.");
+    anyhow::bail!("no microphone permission");
 }
 
 async fn run_listen(
@@ -401,10 +377,8 @@ async fn run_listen(
     if device.as_deref() == Some("-") {
         return run_listen_stdin(kind, frame_ms, plain).await;
     }
-    if matches!(kind, AsrKind::Sensevoice | AsrKind::Iflytek)
-        && !ensure_mic_permission_or_relaunch().await?
-    {
-        return Ok(());
+    if matches!(kind, AsrKind::Sensevoice | AsrKind::Iflytek) {
+        ensure_mic_permission().await?;
     }
     match kind {
         AsrKind::Iflytek => {
@@ -570,9 +544,7 @@ async fn run_devices() -> Result<()> {
 /// (RNNoise) runs before output so downstream consumers see clean audio.
 /// Use: `otoji mic | otoji listen -` or `otoji mic > recording.wav`.
 async fn run_mic(frame_ms: u32) -> Result<()> {
-    if !ensure_mic_permission_or_relaunch().await? {
-        return Ok(());
-    }
+    ensure_mic_permission().await?;
     let (audio_tx, mut audio_rx) = audio::channel(64);
     let _stream = mic::start_default(frame_ms, audio_tx).context("mic")?;
 
