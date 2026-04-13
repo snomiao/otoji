@@ -74,6 +74,10 @@ pub enum AsrEvent {
     Closed,
     /// Provider-side error message (does not necessarily terminate the stream).
     Error { message: String },
+    /// Push-to-talk: live partial while segment is being held.
+    PttPartial { text: String },
+    /// Push-to-talk: final transcription of the held segment.
+    PttFinal { text: String },
 }
 
 #[derive(Debug, Error)]

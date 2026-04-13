@@ -20,6 +20,11 @@ use std::sync::mpsc as smpsc;
 
 const SAMPLE_RATE: u32 = 16_000;
 
+/// Global handle to the worker's input channel — used by the SIGUSR1/SIGUSR2
+/// signal handler to inject PttStart/PttEnd commands.
+pub static PTT_WORKER_TX: std::sync::Mutex<Option<smpsc::Sender<WorkerMsg>>> =
+    std::sync::Mutex::new(None);
+
 #[derive(Debug, Clone)]
 pub struct SenseVoiceConfig {
     /// Directory containing `model.int8.onnx` and `tokens.txt`.
@@ -103,9 +108,13 @@ impl SenseVoice {
 }
 
 /// Messages from the async side to the worker thread.
-enum WorkerMsg {
+pub enum WorkerMsg {
     Pcm(Vec<i16>),
     Eof,
+    /// Begin a push-to-talk segment — accumulate audio from this point.
+    PttStart,
+    /// End the push-to-talk segment — transcribe and emit PttFinal.
+    PttEnd,
 }
 
 /// Events from the worker thread to the async side.
@@ -116,6 +125,8 @@ enum WorkerEvt {
     Status(String),
     Error(String),
     Closed,
+    PttPartial { text: String },
+    PttFinal { text: String },
 }
 
 #[async_trait]
@@ -143,6 +154,13 @@ impl AsrProvider for SenseVoice {
 
         let (in_tx, in_rx) = smpsc::channel::<WorkerMsg>();
         let (out_tx, out_rx) = smpsc::channel::<WorkerEvt>();
+
+        // Expose in_tx for signal handlers (PTT start/end).
+        // Store globally so the signal handler can find it.
+        {
+            let mut guard = PTT_WORKER_TX.lock().unwrap();
+            *guard = Some(in_tx.clone());
+        }
 
         // Worker thread owns the !Send recognizer.
         let cfg_thread = cfg.clone();
@@ -179,6 +197,8 @@ impl AsrProvider for SenseVoice {
                     },
                     WorkerEvt::Status(message) => AsrEvent::Status { message },
                     WorkerEvt::Error(message) => AsrEvent::Error { message },
+                    WorkerEvt::PttPartial { text } => AsrEvent::PttPartial { text },
+                    WorkerEvt::PttFinal { text } => AsrEvent::PttFinal { text },
                     WorkerEvt::Closed => break,
                 };
                 if events_for_drain.blocking_send(asr).is_err() {
@@ -240,6 +260,8 @@ fn worker_main(
                 return;
             }
             Ok(msg @ WorkerMsg::Pcm(_)) => break msg,
+            // PTT signals before any audio — ignore until model loads.
+            Ok(WorkerMsg::PttStart) | Ok(WorkerMsg::PttEnd) => continue,
         }
     };
 
@@ -297,6 +319,12 @@ fn worker_main(
     let min_commit_chars: usize = 8;
     let mut samples_since_commit: usize = usize::MAX;
 
+    // PTT state: when active, audio is also accumulated in ptt_buf.
+    let mut ptt_active = false;
+    let mut ptt_buf: Vec<f32> = Vec::new();
+    let mut ptt_samples_since_partial: usize = 0;
+    let mut ptt_last_partial = String::new();
+
     fn normalize_sentence(s: &str) -> String {
         s.chars().filter(|c| {
             !c.is_ascii_whitespace()
@@ -314,7 +342,6 @@ fn worker_main(
                 start = end;
             }
         }
-        // Don't include trailing incomplete sentence.
         out
     }
     let mut samples_since_decode: usize = 0;
@@ -322,8 +349,6 @@ fn worker_main(
     let mut total_blocks: usize = 0;
     let mut speech_active = false;
 
-    // Adaptive energy threshold (same calibration as before — just used as
-    // a "speech started" gate, not for sentence cutting).
     let configured_threshold = cfg.vad_threshold;
     let calibration_samples = SAMPLE_RATE as usize * 2;
     let mut calibration_count: usize = 0;
@@ -331,9 +356,6 @@ fn worker_main(
     let mut threshold: f32 = configured_threshold;
     let mut calibrated = false;
 
-    // Long silence counter: if silence exceeds vad_silence_ms, force a
-    // full-buf decode + commit everything. This handles the case where the
-    // speaker truly stopped talking (topic change, end of conversation).
     let silence_samples_needed = (cfg.vad_silence_ms as usize) * SAMPLE_RATE as usize / 1000;
     let mut silence_run: usize = 0;
 
@@ -430,8 +452,52 @@ fn worker_main(
                 }
                 break;
             }
+            WorkerMsg::PttStart => {
+                ptt_active = true;
+                ptt_buf.clear();
+                ptt_samples_since_partial = 0;
+                ptt_last_partial.clear();
+                eprintln!("[sensevoice] PTT start");
+            }
+            WorkerMsg::PttEnd => {
+                if ptt_active {
+                    ptt_active = false;
+                    if ptt_buf.len() >= min_samples {
+                        if let Some(text) = decode(&ptt_buf) {
+                            let _ = out_tx.send(WorkerEvt::PttFinal { text });
+                        } else {
+                            let _ = out_tx.send(WorkerEvt::PttFinal { text: String::new() });
+                        }
+                    }
+                    ptt_buf.clear();
+                    ptt_samples_since_partial = 0;
+                    ptt_last_partial.clear();
+                    eprintln!("[sensevoice] PTT end");
+                }
+            }
             WorkerMsg::Pcm(pcm_i16) => {
                 let block = i16_to_f32(&pcm_i16);
+
+                // Feed PTT buffer if active.
+                if ptt_active {
+                    ptt_buf.extend_from_slice(&block);
+                    ptt_samples_since_partial += block.len();
+                    // Periodic PTT partial (every partial_ms).
+                    let ptt_partial_step = (cfg.partial_ms as usize) * SAMPLE_RATE as usize / 1000;
+                    let ptt_min_samples = min_samples;
+                    if ptt_partial_step > 0
+                        && ptt_samples_since_partial >= ptt_partial_step
+                        && ptt_buf.len() >= ptt_min_samples
+                    {
+                        ptt_samples_since_partial = 0;
+                        if let Some(text) = decode(&ptt_buf) {
+                            if text != ptt_last_partial {
+                                ptt_last_partial = text.clone();
+                                let _ = out_tx.send(WorkerEvt::PttPartial { text });
+                            }
+                        }
+                    }
+                }
 
                 // Calibrate noise floor from first ~2s.
                 if !calibrated {

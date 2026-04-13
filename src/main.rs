@@ -434,6 +434,33 @@ async fn drive_plain<P: AsrProvider + 'static>(
             tracing::error!("asr: {e}");
         }
     });
+
+    // Install SIGUSR1/SIGUSR2 handlers for PTT control.
+    #[cfg(unix)]
+    {
+        use otoji::asr::sensevoice::{PTT_WORKER_TX, WorkerMsg};
+        let mut signals = signal_hook::iterator::Signals::new(&[
+            signal_hook::consts::SIGUSR1,
+            signal_hook::consts::SIGUSR2,
+        ])
+        .context("install PTT signal handlers")?;
+        std::thread::Builder::new()
+            .name("ptt-signals".into())
+            .spawn(move || {
+                for sig in signals.forever() {
+                    let msg = match sig {
+                        signal_hook::consts::SIGUSR1 => WorkerMsg::PttStart,
+                        signal_hook::consts::SIGUSR2 => WorkerMsg::PttEnd,
+                        _ => continue,
+                    };
+                    if let Some(tx) = PTT_WORKER_TX.lock().unwrap().as_ref() {
+                        let _ = tx.send(msg);
+                    }
+                }
+            })
+            .ok();
+    }
+
     while let Some(ev) = event_rx.recv().await {
         if let Ok(line) = serde_json::to_string(&ev) {
             println!("{line}");

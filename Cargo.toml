@@ -54,6 +54,7 @@ clap = { version = "4", features = ["derive", "env"] }
 hound = "3.5"
 chrono = "0.4"
 sherpa-onnx = "1.12"
+signal-hook = "0.3"
 
 # Optional Node/Bun binding deps (enabled with `--features node`).
 napi = { version = "2", default-features = false, features = ["napi6", "async"], optional = true }
