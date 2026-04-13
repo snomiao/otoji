@@ -65,6 +65,9 @@ enum Cmd {
         /// Which ASR provider to use.
         #[arg(long, value_enum, default_value_t = AsrKind::Sensevoice)]
         provider: AsrKind,
+        /// SenseVoice model directory (default: ~/.cache/otoji/...).
+        #[arg(long)]
+        model: Option<String>,
         /// Frame size in milliseconds.
         #[arg(long, default_value_t = 40)]
         frame_ms: u32,
@@ -78,6 +81,9 @@ enum Cmd {
     /// Stream mic audio as 16 kHz mono WAV to stdout.
     /// Pipe-friendly: `otoji mic | otoji listen -`.
     Mic {
+        /// Input device — substring of the device name or numeric index.
+        /// Omit to use the system default. Use `otoji devices` to list.
+        device: Option<String>,
         /// Frame size in milliseconds.
         #[arg(long, default_value_t = 40)]
         frame_ms: u32,
@@ -93,14 +99,9 @@ enum Cmd {
         #[arg(long)]
         burst: bool,
     },
-    /// Synthesize text via iFlytek TTS and write the audio to `out`.
-    Speak {
-        text: String,
-        #[arg(long, default_value = "out.mp3")]
-        out: PathBuf,
-    },
     /// Synthesize text and stream a 16 kHz mono WAV to stdout.
     /// Pipe-friendly: `echo "hi" | otoji say - | otoji listen -`.
+    #[command(alias = "speak")]
     Say {
         /// Literal text, or `-` to read from stdin.
         text: String,
@@ -109,6 +110,10 @@ enum Cmd {
         /// → gemini).
         #[arg(long, value_enum, default_value_t = TtsKind::Auto)]
         provider: TtsKind,
+        /// Write to file instead of stdout (for backward compat with old
+        /// `otoji speak` command).
+        #[arg(long)]
+        out: Option<PathBuf>,
     },
 }
 
@@ -318,19 +323,30 @@ async fn main() -> Result<()> {
         Cmd::Listen {
             device,
             provider,
+            model,
             frame_ms,
             plain,
-        } => run_listen(provider, device, frame_ms, plain || !std::io::stdout().is_terminal()).await,
+        } => {
+            if let Some(ref dir) = model {
+                std::env::set_var("OTOJI_SENSEVOICE_DIR", dir);
+            }
+            run_listen(provider, device, frame_ms, plain || !std::io::stdout().is_terminal()).await
+        }
         Cmd::File {
             path,
             provider,
             frame_ms,
             burst,
         } => run_file(provider, path, frame_ms, !burst).await,
-        Cmd::Speak { text, out } => run_speak(text, out).await,
-        Cmd::Say { text, provider } => run_say(provider, text).await,
+        Cmd::Say { text, provider, out } => {
+            if let Some(out_path) = out {
+                run_speak(text, out_path).await
+            } else {
+                run_say(provider, text).await
+            }
+        }
         Cmd::Devices => run_devices().await,
-        Cmd::Mic { frame_ms } => run_mic(frame_ms).await,
+        Cmd::Mic { device, frame_ms } => run_mic(device, frame_ms).await,
     }
 }
 
@@ -356,27 +372,14 @@ async fn run_listen(
             let cfg = IflytekRtasrConfig::from_env().context("RTASR config")?;
             let provider = IflytekRtasr::new(cfg);
             let (audio_tx, audio_rx) = audio::channel(64);
-            let _stream = mic::start_default(frame_ms, audio_tx).context("mic")?;
-            if device.is_some() {
-                eprintln!(
-                    "warning: --provider iflytek currently always uses the system default device"
-                );
-            }
+            let _stream = mic::start(device.as_deref(), frame_ms, audio_tx).context("mic")?;
             drive(provider, audio_rx).await
         }
         AsrKind::Sensevoice => {
-            // Pure-Rust SenseVoice via the sherpa-onnx crate. PCM is captured
-            // by cpal in this process and forwarded directly to the worker
-            // thread that owns the recognizer.
             let cfg = SenseVoiceConfig::from_env();
             let provider = SenseVoice::new(cfg);
             let (audio_tx, audio_rx) = audio::channel(64);
-            let _stream = mic::start_default(frame_ms, audio_tx).context("mic")?;
-            if device.is_some() {
-                eprintln!(
-                    "warning: device selection is not yet wired through cpal; using system default"
-                );
-            }
+            let _stream = mic::start(device.as_deref(), frame_ms, audio_tx).context("mic")?;
             if plain {
                 drive_plain(provider, audio_rx).await
             } else {
@@ -541,10 +544,9 @@ async fn run_devices() -> Result<()> {
 /// Stream mic audio to stdout as a 16 kHz mono WAV. The denoise pipeline
 /// (RNNoise) runs before output so downstream consumers see clean audio.
 /// Use: `otoji mic | otoji listen -` or `otoji mic > recording.wav`.
-async fn run_mic(frame_ms: u32) -> Result<()> {
-    // mic permission is handled by the OS on first access
+async fn run_mic(device: Option<String>, frame_ms: u32) -> Result<()> {
     let (audio_tx, mut audio_rx) = audio::channel(64);
-    let _stream = mic::start_default(frame_ms, audio_tx).context("mic")?;
+    let _stream = mic::start(device.as_deref(), frame_ms, audio_tx).context("mic")?;
 
     use std::io::Write;
     let mut out = std::io::stdout().lock();

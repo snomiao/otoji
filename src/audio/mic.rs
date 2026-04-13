@@ -34,10 +34,19 @@ struct CaptureState {
 /// Start capturing from the default input device. The returned `Stream` must
 /// be kept alive (drop = stop).
 pub fn start_default(frame_ms: u32, tx: AudioTx) -> Result<cpal::Stream> {
+    start(None, frame_ms, tx)
+}
+
+/// Start capturing from a named input device (substring match or index).
+/// Pass `None` to use the system default.
+pub fn start(device_hint: Option<&str>, frame_ms: u32, tx: AudioTx) -> Result<cpal::Stream> {
     let host = cpal::default_host();
-    let device = host
-        .default_input_device()
-        .ok_or_else(|| anyhow!("no default input device"))?;
+    let device = match device_hint {
+        Some(hint) => find_device(&host, hint)?,
+        None => host
+            .default_input_device()
+            .ok_or_else(|| anyhow!("no default input device"))?,
+    };
     let config = device.default_input_config()?;
     let in_rate = config.sample_rate().0;
     let in_channels = config.channels();
@@ -139,6 +148,53 @@ pub fn start_default(frame_ms: u32, tx: AudioTx) -> Result<cpal::Stream> {
     };
     stream.play()?;
     Ok(stream)
+}
+
+/// Find an input device by substring match on name, or by numeric index.
+fn find_device(host: &cpal::Host, hint: &str) -> Result<cpal::Device> {
+    use cpal::traits::HostTrait;
+    let inputs: Vec<cpal::Device> = host
+        .input_devices()
+        .map_err(|e| anyhow!("enumerate input devices: {e}"))?
+        .collect();
+
+    // Try numeric index first.
+    if let Ok(idx) = hint.parse::<usize>() {
+        return inputs
+            .into_iter()
+            .nth(idx)
+            .ok_or_else(|| anyhow!("device index {idx} out of range"));
+    }
+
+    // Substring match on device name (case-insensitive).
+    let lower = hint.to_lowercase();
+    // Special aliases.
+    let keywords: &[&str] = match lower.as_str() {
+        "default" | "mic" => &[],
+        "system" | "loopback" => &["blackhole", "loopback", "soundflower", "vb-cable", "vb cable"],
+        _ => &[],
+    };
+    if keywords.is_empty() && (lower == "default" || lower == "mic") {
+        return host
+            .default_input_device()
+            .ok_or_else(|| anyhow!("no default input device"));
+    }
+    let search_terms: Vec<&str> = if keywords.is_empty() {
+        vec![&lower]
+    } else {
+        keywords.to_vec()
+    };
+    for dev in &inputs {
+        if let Ok(name) = dev.name() {
+            let name_lower = name.to_lowercase();
+            if search_terms.iter().any(|k| name_lower.contains(k)) {
+                return Ok(dev.clone());
+            }
+        }
+    }
+    Err(anyhow!(
+        "no input device matching \"{hint}\". Use `otoji devices` to list."
+    ))
 }
 
 fn downmix_f32_to_mono(data: &[f32], channels: u16) -> Vec<f32> {

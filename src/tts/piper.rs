@@ -168,7 +168,7 @@ impl TtsProvider for PiperTts {
         // mutex for the entire generate call (which is the contract: a
         // single text → audio synthesis is atomic from the model's
         // perspective).
-        let mut guard = self
+        let guard = self
             .inner
             .lock()
             .map_err(|_| OtojiError::Provider("piper mutex poisoned".into()))?;

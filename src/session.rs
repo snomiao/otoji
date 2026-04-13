@@ -52,7 +52,7 @@ impl Default for SessionConfig {
 pub struct ListenSession {
     audio_tx: mpsc::Sender<AudioChunk>,
     event_rx: std::sync::Mutex<mpsc::Receiver<AsrEvent>>,
-    runtime: tokio::runtime::Runtime,
+    _runtime: tokio::runtime::Runtime,
 }
 
 impl ListenSession {
@@ -77,7 +77,7 @@ impl ListenSession {
         Ok(Self {
             audio_tx,
             event_rx: std::sync::Mutex::new(event_rx),
-            runtime: rt,
+            _runtime: rt,
         })
     }
 
@@ -108,18 +108,21 @@ impl ListenSession {
         events
     }
 
-    /// Signal end of audio and wait for the final flush.
-    pub fn flush(&self) {
-        // Drop the sender to signal EOF to the provider.
-        // The provider will emit any remaining finals + Closed.
-        // We can't drop audio_tx here since we only have &self.
-        // Instead, users should drop the session.
-    }
-}
-
-impl Drop for ListenSession {
-    fn drop(&mut self) {
-        // audio_tx drops here → provider sees channel close → flushes → emits Closed.
-        // runtime drops → background tasks terminate.
+    /// Signal end of audio. Drops the audio sender so the provider flushes
+    /// remaining audio and emits Closed. Blocks until all events drain.
+    pub fn finish(self) -> Vec<AsrEvent> {
+        // Drop audio_tx to signal EOF.
+        drop(self.audio_tx);
+        // Collect remaining events until Closed.
+        let mut rx = self.event_rx.into_inner().unwrap();
+        let mut events = Vec::new();
+        while let Some(ev) = rx.blocking_recv() {
+            let is_closed = matches!(ev, AsrEvent::Closed);
+            events.push(ev);
+            if is_closed {
+                break;
+            }
+        }
+        events
     }
 }
