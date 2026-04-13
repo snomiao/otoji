@@ -300,16 +300,32 @@ fn walkdir(dir: &std::path::Path, threshold: &std::time::SystemTime) -> bool {
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    // Ignore SIGUSR1/SIGUSR2 immediately so they don't terminate the process
-    // before the PTT signal handler is installed in drive_plain().
+    // Register SIGUSR1/SIGUSR2 handlers immediately at startup via
+    // signal_hook so they're never SIG_DFL (terminate) or SIG_IGN
+    // (which can interfere with later sigaction overrides).
     #[cfg(unix)]
     {
-        extern "C" { fn signal(sig: i32, handler: usize) -> usize; }
-        const SIG_IGN: usize = 1;
-        unsafe {
-            signal(10, SIG_IGN); // SIGUSR1
-            signal(12, SIG_IGN); // SIGUSR2
-        }
+        use otoji::asr::sensevoice::{PTT_WORKER_TX, WorkerMsg};
+        let mut signals = signal_hook::iterator::Signals::new(&[
+            signal_hook::consts::SIGUSR1,
+            signal_hook::consts::SIGUSR2,
+        ]).expect("install early PTT signal handlers");
+        std::thread::Builder::new()
+            .name("ptt-signals".into())
+            .spawn(move || {
+                for sig in signals.forever() {
+                    let msg = match sig {
+                        signal_hook::consts::SIGUSR1 => WorkerMsg::PttStart,
+                        signal_hook::consts::SIGUSR2 => WorkerMsg::PttEnd,
+                        _ => continue,
+                    };
+                    if let Some(tx) = PTT_WORKER_TX.lock().unwrap().as_ref() {
+                        let _ = tx.send(msg);
+                    }
+                    // If worker not ready yet, signal is dropped (not fatal).
+                }
+            })
+            .ok();
     }
 
     maybe_rebuild_and_reexec();
@@ -450,31 +466,7 @@ async fn drive_plain<P: AsrProvider + 'static>(
         }
     });
 
-    // Install SIGUSR1/SIGUSR2 handlers for PTT control.
-    #[cfg(unix)]
-    {
-        use otoji::asr::sensevoice::{PTT_WORKER_TX, WorkerMsg};
-        let mut signals = signal_hook::iterator::Signals::new(&[
-            signal_hook::consts::SIGUSR1,
-            signal_hook::consts::SIGUSR2,
-        ])
-        .context("install PTT signal handlers")?;
-        std::thread::Builder::new()
-            .name("ptt-signals".into())
-            .spawn(move || {
-                for sig in signals.forever() {
-                    let msg = match sig {
-                        signal_hook::consts::SIGUSR1 => WorkerMsg::PttStart,
-                        signal_hook::consts::SIGUSR2 => WorkerMsg::PttEnd,
-                        _ => continue,
-                    };
-                    if let Some(tx) = PTT_WORKER_TX.lock().unwrap().as_ref() {
-                        let _ = tx.send(msg);
-                    }
-                }
-            })
-            .ok();
-    }
+    // PTT signal handlers installed early in main() — nothing extra needed here.
 
     use std::io::Write;
     let stdout = std::io::stdout();
