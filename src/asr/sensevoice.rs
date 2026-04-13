@@ -310,7 +310,7 @@ fn worker_main(
     let mut last_decoded = String::new();
     let mut last_partial_emitted = String::new();
     let min_commit_chars: usize = 8;
-    let mut samples_since_commit: usize = usize::MAX;
+    let mut samples_since_commit: usize = SAMPLE_RATE as usize * 10; // start high so first commit isn't cooldown-blocked
 
     // PTT state: when active, audio is also accumulated in ptt_buf.
     let mut ptt_active = false;
@@ -520,7 +520,7 @@ fn worker_main(
                     buf.extend_from_slice(&block);
                 }
                 samples_since_decode += block.len();
-                samples_since_commit += block.len();
+                samples_since_commit = samples_since_commit.saturating_add(block.len());
 
                 if active {
                     silence_run = 0;
@@ -542,7 +542,7 @@ fn worker_main(
                 // Adaptive interval: responsive at small buf (1s), efficient at
                 // large buf (buf/6). Prevents O(n²) in burst mode while keeping
                 // ~1s partial updates for realtime mic input.
-                let decode_interval = (buf.len() / 8).max(SAMPLE_RATE as usize);
+                let decode_interval = (buf.len() / 8).max(SAMPLE_RATE as usize * 2);
                 let enough_new = samples_since_decode >= decode_interval;
                 if enough_new && buf.len() >= min_samples {
                     samples_since_decode = 0;
