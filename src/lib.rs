@@ -11,6 +11,7 @@ pub mod asr;
 pub mod audio;
 pub mod core;
 pub mod polish;
+pub mod session;
 pub mod tts;
 
 #[cfg(feature = "node")]
