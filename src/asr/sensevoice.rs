@@ -246,6 +246,9 @@ fn worker_main(
     // actually have audio to decode. For `otoji listen -` with a tiny
     // input that errors before any PCM arrives, this skips the load
     // entirely; for the mic, it defers it until the user starts talking.
+    // Track whether PTT was requested before model loaded, so we can
+    // activate it as soon as the main loop starts.
+    let mut ptt_pending = false;
     let first = loop {
         match in_rx.recv() {
             Ok(WorkerMsg::Eof) | Err(_) => {
@@ -253,8 +256,8 @@ fn worker_main(
                 return;
             }
             Ok(msg @ WorkerMsg::Pcm(_)) => break msg,
-            // PTT signals before any audio — ignore until model loads.
-            Ok(WorkerMsg::PttStart) | Ok(WorkerMsg::PttEnd) => continue,
+            Ok(WorkerMsg::PttStart) => { ptt_pending = true; }
+            Ok(WorkerMsg::PttEnd) => { ptt_pending = false; }
         }
     };
 
@@ -313,7 +316,11 @@ fn worker_main(
     let mut samples_since_commit: usize = SAMPLE_RATE as usize * 10; // start high so first commit isn't cooldown-blocked
 
     // PTT state: when active, audio is also accumulated in ptt_buf.
-    let mut ptt_active = false;
+    // If PTT was requested during model loading, activate immediately.
+    let mut ptt_active = ptt_pending;
+    if ptt_pending {
+        eprintln!("[sensevoice] PTT was pending during model load → activating now");
+    }
     let mut ptt_buf: Vec<f32> = Vec::new();
     let mut ptt_samples_since_partial: usize = 0;
     let mut ptt_last_partial = String::new();
