@@ -295,6 +295,18 @@ fn walkdir(dir: &std::path::Path, threshold: &std::time::SystemTime) -> bool {
 
 #[tokio::main]
 async fn main() -> Result<()> {
+    // Ignore SIGUSR1/SIGUSR2 immediately so they don't terminate the process
+    // before the PTT signal handler is installed in drive_plain().
+    #[cfg(unix)]
+    {
+        extern "C" { fn signal(sig: i32, handler: usize) -> usize; }
+        const SIG_IGN: usize = 1;
+        unsafe {
+            signal(10, SIG_IGN); // SIGUSR1
+            signal(12, SIG_IGN); // SIGUSR2
+        }
+    }
+
     maybe_rebuild_and_reexec();
 
     tracing_subscriber::fmt()
