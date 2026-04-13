@@ -476,9 +476,13 @@ async fn drive_plain<P: AsrProvider + 'static>(
             .ok();
     }
 
+    use std::io::Write;
+    let stdout = std::io::stdout();
     while let Some(ev) = event_rx.recv().await {
         if let Ok(line) = serde_json::to_string(&ev) {
-            println!("{line}");
+            let mut out = stdout.lock();
+            let _ = writeln!(out, "{line}");
+            let _ = out.flush(); // force flush — piped stdout is block-buffered
         }
         if matches!(ev, otoji::core::AsrEvent::Closed) {
             break;
