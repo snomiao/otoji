@@ -462,17 +462,20 @@ fn worker_main(
             WorkerMsg::PttEnd => {
                 if ptt_active {
                     ptt_active = false;
-                    if ptt_buf.len() >= min_samples {
-                        if let Some(text) = decode(&ptt_buf) {
-                            let _ = out_tx.send(WorkerEvt::PttFinal { text });
-                        } else {
-                            let _ = out_tx.send(WorkerEvt::PttFinal { text: String::new() });
-                        }
-                    }
+                    let ptt_ms = ptt_buf.len() * 1000 / SAMPLE_RATE as usize;
+                    eprintln!("[sensevoice] PTT end ({ptt_ms}ms, {} samples)", ptt_buf.len());
+                    // Always emit ptt_final so the caller can clean up.
+                    // Use a lower threshold than normal VAD (250ms vs 1s).
+                    let ptt_min = SAMPLE_RATE as usize / 4; // 250ms
+                    let text = if ptt_buf.len() >= ptt_min {
+                        decode(&ptt_buf).unwrap_or_default()
+                    } else {
+                        String::new()
+                    };
+                    let _ = out_tx.send(WorkerEvt::PttFinal { text });
                     ptt_buf.clear();
                     ptt_samples_since_partial = 0;
                     ptt_last_partial.clear();
-                    eprintln!("[sensevoice] PTT end");
                 }
             }
             WorkerMsg::Pcm(pcm_i16) => {
