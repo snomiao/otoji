@@ -4,6 +4,54 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+## [0.1.2] - 2026-04-14
+
+### Bug Fixes
+- Install signal handlers at startup, not in drive_plain
+- Flush stdout after each JSON line in plain mode
+- Preserve PTT state across model lazy-load
+- Overflow panic in samples_since_commit + cleanup *(listen)*
+- Resolve TODO items — warnings, device selection, API improvements
+- Always emit ptt_final event, lower PTT minimum to 250ms
+- Ignore SIGUSR1/SIGUSR2 at startup to prevent early termination
+- Remove pre-flight silence check, let OS handle permission dialog *(mic)*
+- Better permission instructions — show detected terminal, explain + button *(mic)*
+- Tell user exactly which app to enable in Microphone settings *(mic)*
+- Auto-open System Settings microphone pane on permission error *(mic)*
+- Replace Terminal.app relaunch with in-place permission error *(mic)*
+- Smarter anti-premature commit (silence + buf-pressure + 2-cycle stability) *(listen)*
+- Hold last sentence to prevent premature 。 commits *(listen)*
+- Per-sentence dedup at EOF + lower min_commit_chars *(listen)*
+- Emit Partial as full decoded text, not just trailing tail *(listen)*
+- Sentence-level dedup tracking instead of char-offset *(listen)*
+- Add English period to sentence-enders + auto-plain non-TTY *(listen)*
+- Adaptive decode interval + commit cooldown + pre-commit anchor *(listen)*
+- Rate-limit slow-track decode + realtime-paced QA *(listen)*
+- Use char-offset tracking to prevent Final spam *(listen)*
+
+### Chores
+- Ignore test/sample audio files
+
+### Documentation
+- Add noise robustness test results *(qa)*
+
+### Features
+- --ptt-polish and --ptt-tts flags for PTT post-processing
+- Replace signal_hook with raw signal() + atomic polling *(PTT)*
+- Paced mode + Gemini GT priority + regression baseline *(qa)*
+- Add PTT (push-to-talk) support via SIGUSR1/SIGUSR2
+- Add ListenSession — push-based Rust crate API *(api)*
+- Implement transcribe() + listen() high-level TS API *(api)*
+- Design high-level TS API — transcribe() + listen() *(api)*
+- Add `otoji mic` subcommand — stream mic to stdout as WAV *(mic)*
+- RNNoise denoising + faster partial decode interval *(listen)*
+- Noise gate + speech activity check *(listen)*
+- Rewrite QA workflow + 3s VAD silence default *(qa)*
+- Single-track sliding-window decode with fuzzy stability *(listen)*
+- Sliding-window streaming architecture for SenseVoice *(listen)*
+- Add otoji listen QA harness + matrix benchmark docs *(qa)*
+- Gemini multimodal polish + sensevoice QA-driven fixes *(listen)*
+
 ## [0.1.1] - 2026-04-08
 
 ### Bug Fixes
