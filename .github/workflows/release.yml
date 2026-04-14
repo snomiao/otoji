@@ -63,12 +63,28 @@ jobs:
           token: ${{ secrets.GITHUB_TOKEN }}
       - uses: dtolnay/rust-toolchain@stable
 
-      - uses: release-plz/action@v0.5
+      - id: release-pr
+        uses: release-plz/action@v0.5
         with:
           command: release-pr
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+
+      # Auto-merge the release PR so feat/fix commits on main ship
+      # without manual intervention (semantic-release-style flow).
+      - name: Auto-merge release PR
+        if: steps.release-pr.outputs.prs != '' && steps.release-pr.outputs.prs != '[]'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          pr_number=$(echo '${{ steps.release-pr.outputs.prs }}' | jq -r '.[0].number // empty')
+          if [ -n "$pr_number" ]; then
+            echo "Auto-merging release PR #$pr_number"
+            gh pr merge "$pr_number" --repo "$GITHUB_REPOSITORY" --squash --admin || \
+              gh pr merge "$pr_number" --repo "$GITHUB_REPOSITORY" --squash
+          fi
 
       - id: release
         uses: release-plz/action@v0.5
