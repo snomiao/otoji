@@ -300,29 +300,48 @@ fn walkdir(dir: &std::path::Path, threshold: &std::time::SystemTime) -> bool {
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    // Register SIGUSR1/SIGUSR2 handlers immediately at startup via
-    // signal_hook so they're never SIG_DFL (terminate) or SIG_IGN
-    // (which can interfere with later sigaction overrides).
+    // PTT signal handling for `--plain` stdin mode (used by CapsLockX).
+    // SIGUSR1 starts a PTT segment, SIGUSR2 ends it and emits ptt_final.
+    //
+    // Implementation note: raw signal() + atomic flags + 10ms poller thread.
+    // Using signal_hook's iterator-based API was unreliable in piped-stdio +
+    // tokio runtime setups — the internal self-pipe didn't fire handlers.
     #[cfg(unix)]
     {
-        use otoji::asr::sensevoice::{PTT_WORKER_TX, WorkerMsg};
-        let mut signals = signal_hook::iterator::Signals::new(&[
-            signal_hook::consts::SIGUSR1,
-            signal_hook::consts::SIGUSR2,
-        ]).expect("install early PTT signal handlers");
+        use otoji::asr::sensevoice::{
+            PTT_SIGNAL_PENDING_END, PTT_SIGNAL_PENDING_START, PTT_WORKER_TX, WorkerMsg,
+        };
+        unsafe {
+            extern "C" fn handler(sig: i32) {
+                use std::sync::atomic::Ordering;
+                match sig {
+                    10 => PTT_SIGNAL_PENDING_START.store(true, Ordering::Relaxed),
+                    12 => PTT_SIGNAL_PENDING_END.store(true, Ordering::Relaxed),
+                    _ => {}
+                }
+            }
+            extern "C" {
+                fn signal(sig: i32, handler: extern "C" fn(i32)) -> usize;
+            }
+            signal(10, handler); // SIGUSR1
+            signal(12, handler); // SIGUSR2
+        }
         std::thread::Builder::new()
-            .name("ptt-signals".into())
-            .spawn(move || {
-                for sig in signals.forever() {
-                    let msg = match sig {
-                        signal_hook::consts::SIGUSR1 => WorkerMsg::PttStart,
-                        signal_hook::consts::SIGUSR2 => WorkerMsg::PttEnd,
-                        _ => continue,
-                    };
-                    if let Some(tx) = PTT_WORKER_TX.lock().unwrap().as_ref() {
-                        let _ = tx.send(msg);
+            .name("ptt-poll".into())
+            .spawn(|| {
+                use std::sync::atomic::Ordering;
+                loop {
+                    if PTT_SIGNAL_PENDING_START.swap(false, Ordering::Relaxed) {
+                        if let Some(tx) = PTT_WORKER_TX.lock().unwrap().as_ref() {
+                            let _ = tx.send(WorkerMsg::PttStart);
+                        }
                     }
-                    // If worker not ready yet, signal is dropped (not fatal).
+                    if PTT_SIGNAL_PENDING_END.swap(false, Ordering::Relaxed) {
+                        if let Some(tx) = PTT_WORKER_TX.lock().unwrap().as_ref() {
+                            let _ = tx.send(WorkerMsg::PttEnd);
+                        }
+                    }
+                    std::thread::sleep(std::time::Duration::from_millis(10));
                 }
             })
             .ok();
@@ -466,15 +485,16 @@ async fn drive_plain<P: AsrProvider + 'static>(
         }
     });
 
-    // PTT signal handlers installed early in main() — nothing extra needed here.
-
     use std::io::Write;
     let stdout = std::io::stdout();
     while let Some(ev) = event_rx.recv().await {
         if let Ok(line) = serde_json::to_string(&ev) {
             let mut out = stdout.lock();
-            let _ = writeln!(out, "{line}");
-            let _ = out.flush(); // force flush — piped stdout is block-buffered
+            // Piped stdout is block-buffered; flush after each line so
+            // consumers (e.g. CapsLockX) see events promptly.
+            if writeln!(out, "{line}").is_err() || out.flush().is_err() {
+                break;
+            }
         }
         if matches!(ev, otoji::core::AsrEvent::Closed) {
             break;

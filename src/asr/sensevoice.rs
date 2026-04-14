@@ -25,6 +25,13 @@ const SAMPLE_RATE: u32 = 16_000;
 pub static PTT_WORKER_TX: std::sync::Mutex<Option<smpsc::Sender<WorkerMsg>>> =
     std::sync::Mutex::new(None);
 
+/// Signal handler sets these atomic flags; a poller thread forwards to the worker.
+/// Using atomic flags instead of channels keeps the signal handler async-signal-safe.
+pub static PTT_SIGNAL_PENDING_START: std::sync::atomic::AtomicBool =
+    std::sync::atomic::AtomicBool::new(false);
+pub static PTT_SIGNAL_PENDING_END: std::sync::atomic::AtomicBool =
+    std::sync::atomic::AtomicBool::new(false);
+
 #[derive(Debug, Clone)]
 pub struct SenseVoiceConfig {
     /// Directory containing `model.int8.onnx` and `tokens.txt`.
