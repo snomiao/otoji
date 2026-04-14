@@ -86,6 +86,11 @@ enum Cmd {
         /// value: `gemini`, `openai`, `elevenlabs`, `piper`, `auto`.
         #[arg(long)]
         ptt_tts: Option<String>,
+        /// Path to a file the consumer writes with external context (e.g.
+        /// the frontmost app's accessibility tree). Read once per PTT
+        /// segment and passed to the polisher for context-aware corrections.
+        #[arg(long)]
+        ptt_context_file: Option<PathBuf>,
     },
     /// List available audio input devices.
     Devices,
@@ -381,12 +386,13 @@ async fn main() -> Result<()> {
             plain,
             ptt_polish,
             ptt_tts,
+            ptt_context_file,
         } => {
             if let Some(ref dir) = model {
                 std::env::set_var("OTOJI_SENSEVOICE_DIR", dir);
             }
             let force_plain = plain || !std::io::stdout().is_terminal();
-            run_listen(provider, device, frame_ms, force_plain, ptt_polish, ptt_tts).await
+            run_listen(provider, device, frame_ms, force_plain, ptt_polish, ptt_tts, ptt_context_file).await
         }
         Cmd::File {
             path,
@@ -418,9 +424,10 @@ async fn run_listen(
     plain: bool,
     ptt_polish: Option<String>,
     ptt_tts: Option<String>,
+    ptt_context_file: Option<PathBuf>,
 ) -> Result<()> {
     if device.as_deref() == Some("-") {
-        return run_listen_stdin(kind, frame_ms, plain, ptt_polish, ptt_tts).await;
+        return run_listen_stdin(kind, frame_ms, plain, ptt_polish, ptt_tts, ptt_context_file).await;
     }
     match kind {
         AsrKind::Iflytek => {
@@ -436,7 +443,7 @@ async fn run_listen(
             let (audio_tx, audio_rx) = audio::channel(64);
             let _stream = mic::start(device.as_deref(), frame_ms, audio_tx).context("mic")?;
             if plain {
-                drive_plain(provider, audio_rx, ptt_polish, ptt_tts).await
+                drive_plain(provider, audio_rx, ptt_polish, ptt_tts, ptt_context_file).await
             } else {
                 drive(provider, audio_rx).await
             }
@@ -450,6 +457,7 @@ async fn run_listen_stdin(
     plain_flag: bool,
     ptt_polish: Option<String>,
     ptt_tts: Option<String>,
+    ptt_context_file: Option<PathBuf>,
 ) -> Result<()> {
     if std::io::stdin().is_terminal() {
         anyhow::bail!(
@@ -473,7 +481,7 @@ async fn run_listen_stdin(
             let cfg = IflytekRtasrConfig::from_env().context("RTASR config")?;
             let provider = IflytekRtasr::new(cfg);
             if plain {
-                drive_plain(provider, audio_rx, ptt_polish, ptt_tts).await
+                drive_plain(provider, audio_rx, ptt_polish, ptt_tts, ptt_context_file.clone()).await
             } else {
                 drive(provider, audio_rx).await
             }
@@ -482,7 +490,7 @@ async fn run_listen_stdin(
             let cfg = SenseVoiceConfig::from_env();
             let provider = SenseVoice::new(cfg);
             if plain {
-                drive_plain(provider, audio_rx, ptt_polish, ptt_tts).await
+                drive_plain(provider, audio_rx, ptt_polish, ptt_tts, ptt_context_file.clone()).await
             } else {
                 drive(provider, audio_rx).await
             }
@@ -501,6 +509,7 @@ async fn drive_plain<P: AsrProvider + 'static>(
     audio_rx: audio::AudioRx,
     ptt_polish: Option<String>,
     ptt_tts: Option<String>,
+    ptt_context_file: Option<PathBuf>,
 ) -> Result<()> {
     let (event_tx, mut event_rx) = mpsc::channel(128);
     let provider = Arc::new(provider);
@@ -511,7 +520,6 @@ async fn drive_plain<P: AsrProvider + 'static>(
         }
     });
 
-    // Resolve polisher + TTS provider once at startup.
     let polisher: Option<Arc<dyn Polisher>> = ptt_polish
         .as_deref()
         .and_then(|name| resolve_polisher(name));
@@ -529,37 +537,71 @@ async fn drive_plain<P: AsrProvider + 'static>(
     });
     if polisher.is_some() { eprintln!("[otoji] PTT polish enabled: {}", polisher.as_ref().unwrap().name()); }
     if tts_provider.is_some() { eprintln!("[otoji] PTT TTS enabled: {}", tts_provider.as_ref().unwrap().name()); }
+    if ptt_context_file.is_some() { eprintln!("[otoji] PTT context file: {:?}", ptt_context_file.as_ref().unwrap()); }
 
     use std::io::Write;
-    let stdout = std::io::stdout();
-    while let Some(ev) = event_rx.recv().await {
-        // Intercept ptt_final for polish + TTS.
-        let ev = if let otoji::core::AsrEvent::PttFinal { text } = &ev {
-            let polished = match &polisher {
-                Some(p) => {
-                    let input = otoji::polish::PolishInput { text, prev: None, audio: None };
-                    p.polish(input).await.unwrap_or_else(|e| {
-                        eprintln!("[otoji] PTT polish error: {e}");
-                        text.clone()
-                    })
-                }
-                None => text.clone(),
-            };
-            if let Some(tts) = tts_provider.clone() {
-                let spoken = polished.clone();
-                tokio::spawn(async move { speak_via_afplay(tts, &spoken).await; });
-            }
-            otoji::core::AsrEvent::PttFinal { text: polished }
-        } else { ev };
+    // Emit a single JSON event line with flush.
+    fn emit(ev: &otoji::core::AsrEvent) -> std::io::Result<()> {
+        let line = serde_json::to_string(ev).unwrap_or_default();
+        let stdout = std::io::stdout();
+        let mut out = stdout.lock();
+        writeln!(out, "{line}")?;
+        out.flush()?;
+        Ok(())
+    }
 
-        if let Ok(line) = serde_json::to_string(&ev) {
-            let mut out = stdout.lock();
-            if writeln!(out, "{line}").is_err() || out.flush().is_err() {
+    while let Some(ev) = event_rx.recv().await {
+        match &ev {
+            otoji::core::AsrEvent::PttFinal { text } => {
+                // 1. Emit RAW ptt_final IMMEDIATELY so consumer types ASAP.
+                if emit(&ev).is_err() { break; }
+
+                // 2. Spawn polish + TTS in background (never block typing).
+                let raw = text.clone();
+                let polisher_bg = polisher.clone();
+                let tts_bg = tts_provider.clone();
+                let ctx_path = ptt_context_file.clone();
+                tokio::spawn(async move {
+                    // Read context (AX tree) written by consumer before release.
+                    let ctx = ctx_path
+                        .as_ref()
+                        .and_then(|p| std::fs::read_to_string(p).ok());
+
+                    // Polish (if enabled).
+                    let polished = match polisher_bg {
+                        Some(p) => {
+                            let input = otoji::polish::PolishInput {
+                                text: &raw,
+                                prev: None,
+                                audio: None,
+                                context: ctx.as_deref(),
+                            };
+                            p.polish(input).await.unwrap_or_else(|e| {
+                                eprintln!("[otoji] PTT polish error: {e}");
+                                raw.clone()
+                            })
+                        }
+                        None => raw.clone(),
+                    };
+
+                    // Emit ptt_upgrade only if polish changed something.
+                    if polished.trim() != raw.trim() {
+                        let _ = emit(&otoji::core::AsrEvent::PttUpgrade { text: polished.clone() });
+                    }
+
+                    // TTS (in parallel to consumer's diff-update).
+                    if let Some(tts) = tts_bg {
+                        speak_via_afplay(tts, &polished).await;
+                    }
+                });
+            }
+            otoji::core::AsrEvent::Closed => {
+                let _ = emit(&ev);
                 break;
             }
-        }
-        if matches!(ev, otoji::core::AsrEvent::Closed) {
-            break;
+            _ => {
+                if emit(&ev).is_err() { break; }
+            }
         }
     }
     Ok(())
@@ -795,6 +837,7 @@ async fn drive<P: AsrProvider + 'static>(provider: P, audio_rx: audio::AudioRx) 
                                     text: "test",
                                     prev: None,
                                     audio: None,
+                                    context: None,
                                 };
                                 if p.polish(test).await.is_ok() {
                                     let _ = status_tx

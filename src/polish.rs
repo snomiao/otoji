@@ -21,6 +21,10 @@ pub struct PolishInput<'a> {
     /// Raw audio for this segment (16kHz mono f32, -1.0..1.0).
     /// Available when the ASR provider preserves audio (e.g. SenseVoice).
     pub audio: Option<&'a [f32]>,
+    /// External context (e.g. the frontmost app's accessibility tree).
+    /// Polishers use this to correctly spell proper nouns, app-specific
+    /// terms, file/variable names visible in the UI.
+    pub context: Option<&'a str>,
 }
 
 #[async_trait]
@@ -546,20 +550,23 @@ impl GeminiPolisher {
         };
         serde_json::json!({
             "parts": [{"text": format!(
-                "You polish ASR transcripts using the attached audio for verification.\n\
-                 - Listen to the audio to resolve homophones and proper nouns.\n\
+                "You polish ASR transcripts. Use the attached audio (if any) and\n\
+                 the UI context (if any) to correctly spell proper nouns, file names,\n\
+                 variable names, and app-specific terms visible to the user.\n\
                  - Preserve meaning. Do not summarize.\n\
-                 - Add punctuation, drop fillers (uh/um/那个/えーと).\n\
+                 - Add punctuation — use `?` for questions based on phrasing, even\n\
+                   when SenseVoice defaults to `.`\n\
+                 - Drop fillers (uh/um/那个/えーと).\n\
                  - Normalize numbers, dates, units.\n\
                  - Keep code-switched text (zh/en/ja) as-is.\n\
                  - Glossary: {glossary}\n\
-                 Output only the tidied sentence."
+                 Output ONLY the tidied sentence — no preamble, no quotes."
             )}]
         })
     }
 
     /// Build user turn parts: audio (WAV-wrapped) + ASR text.
-    fn build_user_parts(text: &str, audio: Option<&[f32]>) -> Vec<serde_json::Value> {
+    fn build_user_parts(text: &str, audio: Option<&[f32]>, context: Option<&str>) -> Vec<serde_json::Value> {
         let mut parts = Vec::new();
         if let Some(samples) = audio {
             let wav = pcm_f32_to_wav(samples, 16_000);
@@ -571,7 +578,19 @@ impl GeminiPolisher {
                 }
             }));
         }
-        parts.push(serde_json::json!({"text": format!("ASR hypothesis: {text}")}));
+        let mut text_part = String::new();
+        if let Some(ctx) = context {
+            let trimmed = ctx.trim();
+            if !trimmed.is_empty() {
+                // Cap context to a few KB to avoid blowing up the prompt.
+                let clipped: String = trimmed.chars().take(4000).collect();
+                text_part.push_str("Current app UI context (accessibility tree):\n");
+                text_part.push_str(&clipped);
+                text_part.push_str("\n\n");
+            }
+        }
+        text_part.push_str(&format!("ASR hypothesis: {text}"));
+        parts.push(serde_json::json!({"text": text_part}));
         parts
     }
 
@@ -648,7 +667,7 @@ impl Polisher for GeminiPolisher {
     }
 
     async fn polish(&self, input: PolishInput<'_>) -> Result<String> {
-        let user_parts = Self::build_user_parts(input.text, input.audio);
+        let user_parts = Self::build_user_parts(input.text, input.audio, input.context);
 
         // Try to use cached context for efficiency.
         let cache = self.cache_name.lock().await.clone();

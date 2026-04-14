@@ -126,6 +126,7 @@ pub async fn run(
                     text: &raw,
                     prev: prev.as_deref(),
                     audio: audio.as_deref(),
+                    context: None,
                 };
                 match polisher.polish(input).await {
                     Ok(p) => {
@@ -253,7 +254,7 @@ async fn apply_event(
             s.error = Some(message);
         }
         // PTT events are for external consumers (--plain mode); TUI ignores them.
-        AsrEvent::PttPartial { .. } | AsrEvent::PttFinal { .. } => {}
+        AsrEvent::PttPartial { .. } | AsrEvent::PttFinal { .. } | AsrEvent::PttUpgrade { .. } => {}
     }
 }
 

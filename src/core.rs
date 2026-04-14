@@ -76,8 +76,13 @@ pub enum AsrEvent {
     Error { message: String },
     /// Push-to-talk: live partial while segment is being held.
     PttPartial { text: String },
-    /// Push-to-talk: final transcription of the held segment.
+    /// Push-to-talk: final transcription of the held segment (raw).
+    /// Emitted immediately so the consumer can type without waiting for polish.
     PttFinal { text: String },
+    /// Push-to-talk: polished version of the last `ptt_final`.
+    /// Emitted after LLM polish completes (e.g. punctuation fixed based on
+    /// context). Consumers should diff-update (backspace + retype) the cursor.
+    PttUpgrade { text: String },
 }
 
 #[derive(Debug, Error)]
