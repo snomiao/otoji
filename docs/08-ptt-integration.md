@@ -143,3 +143,40 @@ match line {
 
 See CapsLockX's `voice_otoji.rs` and `voice_ptt.rs` for a complete
 reference implementation.
+
+## Translation styles & dialects
+
+The `--ptt-translate-to` flag accepts free-form language descriptions,
+not just BCP-47 codes. The polish prompt interprets the target liberally:
+
+| Target value                 | LLM output                                    |
+|------------------------------|-----------------------------------------------|
+| `en`, `English`              | Standard English                              |
+| `ja`, `Japanese`, `日本語`   | Standard Japanese                             |
+| `Cantonese`                  | 粤语 (Guangzhou dialect)                      |
+| `Shanghainese`               | 上海话 (Wu dialect)                           |
+| `Taiwanese Mandarin`         | 國語 (Traditional-character, Taiwanese idiom) |
+| `Kansai dialect`             | Osaka/Kyoto-ben Japanese                      |
+| `Classical Chinese 文言文`   | 文言文 classical form                         |
+| `formal Keigo`               | 尊敬語／謙譲語 honorific Japanese             |
+| `Shakespearean English`      | Thou/thee/hath archaic register               |
+| `pirate English`             | Arrr matey style                              |
+| `emoji`                      | 🏴‍☠️🦜 pictograph-only rendering            |
+
+The prompt also resolves the classic ambiguity between the VERB "to
+polish / tidy" and the LANGUAGE "Polish": the instruction wraps target
+language names in `<<< >>>` and explicitly states "this is a LANGUAGE
+NAME, not an instruction to tidy."
+
+### Benchmark: quality vs speed on a CJK→Polish task
+
+See [09-polish-benchmarks.md](./09-polish-benchmarks.md) for TTFB numbers
+per provider. Summary (from Tokyo):
+
+| Provider              | Median TTFB | Quality on CJK→Polish     |
+|-----------------------|-------------|---------------------------|
+| Cloudflare llama-3.1  | ~289 ms     | Good                      |
+| OpenAI gpt-4.1-nano   | ~662 ms     | Good                      |
+| Gemini 2.5-flash-lite | ~1150 ms    | Good                      |
+| OpenAI gpt-4.1-mini   | ~900 ms     | Better for low-res. pairs |
+| Anthropic haiku-4-5   | ~700 ms     | Excellent multilingual    |

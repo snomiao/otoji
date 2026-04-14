@@ -5,6 +5,7 @@ use async_trait::async_trait;
 use bytes::Bytes;
 use tokio::sync::mpsc;
 
+pub mod cloudflare;
 pub mod elevenlabs;
 pub mod gemini;
 pub mod iflytek_tts;

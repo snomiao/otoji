@@ -133,6 +133,7 @@ enum WorkerEvt {
     Closed,
     PttPartial { text: String },
     PttFinal { text: String },
+    LanguageDetected { lang: String },
 }
 
 #[async_trait]
@@ -205,6 +206,7 @@ impl AsrProvider for SenseVoice {
                     WorkerEvt::Error(message) => AsrEvent::Error { message },
                     WorkerEvt::PttPartial { text } => AsrEvent::PttPartial { text },
                     WorkerEvt::PttFinal { text } => AsrEvent::PttFinal { text },
+                    WorkerEvt::LanguageDetected { lang } => AsrEvent::LanguageDetected { lang },
                     WorkerEvt::Closed => break,
                 };
                 if events_for_drain.blocking_send(asr).is_err() {
@@ -227,6 +229,31 @@ fn bytes_to_i16(b: &[u8]) -> Vec<i16> {
         out.push(i16::from_le_bytes([chunk[0], chunk[1]]));
     }
     out
+}
+
+thread_local! {
+    /// Scratch slot written by the `decode` closure in `worker_main`, read
+    /// by `flush_lang!()` to emit LanguageDetected without mutable borrow
+    /// conflicts in the closure.
+    static DECODED_LANG: std::cell::RefCell<Option<String>> = const { std::cell::RefCell::new(None) };
+}
+
+/// Extract the first `<|xx|>` language tag from raw SenseVoice output.
+/// Returns BCP-47-ish lowercase code (e.g. "ja", "zh", "en", "ko", "yue").
+fn parse_language_tag(raw: &str) -> Option<String> {
+    let start = raw.find("<|")?;
+    let rest = &raw[start + 2..];
+    let end = rest.find("|>")?;
+    let tag = &rest[..end];
+    // SenseVoice tags include emotion / event tags too. Filter to likely
+    // language codes — 2-4 ASCII lowercase letters.
+    if (2..=4).contains(&tag.len())
+        && tag.chars().all(|c| c.is_ascii_lowercase())
+    {
+        Some(tag.to_string())
+    } else {
+        None
+    }
 }
 
 fn i16_to_f32(samples: &[i16]) -> Vec<f32> {
@@ -312,6 +339,20 @@ fn worker_main(
     let min_samples = SAMPLE_RATE as usize; // 1s minimum to decode
 
     let mut buf: Vec<f32> = Vec::new();
+    // Language tag from the most recent decode (parked in DECODED_LANG
+    // thread-local by the decode closure to avoid borrow conflicts).
+    let mut last_emitted_lang: Option<String> = None;
+    macro_rules! flush_lang {
+        () => {
+            let cur = DECODED_LANG.with(|slot| slot.borrow().clone());
+            if cur.is_some() && cur != last_emitted_lang {
+                if let Some(ref lang) = cur {
+                    let _ = out_tx.send(WorkerEvt::LanguageDetected { lang: lang.clone() });
+                    last_emitted_lang = cur.clone();
+                }
+            }
+        };
+    }
     let mut seg_id: u64 = 0;
     // Sentence-level commit tracking: store hashes of committed sentence
     // bodies (normalized) so we can dedupe across SenseVoice text revisions.
@@ -381,7 +422,11 @@ fn worker_main(
         let stream = recognizer.create_stream();
         stream.accept_waveform(SAMPLE_RATE as i32, audio);
         recognizer.decode(&stream);
-        let text = stream.get_result()?.text.trim().to_string();
+        let raw = stream.get_result()?.text;
+        // Language extraction now happens via DECODED_LANG thread-local so
+        // callers can read it without mutable borrow conflicts.
+        DECODED_LANG.with(|slot| { *slot.borrow_mut() = parse_language_tag(&raw); });
+        let text = raw.trim().to_string();
         let has_content = text.chars().any(|c| {
             !c.is_ascii_punctuation()
                 && !c.is_ascii_whitespace()
@@ -419,6 +464,7 @@ fn worker_main(
                                 common * 100 / short.chars().count() > 70
                             });
                             if !already {
+                                flush_lang!();
                                 let _ = out_tx.send(WorkerEvt::Final {
                                     seg_id,
                                     text: sentence.clone(),
@@ -444,6 +490,7 @@ fn worker_main(
                                 !short.is_empty() && long.contains(short.as_str())
                             });
                             if !already {
+                                flush_lang!();
                                 let _ = out_tx.send(WorkerEvt::Final {
                                     seg_id,
                                     text: trailing,
@@ -466,15 +513,25 @@ fn worker_main(
                 if ptt_active {
                     ptt_active = false;
                     let ptt_ms = ptt_buf.len() * 1000 / SAMPLE_RATE as usize;
-                    eprintln!("[sensevoice] PTT end ({ptt_ms}ms, {} samples)", ptt_buf.len());
-                    // Always emit ptt_final so the caller can clean up.
+                    let ptt_rms = rms(&ptt_buf);
+                    // Silent segment skip: below VAD threshold AND short ⇒
+                    // don't even decode. Saves ~100ms + any downstream
+                    // polish/TTS API cost. Still emits an empty ptt_final
+                    // so the consumer's placeholder cleanup runs.
+                    let silent = ptt_rms < (threshold * 0.7);
+                    eprintln!(
+                        "[sensevoice] PTT end ({ptt_ms}ms, {} samples, rms={:.4}{})",
+                        ptt_buf.len(), ptt_rms,
+                        if silent { ", SILENT — skipping decode" } else { "" }
+                    );
                     // Use a lower threshold than normal VAD (250ms vs 1s).
                     let ptt_min = SAMPLE_RATE as usize / 4; // 250ms
-                    let text = if ptt_buf.len() >= ptt_min {
-                        decode(&ptt_buf).unwrap_or_default()
-                    } else {
+                    let text = if silent || ptt_buf.len() < ptt_min {
                         String::new()
+                    } else {
+                        decode(&ptt_buf).unwrap_or_default()
                     };
+                    flush_lang!();
                     let _ = out_tx.send(WorkerEvt::PttFinal { text });
                     ptt_buf.clear();
                     ptt_samples_since_partial = 0;
@@ -497,6 +554,7 @@ fn worker_main(
                     {
                         ptt_samples_since_partial = 0;
                         if let Some(text) = decode(&ptt_buf) {
+                            flush_lang!();
                             if text != ptt_last_partial {
                                 ptt_last_partial = text.clone();
                                 let _ = out_tx.send(WorkerEvt::PttPartial { text });
@@ -618,6 +676,7 @@ fn worker_main(
                                 common * 100 / short.chars().count() > 70
                             });
                             if !already && cooldown_ok {
+                                flush_lang!();
                                 let _ = out_tx.send(WorkerEvt::Final {
                                     seg_id,
                                     text: sentence.clone(),
@@ -660,6 +719,7 @@ fn worker_main(
                             !short.is_empty() && long.contains(short.as_str())
                         });
                         if !already && !trim_text.is_empty() {
+                            flush_lang!();
                             let _ = out_tx.send(WorkerEvt::Final {
                                 seg_id,
                                 text: trim_text,

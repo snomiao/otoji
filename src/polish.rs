@@ -25,6 +25,20 @@ pub struct PolishInput<'a> {
     /// Polishers use this to correctly spell proper nouns, app-specific
     /// terms, file/variable names visible in the UI.
     pub context: Option<&'a str>,
+    /// Target language for translation. When set, the polisher returns
+    /// JSON `{"original": "...", "translated": "..."}` instead of a plain
+    /// polished string. Use BCP-47 codes like `"en"`, `"ja"`, `"zh"`.
+    /// If the input is already in the target language, `translated` may
+    /// equal `original`.
+    pub translate_to: Option<&'a str>,
+}
+
+/// Output of a polish call. For plain polish, only `original` is filled;
+/// for translation, both fields are populated.
+#[derive(Debug, Clone, Default)]
+pub struct PolishOutput {
+    pub original: String,
+    pub translated: Option<String>,
 }
 
 #[async_trait]
@@ -40,6 +54,14 @@ pub trait Polisher: Send + Sync {
     /// should use `input.audio` when available. The call must return quickly
     /// or run in the background — it must never block display of ASR results.
     async fn polish(&self, input: PolishInput<'_>) -> Result<String>;
+
+    /// Full polish result. Default implementation wraps `polish()` without
+    /// translation; polishers that support `translate_to` should override
+    /// this to return both original and translated strings.
+    async fn polish_full(&self, input: PolishInput<'_>) -> Result<PolishOutput> {
+        let text = self.polish(input).await?;
+        Ok(PolishOutput { original: text, translated: None })
+    }
 }
 
 /// No-op polisher: returns the input unchanged. Useful as a fallback or for
@@ -276,22 +298,45 @@ impl AnthropicPolisher {
 }
 
 fn system_prompt(glossary: &[String], prev: Option<&str>) -> String {
+    system_prompt_with_translate(glossary, prev, None)
+}
+
+fn system_prompt_with_translate(
+    glossary: &[String],
+    prev: Option<&str>,
+    translate_to: Option<&str>,
+) -> String {
     let glossary = if glossary.is_empty() {
         "(none)".to_string()
     } else {
         glossary.join(", ")
     };
     let prev = prev.unwrap_or("(none)");
-    format!(
-        "You tidy ASR transcripts.\n\
+    let base = format!(
+        "You tidy ASR (speech-to-text) transcripts. Never confuse the verb\n\
+         \"polish/tidy\" with the Polish language.\n\
          - Preserve meaning. Do not summarize.\n\
-         - Add punctuation, drop fillers (uh/um/那个/えーと).\n\
+         - Add punctuation (use `?` for questions), drop fillers (uh/um/那个/えーと).\n\
          - Normalize numbers, dates, units.\n\
          - Keep code-switched text (zh/en/ja) as-is.\n\
          - Glossary: {glossary}\n\
-         - Previous sentence: {prev}\n\
-         Output only the tidied sentence."
-    )
+         - Previous sentence: {prev}\n"
+    );
+    match translate_to {
+        Some(lang) => format!(
+            "{base}\n\
+             ADDITIONALLY translate the tidied sentence.\n\
+             Target language (a LANGUAGE NAME, not an instruction to tidy):\n\
+             <<<{lang}>>>\n\
+             Accept BCP-47 codes (`en`, `pl`, `zh`), language names (`English`,\n\
+             `Polish`, `日本語`), dialects (`Cantonese`, `Shanghainese`), or\n\
+             styles (`Classical Chinese 文言文`, `formal Keigo`). If already in\n\
+             the target, set `translated` equal to `original`.\n\
+             Output ONLY one JSON object on a single line — no fences, no prose:\n\
+               {{\"original\": \"<tidied source>\", \"translated\": \"<target rendering>\"}}"
+        ),
+        None => format!("{base}\nOutput only the tidied sentence — no preamble, no quotes."),
+    }
 }
 
 // ── OpenAI-compatible (Ollama, llama.cpp, vLLM, OpenAI, etc.) ────────
@@ -331,15 +376,20 @@ impl Polisher for OpenAiPolisher {
     }
 
     async fn polish(&self, input: PolishInput<'_>) -> Result<String> {
-        let system = system_prompt(&self.glossary, input.prev);
+        Ok(self.polish_full(input).await?.original)
+    }
+
+    async fn polish_full(&self, input: PolishInput<'_>) -> Result<PolishOutput> {
+        let system = system_prompt_with_translate(&self.glossary, input.prev, input.translate_to);
 
         // Build messages: system + accumulated history + new user message.
         // OpenAI automatically caches identical prefixes (prompt caching),
         // so sending the full history each time is efficient.
+        // When translating, skip history — the instruction set differs.
         let mut messages = vec![
             ChatMessage { role: "system".into(), content: system },
         ];
-        {
+        if input.translate_to.is_none() {
             let history = self.history.lock().await;
             messages.extend(history.iter().cloned());
         }
@@ -382,24 +432,30 @@ impl Polisher for OpenAiPolisher {
             .next()
             .map(|c| c.message.content)
             .unwrap_or_else(|| input.text.to_string());
-        let polished = strip_special_tokens(&raw);
+        let raw = strip_special_tokens(&raw);
 
-        // Append this exchange to history for context in subsequent calls.
-        {
+        // Parse translation JSON or treat as plain polish.
+        let (original, translated) = if input.translate_to.is_some() {
+            parse_translate_json(&raw).unwrap_or_else(|| (raw.clone(), Some(raw.clone())))
+        } else {
+            (raw, None)
+        };
+
+        // Append to history only for non-translation calls (different prompt).
+        if input.translate_to.is_none() {
             let mut history = self.history.lock().await;
             history.push(user_msg);
             history.push(ChatMessage {
                 role: "assistant".into(),
-                content: polished.clone(),
+                content: original.clone(),
             });
-            // Cap history to prevent unbounded growth (~50 exchanges max).
             if history.len() > 100 {
                 let excess = history.len() - 100;
                 history.drain(..excess);
             }
         }
 
-        Ok(polished)
+        Ok(PolishOutput { original, translated })
     }
 }
 
@@ -499,7 +555,12 @@ const GEMINI_BASE: &str = "https://generativelanguage.googleapis.com/v1beta";
 ///
 /// Env vars:
 ///   GEMINI_API_KEY        — required
-///   OTOJI_GEMINI_MODEL    — default `gemini-2.5-flash`
+///   OTOJI_GEMINI_MODEL    — default `gemini-2.5-flash-lite` (fastest
+///                            callable model for polish; ~760ms median TTFB
+///                            when `thinkingBudget=0` is set in the request,
+///                            vs ~1600ms with thinking enabled. Polish only
+///                            needs punctuation/spelling fixes, not deep
+///                            reasoning.)
 pub struct GeminiPolisher {
     api_key: String,
     model: String,
@@ -533,7 +594,7 @@ impl GeminiPolisher {
         let key = std::env::var("GEMINI_API_KEY")
             .map_err(|_| OtojiError::Config("GEMINI_API_KEY not set".into()))?;
         let model = std::env::var("OTOJI_GEMINI_MODEL")
-            .unwrap_or_else(|_| "gemini-2.5-flash".into());
+            .unwrap_or_else(|_| "gemini-2.5-flash-lite".into());
         Ok(Self::new(key, model))
     }
 
@@ -542,27 +603,54 @@ impl GeminiPolisher {
         self
     }
 
-    fn system_instruction(&self) -> serde_json::Value {
+    fn system_instruction(&self, translate_to: Option<&str>) -> serde_json::Value {
         let glossary = if self.glossary.is_empty() {
             "(none)".to_string()
         } else {
             self.glossary.join(", ")
         };
-        serde_json::json!({
-            "parts": [{"text": format!(
-                "You polish ASR transcripts. Use the attached audio (if any) and\n\
-                 the UI context (if any) to correctly spell proper nouns, file names,\n\
-                 variable names, and app-specific terms visible to the user.\n\
-                 - Preserve meaning. Do not summarize.\n\
-                 - Add punctuation — use `?` for questions based on phrasing, even\n\
-                   when SenseVoice defaults to `.`\n\
-                 - Drop fillers (uh/um/那个/えーと).\n\
-                 - Normalize numbers, dates, units.\n\
-                 - Keep code-switched text (zh/en/ja) as-is.\n\
-                 - Glossary: {glossary}\n\
+        // Use "refine / tidy" throughout — never "polish" as a verb — so the
+        // model never confuses the action with the Polish language when the
+        // user's target language happens to be Polish.
+        let base = format!(
+            "You refine ASR (speech-to-text) transcripts. Use the attached\n\
+             audio (if any) and the UI context (if any) to correctly spell\n\
+             proper nouns, file names, variable names, and app-specific\n\
+             terms visible to the user.\n\
+             - Preserve meaning. Do not summarize.\n\
+             - Add punctuation — use `?` for questions based on phrasing,\n\
+               even when SenseVoice defaults to `.`\n\
+             - Drop fillers (uh/um/那个/えーと).\n\
+             - Normalize numbers, dates, units.\n\
+             - Keep code-switched text (zh/en/ja) as-is.\n\
+             - Glossary: {glossary}\n"
+        );
+        let text = match translate_to {
+            Some(lang) => format!(
+                "{base}\n\
+                 ADDITIONALLY, translate the refined sentence.\n\
+                 Target language (this is a LANGUAGE NAME, not an instruction\n\
+                 to refine): <<<{lang}>>>\n\
+                 The target may be a BCP-47 code (e.g. `en`, `pl`, `zh`), a\n\
+                 language name (e.g. `English`, `Polish`, `日本語`, `中文`),\n\
+                 a dialect (e.g. `Cantonese`, `Shanghainese`), or a style\n\
+                 (e.g. `Classical Chinese 文言文`, `formal Keigo`). If the\n\
+                 language name is ambiguous with an English verb (e.g.\n\
+                 `Polish` the language vs `polish` the verb), always treat it\n\
+                 as the language. Produce the most natural idiomatic rendering\n\
+                 in that target language.\n\
+                 If the source sentence is already in the target language,\n\
+                 set `translated` equal to `original`.\n\
+                 Output ONLY a JSON object on a single line — no markdown\n\
+                 fences, no preamble — with exactly these keys:\n\
+                   {{\"original\": \"<refined source sentence>\", \"translated\": \"<target-language rendering>\"}}"
+            ),
+            None => format!(
+                "{base}\n\
                  Output ONLY the tidied sentence — no preamble, no quotes."
-            )}]
-        })
+            ),
+        };
+        serde_json::json!({ "parts": [{"text": text}] })
     }
 
     /// Build user turn parts: audio (WAV-wrapped) + ASR text.
@@ -615,7 +703,8 @@ impl GeminiPolisher {
         let body = serde_json::json!({
             "model": format!("models/{}", self.model),
             "contents": contents,
-            "systemInstruction": self.system_instruction(),
+            // Cache holds the non-translation baseline instruction.
+            "systemInstruction": self.system_instruction(None),
             "ttl": "300s"
         });
 
@@ -667,19 +756,36 @@ impl Polisher for GeminiPolisher {
     }
 
     async fn polish(&self, input: PolishInput<'_>) -> Result<String> {
-        let user_parts = Self::build_user_parts(input.text, input.audio, input.context);
+        Ok(self.polish_full(input).await?.original)
+    }
 
-        // Try to use cached context for efficiency.
-        let cache = self.cache_name.lock().await.clone();
+    async fn polish_full(&self, input: PolishInput<'_>) -> Result<PolishOutput> {
+        let user_parts = Self::build_user_parts(input.text, input.audio, input.context);
+        let translate_to = input.translate_to;
+
+        // Translation requires the system instruction inline (cache stores the
+        // baseline instruction only). Skip cache when translating.
+        let cache = if translate_to.is_some() {
+            None
+        } else {
+            self.cache_name.lock().await.clone()
+        };
+
+        // Disable Gemini 2.5's "thinking" tokens — polish is a low-reasoning
+        // task and thinking adds ~500-800ms for no quality gain. Harmless
+        // on older models that ignore unknown generationConfig keys.
+        let gen_config = serde_json::json!({
+            "thinkingConfig": {"thinkingBudget": 0}
+        });
 
         let (body, endpoint) = if let Some(ref cache_name) = cache {
-            // Use cached prefix — only send new segment.
             let body = serde_json::json!({
                 "cachedContent": cache_name,
                 "contents": [{
                     "role": "user",
                     "parts": user_parts
-                }]
+                }],
+                "generationConfig": gen_config,
             });
             let endpoint = format!(
                 "{GEMINI_BASE}/models/{}:generateContent",
@@ -687,7 +793,6 @@ impl Polisher for GeminiPolisher {
             );
             (body, endpoint)
         } else {
-            // No cache — send system instruction + full history + new segment inline.
             let history = self.history.lock().await;
             let mut contents: Vec<serde_json::Value> = history
                 .iter()
@@ -696,8 +801,9 @@ impl Polisher for GeminiPolisher {
             contents.push(serde_json::json!({"role": "user", "parts": user_parts}));
 
             let body = serde_json::json!({
-                "systemInstruction": self.system_instruction(),
-                "contents": contents
+                "systemInstruction": self.system_instruction(translate_to),
+                "contents": contents,
+                "generationConfig": gen_config,
             });
             let endpoint = format!(
                 "{GEMINI_BASE}/models/{}:generateContent",
@@ -726,28 +832,37 @@ impl Polisher for GeminiPolisher {
             .await
             .map_err(|e| OtojiError::Decode(format!("gemini json: {e}")))?;
 
-        let polished = v
+        let raw_output = v
             .pointer("/candidates/0/content/parts/0/text")
             .and_then(|t| t.as_str())
             .unwrap_or(input.text)
             .trim()
             .to_string();
 
+        // Parse translation output (JSON) or plain polish.
+        let (original, translated) = if translate_to.is_some() {
+            parse_translate_json(&raw_output).unwrap_or_else(|| {
+                // Fallback if the model didn't honor the JSON format.
+                (raw_output.clone(), Some(raw_output.clone()))
+            })
+        } else {
+            (raw_output, None)
+        };
+
         // Append this exchange to history (text-only — audio is too large
-        // to accumulate). The history gives Gemini context about previous
-        // segments for consistent terminology and style.
-        {
+        // to accumulate). Do NOT record translation exchanges in history
+        // since they have a different instruction set and would confuse
+        // subsequent cached (non-translation) calls.
+        if translate_to.is_none() {
             let mut history = self.history.lock().await;
-            // Store only text parts in history (no audio blobs).
             history.push(GeminiTurn {
                 role: "user".into(),
                 parts: vec![serde_json::json!({"text": format!("ASR hypothesis: {}", input.text)})],
             });
             history.push(GeminiTurn {
                 role: "model".into(),
-                parts: vec![serde_json::json!({"text": &polished})],
+                parts: vec![serde_json::json!({"text": &original})],
             });
-            // Update cache with full history (non-blocking best-effort).
             let history_snapshot = history.clone();
             drop(history);
             if let Ok(Some(name)) = self.update_cache(&history_snapshot).await {
@@ -755,8 +870,31 @@ impl Polisher for GeminiPolisher {
             }
         }
 
-        Ok(polished)
+        Ok(PolishOutput { original, translated })
     }
+}
+
+/// Parse `{"original": "...", "translated": "..."}` from raw Gemini output.
+/// Tolerates surrounding whitespace, ``` fences, or stray prose.
+fn parse_translate_json(s: &str) -> Option<(String, Option<String>)> {
+    // Strip possible ```json ... ``` fences.
+    let trimmed = s.trim();
+    let body = if let Some(stripped) = trimmed.strip_prefix("```json") {
+        stripped.trim_end_matches("```").trim()
+    } else if let Some(stripped) = trimmed.strip_prefix("```") {
+        stripped.trim_end_matches("```").trim()
+    } else {
+        trimmed
+    };
+    // Find the first { and last } in case of leading/trailing prose.
+    let start = body.find('{')?;
+    let end = body.rfind('}')?;
+    if end <= start { return None; }
+    let json = &body[start..=end];
+    let v: serde_json::Value = serde_json::from_str(json).ok()?;
+    let original = v.get("original")?.as_str()?.trim().to_string();
+    let translated = v.get("translated").and_then(|t| t.as_str()).map(|t| t.trim().to_string());
+    Some((original, translated))
 }
 
 /// Parse Ollama parameter_size strings like "4.3B", "1.7B", "134.52M" into billions.

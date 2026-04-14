@@ -34,6 +34,7 @@ pub async fn polish_text(opts: PolishOptions) -> Result<String> {
             prev: opts.prev.as_deref(),
             audio: None,
             context: None,
+            translate_to: None,
         })
         .await
         .map_err(|e| Error::from_reason(format!("polish: {e}")))

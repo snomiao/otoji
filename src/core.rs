@@ -83,6 +83,17 @@ pub enum AsrEvent {
     /// Emitted after LLM polish completes (e.g. punctuation fixed based on
     /// context). Consumers should diff-update (backspace + retype) the cursor.
     PttUpgrade { text: String },
+    /// Push-to-talk: translation of the last `ptt_final` into the target
+    /// language configured via `--ptt-translate-to`. Only emitted when
+    /// translation is enabled. The `lang` field carries the target BCP-47
+    /// code (e.g. `"en"`, `"ja"`).
+    PttTranslated { text: String, lang: String },
+    /// Source language detected by the ASR engine (e.g. SenseVoice emits
+    /// `<|ja|>`, `<|zh|>`, `<|en|>` tags). Useful for bidirectional
+    /// translation — the consumer can decide which direction to translate
+    /// based on this tag. Emitted once per PTT segment (or VAD segment),
+    /// right before the corresponding `ptt_final` / `final`.
+    LanguageDetected { lang: String },
 }
 
 #[derive(Debug, Error)]
