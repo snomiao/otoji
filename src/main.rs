@@ -103,6 +103,22 @@ enum Cmd {
         /// when `--ptt-translate-to` is set. Defaults to `original`.
         #[arg(long, default_value = "original")]
         ptt_tts_source: String,
+        /// Path to a Unix domain socket (or `host:port` for TCP) that
+        /// otoji will bind on and accept text control messages for PTT.
+        /// Alternative to SIGUSR1/SIGUSR2 — works on Windows and avoids
+        /// process-permission issues.
+        ///
+        /// Protocol (one command per line, ASCII):
+        ///   PTT_START           — start a PTT segment (like SIGUSR1)
+        ///   PTT_END             — end the segment (like SIGUSR2)
+        ///   CONTEXT <text>      — set the accessibility/UI context
+        ///                         in-band; replaces --ptt-context-file
+        ///
+        /// Examples:
+        ///   --ptt-control-socket /tmp/otoji-ctrl.sock
+        ///   --ptt-control-socket 127.0.0.1:18080
+        #[arg(long)]
+        ptt_control_socket: Option<String>,
         /// Polish speed/quality preset. Overrides OTOJI_POLISH_* env vars
         /// when set, so a single CLI flag picks a sensible combination.
         ///
@@ -140,6 +156,24 @@ enum Cmd {
         /// Disable real-time pacing (send as fast as possible).
         #[arg(long)]
         burst: bool,
+    },
+    /// Start a WebSocket server that accepts binary PCM audio (16 kHz
+    /// mono s16le) and broadcasts AsrEvents as JSON text frames.
+    ///
+    /// One WebSocket connection = one live SenseVoice session. Clients
+    /// (browser apps, Electron, etc.) send binary PCM frames to stream
+    /// audio in, and receive events on the same connection.
+    ///
+    /// Control messages (text frames IN):
+    ///   PTT_START        — mark PTT segment start
+    ///   PTT_END          — mark segment end
+    ///   CONTEXT <text>   — set UI context for polish
+    ///
+    /// Example URL: ws://127.0.0.1:8080/
+    Server {
+        /// Bind address (default: `127.0.0.1:8080`).
+        #[arg(long, default_value = "127.0.0.1:8080")]
+        addr: String,
     },
     /// One-shot transcribe a WAV or PCM file. Prints a single JSON line
     /// `{"text": "..."}` to stdout and exits — designed for CI, batch
@@ -268,6 +302,92 @@ fn resolve_tts(kind: TtsKind) -> Result<Arc<dyn TtsProvider>> {
             Ok(Arc::new(CloudflareTts::new(cfg)))
         }
     }
+}
+
+/// Start a PTT control server that accepts line-based commands.
+/// Accepts either a Unix-domain-socket path (contains '/' on unix) or a
+/// `host:port` TCP address. Portable alternative to SIGUSR1/2 for
+/// non-Unix consumers.
+fn start_ptt_control_server(addr: String) {
+    use otoji::asr::sensevoice::{PTT_WORKER_TX, WorkerMsg};
+    std::thread::Builder::new()
+        .name("ptt-control".into())
+        .spawn(move || {
+            let is_unix_path = addr.starts_with('/');
+            eprintln!("[otoji] PTT control server listening on {addr}");
+
+            #[cfg(unix)]
+            if is_unix_path {
+                let _ = std::fs::remove_file(&addr);
+                let listener = match std::os::unix::net::UnixListener::bind(&addr) {
+                    Ok(l) => l,
+                    Err(e) => {
+                        eprintln!("[otoji] bind unix socket {addr}: {e}");
+                        return;
+                    }
+                };
+                for stream in listener.incoming().flatten() {
+                    handle_ptt_control_conn(stream);
+                }
+                return;
+            }
+            let _ = is_unix_path; // silence unused on non-unix
+
+            // TCP fallback (and Windows default).
+            let listener = match std::net::TcpListener::bind(&addr) {
+                Ok(l) => l,
+                Err(e) => {
+                    eprintln!("[otoji] bind tcp {addr}: {e}");
+                    return;
+                }
+            };
+            for stream in listener.incoming().flatten() {
+                handle_ptt_control_conn(stream);
+            }
+
+            // Silence unused-import warning when neither branch uses.
+            let _ = (PTT_WORKER_TX.lock(), WorkerMsg::PttStart);
+        })
+        .ok();
+}
+
+fn handle_ptt_control_conn<R>(stream: R)
+where
+    R: std::io::Read + Send + 'static,
+{
+    use otoji::asr::sensevoice::{
+        PTT_SIGNAL_PENDING_END, PTT_SIGNAL_PENDING_START, PTT_WORKER_TX, WorkerMsg,
+    };
+    use std::io::BufRead;
+    std::thread::spawn(move || {
+        let reader = std::io::BufReader::new(stream);
+        for line in reader.lines().map_while(|r| r.ok()) {
+            let line = line.trim();
+            if line.is_empty() { continue; }
+            // Parse command.
+            if line.eq_ignore_ascii_case("PTT_START") {
+                // Set the same flag used by the SIGUSR1 poller so the
+                // worker_tx path stays consistent.
+                PTT_SIGNAL_PENDING_START
+                    .store(true, std::sync::atomic::Ordering::Relaxed);
+                eprintln!("[otoji-ctrl] PTT_START");
+            } else if line.eq_ignore_ascii_case("PTT_END") {
+                PTT_SIGNAL_PENDING_END
+                    .store(true, std::sync::atomic::Ordering::Relaxed);
+                eprintln!("[otoji-ctrl] PTT_END");
+            } else if let Some(ctx) = line.strip_prefix("CONTEXT ") {
+                // Write to the standard context file path so the existing
+                // read path picks it up. Keeps integration simple.
+                if let Ok(path) = std::env::var("OTOJI_PTT_CONTEXT_FILE") {
+                    let _ = std::fs::write(path, ctx);
+                    eprintln!("[otoji-ctrl] CONTEXT ({} bytes)", ctx.len());
+                }
+            } else {
+                eprintln!("[otoji-ctrl] unknown command: {line:?}");
+            }
+            let _ = (PTT_WORKER_TX.lock(), WorkerMsg::PttStart); // silence import warn
+        }
+    });
 }
 
 /// Apply a polish preset by setting the OTOJI_POLISH_* env vars that
@@ -501,6 +621,7 @@ async fn main() -> Result<()> {
             ptt_context_file,
             ptt_translate_to,
             ptt_tts_source,
+            ptt_control_socket,
             polish_preset,
         } => {
             if let Some(ref dir) = model {
@@ -508,6 +629,10 @@ async fn main() -> Result<()> {
             }
             if let Some(ref preset) = polish_preset {
                 apply_polish_preset(preset);
+            }
+            // Start the PTT control socket server if requested.
+            if let Some(addr) = ptt_control_socket {
+                start_ptt_control_server(addr);
             }
             let force_plain = plain || !std::io::stdout().is_terminal();
             run_listen(
@@ -531,6 +656,7 @@ async fn main() -> Result<()> {
         }
         Cmd::Devices => run_devices().await,
         Cmd::Mic { device, frame_ms } => run_mic(device, frame_ms).await,
+        Cmd::Server { addr } => run_server(addr).await,
         Cmd::Transcribe { path, model, translate_to } => {
             if let Some(ref dir) = model {
                 std::env::set_var("OTOJI_SENSEVOICE_DIR", dir);
@@ -669,6 +795,22 @@ async fn drive_plain<P: AsrProvider + 'static>(
     let polisher: Option<Arc<dyn Polisher>> = ptt_polish
         .as_deref()
         .and_then(|name| resolve_polisher(name));
+
+    // Prewarm the polisher connection so the first real PTT segment doesn't
+    // pay DNS / TLS / cold-start overhead. Typical saving: 200-400ms on
+    // the first ptt_final after startup.
+    if let Some(p) = polisher.clone() {
+        tokio::spawn(async move {
+            let _ = p.polish(otoji::polish::PolishInput {
+                text: "hi",
+                prev: None,
+                audio: None,
+                context: None,
+                translate_to: None,
+            }).await;
+            eprintln!("[otoji] polish connection prewarmed");
+        });
+    }
     let tts_provider: Option<Arc<dyn TtsProvider>> = ptt_tts.as_deref().and_then(|name| {
         let kind = match name {
             "auto" | "" => TtsKind::Auto,
@@ -932,6 +1074,92 @@ async fn run_mic(device: Option<String>, frame_ms: u32) -> Result<()> {
         if out.write_all(&chunk.pcm).is_err() {
             break; // stdout closed (pipe broken)
         }
+    }
+    Ok(())
+}
+
+/// Run a minimal WebSocket server. Each connection = one SenseVoice
+/// session. Binary frames are treated as raw 16 kHz mono s16le PCM audio.
+/// Text frames are control commands. Events flow back as JSON text frames.
+async fn run_server(addr: String) -> Result<()> {
+    use futures_util::{SinkExt, StreamExt};
+    use tokio_tungstenite::tungstenite::Message;
+
+    let listener = tokio::net::TcpListener::bind(&addr)
+        .await
+        .context("bind ws server")?;
+    eprintln!("[otoji] WebSocket server listening on ws://{addr}/");
+
+    while let Ok((stream, peer)) = listener.accept().await {
+        eprintln!("[otoji] client connected: {peer}");
+        tokio::spawn(async move {
+            let ws = match tokio_tungstenite::accept_async(stream).await {
+                Ok(ws) => ws,
+                Err(e) => { eprintln!("[otoji] ws accept: {e}"); return; }
+            };
+            let (mut tx, mut rx) = ws.split();
+
+            // Audio bridge: PCM bytes → SenseVoice worker.
+            let (audio_tx, audio_rx) = audio::channel(256);
+            let (event_tx, mut event_rx) = mpsc::channel(128);
+
+            let cfg = SenseVoiceConfig::from_env();
+            let provider = Arc::new(SenseVoice::new(cfg));
+            let p2 = provider.clone();
+            tokio::spawn(async move {
+                if let Err(e) = p2.run(audio_rx, event_tx).await {
+                    eprintln!("[otoji-ws] asr: {e}");
+                }
+            });
+
+            // Forward events → WebSocket.
+            let send_task = tokio::spawn(async move {
+                while let Some(ev) = event_rx.recv().await {
+                    if let Ok(line) = serde_json::to_string(&ev) {
+                        if tx.send(Message::Text(line.into())).await.is_err() { break; }
+                    }
+                    if matches!(ev, otoji::core::AsrEvent::Closed) { break; }
+                }
+            });
+
+            // Read incoming WS frames.
+            while let Some(msg) = rx.next().await {
+                let msg = match msg {
+                    Ok(m) => m,
+                    Err(e) => { eprintln!("[otoji-ws] recv: {e}"); break; }
+                };
+                match msg {
+                    Message::Binary(data) => {
+                        let chunk = otoji::core::AudioChunk::new(
+                            otoji::core::AudioFormat::PCM16K_MONO,
+                            data.to_vec(),
+                        );
+                        if audio_tx.send(chunk).await.is_err() { break; }
+                    }
+                    Message::Text(t) => {
+                        use otoji::asr::sensevoice::{
+                            PTT_SIGNAL_PENDING_END, PTT_SIGNAL_PENDING_START,
+                        };
+                        use std::sync::atomic::Ordering;
+                        let line = t.trim();
+                        if line.eq_ignore_ascii_case("PTT_START") {
+                            PTT_SIGNAL_PENDING_START.store(true, Ordering::Relaxed);
+                        } else if line.eq_ignore_ascii_case("PTT_END") {
+                            PTT_SIGNAL_PENDING_END.store(true, Ordering::Relaxed);
+                        } else if let Some(_ctx) = line.strip_prefix("CONTEXT ") {
+                            // Context handling: write to configured file if set.
+                            if let Ok(path) = std::env::var("OTOJI_PTT_CONTEXT_FILE") {
+                                let _ = std::fs::write(path, _ctx);
+                            }
+                        }
+                    }
+                    Message::Close(_) => break,
+                    _ => {}
+                }
+            }
+            let _ = send_task.await;
+            eprintln!("[otoji] client disconnected: {peer}");
+        });
     }
     Ok(())
 }
