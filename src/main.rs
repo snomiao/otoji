@@ -75,6 +75,17 @@ enum Cmd {
         /// Useful for piping into scripts and for headless testing.
         #[arg(long)]
         plain: bool,
+        /// Run an LLM polish pass on `ptt_final` events (fixes punctuation
+        /// like `?` vs `.`). Requires GEMINI_API_KEY / ANTHROPIC_API_KEY /
+        /// OPENAI_API_KEY in env or .env.local. Value = polisher name:
+        /// `gemini`, `anthropic`, `openai`, or `auto` (default, picks any).
+        #[arg(long)]
+        ptt_polish: Option<String>,
+        /// After `ptt_final`, synthesize the text via TTS and play it via
+        /// `afplay` (macOS). Useful for pronunciation learning. Provider
+        /// value: `gemini`, `openai`, `elevenlabs`, `piper`, `auto`.
+        #[arg(long)]
+        ptt_tts: Option<String>,
     },
     /// List available audio input devices.
     Devices,
@@ -300,6 +311,13 @@ fn walkdir(dir: &std::path::Path, threshold: &std::time::SystemTime) -> bool {
 
 #[tokio::main]
 async fn main() -> Result<()> {
+    // Load .env / .env.local (manifest dir, then cwd). Silent if absent.
+    let manifest = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+    let _ = dotenvy::from_path(manifest.join(".env.local"));
+    let _ = dotenvy::from_path(manifest.join(".env"));
+    let _ = dotenvy::from_filename(".env.local");
+    let _ = dotenvy::from_filename(".env");
+
     // PTT signal handling for `--plain` stdin mode (used by CapsLockX).
     // SIGUSR1 starts a PTT segment, SIGUSR2 ends it and emits ptt_final.
     //
@@ -361,11 +379,14 @@ async fn main() -> Result<()> {
             model,
             frame_ms,
             plain,
+            ptt_polish,
+            ptt_tts,
         } => {
             if let Some(ref dir) = model {
                 std::env::set_var("OTOJI_SENSEVOICE_DIR", dir);
             }
-            run_listen(provider, device, frame_ms, plain || !std::io::stdout().is_terminal()).await
+            let force_plain = plain || !std::io::stdout().is_terminal();
+            run_listen(provider, device, frame_ms, force_plain, ptt_polish, ptt_tts).await
         }
         Cmd::File {
             path,
@@ -395,12 +416,11 @@ async fn run_listen(
     device: Option<String>,
     frame_ms: u32,
     plain: bool,
+    ptt_polish: Option<String>,
+    ptt_tts: Option<String>,
 ) -> Result<()> {
     if device.as_deref() == Some("-") {
-        return run_listen_stdin(kind, frame_ms, plain).await;
-    }
-    if matches!(kind, AsrKind::Sensevoice | AsrKind::Iflytek) {
-        // mic permission is handled by the OS on first access
+        return run_listen_stdin(kind, frame_ms, plain, ptt_polish, ptt_tts).await;
     }
     match kind {
         AsrKind::Iflytek => {
@@ -416,7 +436,7 @@ async fn run_listen(
             let (audio_tx, audio_rx) = audio::channel(64);
             let _stream = mic::start(device.as_deref(), frame_ms, audio_tx).context("mic")?;
             if plain {
-                drive_plain(provider, audio_rx).await
+                drive_plain(provider, audio_rx, ptt_polish, ptt_tts).await
             } else {
                 drive(provider, audio_rx).await
             }
@@ -424,15 +444,19 @@ async fn run_listen(
     }
 }
 
-async fn run_listen_stdin(kind: AsrKind, frame_ms: u32, plain_flag: bool) -> Result<()> {
+async fn run_listen_stdin(
+    kind: AsrKind,
+    frame_ms: u32,
+    plain_flag: bool,
+    ptt_polish: Option<String>,
+    ptt_tts: Option<String>,
+) -> Result<()> {
     if std::io::stdin().is_terminal() {
         anyhow::bail!(
             "`otoji listen -` expects WAV data on stdin, but stdin is a terminal. \
              Try:  cat sample.wav | otoji listen -"
         );
     }
-    // Force plain whenever stdout is not a TTY (piping/redirecting), since the
-    // ratatui TUI would fight stdout. Honor the explicit --plain flag too.
     let plain = plain_flag || !std::io::stdout().is_terminal();
 
     let (audio_tx, audio_rx) = audio::channel(64);
@@ -449,7 +473,7 @@ async fn run_listen_stdin(kind: AsrKind, frame_ms: u32, plain_flag: bool) -> Res
             let cfg = IflytekRtasrConfig::from_env().context("RTASR config")?;
             let provider = IflytekRtasr::new(cfg);
             if plain {
-                drive_plain(provider, audio_rx).await
+                drive_plain(provider, audio_rx, ptt_polish, ptt_tts).await
             } else {
                 drive(provider, audio_rx).await
             }
@@ -458,7 +482,7 @@ async fn run_listen_stdin(kind: AsrKind, frame_ms: u32, plain_flag: bool) -> Res
             let cfg = SenseVoiceConfig::from_env();
             let provider = SenseVoice::new(cfg);
             if plain {
-                drive_plain(provider, audio_rx).await
+                drive_plain(provider, audio_rx, ptt_polish, ptt_tts).await
             } else {
                 drive(provider, audio_rx).await
             }
@@ -475,6 +499,8 @@ async fn run_listen_stdin(kind: AsrKind, frame_ms: u32, plain_flag: bool) -> Res
 async fn drive_plain<P: AsrProvider + 'static>(
     provider: P,
     audio_rx: audio::AudioRx,
+    ptt_polish: Option<String>,
+    ptt_tts: Option<String>,
 ) -> Result<()> {
     let (event_tx, mut event_rx) = mpsc::channel(128);
     let provider = Arc::new(provider);
@@ -485,13 +511,49 @@ async fn drive_plain<P: AsrProvider + 'static>(
         }
     });
 
+    // Resolve polisher + TTS provider once at startup.
+    let polisher: Option<Arc<dyn Polisher>> = ptt_polish
+        .as_deref()
+        .and_then(|name| resolve_polisher(name));
+    let tts_provider: Option<Arc<dyn TtsProvider>> = ptt_tts.as_deref().and_then(|name| {
+        let kind = match name {
+            "auto" | "" => TtsKind::Auto,
+            "piper" => TtsKind::Piper,
+            "openai" => TtsKind::Openai,
+            "elevenlabs" => TtsKind::Elevenlabs,
+            "gemini" => TtsKind::Gemini,
+            "iflytek" => TtsKind::Iflytek,
+            other => { eprintln!("[otoji] unknown --ptt-tts value: {other:?}"); return None; }
+        };
+        resolve_tts(kind).ok()
+    });
+    if polisher.is_some() { eprintln!("[otoji] PTT polish enabled: {}", polisher.as_ref().unwrap().name()); }
+    if tts_provider.is_some() { eprintln!("[otoji] PTT TTS enabled: {}", tts_provider.as_ref().unwrap().name()); }
+
     use std::io::Write;
     let stdout = std::io::stdout();
     while let Some(ev) = event_rx.recv().await {
+        // Intercept ptt_final for polish + TTS.
+        let ev = if let otoji::core::AsrEvent::PttFinal { text } = &ev {
+            let polished = match &polisher {
+                Some(p) => {
+                    let input = otoji::polish::PolishInput { text, prev: None, audio: None };
+                    p.polish(input).await.unwrap_or_else(|e| {
+                        eprintln!("[otoji] PTT polish error: {e}");
+                        text.clone()
+                    })
+                }
+                None => text.clone(),
+            };
+            if let Some(tts) = tts_provider.clone() {
+                let spoken = polished.clone();
+                tokio::spawn(async move { speak_via_afplay(tts, &spoken).await; });
+            }
+            otoji::core::AsrEvent::PttFinal { text: polished }
+        } else { ev };
+
         if let Ok(line) = serde_json::to_string(&ev) {
             let mut out = stdout.lock();
-            // Piped stdout is block-buffered; flush after each line so
-            // consumers (e.g. CapsLockX) see events promptly.
             if writeln!(out, "{line}").is_err() || out.flush().is_err() {
                 break;
             }
@@ -500,6 +562,86 @@ async fn drive_plain<P: AsrProvider + 'static>(
             break;
         }
     }
+    Ok(())
+}
+
+/// Resolve polish provider name to an instance. Returns None on error.
+fn resolve_polisher(name: &str) -> Option<Arc<dyn Polisher>> {
+    use otoji::polish::{AnthropicPolisher, GeminiPolisher, OpenAiPolisher};
+    let try_gemini = || -> Option<Arc<dyn Polisher>> {
+        GeminiPolisher::from_env().ok().map(|p| Arc::new(p) as Arc<dyn Polisher>)
+    };
+    let try_anthropic = || -> Option<Arc<dyn Polisher>> {
+        AnthropicPolisher::from_env().ok().map(|p| Arc::new(p) as Arc<dyn Polisher>)
+    };
+    let try_openai = || -> Option<Arc<dyn Polisher>> {
+        OpenAiPolisher::from_env().ok().map(|p| Arc::new(p) as Arc<dyn Polisher>)
+    };
+    match name {
+        "gemini" => try_gemini(),
+        "anthropic" => try_anthropic(),
+        "openai" => try_openai(),
+        "auto" | "" => try_gemini().or_else(try_openai).or_else(try_anthropic),
+        other => {
+            eprintln!("[otoji] unknown --ptt-polish value: {other:?}");
+            None
+        }
+    }
+}
+
+/// Synthesize `text` via `tts` and play back via `afplay` (macOS).
+async fn speak_via_afplay(tts: Arc<dyn TtsProvider>, text: &str) {
+    if text.is_empty() { return; }
+    use bytes::BytesMut;
+    let sample_rate = tts.sample_rate();
+    let is_pcm = tts.is_pcm();
+    let (audio_tx, mut audio_rx) = tokio::sync::mpsc::channel::<bytes::Bytes>(64);
+    let text_owned = text.to_string();
+    let tts_run = tokio::spawn(async move {
+        if let Err(e) = tts.synthesize(&text_owned, audio_tx).await {
+            eprintln!("[otoji] TTS synth error: {e}");
+        }
+    });
+    // Collect audio bytes.
+    let mut buf = BytesMut::new();
+    while let Some(chunk) = audio_rx.recv().await { buf.extend_from_slice(&chunk); }
+    let _ = tts_run.await;
+
+    // Write to temp file and play via afplay. Wrap PCM in WAV header if needed.
+    let tmp = std::env::temp_dir().join(format!("otoji-tts-{}.wav", std::process::id()));
+    if let Err(e) = write_wav_file(&tmp, &buf, sample_rate, is_pcm) {
+        eprintln!("[otoji] TTS write file error: {e}");
+        return;
+    }
+    let _ = std::process::Command::new("afplay")
+        .arg(&tmp)
+        .status();
+    let _ = std::fs::remove_file(&tmp);
+}
+
+/// Write audio bytes to a WAV file. If `is_pcm`, wrap mono i16 LE PCM in
+/// a RIFF header; otherwise treat `bytes` as already-packaged audio (e.g. MP3).
+fn write_wav_file(path: &std::path::Path, bytes: &[u8], sample_rate: u32, is_pcm: bool) -> std::io::Result<()> {
+    use std::io::Write;
+    let mut f = std::fs::File::create(path)?;
+    if is_pcm {
+        let data_len = bytes.len() as u32;
+        let byte_rate = sample_rate * 2; // mono, 16-bit
+        f.write_all(b"RIFF")?;
+        f.write_all(&(36u32 + data_len).to_le_bytes())?;
+        f.write_all(b"WAVE")?;
+        f.write_all(b"fmt ")?;
+        f.write_all(&16u32.to_le_bytes())?;
+        f.write_all(&1u16.to_le_bytes())?;       // PCM
+        f.write_all(&1u16.to_le_bytes())?;       // mono
+        f.write_all(&sample_rate.to_le_bytes())?;
+        f.write_all(&byte_rate.to_le_bytes())?;
+        f.write_all(&2u16.to_le_bytes())?;       // block align
+        f.write_all(&16u16.to_le_bytes())?;      // bits per sample
+        f.write_all(b"data")?;
+        f.write_all(&data_len.to_le_bytes())?;
+    }
+    f.write_all(bytes)?;
     Ok(())
 }
 
