@@ -351,6 +351,13 @@ struct ChatRequest<'a> {
     /// cached server-side for up to 1 hour, reducing cost and latency.
     #[serde(skip_serializing_if = "Option::is_none")]
     store: Option<bool>,
+    /// Sampling temperature. Polish/translate is a low-creativity task
+    /// — keep low to discourage chat-assistant drift.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    temperature: Option<f32>,
+    /// `{"type": "json_object"}` for structured output (translation).
+    #[serde(rename = "response_format", skip_serializing_if = "Option::is_none")]
+    response_format: Option<serde_json::Value>,
 }
 
 #[derive(Serialize, Deserialize, Clone)]
@@ -393,18 +400,27 @@ impl Polisher for OpenAiPolisher {
             let history = self.history.lock().await;
             messages.extend(history.iter().cloned());
         }
+        // Wrap input in clear delimiters so the model never mistakes it for
+        // chat addressed to itself.
         let user_msg = ChatMessage {
             role: "user".into(),
-            content: input.text.to_string(),
+            content: format!("<<<{}>>>", input.text),
         };
         messages.push(user_msg.clone());
 
         let is_openai = self.base_url.contains("openai.com");
+        let response_format = if input.translate_to.is_some() {
+            Some(serde_json::json!({"type": "json_object"}))
+        } else {
+            None
+        };
         let body = ChatRequest {
             model: &self.model,
             messages,
             max_tokens: Some(512),
             store: if is_openai { Some(true) } else { None },
+            temperature: Some(0.1),
+            response_format,
         };
         let url = format!("{}/chat/completions", self.base_url);
         let mut req = self.client.post(&url)
@@ -433,6 +449,16 @@ impl Polisher for OpenAiPolisher {
             .map(|c| c.message.content)
             .unwrap_or_else(|| input.text.to_string());
         let raw = strip_special_tokens(&raw);
+
+        // Detect chat-assistant drift on plain polish (translation is JSON-
+        // schema-constrained so it's safe).
+        if input.translate_to.is_none() && looks_like_chat_drift(input.text, &raw) {
+            eprintln!(
+                "[polish] openai-compat drift detected, falling back to raw: {:?} → {:?}",
+                input.text, raw
+            );
+            return Ok(PolishOutput { original: input.text.to_string(), translated: None });
+        }
 
         // Parse translation JSON or treat as plain polish.
         let (original, translated) = if input.translate_to.is_some() {
@@ -612,18 +638,36 @@ impl GeminiPolisher {
         // Use "refine / tidy" throughout — never "polish" as a verb — so the
         // model never confuses the action with the Polish language when the
         // user's target language happens to be Polish.
+        //
+        // CRITICAL: short inputs (a single word like "hello") otherwise
+        // trigger the model's chat persona and produce things like
+        // "Hi! How can I help you today?". Reinforce three times that this
+        // is a transformation task, not a conversation, with explicit
+        // few-shot examples of the short-input case.
         let base = format!(
-            "You refine ASR (speech-to-text) transcripts. Use the attached\n\
-             audio (if any) and the UI context (if any) to correctly spell\n\
-             proper nouns, file names, variable names, and app-specific\n\
-             terms visible to the user.\n\
-             - Preserve meaning. Do not summarize.\n\
+            "You are a TEXT TRANSFORMATION FUNCTION, not an assistant.\n\
+             You receive ASR (speech-to-text) transcripts wrapped in <<<...>>>.\n\
+             You return ONLY the refined transcript — verbatim, in the same\n\
+             language, no greetings, no questions back to the user, no offers\n\
+             to help, no preamble, no commentary, no quotes around output.\n\
+             - Preserve meaning. Do not summarize. Do not extend.\n\
              - Add punctuation — use `?` for questions based on phrasing,\n\
                even when SenseVoice defaults to `.`\n\
              - Drop fillers (uh/um/那个/えーと).\n\
              - Normalize numbers, dates, units.\n\
              - Keep code-switched text (zh/en/ja) as-is.\n\
-             - Glossary: {glossary}\n"
+             - For very short inputs (1-3 words), just add punctuation/\n\
+               capitalization and return; do NOT expand into a sentence,\n\
+               do NOT respond conversationally.\n\
+             - Glossary: {glossary}\n\
+             \n\
+             Examples (input → output):\n\
+               <<<hello>>> → Hello.\n\
+               <<<こんにちは>>> → こんにちは。\n\
+               <<<ok thanks>>> → OK, thanks.\n\
+               <<<is this working>>> → Is this working?\n\
+               <<<hmm>>> → Hmm.\n\
+               <<<>>> → (empty input — return empty string)\n"
         );
         let text = match translate_to {
             Some(lang) => format!(
@@ -647,7 +691,8 @@ impl GeminiPolisher {
             ),
             None => format!(
                 "{base}\n\
-                 Output ONLY the tidied sentence — no preamble, no quotes."
+                 Output ONLY the refined transcript — no preamble, no quotes,\n\
+                 no questions back, no offers to help."
             ),
         };
         serde_json::json!({ "parts": [{"text": text}] })
@@ -677,7 +722,9 @@ impl GeminiPolisher {
                 text_part.push_str("\n\n");
             }
         }
-        text_part.push_str(&format!("ASR hypothesis: {text}"));
+        // Wrap the input in clear delimiters so the model can never mistake
+        // it for a chat message addressed to itself.
+        text_part.push_str(&format!("<<<{text}>>>"));
         parts.push(serde_json::json!({"text": text_part}));
         parts
     }
@@ -774,9 +821,29 @@ impl Polisher for GeminiPolisher {
         // Disable Gemini 2.5's "thinking" tokens — polish is a low-reasoning
         // task and thinking adds ~500-800ms for no quality gain. Harmless
         // on older models that ignore unknown generationConfig keys.
-        let gen_config = serde_json::json!({
-            "thinkingConfig": {"thinkingBudget": 0}
-        });
+        //
+        // For translation, also force structured-output via responseSchema so
+        // the model cannot drift into chat-assistant prose for short inputs.
+        let gen_config = if translate_to.is_some() {
+            serde_json::json!({
+                "thinkingConfig": {"thinkingBudget": 0},
+                "temperature": 0.1,
+                "responseMimeType": "application/json",
+                "responseSchema": {
+                    "type": "OBJECT",
+                    "properties": {
+                        "original":   {"type": "STRING"},
+                        "translated": {"type": "STRING"}
+                    },
+                    "required": ["original", "translated"]
+                }
+            })
+        } else {
+            serde_json::json!({
+                "thinkingConfig": {"thinkingBudget": 0},
+                "temperature": 0.1
+            })
+        };
 
         let (body, endpoint) = if let Some(ref cache_name) = cache {
             let body = serde_json::json!({
@@ -839,6 +906,19 @@ impl Polisher for GeminiPolisher {
             .trim()
             .to_string();
 
+        // Detect assistant-persona drift — short inputs sometimes coax the
+        // model into a "How can I help?" style reply. If we see signature
+        // phrases AND the output is much longer than the input, fall back
+        // to the raw text. (Never applies to translation since JSON
+        // schema constrains the output structure.)
+        if translate_to.is_none() && looks_like_chat_drift(input.text, &raw_output) {
+            eprintln!(
+                "[polish] gemini drift detected, falling back to raw: {:?} → {:?}",
+                input.text, raw_output
+            );
+            return Ok(PolishOutput { original: input.text.to_string(), translated: None });
+        }
+
         // Parse translation output (JSON) or plain polish.
         let (original, translated) = if translate_to.is_some() {
             parse_translate_json(&raw_output).unwrap_or_else(|| {
@@ -872,6 +952,45 @@ impl Polisher for GeminiPolisher {
 
         Ok(PolishOutput { original, translated })
     }
+}
+
+/// Heuristic: did the model drop into chat-assistant mode instead of just
+/// refining the input? Triggered by short inputs like "hello" producing
+/// "Hi! How can I help you today?" outputs.
+///
+/// We treat the output as drift when it is *substantially longer* than the
+/// input AND contains a giveaway phrase. Keep the list tight to avoid
+/// false-positives on legitimate transcripts that happen to ask questions.
+fn looks_like_chat_drift(input: &str, output: &str) -> bool {
+    let in_chars = input.chars().count();
+    let out_chars = output.chars().count();
+    // Allow some growth (punctuation, capitalization). Drift is usually >2x.
+    if in_chars >= 25 || out_chars < in_chars * 2 + 10 {
+        return false;
+    }
+    let lower = output.to_lowercase();
+    const TELLS: &[&str] = &[
+        "how can i help",
+        "how may i help",
+        "i'd be happy to",
+        "i would be happy",
+        "i'm happy to help",
+        "feel free to ask",
+        "what would you like",
+        "is there anything",
+        "let me know if",
+        "as an ai",
+        "i am an ai",
+        // Japanese variants
+        "お手伝い",
+        "何かお手伝い",
+        "どのようにお手伝い",
+        // Chinese variants
+        "我能帮",
+        "我可以帮",
+        "有什么可以",
+    ];
+    TELLS.iter().any(|t| lower.contains(t))
 }
 
 /// Parse `{"original": "...", "translated": "..."}` from raw Gemini output.
