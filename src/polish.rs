@@ -312,30 +312,69 @@ fn system_prompt_with_translate(
         glossary.join(", ")
     };
     let prev = prev.unwrap_or("(none)");
+    // XML-tag output format. Why XML over raw text or JSON:
+    // - Drift-proof: anything outside <refined>...</refined> is ignored on
+    //   our side, so even if the model adds explanatory prose (e.g. for an
+    //   ambiguous one-word input like "Polish."), only the tag content is
+    //   used and the drift is dropped.
+    // - Empty-input safe: `<refined></refined>` is a valid no-op output
+    //   instead of an awkward `""` JSON value or stray apology text.
+    // - Streaming-friendly: the receiver can scan for `</refined>` to know
+    //   when the polished text is complete without needing a JSON parser.
     let base = format!(
-        "You tidy ASR (speech-to-text) transcripts. Never confuse the verb\n\
-         \"polish/tidy\" with the Polish language.\n\
-         - Preserve meaning. Do not summarize.\n\
-         - Add punctuation (use `?` for questions), drop fillers (uh/um/那个/えーと).\n\
+        "You are a TEXT TRANSFORMATION FUNCTION, not an assistant.\n\
+         You receive ASR (speech-to-text) transcripts wrapped in <<<...>>>.\n\
+         You MUST emit the refined transcript inside <refined>...</refined>\n\
+         tags. Nothing else. No preamble, no commentary, no greetings,\n\
+         no questions back, no explanations, no topic expansion.\n\
+         - Preserve meaning. Do not summarize. Do not extend.\n\
+         - Add punctuation — use `?` for questions based on phrasing,\n\
+           even when SenseVoice defaults to `.`\n\
+         - Drop fillers (uh/um/那个/えーと).\n\
          - Normalize numbers, dates, units.\n\
          - Keep code-switched text (zh/en/ja) as-is.\n\
+         - Output length must stay close to input length. For 1-3 word inputs,\n\
+           just fix punctuation/casing — never expand into a sentence,\n\
+           never explain what the word means, never respond conversationally.\n\
+         - Empty input → emit `<refined></refined>` and stop.\n\
+         - Never confuse the verb \"polish/tidy\" with the Polish language.\n\
          - Glossary: {glossary}\n\
-         - Previous sentence: {prev}\n"
+         - Previous sentence: {prev}\n\
+         \n\
+         Examples (input → output):\n\
+           <<<hello>>> → <refined>Hello.</refined>\n\
+           <<<Polish.>>> → <refined>Polish.</refined>\n\
+           <<<Java.>>> → <refined>Java.</refined>\n\
+           <<<こんにちは>>> → <refined>こんにちは。</refined>\n\
+           <<<ok thanks>>> → <refined>OK, thanks.</refined>\n\
+           <<<is this working>>> → <refined>Is this working?</refined>\n\
+           <<<hmm>>> → <refined>Hmm.</refined>\n\
+           <<<>>> → <refined></refined>\n"
     );
     match translate_to {
         Some(lang) => format!(
             "{base}\n\
-             ADDITIONALLY translate the tidied sentence.\n\
-             Target language (a LANGUAGE NAME, not an instruction to tidy):\n\
+             ADDITIONALLY translate the refined sentence into the target\n\
+             language and emit it inside <translated>...</translated> tags\n\
+             after the <refined> block. Output exactly two tag blocks,\n\
+             nothing else.\n\
+             Target language (a LANGUAGE NAME, not an instruction to refine):\n\
              <<<{lang}>>>\n\
              Accept BCP-47 codes (`en`, `pl`, `zh`), language names (`English`,\n\
              `Polish`, `日本語`), dialects (`Cantonese`, `Shanghainese`), or\n\
-             styles (`Classical Chinese 文言文`, `formal Keigo`). If already in\n\
-             the target, set `translated` equal to `original`.\n\
-             Output ONLY one JSON object on a single line — no fences, no prose:\n\
-               {{\"original\": \"<tidied source>\", \"translated\": \"<target rendering>\"}}"
+             styles (`Classical Chinese 文言文`, `formal Keigo`). If the source\n\
+             is already in the target language, copy the same text into\n\
+             <translated>.\n\
+             \n\
+             Translation example:\n\
+               input <<<hello>>> with target <<<ja>>>\n\
+               output: <refined>Hello.</refined><translated>こんにちは。</translated>"
         ),
-        None => format!("{base}\nOutput only the tidied sentence — no preamble, no quotes."),
+        None => format!(
+            "{base}\n\
+             Output ONLY the <refined>...</refined> block — nothing before,\n\
+             nothing after."
+        ),
     }
 }
 
@@ -409,18 +448,24 @@ impl Polisher for OpenAiPolisher {
         messages.push(user_msg.clone());
 
         let is_openai = self.base_url.contains("openai.com");
-        let response_format = if input.translate_to.is_some() {
-            Some(serde_json::json!({"type": "json_object"}))
+        // No more JSON response_format — output is XML-tag framed instead,
+        // which is streaming-friendly and tolerant of empty input.
+        // Cap output tokens proportional to input length so even if the model
+        // tries to drift past the closing tag, the runaway is bounded.
+        let in_chars = input.text.chars().count() as u32;
+        let cap = if input.translate_to.is_some() {
+            // Need budget for both <refined> + <translated> blocks.
+            (in_chars * 4).max(120).min(1024)
         } else {
-            None
+            (in_chars * 2 + 30).max(60).min(512)
         };
         let body = ChatRequest {
             model: &self.model,
             messages,
-            max_tokens: Some(512),
+            max_tokens: Some(cap),
             store: if is_openai { Some(true) } else { None },
             temperature: Some(0.1),
-            response_format,
+            response_format: None,
         };
         let url = format!("{}/chat/completions", self.base_url);
         let mut req = self.client.post(&url)
@@ -447,24 +492,33 @@ impl Polisher for OpenAiPolisher {
             .into_iter()
             .next()
             .map(|c| c.message.content)
-            .unwrap_or_else(|| input.text.to_string());
+            .unwrap_or_default();
         let raw = strip_special_tokens(&raw);
 
-        // Detect chat-assistant drift on plain polish (translation is JSON-
-        // schema-constrained so it's safe).
-        if input.translate_to.is_none() && looks_like_chat_drift(input.text, &raw) {
-            eprintln!(
-                "[polish] openai-compat drift detected, falling back to raw: {:?} → {:?}",
-                input.text, raw
-            );
-            return Ok(PolishOutput { original: input.text.to_string(), translated: None });
-        }
+        // Extract <refined>...</refined> (and optional <translated>...</translated>).
+        // Anything outside the tags is treated as drift and dropped — the
+        // model can ramble all it wants, only the tagged content reaches the
+        // user. If no tag is found at all, fall back to the raw input so the
+        // user still gets something typed at the cursor.
+        let refined = extract_xml_tag(&raw, "refined");
+        let translated_tag = extract_xml_tag(&raw, "translated");
 
-        // Parse translation JSON or treat as plain polish.
-        let (original, translated) = if input.translate_to.is_some() {
-            parse_translate_json(&raw).unwrap_or_else(|| (raw.clone(), Some(raw.clone())))
+        let original = match refined {
+            Some(s) => s,
+            None => {
+                eprintln!(
+                    "[polish] openai-compat: no <refined> tag in output, using raw input ({} chars)",
+                    raw.chars().count()
+                );
+                input.text.to_string()
+            }
+        };
+        let translated = if input.translate_to.is_some() {
+            // For translation, prefer explicit <translated>; if missing,
+            // fall back to <refined> (model collapsed both into one).
+            translated_tag.or_else(|| Some(original.clone()))
         } else {
-            (raw, None)
+            None
         };
 
         // Append to history only for non-translation calls (different prompt).
@@ -639,40 +693,47 @@ impl GeminiPolisher {
         // model never confuses the action with the Polish language when the
         // user's target language happens to be Polish.
         //
-        // CRITICAL: short inputs (a single word like "hello") otherwise
-        // trigger the model's chat persona and produce things like
-        // "Hi! How can I help you today?". Reinforce three times that this
-        // is a transformation task, not a conversation, with explicit
-        // few-shot examples of the short-input case.
+        // CRITICAL: short inputs (a single word like "hello" or "Polish.")
+        // otherwise trigger the model's chat persona — it explains the word's
+        // meaning or asks back. We force XML-tag output so any drift outside
+        // <refined>...</refined> can be discarded on our side, and we cap
+        // maxOutputTokens server-side for further safety.
         let base = format!(
             "You are a TEXT TRANSFORMATION FUNCTION, not an assistant.\n\
              You receive ASR (speech-to-text) transcripts wrapped in <<<...>>>.\n\
-             You return ONLY the refined transcript — verbatim, in the same\n\
-             language, no greetings, no questions back to the user, no offers\n\
-             to help, no preamble, no commentary, no quotes around output.\n\
+             You MUST emit the refined transcript inside <refined>...</refined>\n\
+             tags. Nothing outside the tags is permitted: no greetings, no\n\
+             questions back, no explanations, no topic expansion, no commentary.\n\
              - Preserve meaning. Do not summarize. Do not extend.\n\
              - Add punctuation — use `?` for questions based on phrasing,\n\
                even when SenseVoice defaults to `.`\n\
              - Drop fillers (uh/um/那个/えーと).\n\
              - Normalize numbers, dates, units.\n\
              - Keep code-switched text (zh/en/ja) as-is.\n\
-             - For very short inputs (1-3 words), just add punctuation/\n\
-               capitalization and return; do NOT expand into a sentence,\n\
-               do NOT respond conversationally.\n\
+             - For very short inputs (1-3 words or single nouns like\n\
+               \"Polish.\", \"Java.\"), just fix punctuation/casing and emit\n\
+               that — never expand into a sentence, never explain the word,\n\
+               never respond conversationally.\n\
+             - Empty input → emit `<refined></refined>` and stop.\n\
              - Glossary: {glossary}\n\
              \n\
              Examples (input → output):\n\
-               <<<hello>>> → Hello.\n\
-               <<<こんにちは>>> → こんにちは。\n\
-               <<<ok thanks>>> → OK, thanks.\n\
-               <<<is this working>>> → Is this working?\n\
-               <<<hmm>>> → Hmm.\n\
-               <<<>>> → (empty input — return empty string)\n"
+               <<<hello>>> → <refined>Hello.</refined>\n\
+               <<<Polish.>>> → <refined>Polish.</refined>\n\
+               <<<Java.>>> → <refined>Java.</refined>\n\
+               <<<こんにちは>>> → <refined>こんにちは。</refined>\n\
+               <<<ok thanks>>> → <refined>OK, thanks.</refined>\n\
+               <<<is this working>>> → <refined>Is this working?</refined>\n\
+               <<<hmm>>> → <refined>Hmm.</refined>\n\
+               <<<>>> → <refined></refined>\n"
         );
         let text = match translate_to {
             Some(lang) => format!(
                 "{base}\n\
-                 ADDITIONALLY, translate the refined sentence.\n\
+                 ADDITIONALLY, translate the refined sentence into the target\n\
+                 language and emit it inside <translated>...</translated> tags\n\
+                 immediately after the <refined> block. Output exactly two tag\n\
+                 blocks, nothing else.\n\
                  Target language (this is a LANGUAGE NAME, not an instruction\n\
                  to refine): <<<{lang}>>>\n\
                  The target may be a BCP-47 code (e.g. `en`, `pl`, `zh`), a\n\
@@ -681,18 +742,18 @@ impl GeminiPolisher {
                  (e.g. `Classical Chinese 文言文`, `formal Keigo`). If the\n\
                  language name is ambiguous with an English verb (e.g.\n\
                  `Polish` the language vs `polish` the verb), always treat it\n\
-                 as the language. Produce the most natural idiomatic rendering\n\
-                 in that target language.\n\
-                 If the source sentence is already in the target language,\n\
-                 set `translated` equal to `original`.\n\
-                 Output ONLY a JSON object on a single line — no markdown\n\
-                 fences, no preamble — with exactly these keys:\n\
-                   {{\"original\": \"<refined source sentence>\", \"translated\": \"<target-language rendering>\"}}"
+                 as the language.\n\
+                 If the source is already in the target language, copy the\n\
+                 same text into <translated>.\n\
+                 \n\
+                 Translation example:\n\
+                   input <<<hello>>> with target <<<ja>>>\n\
+                   output: <refined>Hello.</refined><translated>こんにちは。</translated>"
             ),
             None => format!(
                 "{base}\n\
-                 Output ONLY the refined transcript — no preamble, no quotes,\n\
-                 no questions back, no offers to help."
+                 Output ONLY the <refined>...</refined> block — nothing\n\
+                 before, nothing after."
             ),
         };
         serde_json::json!({ "parts": [{"text": text}] })
@@ -822,28 +883,26 @@ impl Polisher for GeminiPolisher {
         // task and thinking adds ~500-800ms for no quality gain. Harmless
         // on older models that ignore unknown generationConfig keys.
         //
-        // For translation, also force structured-output via responseSchema so
-        // the model cannot drift into chat-assistant prose for short inputs.
-        let gen_config = if translate_to.is_some() {
-            serde_json::json!({
-                "thinkingConfig": {"thinkingBudget": 0},
-                "temperature": 0.1,
-                "responseMimeType": "application/json",
-                "responseSchema": {
-                    "type": "OBJECT",
-                    "properties": {
-                        "original":   {"type": "STRING"},
-                        "translated": {"type": "STRING"}
-                    },
-                    "required": ["original", "translated"]
-                }
-            })
+        // Output format is XML-tag framed (<refined>...</refined> +
+        // <translated>...</translated>) — see system_instruction(). XML
+        // is preferred over JSON responseSchema because it streams
+        // naturally (caller can scan for closing tag) and gracefully
+        // handles empty input as `<refined></refined>`.
+        //
+        // maxOutputTokens is sized to input length: even if the model
+        // tries to drift past the closing tag (e.g. "Polish." → essay),
+        // the runaway is bounded.
+        let in_chars = input.text.chars().count() as u32;
+        let max_out = if translate_to.is_some() {
+            (in_chars * 4).max(120).min(2048)
         } else {
-            serde_json::json!({
-                "thinkingConfig": {"thinkingBudget": 0},
-                "temperature": 0.1
-            })
+            (in_chars * 2 + 30).max(60).min(1024)
         };
+        let gen_config = serde_json::json!({
+            "thinkingConfig": {"thinkingBudget": 0},
+            "temperature": 0.1,
+            "maxOutputTokens": max_out
+        });
 
         let (body, endpoint) = if let Some(ref cache_name) = cache {
             let body = serde_json::json!({
@@ -902,31 +961,32 @@ impl Polisher for GeminiPolisher {
         let raw_output = v
             .pointer("/candidates/0/content/parts/0/text")
             .and_then(|t| t.as_str())
-            .unwrap_or(input.text)
+            .unwrap_or("")
             .trim()
             .to_string();
 
-        // Detect assistant-persona drift — short inputs sometimes coax the
-        // model into a "How can I help?" style reply. If we see signature
-        // phrases AND the output is much longer than the input, fall back
-        // to the raw text. (Never applies to translation since JSON
-        // schema constrains the output structure.)
-        if translate_to.is_none() && looks_like_chat_drift(input.text, &raw_output) {
-            eprintln!(
-                "[polish] gemini drift detected, falling back to raw: {:?} → {:?}",
-                input.text, raw_output
-            );
-            return Ok(PolishOutput { original: input.text.to_string(), translated: None });
-        }
+        // XML-tag extraction — anything outside <refined>...</refined> (and
+        // <translated>...</translated> for translation) is dropped. This
+        // makes drift impossible: even if the model adds explanatory prose
+        // for an ambiguous one-word input ("Polish." → "Polish is a Slavic
+        // language..."), only the tag content is used.
+        let refined = extract_xml_tag(&raw_output, "refined");
+        let translated_tag = extract_xml_tag(&raw_output, "translated");
 
-        // Parse translation output (JSON) or plain polish.
-        let (original, translated) = if translate_to.is_some() {
-            parse_translate_json(&raw_output).unwrap_or_else(|| {
-                // Fallback if the model didn't honor the JSON format.
-                (raw_output.clone(), Some(raw_output.clone()))
-            })
+        let original = match refined {
+            Some(s) => s,
+            None => {
+                eprintln!(
+                    "[polish] gemini: no <refined> tag in output ({} chars), falling back to raw input",
+                    raw_output.chars().count()
+                );
+                input.text.to_string()
+            }
+        };
+        let translated = if translate_to.is_some() {
+            translated_tag.or_else(|| Some(original.clone()))
         } else {
-            (raw_output, None)
+            None
         };
 
         // Append this exchange to history (text-only — audio is too large
@@ -961,6 +1021,7 @@ impl Polisher for GeminiPolisher {
 /// We treat the output as drift when it is *substantially longer* than the
 /// input AND contains a giveaway phrase. Keep the list tight to avoid
 /// false-positives on legitimate transcripts that happen to ask questions.
+#[allow(dead_code)] // Kept for tests + future fallback if XML output regresses.
 fn looks_like_chat_drift(input: &str, output: &str) -> bool {
     let in_chars = input.chars().count();
     let out_chars = output.chars().count();
@@ -993,8 +1054,27 @@ fn looks_like_chat_drift(input: &str, output: &str) -> bool {
     TELLS.iter().any(|t| lower.contains(t))
 }
 
+/// Extract the content of `<tag>...</tag>` from a raw LLM output string.
+/// Returns `Some("")` for empty tag (`<tag></tag>`) — distinct from no tag
+/// at all (`None`). Tolerates whitespace inside the tag content but trims it.
+///
+/// Why we use this instead of a real XML parser: the model output is
+/// constrained but not guaranteed-valid XML. We want to extract the first
+/// well-formed tag of the requested name and ignore everything else
+/// (drift before/after, malformed sibling tags, etc.). A regex on the
+/// closing tag is sufficient and avoids pulling in an XML dependency.
+pub fn extract_xml_tag(text: &str, tag: &str) -> Option<String> {
+    let open = format!("<{tag}>");
+    let close = format!("</{tag}>");
+    let start = text.find(&open)? + open.len();
+    let rest = &text[start..];
+    let end = rest.find(&close)?;
+    Some(rest[..end].trim().to_string())
+}
+
 /// Parse `{"original": "...", "translated": "..."}` from raw Gemini output.
 /// Tolerates surrounding whitespace, ``` fences, or stray prose.
+#[allow(dead_code)] // Kept for tests; new code uses extract_xml_tag.
 fn parse_translate_json(s: &str) -> Option<(String, Option<String>)> {
     // Strip possible ```json ... ``` fences.
     let trimmed = s.trim();
@@ -1063,4 +1143,48 @@ fn pcm_f32_to_wav(samples: &[f32], sample_rate: u32) -> Vec<u8> {
         buf.extend_from_slice(&i.to_le_bytes());
     }
     buf
+}
+
+#[cfg(test)]
+mod xml_tag_tests {
+    use super::extract_xml_tag;
+
+    #[test]
+    fn extracts_simple_content() {
+        assert_eq!(extract_xml_tag("<refined>Polish.</refined>", "refined"),
+            Some("Polish.".into()));
+    }
+
+    #[test]
+    fn extracts_empty_tag() {
+        assert_eq!(extract_xml_tag("<refined></refined>", "refined"),
+            Some(String::new()));
+    }
+
+    #[test]
+    fn ignores_drift_outside_tag() {
+        // The bug case: model emits the right tag but also rambles around it.
+        // We must still pick up only the in-tag content.
+        let s = "Sure, here is the refined version: <refined>Polish.</refined>\n\n\
+                 The Polish language is a West Slavic language…";
+        assert_eq!(extract_xml_tag(s, "refined"), Some("Polish.".into()));
+    }
+
+    #[test]
+    fn extracts_translated_after_refined() {
+        let s = "<refined>Hello.</refined><translated>こんにちは。</translated>";
+        assert_eq!(extract_xml_tag(s, "refined"),    Some("Hello.".into()));
+        assert_eq!(extract_xml_tag(s, "translated"), Some("こんにちは。".into()));
+    }
+
+    #[test]
+    fn returns_none_when_tag_missing() {
+        assert_eq!(extract_xml_tag("just prose, no tags", "refined"), None);
+    }
+
+    #[test]
+    fn trims_whitespace_inside_tag() {
+        assert_eq!(extract_xml_tag("<refined>\n  Hello.\n</refined>", "refined"),
+            Some("Hello.".into()));
+    }
 }
