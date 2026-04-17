@@ -159,6 +159,44 @@ mod tray_macos {
         let _ = std::process::Command::new("open").arg(&dir).spawn();
     }
 
+    /// Click → reveal the most recent note's .wav in Finder (`open -R`).
+    unsafe extern "C" fn action_reveal_latest_wav(
+        _this: *mut c_void,
+        _cmd: *mut c_void,
+        _sender: *mut c_void,
+    ) {
+        let recent = otoji::notes::recent(1);
+        let Some(n) = recent.first() else { return };
+        let wav = otoji::notes::artifact_path(&n.stem, "wav");
+        if wav.exists() {
+            let _ = std::process::Command::new("open").arg("-R").arg(&wav).spawn();
+        } else {
+            // Fall back to opening the data folder if no audio sidecar exists
+            // (PttFinal segments don't currently capture audio).
+            let _ = std::process::Command::new("open").arg(otoji::notes::data_dir()).spawn();
+        }
+    }
+
+    /// Click → open the most recent note's polished .md (or fall back to
+    /// the .srt sidecar, which always exists for finalized notes).
+    unsafe extern "C" fn action_open_latest_md(
+        _this: *mut c_void,
+        _cmd: *mut c_void,
+        _sender: *mut c_void,
+    ) {
+        let recent = otoji::notes::recent(1);
+        let Some(n) = recent.first() else { return };
+        let md = otoji::notes::artifact_path(&n.stem, "md");
+        let target = if md.exists() {
+            md
+        } else {
+            otoji::notes::artifact_path(&n.stem, "srt")
+        };
+        if target.exists() {
+            let _ = std::process::Command::new("open").arg(&target).spawn();
+        }
+    }
+
     unsafe fn ensure_action_class() {
         ACTION_CLASS_ONCE.call_once(|| {
             let superclass = cls(b"NSObject\0");
@@ -182,6 +220,18 @@ mod tray_macos {
                 new_cls,
                 sel(b"openFolder:\0"),
                 action_open_folder as *const c_void,
+                b"v@:@\0".as_ptr() as *const _,
+            );
+            class_addMethod(
+                new_cls,
+                sel(b"revealLatestWav:\0"),
+                action_reveal_latest_wav as *const c_void,
+                b"v@:@\0".as_ptr() as *const _,
+            );
+            class_addMethod(
+                new_cls,
+                sel(b"openLatestMd:\0"),
+                action_open_latest_md as *const c_void,
                 b"v@:@\0".as_ptr() as *const _,
             );
             objc_registerClassPair(new_cls);
@@ -276,6 +326,35 @@ mod tray_macos {
 
         let sep2 = msg0(menuitem_cls, sel(b"separatorItem\0"));
         msg1_ptr(menu, sel(b"addItem:\0"), sep2);
+
+        // Latest-segment shortcuts (no-ops if there are no notes yet —
+        // the click handlers just return early).
+        let reveal_item = init_fn(
+            msg0(menuitem_cls, sel(b"alloc\0")),
+            init_sel,
+            nsstring("Reveal latest .wav in Finder"),
+            sel(b"revealLatestWav:\0"),
+            nsstring(""),
+        );
+        if !target.is_null() {
+            msg1_ptr(reveal_item, sel(b"setTarget:\0"), target);
+        }
+        msg1_ptr(menu, sel(b"addItem:\0"), reveal_item);
+
+        let open_md_item = init_fn(
+            msg0(menuitem_cls, sel(b"alloc\0")),
+            init_sel,
+            nsstring("Open latest polished .md"),
+            sel(b"openLatestMd:\0"),
+            nsstring(""),
+        );
+        if !target.is_null() {
+            msg1_ptr(open_md_item, sel(b"setTarget:\0"), target);
+        }
+        msg1_ptr(menu, sel(b"addItem:\0"), open_md_item);
+
+        let sep3 = msg0(menuitem_cls, sel(b"separatorItem\0"));
+        msg1_ptr(menu, sel(b"addItem:\0"), sep3);
 
         // Quit: terminate: on NSApp.
         let app = msg0(cls(b"NSApplication\0"), sel(b"sharedApplication\0"));
