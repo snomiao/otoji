@@ -109,6 +109,22 @@ mod tray_macos {
     static ACTION_TARGET: AtomicPtr<c_void> = AtomicPtr::new(std::ptr::null_mut());
     static ACTION_CLASS_ONCE: std::sync::Once = std::sync::Once::new();
 
+    // Cached mtime (seconds since epoch) of notes.jsonl from the last
+    // successful menu rebuild. Used to skip rebuilds when nothing has
+    // changed — avoids reshuffling the menu under the user's cursor at
+    // every tick boundary.
+    static LAST_MTIME: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
+    fn notes_mtime_secs() -> u64 {
+        let path = otoji::notes::notes_path();
+        std::fs::metadata(&path)
+            .and_then(|m| m.modified())
+            .ok()
+            .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+            .map(|d| d.as_secs())
+            .unwrap_or(0)
+    }
+
     /// Read [sender representedObject] as a Rust String. Best-effort.
     unsafe fn rep_obj_to_string(sender: *mut c_void) -> Option<String> {
         if sender.is_null() {
@@ -288,8 +304,26 @@ mod tray_macos {
         let sep1 = msg0(menuitem_cls, sel(b"separatorItem\0"));
         msg1_ptr(menu, sel(b"addItem:\0"), sep1);
 
-        // Recent notes (display-only — clicking does nothing for milestone 2).
-        let recent = otoji::notes::recent(10);
+        // Recent notes — clicking copies the full text to the pasteboard.
+        // Filter out empty-text entries (brief PTT taps, VAD false starts).
+        let recent: Vec<_> = otoji::notes::recent(20)
+            .into_iter()
+            .filter(|n| !n.text.trim().is_empty())
+            .take(10)
+            .collect();
+
+        // Reflect the count in the menu-bar button title so the user can
+        // tell at a glance whether the listen child is producing notes.
+        let button = msg0(item, sel(b"button\0"));
+        if !button.is_null() {
+            let title = if recent.is_empty() {
+                "音".to_string()
+            } else {
+                format!("音 {}", recent.len().min(99))
+            };
+            msg1_ptr(button, sel(b"setTitle:\0"), nsstring(&title));
+        }
+
         if recent.is_empty() {
             let empty = init_fn(
                 msg0(menuitem_cls, sel(b"alloc\0")),
@@ -385,6 +419,12 @@ mod tray_macos {
     }
 
     extern "C" fn refresh_tick(_timer: *mut c_void, _info: *mut c_void) {
+        let mtime = notes_mtime_secs();
+        let prev = LAST_MTIME.load(std::sync::atomic::Ordering::Acquire);
+        if mtime == prev {
+            return;
+        }
+        LAST_MTIME.store(mtime, std::sync::atomic::Ordering::Release);
         unsafe { rebuild_menu(); }
     }
 
