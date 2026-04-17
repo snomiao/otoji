@@ -4,6 +4,16 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+## [0.1.7] - 2026-04-17
+
+### Features
+- Add 'Reveal latest .wav' / 'Open latest .md' shortcuts *(tray)*
+- Clickable items — copy note text, open data folder *(tray)*
+- Add --dump-menu diagnostic flag *(tray)*
+- Populate menu with recent notes + 3s auto-refresh *(tray)*
+- Add otoji-tray macOS bin (milestone 1: empty menu + Quit) *(tray)*
+- JSONL store + per-segment wav/srt/md sidecars *(notes)*
+
 ## [0.1.6] - 2026-04-15
 
 ### Features
