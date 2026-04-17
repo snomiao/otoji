@@ -839,7 +839,32 @@ async fn drive_plain<P: AsrProvider + 'static>(
         Ok(())
     }
 
+    // Track the stem of the most recent PttFinal so the async polish task
+    // (which produces PttUpgrade later) can write the polished `.md`
+    // sibling next to the same wav/srt.
+    let mut last_ptt_stem: Option<String> = None;
+
     while let Some(ev) = event_rx.recv().await {
+        // Persist finalized segments + sidecar artifacts (wav/srt) into
+        // the notes store. Best-effort: failures are logged, not raised.
+        match &ev {
+            otoji::core::AsrEvent::Final { text, audio, .. } => {
+                let mut note = otoji::notes::Note::new("final", text, None);
+                if let Some(samples) = audio {
+                    note.duration_ms = Some((samples.len() as u32 * 1000) / 16_000);
+                    otoji::notes::save_wav(&note.stem, samples, 16_000);
+                }
+                otoji::notes::save_srt(&note.stem, &note.text, note.duration_ms.unwrap_or(0));
+                otoji::notes::append(&note);
+            }
+            otoji::core::AsrEvent::PttFinal { text } => {
+                let note = otoji::notes::Note::new("ptt_final", text, None);
+                otoji::notes::save_srt(&note.stem, &note.text, 0);
+                otoji::notes::append(&note);
+                last_ptt_stem = Some(note.stem);
+            }
+            _ => {}
+        }
         match &ev {
             otoji::core::AsrEvent::PttFinal { text } => {
                 // 1. Emit RAW ptt_final IMMEDIATELY so consumer types ASAP.
@@ -852,6 +877,7 @@ async fn drive_plain<P: AsrProvider + 'static>(
                 let ctx_path = ptt_context_file.clone();
                 let translate_to_bg = ptt_translate_to.clone();
                 let tts_source_bg = ptt_tts_source.clone();
+                let stem_bg = last_ptt_stem.clone();
                 tokio::spawn(async move {
                     let ctx = ctx_path
                         .as_ref()
@@ -889,6 +915,9 @@ async fn drive_plain<P: AsrProvider + 'static>(
                         let _ = emit(&otoji::core::AsrEvent::PttUpgrade {
                             text: polished.clone(),
                         });
+                        if let Some(stem) = stem_bg.as_deref() {
+                            otoji::notes::save_polish_md(stem, &polished);
+                        }
                     }
 
                     // Emit ptt_translated if translation produced something
