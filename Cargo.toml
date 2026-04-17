@@ -21,6 +21,10 @@ crate-type = ["rlib", "cdylib"]
 name = "otoji"
 path = "src/main.rs"
 
+[[bin]]
+name = "otoji-tray"
+path = "src/bin/tray.rs"
+
 [features]
 default = []
 # Enable the napi-rs Node.js / Bun bindings exposed via src/napi.rs.
