@@ -446,18 +446,35 @@ impl Polisher for OpenAiPolisher {
         let system = system_prompt_with_translate(
             &self.glossary, input.prev, input.translate_to, &nonce);
 
-        // Build messages: system + accumulated history + new user message.
+        // Build messages: system + few-shot + accumulated history + new user.
         // OpenAI automatically caches identical prefixes (prompt caching),
         // so sending the full history each time is efficient.
         // NOTE: with a per-request nonce, the system prompt is unique each
         // call, so the cache mostly covers the model's stable tokens
         // (tokenizer + weights) rather than our prompt bytes. That's OK —
         // the injection defense is worth the cache miss for short inputs.
-        // When translating, skip history — the instruction set differs.
+        // When translating, skip history + few-shot — the instruction set
+        // differs and the target language is dynamic.
         let mut messages = vec![
             ChatMessage { role: "system".into(), content: system },
         ];
         if input.translate_to.is_none() {
+            // Few-shot pairs with the *current* nonce — concrete examples of
+            // correct tag emission. Especially important for smaller models
+            // (e.g. llama-3.1-8b-instruct-fast on Cloudflare Workers AI)
+            // where a `Polish.` input otherwise drifts into a chat reply.
+            // Three pairs keep the token cost low: filler-removal, the
+            // reported drift case, and the empty-input edge case.
+            let r = &refined_tag_name;
+            let few_shot = [
+                ("<<<um ok thanks>>>", format!("<{r}>OK, thanks.</{r}>")),
+                ("<<<Polish.>>>",      format!("<{r}>Polish.</{r}>")),
+                ("<<<>>>",             format!("<{r}></{r}>")),
+            ];
+            for (u, a) in &few_shot {
+                messages.push(ChatMessage { role: "user".into(),      content: u.to_string() });
+                messages.push(ChatMessage { role: "assistant".into(), content: a.clone() });
+            }
             let history = self.history.lock().await;
             messages.extend(history.iter().cloned());
         }
@@ -544,12 +561,15 @@ impl Polisher for OpenAiPolisher {
         };
 
         // Append to history only for non-translation calls (different prompt).
+        // Store the FULL tagged response so the model sees consistent format
+        // across the conversation. Old entries carry old nonces — that's fine,
+        // the system prompt + current few-shot anchor which nonce to use now.
         if input.translate_to.is_none() {
             let mut history = self.history.lock().await;
             history.push(user_msg);
             history.push(ChatMessage {
                 role: "assistant".into(),
-                content: original.clone(),
+                content: format!("<{refined_tag_name}>{original}</{refined_tag_name}>"),
             });
             if history.len() > 100 {
                 let excess = history.len() - 100;
@@ -610,14 +630,22 @@ impl Polisher for AnthropicPolisher {
         let nonce = make_nonce();
         let refined_tag_name = format!("refined-{nonce}");
         let system = system_prompt(&self.glossary, input.prev, &nonce);
+        // Few-shot pairs with current nonce — see OpenAiPolisher for rationale.
+        let r = &refined_tag_name;
+        let messages = vec![
+            AnthropicMessage { role: "user",      content: "<<<um ok thanks>>>".into() },
+            AnthropicMessage { role: "assistant", content: format!("<{r}>OK, thanks.</{r}>") },
+            AnthropicMessage { role: "user",      content: "<<<Polish.>>>".into() },
+            AnthropicMessage { role: "assistant", content: format!("<{r}>Polish.</{r}>") },
+            AnthropicMessage { role: "user",      content: "<<<>>>".into() },
+            AnthropicMessage { role: "assistant", content: format!("<{r}></{r}>") },
+            AnthropicMessage { role: "user",      content: format!("<<<{}>>>", input.text) },
+        ];
         let body = AnthropicRequest {
             model: &self.model,
             max_tokens: 512,
             system,
-            messages: vec![AnthropicMessage {
-                role: "user",
-                content: format!("<<<{}>>>", input.text),
-            }],
+            messages,
         };
         let resp = self
             .client
@@ -966,10 +994,30 @@ impl Polisher for GeminiPolisher {
             (body, endpoint)
         } else {
             let history = self.history.lock().await;
-            let mut contents: Vec<serde_json::Value> = history
-                .iter()
-                .map(|t| serde_json::json!({"role": t.role, "parts": t.parts}))
-                .collect();
+            let mut contents: Vec<serde_json::Value> = Vec::new();
+            // Few-shot with current nonce (skip on translation calls — target
+            // language is dynamic). See OpenAiPolisher for rationale.
+            if translate_to.is_none() {
+                let r = &refined_tag_name;
+                let pairs: [(&str, String); 3] = [
+                    ("<<<um ok thanks>>>", format!("<{r}>OK, thanks.</{r}>")),
+                    ("<<<Polish.>>>",      format!("<{r}>Polish.</{r}>")),
+                    ("<<<>>>",             format!("<{r}></{r}>")),
+                ];
+                for (u, a) in &pairs {
+                    contents.push(serde_json::json!({
+                        "role": "user",
+                        "parts": [{"text": *u}],
+                    }));
+                    contents.push(serde_json::json!({
+                        "role": "model",
+                        "parts": [{"text": a}],
+                    }));
+                }
+            }
+            contents.extend(history.iter().map(|t| {
+                serde_json::json!({"role": t.role, "parts": t.parts})
+            }));
             contents.push(serde_json::json!({"role": "user", "parts": user_parts}));
 
             let body = serde_json::json!({
@@ -1040,13 +1088,20 @@ impl Polisher for GeminiPolisher {
         // subsequent cached (non-translation) calls.
         if translate_to.is_none() {
             let mut history = self.history.lock().await;
+            // Store input wrapped in <<<>>> and response in <refined-NONCE>
+            // tags so the format reinforced by the few-shot stays consistent
+            // through the whole conversation. Old nonces in history are fine —
+            // the system prompt + current few-shot tell the model which
+            // nonce to use *now*.
             history.push(GeminiTurn {
                 role: "user".into(),
-                parts: vec![serde_json::json!({"text": format!("ASR hypothesis: {}", input.text)})],
+                parts: vec![serde_json::json!({"text": format!("<<<{}>>>", input.text)})],
             });
             history.push(GeminiTurn {
                 role: "model".into(),
-                parts: vec![serde_json::json!({"text": &original})],
+                parts: vec![serde_json::json!({
+                    "text": format!("<{refined_tag_name}>{original}</{refined_tag_name}>")
+                })],
             });
             let history_snapshot = history.clone();
             drop(history);
