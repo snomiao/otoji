@@ -12,6 +12,16 @@
 
 #[cfg(target_os = "macos")]
 fn main() {
+    let args: Vec<String> = std::env::args().collect();
+    if args.iter().any(|a| a == "--dump-menu") {
+        // Diagnostic: print what the menu *would* contain without
+        // touching AppKit. Lets us verify the recent-notes path from
+        // CI / the terminal where AX isn't available.
+        for (i, n) in otoji::notes::recent(10).iter().enumerate() {
+            println!("[{i}] {} | {} | {}", n.kind, n.stem, n.text);
+        }
+        return;
+    }
     tray_macos::run();
 }
 
