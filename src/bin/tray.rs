@@ -47,6 +47,18 @@ mod tray_macos {
         fn objc_getClass(name: *const std::ffi::c_char) -> *mut c_void;
         fn sel_registerName(name: *const std::ffi::c_char) -> *mut c_void;
         fn objc_msgSend(receiver: *mut c_void, sel: *mut c_void, ...) -> *mut c_void;
+        fn objc_allocateClassPair(
+            superclass: *mut c_void,
+            name: *const std::ffi::c_char,
+            extra_bytes: usize,
+        ) -> *mut c_void;
+        fn objc_registerClassPair(class: *mut c_void);
+        fn class_addMethod(
+            class: *mut c_void,
+            sel: *mut c_void,
+            imp: *const c_void,
+            types: *const std::ffi::c_char,
+        ) -> bool;
         fn CFRunLoopRun();
         fn CFRunLoopGetMain() -> *mut c_void;
         fn CFRunLoopAddTimer(rl: *mut c_void, timer: *mut c_void, mode: *mut c_void);
@@ -94,6 +106,104 @@ mod tray_macos {
         f(cls_str, sel_utf8, cstr.as_ptr())
     }
 
+    static ACTION_TARGET: AtomicPtr<c_void> = AtomicPtr::new(std::ptr::null_mut());
+    static ACTION_CLASS_ONCE: std::sync::Once = std::sync::Once::new();
+
+    /// Read [sender representedObject] as a Rust String. Best-effort.
+    unsafe fn rep_obj_to_string(sender: *mut c_void) -> Option<String> {
+        if sender.is_null() {
+            return None;
+        }
+        let obj = msg0(sender, sel(b"representedObject\0"));
+        if obj.is_null() {
+            return None;
+        }
+        let utf8: *const std::ffi::c_char = {
+            let f: extern "C" fn(*mut c_void, *mut c_void) -> *const std::ffi::c_char =
+                std::mem::transmute(objc_msgSend as *const ());
+            f(obj, sel(b"UTF8String\0"))
+        };
+        if utf8.is_null() {
+            return None;
+        }
+        Some(std::ffi::CStr::from_ptr(utf8).to_string_lossy().into_owned())
+    }
+
+    /// Click → write the note's text to the system pasteboard.
+    unsafe extern "C" fn action_copy_note(
+        _this: *mut c_void,
+        _cmd: *mut c_void,
+        sender: *mut c_void,
+    ) {
+        let Some(text) = rep_obj_to_string(sender) else { return };
+        let pb = msg0(cls(b"NSPasteboard\0"), sel(b"generalPasteboard\0"));
+        if pb.is_null() {
+            return;
+        }
+        msg0(pb, sel(b"clearContents\0"));
+        // [pb setString:text forType:NSPasteboardTypeString]
+        let s = nsstring(&text);
+        let ns_type = nsstring("public.utf8-plain-text");
+        let f: extern "C" fn(*mut c_void, *mut c_void, *mut c_void, *mut c_void) -> bool =
+            std::mem::transmute(objc_msgSend as *const ());
+        f(pb, sel(b"setString:forType:\0"), s, ns_type);
+    }
+
+    /// Click → `open <data_dir>` in Finder.
+    unsafe extern "C" fn action_open_folder(
+        _this: *mut c_void,
+        _cmd: *mut c_void,
+        _sender: *mut c_void,
+    ) {
+        let dir = otoji::notes::data_dir();
+        let _ = std::process::Command::new("open").arg(&dir).spawn();
+    }
+
+    unsafe fn ensure_action_class() {
+        ACTION_CLASS_ONCE.call_once(|| {
+            let superclass = cls(b"NSObject\0");
+            let new_cls = objc_allocateClassPair(
+                superclass,
+                b"OtojiTrayTarget\0".as_ptr() as *const _,
+                0,
+            );
+            if new_cls.is_null() {
+                eprintln!("otoji-tray: failed to allocate OtojiTrayTarget");
+                return;
+            }
+            // -(void)copyNote:(id)sender   types: v@:@
+            class_addMethod(
+                new_cls,
+                sel(b"copyNote:\0"),
+                action_copy_note as *const c_void,
+                b"v@:@\0".as_ptr() as *const _,
+            );
+            class_addMethod(
+                new_cls,
+                sel(b"openFolder:\0"),
+                action_open_folder as *const c_void,
+                b"v@:@\0".as_ptr() as *const _,
+            );
+            objc_registerClassPair(new_cls);
+        });
+    }
+
+    unsafe fn action_target() -> *mut c_void {
+        let existing = ACTION_TARGET.load(Ordering::Acquire);
+        if !existing.is_null() {
+            return existing;
+        }
+        ensure_action_class();
+        let target_cls = cls(b"OtojiTrayTarget\0");
+        if target_cls.is_null() {
+            return std::ptr::null_mut();
+        }
+        let inst = msg0(msg0(target_cls, sel(b"alloc\0")), sel(b"init\0"));
+        msg0(inst, sel(b"retain\0"));
+        ACTION_TARGET.store(inst, Ordering::Release);
+        inst
+    }
+
     /// Build (or rebuild) the status item's menu in place.
     unsafe fn rebuild_menu() {
         let item = STATUS_ITEM.load(Ordering::Acquire);
@@ -109,15 +219,20 @@ mod tray_macos {
             *mut c_void, *mut c_void, *mut c_void,
         ) -> *mut c_void = std::mem::transmute(objc_msgSend as *const ());
 
-        // Header: data folder path (display-only).
+        let target = action_target();
+
+        // Header: clicking opens the data folder in Finder.
         let dir = otoji::notes::data_dir();
         let header = init_fn(
             msg0(menuitem_cls, sel(b"alloc\0")),
             init_sel,
             nsstring(&format!("📁 {}", truncate(&dir.to_string_lossy(), 60))),
-            std::ptr::null_mut(),
+            sel(b"openFolder:\0"),
             nsstring(""),
         );
+        if !target.is_null() {
+            msg1_ptr(header, sel(b"setTarget:\0"), target);
+        }
         msg1_ptr(menu, sel(b"addItem:\0"), header);
 
         let sep1 = msg0(menuitem_cls, sel(b"separatorItem\0"));
@@ -146,9 +261,15 @@ mod tray_macos {
                     msg0(menuitem_cls, sel(b"alloc\0")),
                     init_sel,
                     nsstring(&title),
-                    std::ptr::null_mut(),
+                    sel(b"copyNote:\0"),
                     nsstring(""),
                 );
+                // representedObject carries the FULL note text (not the
+                // truncated title) so click → pasteboard gets the original.
+                msg1_ptr(it, sel(b"setRepresentedObject:\0"), nsstring(&note.text));
+                if !target.is_null() {
+                    msg1_ptr(it, sel(b"setTarget:\0"), target);
+                }
                 msg1_ptr(menu, sel(b"addItem:\0"), it);
             }
         }
