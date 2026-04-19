@@ -110,16 +110,19 @@ mod tray_macos {
     /// image (system tints it for dark/light mode automatically). Returns
     /// `false` if the symbol can't be loaded — caller should fall back to
     /// a text title.
-    unsafe fn set_button_mic_image(button: *mut c_void) -> bool {
+    unsafe fn set_button_mic_image(button: *mut c_void, active: bool) -> bool {
         let nsimage = cls(b"NSImage\0");
         if nsimage.is_null() { return false; }
-        // +[NSImage imageWithSystemSymbolName:accessibilityDescription:]
+        // mic.fill when listen is running (the system shows the orange dot
+        // anyway), mic.slash when stopped — so users can tell at a glance
+        // that otoji is *not* recording, distinguishing the tray icon from
+        // macOS's privacy indicator.
+        let symbol = if active { "mic.fill" } else { "mic.slash" };
         let sel_sym = sel(b"imageWithSystemSymbolName:accessibilityDescription:\0");
         let f: extern "C" fn(*mut c_void, *mut c_void, *mut c_void, *mut c_void) -> *mut c_void =
             std::mem::transmute(objc_msgSend as *const ());
-        let img = f(nsimage, sel_sym, nsstring("mic.fill"), nsstring("otoji"));
+        let img = f(nsimage, sel_sym, nsstring(symbol), nsstring("otoji"));
         if img.is_null() { return false; }
-        // -[NSImage setTemplate:]
         let sel_tmpl = sel(b"setTemplate:\0");
         let f_set: extern "C" fn(*mut c_void, *mut c_void, bool) =
             std::mem::transmute(objc_msgSend as *const ());
@@ -468,7 +471,7 @@ mod tray_macos {
             // not shown — it was capped at 10 (menu length) and conveyed
             // nothing useful past first use. Falls back to "音" if SF
             // Symbols are unavailable (pre-Big Sur).
-            if !set_button_mic_image(button) {
+            if !set_button_mic_image(button, running) {
                 msg1_ptr(button, sel(b"setTitle:\0"), nsstring("音"));
             } else {
                 msg1_ptr(button, sel(b"setTitle:\0"), nsstring(""));
@@ -611,7 +614,7 @@ mod tray_macos {
             // Initial: SF Symbol "mic" template image, falls back to "音".
             let button = msg0(item, sel(b"button\0"));
             if !button.is_null() {
-                if !set_button_mic_image(button) {
+                if !set_button_mic_image(button, listen_is_running()) {
                     msg1_ptr(button, sel(b"setTitle:\0"), nsstring("音"));
                 }
             }
