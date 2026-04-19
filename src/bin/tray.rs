@@ -338,18 +338,15 @@ mod tray_macos {
         // tell at a glance whether the listen child is producing notes.
         let button = msg0(item, sel(b"button\0"));
         if !button.is_null() {
-            // SF Symbol "mic" as a template image (auto-tinted by macOS).
-            // Falls back to "音" text if SF Symbols aren't available.
-            let img_set = set_button_mic_image(button);
-            let title = if !img_set {
-                if recent.is_empty() { "音".to_string() }
-                else { format!("音 {}", recent.len().min(99)) }
-            } else if recent.is_empty() {
-                String::new()
+            // Icon-only: SF Symbol "mic.fill" as template image. Count is
+            // not shown — it was capped at 10 (menu length) and conveyed
+            // nothing useful past first use. Falls back to "音" if SF
+            // Symbols are unavailable (pre-Big Sur).
+            if !set_button_mic_image(button) {
+                msg1_ptr(button, sel(b"setTitle:\0"), nsstring("音"));
             } else {
-                format!(" {}", recent.len().min(99))
-            };
-            msg1_ptr(button, sel(b"setTitle:\0"), nsstring(&title));
+                msg1_ptr(button, sel(b"setTitle:\0"), nsstring(""));
+            }
         }
 
         if recent.is_empty() {

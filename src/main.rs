@@ -495,10 +495,22 @@ fn maybe_rebuild_and_reexec() {
             .stderr(std::process::Stdio::piped())
             .output()
     } else {
-        std::process::Command::new("cargo")
-            .args(["install", "--path", manifest_dir])
-            .env("OTOJI_REBUILDING", "1")
-            .stdout(std::process::Stdio::null())
+        // Install to wherever the running binary actually lives, so the
+        // re-exec sees a fresh mtime. Without this, `cargo install` would
+        // default to ~/.cargo/bin/, leaving the running ~/.local/bin/otoji
+        // (or similar) untouched and triggering an infinite rebuild loop
+        // on the next start.
+        let install_root = exe
+            .parent()
+            .and_then(|p| p.parent())
+            .map(|p| p.to_path_buf());
+        let mut cmd = std::process::Command::new("cargo");
+        cmd.args(["install", "--path", manifest_dir])
+            .env("OTOJI_REBUILDING", "1");
+        if let Some(root) = install_root {
+            cmd.env("CARGO_INSTALL_ROOT", root);
+        }
+        cmd.stdout(std::process::Stdio::null())
             .stderr(std::process::Stdio::piped())
             .output()
     };
