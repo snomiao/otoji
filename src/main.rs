@@ -855,6 +855,7 @@ async fn drive_plain<P: AsrProvider + 'static>(
                     otoji::notes::save_wav(&note.stem, samples, 16_000);
                 }
                 otoji::notes::save_srt(&note.stem, &note.text, note.duration_ms.unwrap_or(0));
+                otoji::notes::mux_webm(&note.stem);
                 otoji::notes::append(&note);
             }
             otoji::core::AsrEvent::PttFinal { text } => {

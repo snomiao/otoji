@@ -172,6 +172,29 @@ fn srt_time(ms: u32) -> String {
     format!("{h:02}:{m:02}:{s:02},{ms_part:03}")
 }
 
+/// Detached-spawn ffmpeg to mux `<stem>.wav` + `<stem>.srt` into
+/// `<stem>.webm` (Opus + WebVTT). Originals untouched. No-op if ffmpeg
+/// is missing or the output already exists. Fire-and-forget.
+pub fn mux_webm(stem: &str) {
+    let wav = artifact_path(stem, "wav");
+    let srt = artifact_path(stem, "srt");
+    let out = artifact_path(stem, "webm");
+    if out.exists() || !wav.exists() || !srt.exists() {
+        return;
+    }
+    let _ = std::process::Command::new("ffmpeg")
+        .args(["-loglevel", "error", "-y", "-i"])
+        .arg(&wav)
+        .arg("-i")
+        .arg(&srt)
+        .args(["-c:a", "libopus", "-b:a", "24k", "-c:s", "webvtt"])
+        .arg(&out)
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .spawn();
+}
+
 /// Write the polished version as `<stem>.md`. Best-effort.
 pub fn save_polish_md(stem: &str, polished: &str) {
     if let Err(e) = try_save_md(stem, polished) {
