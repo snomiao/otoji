@@ -215,6 +215,83 @@ mod tray_macos {
         }
     }
 
+    /// Returns true if at least one `otoji listen` process is running.
+    fn listen_is_running() -> bool {
+        std::process::Command::new("pgrep")
+            .args(["-f", "otoji listen"])
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .status()
+            .map(|s| s.success())
+            .unwrap_or(false)
+    }
+
+    /// Count notes whose stem starts with today's UTC date prefix
+    /// (YYYY-MM-DD). Cheap O(N) over the recent window.
+    fn today_count() -> usize {
+        let today = chrono_today_prefix();
+        otoji::notes::recent(1000)
+            .iter()
+            .filter(|n| n.stem.starts_with(&today) && !n.text.trim().is_empty())
+            .count()
+    }
+
+    /// Today's prefix as `YYYY-MM-DD` (UTC, matching otoji's stem format).
+    fn chrono_today_prefix() -> String {
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_secs())
+            .unwrap_or(0);
+        // Days since epoch, then convert via civil_from_days.
+        let days = (now / 86400) as i64;
+        let (y, m, d) = civil_from_days(days);
+        format!("{y:04}-{m:02}-{d:02}")
+    }
+
+    /// Howard Hinnant's date algorithm: days-since-epoch → (year, month, day).
+    fn civil_from_days(z: i64) -> (i32, u32, u32) {
+        let z = z + 719468;
+        let era = if z >= 0 { z } else { z - 146096 } / 146097;
+        let doe = (z - era * 146097) as u64;
+        let yoe = (doe - doe / 1460 + doe / 36524 - doe / 146096) / 365;
+        let y = yoe as i64 + era * 400;
+        let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+        let mp = (5 * doy + 2) / 153;
+        let d = doy - (153 * mp + 2) / 5 + 1;
+        let m = if mp < 10 { mp + 3 } else { mp - 9 };
+        let y = if m <= 2 { y + 1 } else { y };
+        (y as i32, m as u32, d as u32)
+    }
+
+    /// Click → kill all `otoji listen` processes. CLX will respawn one
+    /// on the next voice trigger.
+    unsafe extern "C" fn action_stop_listen(
+        _this: *mut c_void,
+        _cmd: *mut c_void,
+        _sender: *mut c_void,
+    ) {
+        let _ = std::process::Command::new("pkill")
+            .args(["-f", "otoji listen"])
+            .status();
+    }
+
+    /// Click → spawn a bare `otoji listen --plain` if none is running.
+    unsafe extern "C" fn action_start_listen(
+        _this: *mut c_void,
+        _cmd: *mut c_void,
+        _sender: *mut c_void,
+    ) {
+        if listen_is_running() {
+            return;
+        }
+        let _ = std::process::Command::new("otoji")
+            .args(["listen", "--plain"])
+            .stdin(std::process::Stdio::null())
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .spawn();
+    }
+
     /// Click → open the most recent note's polished .md (or fall back to
     /// the .srt sidecar, which always exists for finalized notes).
     unsafe extern "C" fn action_open_latest_md(
@@ -272,6 +349,18 @@ mod tray_macos {
                 action_open_latest_md as *const c_void,
                 b"v@:@\0".as_ptr() as *const _,
             );
+            class_addMethod(
+                new_cls,
+                sel(b"stopListen:\0"),
+                action_stop_listen as *const c_void,
+                b"v@:@\0".as_ptr() as *const _,
+            );
+            class_addMethod(
+                new_cls,
+                sel(b"startListen:\0"),
+                action_start_listen as *const c_void,
+                b"v@:@\0".as_ptr() as *const _,
+            );
             objc_registerClassPair(new_cls);
         });
     }
@@ -309,7 +398,44 @@ mod tray_macos {
 
         let target = action_target();
 
-        // Header: clicking opens the data folder in Finder.
+        // ── Status + control header ──────────────────────────────
+        let running = listen_is_running();
+        let status_label = if running {
+            format!("🟢 listen: running   •   today: {}", today_count())
+        } else {
+            format!("⚫ listen: stopped   •   today: {}", today_count())
+        };
+        let status_item = init_fn(
+            msg0(menuitem_cls, sel(b"alloc\0")),
+            init_sel,
+            nsstring(&status_label),
+            std::ptr::null_mut(),
+            nsstring(""),
+        );
+        msg1_ptr(menu, sel(b"addItem:\0"), status_item);
+
+        // Toggle: Start otoji listen / Stop otoji listen.
+        let (toggle_label, toggle_sel): (&str, &[u8]) = if running {
+            ("⏹  Stop otoji listen", b"stopListen:\0")
+        } else {
+            ("▶︎  Start otoji listen", b"startListen:\0")
+        };
+        let toggle_item = init_fn(
+            msg0(menuitem_cls, sel(b"alloc\0")),
+            init_sel,
+            nsstring(toggle_label),
+            sel(toggle_sel),
+            nsstring(""),
+        );
+        if !target.is_null() {
+            msg1_ptr(toggle_item, sel(b"setTarget:\0"), target);
+        }
+        msg1_ptr(menu, sel(b"addItem:\0"), toggle_item);
+
+        let sep0 = msg0(menuitem_cls, sel(b"separatorItem\0"));
+        msg1_ptr(menu, sel(b"addItem:\0"), sep0);
+
+        // Folder header: clicking opens the data folder in Finder.
         let dir = otoji::notes::data_dir();
         let header = init_fn(
             msg0(menuitem_cls, sel(b"alloc\0")),
