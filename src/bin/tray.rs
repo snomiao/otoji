@@ -106,6 +106,28 @@ mod tray_macos {
         f(cls_str, sel_utf8, cstr.as_ptr())
     }
 
+    /// Set the status-bar button image to SF Symbol "mic.fill" as a template
+    /// image (system tints it for dark/light mode automatically). Returns
+    /// `false` if the symbol can't be loaded — caller should fall back to
+    /// a text title.
+    unsafe fn set_button_mic_image(button: *mut c_void) -> bool {
+        let nsimage = cls(b"NSImage\0");
+        if nsimage.is_null() { return false; }
+        // +[NSImage imageWithSystemSymbolName:accessibilityDescription:]
+        let sel_sym = sel(b"imageWithSystemSymbolName:accessibilityDescription:\0");
+        let f: extern "C" fn(*mut c_void, *mut c_void, *mut c_void, *mut c_void) -> *mut c_void =
+            std::mem::transmute(objc_msgSend as *const ());
+        let img = f(nsimage, sel_sym, nsstring("mic.fill"), nsstring("otoji"));
+        if img.is_null() { return false; }
+        // -[NSImage setTemplate:]
+        let sel_tmpl = sel(b"setTemplate:\0");
+        let f_set: extern "C" fn(*mut c_void, *mut c_void, bool) =
+            std::mem::transmute(objc_msgSend as *const ());
+        f_set(img, sel_tmpl, true);
+        msg1_ptr(button, sel(b"setImage:\0"), img);
+        true
+    }
+
     static ACTION_TARGET: AtomicPtr<c_void> = AtomicPtr::new(std::ptr::null_mut());
     static ACTION_CLASS_ONCE: std::sync::Once = std::sync::Once::new();
 
@@ -316,10 +338,16 @@ mod tray_macos {
         // tell at a glance whether the listen child is producing notes.
         let button = msg0(item, sel(b"button\0"));
         if !button.is_null() {
-            let title = if recent.is_empty() {
-                "音".to_string()
+            // SF Symbol "mic" as a template image (auto-tinted by macOS).
+            // Falls back to "音" text if SF Symbols aren't available.
+            let img_set = set_button_mic_image(button);
+            let title = if !img_set {
+                if recent.is_empty() { "音".to_string() }
+                else { format!("音 {}", recent.len().min(99)) }
+            } else if recent.is_empty() {
+                String::new()
             } else {
-                format!("音 {}", recent.len().min(99))
+                format!(" {}", recent.len().min(99))
             };
             msg1_ptr(button, sel(b"setTitle:\0"), nsstring(&title));
         }
@@ -457,10 +485,12 @@ mod tray_macos {
             msg0(item, sel(b"retain\0"));
             STATUS_ITEM.store(item, Ordering::Release);
 
-            // Title-only button (no icon asset yet).
+            // Initial: SF Symbol "mic" template image, falls back to "音".
             let button = msg0(item, sel(b"button\0"));
             if !button.is_null() {
-                msg1_ptr(button, sel(b"setTitle:\0"), nsstring("音"));
+                if !set_button_mic_image(button) {
+                    msg1_ptr(button, sel(b"setTitle:\0"), nsstring("音"));
+                }
             }
 
             // Initial menu population.
