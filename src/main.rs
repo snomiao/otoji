@@ -133,6 +133,10 @@ enum Cmd {
         ///               to be pulled already.
         #[arg(long)]
         polish_preset: Option<String>,
+        /// Use VoiceProcessingIO (AEC) instead of cpal for mic capture.
+        /// macOS only — suppresses speaker bleed from system audio.
+        #[arg(long)]
+        aec: bool,
     },
     /// List available audio input devices.
     Devices,
@@ -635,6 +639,7 @@ async fn main() -> Result<()> {
             ptt_tts_source,
             ptt_control_socket,
             polish_preset,
+            aec,
         } => {
             if let Some(ref dir) = model {
                 std::env::set_var("OTOJI_SENSEVOICE_DIR", dir);
@@ -650,7 +655,7 @@ async fn main() -> Result<()> {
             run_listen(
                 provider, device, frame_ms, force_plain,
                 ptt_polish, ptt_tts, ptt_context_file,
-                ptt_translate_to, ptt_tts_source,
+                ptt_translate_to, ptt_tts_source, aec,
             ).await
         }
         Cmd::File {
@@ -693,6 +698,7 @@ async fn run_listen(
     ptt_context_file: Option<PathBuf>,
     ptt_translate_to: Option<String>,
     ptt_tts_source: String,
+    aec: bool,
 ) -> Result<()> {
     if device.as_deref() == Some("-") {
         return run_listen_stdin(
@@ -700,6 +706,20 @@ async fn run_listen(
             ptt_translate_to, ptt_tts_source,
         ).await;
     }
+
+    // On macOS with --aec, use VoiceProcessingIO instead of cpal.
+    #[cfg(target_os = "macos")]
+    if aec {
+        return run_listen_vpio(
+            kind, frame_ms, plain, ptt_polish, ptt_tts, ptt_context_file,
+            ptt_translate_to, ptt_tts_source,
+        ).await;
+    }
+    #[cfg(not(target_os = "macos"))]
+    if aec {
+        tracing::warn!("--aec is macOS-only, falling back to cpal");
+    }
+
     match kind {
         AsrKind::Iflytek => {
             let cfg = IflytekRtasrConfig::from_env().context("RTASR config")?;
@@ -713,6 +733,43 @@ async fn run_listen(
             let provider = SenseVoice::new(cfg);
             let (audio_tx, audio_rx) = audio::channel(64);
             let _stream = mic::start(device.as_deref(), frame_ms, audio_tx).context("mic")?;
+            if plain {
+                drive_plain(
+                    provider, audio_rx, ptt_polish, ptt_tts, ptt_context_file,
+                    ptt_translate_to, ptt_tts_source,
+                ).await
+            } else {
+                drive(provider, audio_rx).await
+            }
+        }
+    }
+}
+
+#[cfg(target_os = "macos")]
+async fn run_listen_vpio(
+    kind: AsrKind,
+    frame_ms: u32,
+    plain: bool,
+    ptt_polish: Option<String>,
+    ptt_tts: Option<String>,
+    ptt_context_file: Option<PathBuf>,
+    ptt_translate_to: Option<String>,
+    ptt_tts_source: String,
+) -> Result<()> {
+    use audio::vpio;
+    match kind {
+        AsrKind::Iflytek => {
+            let cfg = IflytekRtasrConfig::from_env().context("RTASR config")?;
+            let provider = IflytekRtasr::new(cfg);
+            let (audio_tx, audio_rx) = audio::channel(64);
+            let _stream = vpio::start(frame_ms, audio_tx).context("VPIO mic")?;
+            drive(provider, audio_rx).await
+        }
+        AsrKind::Sensevoice => {
+            let cfg = SenseVoiceConfig::from_env();
+            let provider = SenseVoice::new(cfg);
+            let (audio_tx, audio_rx) = audio::channel(64);
+            let _stream = vpio::start(frame_ms, audio_tx).context("VPIO mic")?;
             if plain {
                 drive_plain(
                     provider, audio_rx, ptt_polish, ptt_tts, ptt_context_file,
