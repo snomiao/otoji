@@ -205,6 +205,25 @@ enum Cmd {
         #[arg(long)]
         out: Option<PathBuf>,
     },
+
+    /// List note metadata (stem, time, kind). No content.
+    #[command(alias = "list")]
+    Ls {
+        /// Number of recent entries to show (default: 20, 0 = all).
+        #[arg(short = 'n', long, default_value_t = 20)]
+        lines: usize,
+    },
+
+    /// Read note text content. With --follow, streams new notes as they arrive.
+    #[command(alias = "r")]
+    Read {
+        /// Keep watching for new notes (like `tail -f`).
+        #[arg(short, long)]
+        follow: bool,
+        /// Number of recent notes to show on startup (default: 1).
+        #[arg(short = 'n', long, default_value_t = 1)]
+        lines: usize,
+    },
 }
 
 #[derive(clap::ValueEnum, Clone, Debug)]
@@ -675,7 +694,127 @@ async fn main() -> Result<()> {
             }
             run_transcribe(path, translate_to).await
         }
+        Cmd::Ls { lines } => run_ls(lines),
+        Cmd::Read { follow, lines } => run_read(follow, lines),
     }
+}
+
+fn run_ls(n: usize) -> Result<()> {
+    let notes = if n == 0 {
+        let all = otoji::notes::recent(usize::MAX);
+        all.into_iter().rev().collect::<Vec<_>>()
+    } else {
+        otoji::notes::recent(n).into_iter().rev().collect()
+    };
+    for note in &notes {
+        let dt = chrono::DateTime::from_timestamp_millis(note.ts)
+            .map(|d| d.with_timezone(&chrono::Local).format("%m-%d %H:%M:%S").to_string())
+            .unwrap_or_else(|| note.stem.clone());
+        let preview: String = note.text.chars().take(40).collect();
+        let ellipsis = if note.text.chars().count() > 40 { "…" } else { "" };
+        println!("{dt}  [{kind}]  {preview}{ellipsis}", kind = note.kind);
+    }
+    Ok(())
+}
+
+/// Prefer polished `.md` over raw `text` from the note.
+fn note_content(note: &otoji::notes::Note) -> String {
+    let md = otoji::notes::artifact_path(&note.stem, "md");
+    if md.exists() {
+        std::fs::read_to_string(&md).ok().unwrap_or_else(|| note.text.clone())
+    } else {
+        note.text.clone()
+    }
+}
+
+/// For `ptt_final` notes in follow mode, the polish `.md` may not be
+/// written yet (async LLM call). Poll up to `max_wait` for it to appear.
+fn note_content_await_polish(note: &otoji::notes::Note, max_wait: std::time::Duration) -> String {
+    if note.kind != "ptt_final" {
+        return note_content(note);
+    }
+    let md = otoji::notes::artifact_path(&note.stem, "md");
+    let deadline = std::time::Instant::now() + max_wait;
+    loop {
+        if md.exists() {
+            if let Ok(s) = std::fs::read_to_string(&md) {
+                return s;
+            }
+        }
+        if std::time::Instant::now() >= deadline {
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(200));
+    }
+    note.text.clone()
+}
+
+fn run_read(follow: bool, n: usize) -> Result<()> {
+    use std::io::{BufRead, BufReader, Seek, SeekFrom};
+    use std::fs::File;
+
+    let path = otoji::notes::notes_path();
+
+    // Print existing tail (last n lines, 0 = all). Prefer polished .md.
+    let existing = if n == 0 {
+        let all = otoji::notes::recent(usize::MAX);
+        all.into_iter().rev().collect::<Vec<_>>()
+    } else {
+        let tail = otoji::notes::recent(n);
+        tail.into_iter().rev().collect::<Vec<_>>()
+    };
+    for note in &existing {
+        println!("{}", note_content(note));
+    }
+
+    if !follow {
+        return Ok(());
+    }
+
+    // Follow mode: poll for new lines appended to the file.
+    let mut file = match File::open(&path) {
+        Ok(f) => f,
+        Err(_) => {
+            // File doesn't exist yet — wait for it.
+            loop {
+                std::thread::sleep(std::time::Duration::from_millis(500));
+                if let Ok(f) = File::open(&path) {
+                    break f;
+                }
+            }
+        }
+    };
+    // Seek to end so we only see new entries.
+    file.seek(SeekFrom::End(0))?;
+    let mut reader = BufReader::new(file);
+    let mut line = String::new();
+    loop {
+        line.clear();
+        match reader.read_line(&mut line) {
+            Ok(0) => {
+                // No new data yet — sleep and retry.
+                std::thread::sleep(std::time::Duration::from_millis(200));
+            }
+            Ok(_) => {
+                let trimmed = line.trim();
+                if !trimmed.is_empty() {
+                    if let Ok(note) = serde_json::from_str::<otoji::notes::Note>(trimmed) {
+                        // Wait up to 3s for polish .md on ptt_final notes.
+                        let content = note_content_await_polish(
+                            &note,
+                            std::time::Duration::from_secs(3),
+                        );
+                        println!("{content}");
+                    }
+                }
+            }
+            Err(e) => {
+                eprintln!("read error: {e}");
+                break;
+            }
+        }
+    }
+    Ok(())
 }
 
 // No more pre-flight mic permission check. Just open the mic directly —
