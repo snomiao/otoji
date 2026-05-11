@@ -2,6 +2,8 @@
 
 pub mod file;
 pub mod mic;
+#[cfg(target_os = "macos")]
+pub mod vpio;
 
 use crate::core::AudioChunk;
 use tokio::sync::mpsc;
