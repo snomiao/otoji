@@ -10,9 +10,11 @@
 pub mod asr;
 pub mod audio;
 pub mod core;
+pub mod kws;
 pub mod notes;
 pub mod polish;
 pub mod session;
+pub mod slug;
 pub mod tts;
 
 #[cfg(feature = "node")]
