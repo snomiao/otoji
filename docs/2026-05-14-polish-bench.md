@@ -85,37 +85,94 @@ polish プロンプトの先頭に挿入。
 ただし zh のみ 62.9 → 32.7 % と改善しており、コンテキスト由来の
 情報が中文の同音語選択に役立つ可能性は残る。プロンプト設計の余地大。
 
-## 5. 結論と推奨
+## 5. プロンプト再設計の検証 (v2)
+
+§4 で AX 文脈付与が悪化した原因を「単一テキストブロックで指示遵守が
+崩れる」と推測した。これを検証するため、`run_polish_v2_bench.py` で
+Ollama Chat API を用い、system / user role 分離 + 厳格制約 + few-shot
+の各組み合わせを試した。`qwen2.5:7b` 固定。
+
+```
+pipeline                       overall    ja      en      zh      ko    avg ms
+SHORT SV raw (baseline)         10.8%   12.2    16.1     3.8    12.7      0
+v1-noctx (naive prompt)         54.0%   57.1    83.9    24.5    62.0    166
+v2-noctx (strict prompt)        76.6%   39.6    78.2    22.6   181.9    183
+v2-ax-inline                   387.2%  375.9   267.8   444.0   412.0    405
+v2-ax-sep   (system role)      104.1%  113.5    93.1    67.3   131.3    253
+v2-ax-fewshot                   74.4%   85.7    83.9    42.8    83.1    242
+```
+
+### 観察
+
+1. **「naive(v1)」が「strict(v2)」より良い** (54.0 % vs 76.6 %)。厳格な
+   制約文が ko 出力を逆に暴走させる (181.9 %)。
+2. **AX context インライン (387 %)** — 与えた UI ラベルをそのまま polish
+   出力に書き写してしまう。最悪のケース。
+3. **System role + 黙認応答** で 104 % まで改善するが、未だ raw の
+   10 倍悪い。
+4. **Few-shot を加えると 74.4 %** — 改善するが raw に到底届かない。
+5. **§4 の v1 結果 (63.6 %) と本節の v1-noctx (54 %) は乖離**。前者は
+   `ollama run` CLI の単一プロンプト、後者は Chat API の system + user
+   分離。Chat API の方がやや良いが、結論は変わらない。
+
+### 結論
+
+短コマンド (1–3 s, 数語) への LLM polish は、プロンプト設計を尽くしても
+SenseVoice raw を超えられなかった。原因:
+
+- 短文ほど modal expansion が起きやすい
+  (`open chrome` → `Open Google Chrome browser, please.`)
+- 参照テキストが短いほど CER は語句追加に敏感 (1 語追加で +20–50 %)
+- AX 文脈は 7 B 規模では handle 不能
+
+## 6. 結論と推奨
 
 | 用途 | 推奨パイプライン |
 |---|---|
-| PTT 短コマンド | **SenseVoice raw のみ** (CER 10.8 %, polish 不要) |
+| PTT 短コマンド | **SenseVoice raw のみ** (CER 10.8 %, polish 完全に opt-out) |
 | 長文ディクテーション | SenseVoice raw (15.9 %) — polish はリスク高 |
 | 英語長文 | Whisper-turbo (en 11.4 %) — 短文は厳禁 |
-| AX 文脈活用 | 現状の単純プロンプト + 7B モデルでは効果なし。要再設計 |
+| AX 文脈活用 | 現状無効。70 B+ クラス LLM 待ち or 別アプローチ要検討 |
 
 `stt_polish_chain` 既定値の見直しを推奨:
 
-- 現状 `mlx:qwen2.5-3b,llm-corrector,raw`
-- 案: `raw` を先頭にするか、polish を opt-in にする
+- 現状: `mlx:qwen2.5-3b,llm-corrector,raw`
+- **案**: `raw` を先頭にし polish を完全 opt-in、もしくは
+  発話長 (秒数 / 文字数) によるフォールバックを実装
 
-## 6. 残課題
+実装ヒント — 発話長によるルーティング (擬似コード):
 
-- **プロンプト再設計**: system/user 分離 + few-shot を試す。
-  特に「与えたコンテキストを出力に書き写さない」制約を強める。
-- **より大きいモデル**: `qwen3:14b`, `gemma3:27b` 等で polish 品質が
-  改善するか測定。
+```rust
+let polished = if utterance.duration_ms < 5000 || raw_text.chars().count() < 15 {
+    raw_text  // skip polish entirely for short commands
+} else {
+    polish_chain.run(raw_text, context)?
+};
+```
+
+## 7. 残課題
+
+- **より大きい polish モデル**: `qwen3:14b`, `gemma3:27b` 等で
+  short-clip 暴走が抑えられるか測定 (M2 16 GB では tight)。
 - **韓国語専用 LLM**: Qwen の ko 弱点を回避するため、`exaone3.5:7.8b`
   等の韓国語強モデルを試す。
-- **実音声短コマンド**: TTS 合成では Whisper hallucination 傾向が
-  過小評価される可能性。実マイク録音で再測定。
+- **実音声短コマンド**: TTS 合成では Whisper hallucination が過小評価
+  される可能性。実マイク録音で再測定。
+- **AX 文脈の別アプローチ**: 文脈を polish プロンプトではなく、
+  ASR の hot-words ヒントとして渡す方向 (sherpa-onnx は
+  `--hotwords-file` 対応)。
 
-## 7. 再現
+## 8. 再現
 
 ```bash
-python3 ~/work/sensevoice-bench/run_polish_bench.py        # § 2
-python3 ~/work/sensevoice-bench/run_short_context_bench.py # § 3 + 4
+python3 ~/work/sensevoice-bench/run_polish_bench.py         # § 2
+python3 ~/work/sensevoice-bench/run_short_context_bench.py  # § 3 + 4
+python3 ~/work/sensevoice-bench/run_polish_v2_bench.py      # § 5
 ```
+
+注意: macOS のシステムプロキシ (例: `127.0.0.1:8080`) が有効な場合
+`requests.Session(trust_env=False)` 必須。`run_polish_v2_bench.py` は
+対応済み。
 
 Ollama サーバ (`brew services start ollama`) と
 `ollama pull qwen2.5:{3b,7b}` が前提。
