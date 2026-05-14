@@ -257,18 +257,66 @@ pub fn config_path() -> PathBuf {
     data_dir().join("config.json")
 }
 
+/// Migrations applied to a freshly-loaded config so that older users pick up
+/// safe new defaults without manual intervention. Each migration must be
+/// idempotent and only touch fields whose previous value was the *exact*
+/// previous default (never overwrite a value the user customized).
+fn apply_migrations(cfg: &mut OtojiConfig) {
+    // 2026-05-14: prepend length gates to stt_polish_chain so short voice
+    // commands skip LLM polish (CER degrades ~6× otherwise — see
+    // docs/2026-05-14-polish-bench.md §5).
+    const OLD_DEFAULT: &str = "mlx:qwen2.5-3b,llm-corrector,raw";
+    if cfg.stt_polish_chain == OLD_DEFAULT {
+        cfg.stt_polish_chain = default_stt_polish_chain();
+        eprintln!("[otoji] migrated stt_polish_chain to length-gated default");
+    }
+}
+
 pub fn load() -> OtojiConfig {
     let path = config_path();
     if let Ok(data) = std::fs::read_to_string(&path) {
         match serde_json::from_str::<OtojiConfig>(&data) {
-            Ok(cfg) => cfg,
+            Ok(mut cfg) => {
+                apply_migrations(&mut cfg);
+                return cfg;
+            }
             Err(e) => {
                 eprintln!("[otoji] config parse error: {} — using defaults", e);
-                OtojiConfig::default()
+                return OtojiConfig::default();
             }
         }
     } else {
         OtojiConfig::default()
+    }
+}
+
+#[cfg(test)]
+mod migration_tests {
+    use super::*;
+
+    #[test]
+    fn upgrades_old_polish_chain_default() {
+        let mut cfg = OtojiConfig::default();
+        cfg.stt_polish_chain = "mlx:qwen2.5-3b,llm-corrector,raw".to_string();
+        apply_migrations(&mut cfg);
+        assert_eq!(cfg.stt_polish_chain, default_stt_polish_chain());
+        assert!(cfg.stt_polish_chain.starts_with("min-chars:"));
+    }
+
+    #[test]
+    fn leaves_customized_polish_chain_alone() {
+        let mut cfg = OtojiConfig::default();
+        cfg.stt_polish_chain = "raw".to_string(); // user-customized
+        apply_migrations(&mut cfg);
+        assert_eq!(cfg.stt_polish_chain, "raw");
+    }
+
+    #[test]
+    fn idempotent_on_already_migrated() {
+        let mut cfg = OtojiConfig::default(); // already has the new gated default
+        let before = cfg.stt_polish_chain.clone();
+        apply_migrations(&mut cfg);
+        assert_eq!(cfg.stt_polish_chain, before);
     }
 }
 
