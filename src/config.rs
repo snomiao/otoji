@@ -135,72 +135,116 @@ pub struct OtojiConfig {
 }
 
 // デフォルト値関数
-fn default_stt_engine() -> String { "sherpa".to_string() }
+fn default_stt_engine() -> String {
+    "sherpa".to_string()
+}
 /// Best SenseVoice multilingual bundle by accuracy on our ja/en/zh/ko TTS
 /// benchmark (1.2% overall vs 54% for the 2025-09-09 retrain). int8 is
 /// strictly smaller + faster with no accuracy loss vs fp32.
 pub const DEFAULT_SHERPA_VARIANT: &str = "sherpa-onnx-sense-voice-zh-en-ja-ko-yue-int8-2024-07-17";
-fn default_sherpa_model_variant() -> String { DEFAULT_SHERPA_VARIANT.to_string() }
+fn default_sherpa_model_variant() -> String {
+    DEFAULT_SHERPA_VARIANT.to_string()
+}
 /// Latest stable Kokoro multilingual TTS (int8, ~140MB). Includes en/ja/zh/ko/fr/it/es/hi/pt-br.
 pub const DEFAULT_KOKORO_VARIANT: &str = "kokoro-int8-multi-lang-v1_1";
-fn default_kokoro_model_variant() -> String { DEFAULT_KOKORO_VARIANT.to_string() }
-fn default_ptt_polish_provider() -> String { "openai".to_string() }
-fn default_whisper_language() -> String { "ja".to_string() }
+fn default_kokoro_model_variant() -> String {
+    DEFAULT_KOKORO_VARIANT.to_string()
+}
+fn default_ptt_polish_provider() -> String {
+    "openai".to_string()
+}
+fn default_whisper_language() -> String {
+    "ja".to_string()
+}
 fn default_tts_chain() -> String {
     "elevenlabs:rachel,gemini-2.5-flash-preview-tts,openai:tts-1,msedge,native".to_string()
 }
-fn default_stt_polish_chain() -> String { "mlx:qwen2.5-3b,llm-corrector,raw".to_string() }
-fn default_aec_gain() -> f32 { 15.0 }
-fn default_noise_gate() -> f32 { 0.003 }
-fn default_speech_start_prob() -> f32 { 0.8 }
-fn default_speech_end_prob() -> f32 { 0.6 }
-fn default_speech_start_frames() -> usize { 10 }
-fn default_silence_end_frames() -> usize { 20 }
-fn default_aec_mode() -> String { "always".to_string() }
-fn default_translate_preset() -> String { "off".to_string() }
-fn default_translate_target() -> String { "English".to_string() }
-fn default_translate_other() -> String { "Japanese".to_string() }
-fn default_translate_direction() -> String { "one_way".to_string() }
-fn default_translate_type() -> String { "translated".to_string() }
-fn default_translate_both_template() -> String { "__ORIGINAL__\n__TRANSLATION__".to_string() }
-fn default_translate_tts_source() -> String { "original".to_string() }
-fn default_translate_polish_provider() -> String { "gemini".to_string() }
-fn default_translate_tts_provider() -> String { "gemini".to_string() }
+fn default_stt_polish_chain() -> String {
+    "mlx:qwen2.5-3b,llm-corrector,raw".to_string()
+}
+fn default_aec_gain() -> f32 {
+    15.0
+}
+fn default_noise_gate() -> f32 {
+    0.003
+}
+fn default_speech_start_prob() -> f32 {
+    0.8
+}
+fn default_speech_end_prob() -> f32 {
+    0.6
+}
+fn default_speech_start_frames() -> usize {
+    10
+}
+fn default_silence_end_frames() -> usize {
+    20
+}
+fn default_aec_mode() -> String {
+    "always".to_string()
+}
+fn default_translate_preset() -> String {
+    "off".to_string()
+}
+fn default_translate_target() -> String {
+    "English".to_string()
+}
+fn default_translate_other() -> String {
+    "Japanese".to_string()
+}
+fn default_translate_direction() -> String {
+    "one_way".to_string()
+}
+fn default_translate_type() -> String {
+    "translated".to_string()
+}
+fn default_translate_both_template() -> String {
+    "__ORIGINAL__\n__TRANSLATION__".to_string()
+}
+fn default_translate_tts_source() -> String {
+    "original".to_string()
+}
+fn default_translate_polish_provider() -> String {
+    "gemini".to_string()
+}
+fn default_translate_tts_provider() -> String {
+    "gemini".to_string()
+}
 
 impl Default for OtojiConfig {
     fn default() -> Self {
         Self {
-            stt_engine:              default_stt_engine(),
-            sherpa_model_variant:    default_sherpa_model_variant(),
-            kokoro_model_variant:    default_kokoro_model_variant(),
+            stt_engine: default_stt_engine(),
+            sherpa_model_variant: default_sherpa_model_variant(),
+            kokoro_model_variant: default_kokoro_model_variant(),
             ptt_vad_auto_release_ms: 0,
-            ptt_polish_provider:     default_ptt_polish_provider(),
-            ptt_polish_model:        String::new(),
-            whisper_model_path:      String::new(),
-            whisper_language:        default_whisper_language(),
-            stt_correction:          false,
-            tts_chain:               default_tts_chain(),
-            stt_polish_chain:        default_stt_polish_chain(),
-            aec_gain:                default_aec_gain(),
-            noise_gate:              default_noise_gate(),
-            speech_start_prob:       default_speech_start_prob(),
-            speech_end_prob:         default_speech_end_prob(),
-            speech_start_frames:     default_speech_start_frames(),
-            silence_end_frames:      default_silence_end_frames(),
-            aec_mode:                default_aec_mode(),
-            overlay_sharing:         false,
-            translate_enabled:       false,
-            translate_preset:        default_translate_preset(),
-            translate_target:        default_translate_target(),
-            translate_other:         default_translate_other(),
-            translate_direction:     default_translate_direction(),
-            translate_type:          default_translate_type(),
+            ptt_polish_provider: default_ptt_polish_provider(),
+            ptt_polish_model: String::new(),
+            whisper_model_path: String::new(),
+            whisper_language: default_whisper_language(),
+            stt_correction: false,
+            tts_chain: default_tts_chain(),
+            stt_polish_chain: default_stt_polish_chain(),
+            aec_gain: default_aec_gain(),
+            noise_gate: default_noise_gate(),
+            speech_start_prob: default_speech_start_prob(),
+            speech_end_prob: default_speech_end_prob(),
+            speech_start_frames: default_speech_start_frames(),
+            silence_end_frames: default_silence_end_frames(),
+            aec_mode: default_aec_mode(),
+            overlay_sharing: false,
+            translate_enabled: false,
+            translate_preset: default_translate_preset(),
+            translate_target: default_translate_target(),
+            translate_other: default_translate_other(),
+            translate_direction: default_translate_direction(),
+            translate_type: default_translate_type(),
             translate_both_template: default_translate_both_template(),
-            translate_tts_source:    default_translate_tts_source(),
+            translate_tts_source: default_translate_tts_source(),
             translate_polish_provider: default_translate_polish_provider(),
-            translate_tts_provider:  default_translate_tts_provider(),
-            note_translate_enabled:  false,
-            note_translate_target:   String::new(),
+            translate_tts_provider: default_translate_tts_provider(),
+            note_translate_enabled: false,
+            note_translate_target: String::new(),
         }
     }
 }

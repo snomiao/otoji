@@ -10,10 +10,19 @@ use otoji::core::AsrEvent;
 fn serialize_ptt_events_as_json_lines() {
     let events = vec![
         AsrEvent::Open,
-        AsrEvent::PttPartial { text: "hello".into() },
-        AsrEvent::PttFinal { text: "hello world".into() },
-        AsrEvent::PttUpgrade { text: "Hello, world.".into() },
-        AsrEvent::PttTranslated { text: "こんにちは、世界。".into(), lang: "ja".into() },
+        AsrEvent::PttPartial {
+            text: "hello".into(),
+        },
+        AsrEvent::PttFinal {
+            text: "hello world".into(),
+        },
+        AsrEvent::PttUpgrade {
+            text: "Hello, world.".into(),
+        },
+        AsrEvent::PttTranslated {
+            text: "こんにちは、世界。".into(),
+            lang: "ja".into(),
+        },
         AsrEvent::LanguageDetected { lang: "en".into() },
         AsrEvent::Closed,
     ];
@@ -40,7 +49,10 @@ fn ptt_events_have_snake_case_type_discriminant() {
     let s = serde_json::to_string(&e).unwrap();
     assert!(s.contains("\"type\":\"ptt_upgrade\""), "bad: {s}");
 
-    let e = AsrEvent::PttTranslated { text: "ja".into(), lang: "ja".into() };
+    let e = AsrEvent::PttTranslated {
+        text: "ja".into(),
+        lang: "ja".into(),
+    };
     let s = serde_json::to_string(&e).unwrap();
     assert!(s.contains("\"type\":\"ptt_translated\""), "bad: {s}");
     assert!(s.contains("\"lang\":\"ja\""));
@@ -122,6 +134,9 @@ fn try_parse_translate_json(s: &str) -> Option<(String, Option<String>)> {
     let json = &body[start..=end];
     let v: serde_json::Value = serde_json::from_str(json).ok()?;
     let original = v.get("original")?.as_str()?.trim().to_string();
-    let translated = v.get("translated").and_then(|t| t.as_str()).map(|t| t.trim().to_string());
+    let translated = v
+        .get("translated")
+        .and_then(|t| t.as_str())
+        .map(|t| t.trim().to_string());
     Some((original, translated))
 }

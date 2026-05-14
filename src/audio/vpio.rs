@@ -18,38 +18,105 @@ use std::ptr::null_mut;
 
 #[link(name = "AudioToolbox", kind = "framework")]
 extern "C" {
-    fn AudioComponentFindNext(comp: *mut c_void, desc: *const AudioComponentDescription) -> *mut c_void;
+    fn AudioComponentFindNext(
+        comp: *mut c_void,
+        desc: *const AudioComponentDescription,
+    ) -> *mut c_void;
     fn AudioComponentInstanceNew(comp: *mut c_void, instance: *mut *mut c_void) -> i32;
-    fn AudioUnitSetProperty(unit: *mut c_void, prop: u32, scope: u32, element: u32, data: *const c_void, size: u32) -> i32;
-    fn AudioUnitGetProperty(unit: *mut c_void, prop: u32, scope: u32, element: u32, data: *mut c_void, size: *mut u32) -> i32;
+    fn AudioUnitSetProperty(
+        unit: *mut c_void,
+        prop: u32,
+        scope: u32,
+        element: u32,
+        data: *const c_void,
+        size: u32,
+    ) -> i32;
+    fn AudioUnitGetProperty(
+        unit: *mut c_void,
+        prop: u32,
+        scope: u32,
+        element: u32,
+        data: *mut c_void,
+        size: *mut u32,
+    ) -> i32;
     fn AudioUnitInitialize(unit: *mut c_void) -> i32;
     fn AudioUnitUninitialize(unit: *mut c_void) -> i32;
     fn AudioOutputUnitStart(unit: *mut c_void) -> i32;
     fn AudioOutputUnitStop(unit: *mut c_void) -> i32;
-    fn AudioUnitRender(unit: *mut c_void, flags: *mut u32, timestamp: *const AudioTimeStamp, bus: u32, frames: u32, buffers: *mut AudioBufferList) -> i32;
+    fn AudioUnitRender(
+        unit: *mut c_void,
+        flags: *mut u32,
+        timestamp: *const AudioTimeStamp,
+        bus: u32,
+        frames: u32,
+        buffers: *mut AudioBufferList,
+    ) -> i32;
     fn AudioComponentInstanceDispose(unit: *mut c_void) -> i32;
 }
 
 // ── CoreAudio types ─────────────────────────────────────────────────────────
 
-#[repr(C)] #[derive(Clone, Copy)]
-struct AudioComponentDescription { component_type: u32, component_sub_type: u32, component_manufacturer: u32, component_flags: u32, component_flags_mask: u32 }
-
-#[repr(C)] #[derive(Clone, Copy)]
-struct AudioStreamBasicDescription { sample_rate: f64, format_id: u32, format_flags: u32, bytes_per_packet: u32, frames_per_packet: u32, bytes_per_frame: u32, channels_per_frame: u32, bits_per_channel: u32, reserved: u32 }
-
-#[repr(C)] #[derive(Clone, Copy)]
-struct AudioTimeStamp { sample_time: f64, host_time: u64, rate_scalar: f64, word_clock_time: u64, smpte_time: [u8; 24], flags: u32, reserved: u32 }
+#[repr(C)]
+#[derive(Clone, Copy)]
+struct AudioComponentDescription {
+    component_type: u32,
+    component_sub_type: u32,
+    component_manufacturer: u32,
+    component_flags: u32,
+    component_flags_mask: u32,
+}
 
 #[repr(C)]
-struct AudioBuffer { number_channels: u32, data_byte_size: u32, data: *mut c_void }
+#[derive(Clone, Copy)]
+struct AudioStreamBasicDescription {
+    sample_rate: f64,
+    format_id: u32,
+    format_flags: u32,
+    bytes_per_packet: u32,
+    frames_per_packet: u32,
+    bytes_per_frame: u32,
+    channels_per_frame: u32,
+    bits_per_channel: u32,
+    reserved: u32,
+}
 
 #[repr(C)]
-struct AudioBufferList { number_buffers: u32, buffers: [AudioBuffer; 1] }
+#[derive(Clone, Copy)]
+struct AudioTimeStamp {
+    sample_time: f64,
+    host_time: u64,
+    rate_scalar: f64,
+    word_clock_time: u64,
+    smpte_time: [u8; 24],
+    flags: u32,
+    reserved: u32,
+}
+
+#[repr(C)]
+struct AudioBuffer {
+    number_channels: u32,
+    data_byte_size: u32,
+    data: *mut c_void,
+}
+
+#[repr(C)]
+struct AudioBufferList {
+    number_buffers: u32,
+    buffers: [AudioBuffer; 1],
+}
 
 #[repr(C)]
 struct AURenderCallbackStruct {
-    input_proc: Option<unsafe extern "C" fn(*mut c_void, *mut u32, *const AudioTimeStamp, u32, u32, *mut AudioBufferList) -> i32>,
+    input_proc: Option<
+        unsafe extern "C" fn(
+            *mut c_void,
+            *mut u32,
+            *const AudioTimeStamp,
+            u32,
+            u32,
+            *mut AudioBufferList,
+        ) -> i32,
+    >,
     input_proc_ref_con: *mut c_void,
 }
 
@@ -120,11 +187,18 @@ unsafe extern "C" fn input_callback(
 
     // Gain + resample to 16kHz
     let src_rate = ctx.sample_rate;
-    let gained: Vec<f32> = raw.iter().map(|&s| (s * VPIO_GAIN).clamp(-1.0, 1.0)).collect();
+    let gained: Vec<f32> = raw
+        .iter()
+        .map(|&s| (s * VPIO_GAIN).clamp(-1.0, 1.0))
+        .collect();
     let at16k = resample_linear_carry(&gained, src_rate, 16_000, &mut ctx.resample_carry);
 
     // Convert to i16 and accumulate
-    ctx.chunk_buf.extend(at16k.iter().map(|&s| (s * 32767.0).clamp(-32768.0, 32767.0) as i16));
+    ctx.chunk_buf.extend(
+        at16k
+            .iter()
+            .map(|&s| (s * 32767.0).clamp(-32768.0, 32767.0) as i16),
+    );
 
     // Emit complete chunks
     while ctx.chunk_buf.len() * 2 >= ctx.chunk_target {
@@ -134,15 +208,22 @@ unsafe extern "C" fn input_callback(
         for s in &drain {
             bytes.extend_from_slice(&s.to_le_bytes());
         }
-        let _ = ctx.tx.try_send(AudioChunk::new(AudioFormat::PCM16K_MONO, Bytes::from(bytes)));
+        let _ = ctx.tx.try_send(AudioChunk::new(
+            AudioFormat::PCM16K_MONO,
+            Bytes::from(bytes),
+        ));
     }
 
     0
 }
 
 fn resample_linear_carry(src: &[f32], from: u32, to: u32, carry: &mut f64) -> Vec<f32> {
-    if src.is_empty() { return Vec::new(); }
-    if from == to { return src.to_vec(); }
+    if src.is_empty() {
+        return Vec::new();
+    }
+    if from == to {
+        return src.to_vec();
+    }
     let ratio = from as f64 / to as f64;
     let mut out = Vec::with_capacity((src.len() as f64 / ratio) as usize + 1);
     let mut pos = *carry;
@@ -200,7 +281,15 @@ pub fn start(frame_ms: u32, tx: AudioTx) -> Result<VpioStream> {
 
         // Enable input on Bus 1 (microphone)
         let enable: u32 = 1;
-        if AudioUnitSetProperty(unit, K_AUDIO_OUTPUT_UNIT_PROPERTY_ENABLE_IO, K_AUDIO_UNIT_SCOPE_INPUT, 1, &enable as *const u32 as *const c_void, 4) != 0 {
+        if AudioUnitSetProperty(
+            unit,
+            K_AUDIO_OUTPUT_UNIT_PROPERTY_ENABLE_IO,
+            K_AUDIO_UNIT_SCOPE_INPUT,
+            1,
+            &enable as *const u32 as *const c_void,
+            4,
+        ) != 0
+        {
             AudioComponentInstanceDispose(unit);
             return Err(anyhow!("Failed to enable VPIO input"));
         }
@@ -210,10 +299,21 @@ pub fn start(frame_ms: u32, tx: AudioTx) -> Result<VpioStream> {
             sample_rate: 48000.0,
             format_id: K_AUDIO_FORMAT_LINEAR_PCM,
             format_flags: K_AUDIO_FORMAT_FLAG_IS_FLOAT | K_AUDIO_FORMAT_FLAG_IS_PACKED,
-            bytes_per_packet: 4, frames_per_packet: 1, bytes_per_frame: 4,
-            channels_per_frame: 1, bits_per_channel: 32, reserved: 0,
+            bytes_per_packet: 4,
+            frames_per_packet: 1,
+            bytes_per_frame: 4,
+            channels_per_frame: 1,
+            bits_per_channel: 32,
+            reserved: 0,
         };
-        AudioUnitSetProperty(unit, K_AUDIO_UNIT_PROPERTY_STREAM_FORMAT, K_AUDIO_UNIT_SCOPE_OUTPUT, 1, &fmt as *const _ as *const c_void, std::mem::size_of::<AudioStreamBasicDescription>() as u32);
+        AudioUnitSetProperty(
+            unit,
+            K_AUDIO_UNIT_PROPERTY_STREAM_FORMAT,
+            K_AUDIO_UNIT_SCOPE_OUTPUT,
+            1,
+            &fmt as *const _ as *const c_void,
+            std::mem::size_of::<AudioStreamBasicDescription>() as u32,
+        );
 
         if AudioUnitInitialize(unit) != 0 {
             AudioComponentInstanceDispose(unit);
@@ -221,20 +321,51 @@ pub fn start(frame_ms: u32, tx: AudioTx) -> Result<VpioStream> {
         }
 
         // Minimize audio ducking (macOS 14+)
-        #[repr(C)] struct DuckingConfig { enable_advanced: u8, level: u32 }
-        let ducking = DuckingConfig { enable_advanced: 0, level: 10 };
-        AudioUnitSetProperty(unit, 2108, K_AUDIO_UNIT_SCOPE_GLOBAL, 0, &ducking as *const DuckingConfig as *const c_void, std::mem::size_of::<DuckingConfig>() as u32);
+        #[repr(C)]
+        struct DuckingConfig {
+            enable_advanced: u8,
+            level: u32,
+        }
+        let ducking = DuckingConfig {
+            enable_advanced: 0,
+            level: 10,
+        };
+        AudioUnitSetProperty(
+            unit,
+            2108,
+            K_AUDIO_UNIT_SCOPE_GLOBAL,
+            0,
+            &ducking as *const DuckingConfig as *const c_void,
+            std::mem::size_of::<DuckingConfig>() as u32,
+        );
 
         // Query actual sample rate
         let mut actual: AudioStreamBasicDescription = std::mem::zeroed();
         let mut sz = std::mem::size_of::<AudioStreamBasicDescription>() as u32;
-        let rate = if AudioUnitGetProperty(unit, K_AUDIO_UNIT_PROPERTY_STREAM_FORMAT, K_AUDIO_UNIT_SCOPE_OUTPUT, 1, &mut actual as *mut _ as *mut c_void, &mut sz) == 0 {
+        let rate = if AudioUnitGetProperty(
+            unit,
+            K_AUDIO_UNIT_PROPERTY_STREAM_FORMAT,
+            K_AUDIO_UNIT_SCOPE_OUTPUT,
+            1,
+            &mut actual as *mut _ as *mut c_void,
+            &mut sz,
+        ) == 0
+        {
             actual.sample_rate as u32
-        } else { 48000 };
+        } else {
+            48000
+        };
 
         // Tell AU not to allocate its own buffer
         let no_alloc: u32 = 0;
-        AudioUnitSetProperty(unit, K_AUDIO_UNIT_PROPERTY_SHOULD_ALLOCATE_BUFFER, K_AUDIO_UNIT_SCOPE_OUTPUT, 1, &no_alloc as *const u32 as *const c_void, 4);
+        AudioUnitSetProperty(
+            unit,
+            K_AUDIO_UNIT_PROPERTY_SHOULD_ALLOCATE_BUFFER,
+            K_AUDIO_UNIT_SCOPE_OUTPUT,
+            1,
+            &no_alloc as *const u32 as *const c_void,
+            4,
+        );
 
         let bytes_per_ms = (16_000usize / 1000) * 2; // 16kHz mono i16
         let chunk_target = bytes_per_ms * frame_ms as usize;
@@ -253,7 +384,15 @@ pub fn start(frame_ms: u32, tx: AudioTx) -> Result<VpioStream> {
             input_proc: Some(input_callback),
             input_proc_ref_con: &mut *ctx as *mut CallbackCtx as *mut c_void,
         };
-        if AudioUnitSetProperty(unit, K_AUDIO_OUTPUT_UNIT_PROPERTY_SET_INPUT_CALLBACK, K_AUDIO_UNIT_SCOPE_GLOBAL, 0, &cb as *const AURenderCallbackStruct as *const c_void, std::mem::size_of::<AURenderCallbackStruct>() as u32) != 0 {
+        if AudioUnitSetProperty(
+            unit,
+            K_AUDIO_OUTPUT_UNIT_PROPERTY_SET_INPUT_CALLBACK,
+            K_AUDIO_UNIT_SCOPE_GLOBAL,
+            0,
+            &cb as *const AURenderCallbackStruct as *const c_void,
+            std::mem::size_of::<AURenderCallbackStruct>() as u32,
+        ) != 0
+        {
             AudioComponentInstanceDispose(unit);
             return Err(anyhow!("Failed to set VPIO input callback"));
         }
@@ -263,7 +402,11 @@ pub fn start(frame_ms: u32, tx: AudioTx) -> Result<VpioStream> {
             return Err(anyhow!("AudioOutputUnitStart failed"));
         }
 
-        tracing::info!("[otoji] VPIO AEC mic started ({}Hz → 16kHz, gain={}x)", rate, VPIO_GAIN);
+        tracing::info!(
+            "[otoji] VPIO AEC mic started ({}Hz → 16kHz, gain={}x)",
+            rate,
+            VPIO_GAIN
+        );
         Ok(VpioStream { unit, _ctx: ctx })
     }
 }

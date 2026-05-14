@@ -81,7 +81,12 @@ mod tray_macos {
     // ── NSRect ───────────────────────────────────────────────────────────────
     #[repr(C)]
     #[derive(Clone, Copy)]
-    struct NSRect { x: f64, y: f64, w: f64, h: f64 }
+    struct NSRect {
+        x: f64,
+        y: f64,
+        w: f64,
+        h: f64,
+    }
 
     // ── Settings window globals ──────────────────────────────────────────────
     static SETTINGS_WINDOW: AtomicPtr<c_void> = AtomicPtr::new(std::ptr::null_mut());
@@ -135,21 +140,36 @@ mod tray_macos {
     // ── Settings message handler ─────────────────────────────────────────────
 
     unsafe fn nsstring_to_string(ns: *mut c_void) -> Option<String> {
-        if ns.is_null() { return None; }
+        if ns.is_null() {
+            return None;
+        }
         let f: extern "C" fn(*mut c_void, *mut c_void) -> *const std::ffi::c_char =
             std::mem::transmute(objc_msgSend as *const ());
         let cstr = f(ns, sel(b"UTF8String\0"));
-        if cstr.is_null() { return None; }
-        Some(std::ffi::CStr::from_ptr(cstr).to_string_lossy().into_owned())
+        if cstr.is_null() {
+            return None;
+        }
+        Some(
+            std::ffi::CStr::from_ptr(cstr)
+                .to_string_lossy()
+                .into_owned(),
+        )
     }
 
     unsafe fn eval_settings_js(js: &str) {
         let wv = SETTINGS_WEBVIEW.load(Ordering::Acquire);
-        if wv.is_null() { return; }
+        if wv.is_null() {
+            return;
+        }
         let js_ns = nsstring(js);
         let f: extern "C" fn(*mut c_void, *mut c_void, *mut c_void, *mut c_void) -> *mut c_void =
             std::mem::transmute(objc_msgSend as *const ());
-        f(wv, sel(b"evaluateJavaScript:completionHandler:\0"), js_ns, std::ptr::null_mut());
+        f(
+            wv,
+            sel(b"evaluateJavaScript:completionHandler:\0"),
+            js_ns,
+            std::ptr::null_mut(),
+        );
     }
 
     /// IMP for `userContentController:didReceiveScriptMessage:`.
@@ -160,8 +180,12 @@ mod tray_macos {
         message: *mut c_void,
     ) {
         let body = msg0(message, sel(b"body\0"));
-        let Some(body_str) = nsstring_to_string(body) else { return };
-        let Ok(parsed) = serde_json::from_str::<serde_json::Value>(&body_str) else { return };
+        let Some(body_str) = nsstring_to_string(body) else {
+            return;
+        };
+        let Ok(parsed) = serde_json::from_str::<serde_json::Value>(&body_str) else {
+            return;
+        };
         let cmd = parsed.get("cmd").and_then(|v| v.as_str()).unwrap_or("");
         match cmd {
             "get_config" => {
@@ -172,7 +196,9 @@ mod tray_macos {
             }
             "set_config" => {
                 if let Some(cfg_val) = parsed.get("cfg") {
-                    if let Ok(cfg) = serde_json::from_value::<otoji::config::OtojiConfig>(cfg_val.clone()) {
+                    if let Ok(cfg) =
+                        serde_json::from_value::<otoji::config::OtojiConfig>(cfg_val.clone())
+                    {
                         otoji::config::save(&cfg);
                         eval_settings_js("window.handleSetConfig()");
                     }
@@ -185,10 +211,7 @@ mod tray_macos {
                 }
             }
             "check_model_status" => {
-                let kind_str = parsed
-                    .get("kind")
-                    .and_then(|v| v.as_str())
-                    .unwrap_or("stt");
+                let kind_str = parsed.get("kind").and_then(|v| v.as_str()).unwrap_or("stt");
                 let variant = parsed
                     .get("variant")
                     .and_then(|v| v.as_str())
@@ -249,9 +272,13 @@ mod tray_macos {
                 b"OtojiSettingsHandler\0".as_ptr() as *const _,
                 0,
             );
-            if new_cls.is_null() { return; }
+            if new_cls.is_null() {
+                return;
+            }
             let proto = objc_getProtocol(b"WKScriptMessageHandler\0".as_ptr() as *const _);
-            if !proto.is_null() { class_addProtocol(new_cls, proto); }
+            if !proto.is_null() {
+                class_addProtocol(new_cls, proto);
+            }
             class_addMethod(
                 new_cls,
                 sel(b"userContentController:didReceiveScriptMessage:\0"),
@@ -274,7 +301,11 @@ mod tray_macos {
                 return;
             }
             // Bring back and reload config
-            msg1_ptr(existing, sel(b"makeKeyAndOrderFront:\0"), std::ptr::null_mut());
+            msg1_ptr(
+                existing,
+                sel(b"makeKeyAndOrderFront:\0"),
+                std::ptr::null_mut(),
+            );
             let nsapp = msg0(cls(b"NSApplication\0"), sel(b"sharedApplication\0"));
             let f: extern "C" fn(*mut c_void, *mut c_void, i64) -> bool =
                 std::mem::transmute(objc_msgSend as *const ());
@@ -291,7 +322,10 @@ mod tray_macos {
 
         // WKWebViewConfiguration
         let wk_cfg_cls = cls(b"WKWebViewConfiguration\0");
-        if wk_cfg_cls.is_null() { eprintln!("otoji-tray: WKWebViewConfiguration not found"); return; }
+        if wk_cfg_cls.is_null() {
+            eprintln!("otoji-tray: WKWebViewConfiguration not found");
+            return;
+        }
         let wk_cfg = msg0(msg0(wk_cfg_cls, sel(b"alloc\0")), sel(b"init\0"));
 
         // userContentController
@@ -299,43 +333,80 @@ mod tray_macos {
 
         // handler instance
         let handler_cls = cls(b"OtojiSettingsHandler\0");
-        if handler_cls.is_null() { return; }
+        if handler_cls.is_null() {
+            return;
+        }
         let handler = msg0(msg0(handler_cls, sel(b"alloc\0")), sel(b"init\0"));
 
         // [ucc addScriptMessageHandler:handler name:@"otoji"]
         let f4: extern "C" fn(*mut c_void, *mut c_void, *mut c_void, *mut c_void) -> *mut c_void =
             std::mem::transmute(objc_msgSend as *const ());
-        f4(ucc, sel(b"addScriptMessageHandler:name:\0"), handler, nsstring("otoji"));
+        f4(
+            ucc,
+            sel(b"addScriptMessageHandler:name:\0"),
+            handler,
+            nsstring("otoji"),
+        );
 
         // WKWebView
-        let rect = NSRect { x: 0.0, y: 0.0, w: 560.0, h: 640.0 };
+        let rect = NSRect {
+            x: 0.0,
+            y: 0.0,
+            w: 560.0,
+            h: 640.0,
+        };
         let wk_view_cls = cls(b"WKWebView\0");
-        if wk_view_cls.is_null() { eprintln!("otoji-tray: WKWebView not found"); return; }
+        if wk_view_cls.is_null() {
+            eprintln!("otoji-tray: WKWebView not found");
+            return;
+        }
         let wk_alloc = msg0(wk_view_cls, sel(b"alloc\0"));
         let webview: *mut c_void = {
             let f: extern "C" fn(*mut c_void, *mut c_void, NSRect, *mut c_void) -> *mut c_void =
                 std::mem::transmute(objc_msgSend as *const ());
-            f(wk_alloc, sel(b"initWithFrame:configuration:\0"), rect, wk_cfg)
+            f(
+                wk_alloc,
+                sel(b"initWithFrame:configuration:\0"),
+                rect,
+                wk_cfg,
+            )
         };
-        if webview.is_null() { eprintln!("otoji-tray: WKWebView init failed"); return; }
+        if webview.is_null() {
+            eprintln!("otoji-tray: WKWebView init failed");
+            return;
+        }
         SETTINGS_WEBVIEW.store(webview, Ordering::Release);
 
         // Load HTML
         let f4l: extern "C" fn(*mut c_void, *mut c_void, *mut c_void, *mut c_void) -> *mut c_void =
             std::mem::transmute(objc_msgSend as *const ());
-        f4l(webview, sel(b"loadHTMLString:baseURL:\0"), nsstring(SETTINGS_HTML), std::ptr::null_mut());
+        f4l(
+            webview,
+            sel(b"loadHTMLString:baseURL:\0"),
+            nsstring(SETTINGS_HTML),
+            std::ptr::null_mut(),
+        );
 
         // NSWindow
         let style_mask: u64 = 1 | 2 | 4 | 8; // titled | closable | miniaturizable | resizable
-        let backing: u64 = 2;                  // NSBackingStoreBuffered
+        let backing: u64 = 2; // NSBackingStoreBuffered
         let win_alloc = msg0(cls(b"NSWindow\0"), sel(b"alloc\0"));
         let window: *mut c_void = {
             let f: extern "C" fn(*mut c_void, *mut c_void, NSRect, u64, u64, bool) -> *mut c_void =
                 std::mem::transmute(objc_msgSend as *const ());
-            f(win_alloc, sel(b"initWithContentRect:styleMask:backing:defer:\0"),
-              rect, style_mask, backing, false)
+            f(
+                win_alloc,
+                sel(b"initWithContentRect:styleMask:backing:defer:\0"),
+                rect,
+                style_mask,
+                backing,
+                false,
+            )
         };
-        if window.is_null() { eprintln!("otoji-tray: NSWindow init failed"); return; }
+        if window.is_null() {
+            eprintln!("otoji-tray: NSWindow init failed");
+            return;
+        }
 
         msg1_ptr(window, sel(b"setTitle:\0"), nsstring("otoji 設定"));
         msg1_ptr(window, sel(b"setContentView:\0"), webview);
@@ -346,7 +417,11 @@ mod tray_macos {
         msg0(window, sel(b"retain\0"));
         SETTINGS_WINDOW.store(window, Ordering::Release);
 
-        msg1_ptr(window, sel(b"makeKeyAndOrderFront:\0"), std::ptr::null_mut());
+        msg1_ptr(
+            window,
+            sel(b"makeKeyAndOrderFront:\0"),
+            std::ptr::null_mut(),
+        );
         let nsapp = msg0(cls(b"NSApplication\0"), sel(b"sharedApplication\0"));
         let f_act: extern "C" fn(*mut c_void, *mut c_void, i64) -> bool =
             std::mem::transmute(objc_msgSend as *const ());
@@ -376,9 +451,8 @@ mod tray_macos {
     unsafe fn nsstring(s: &str) -> *mut c_void {
         let cls_str = cls(b"NSString\0");
         let sel_utf8 = sel(b"stringWithUTF8String:\0");
-        let cstr = std::ffi::CString::new(s).unwrap_or_else(|_| {
-            std::ffi::CString::new(s.replace('\0', "")).unwrap()
-        });
+        let cstr = std::ffi::CString::new(s)
+            .unwrap_or_else(|_| std::ffi::CString::new(s.replace('\0', "")).unwrap());
         let f: extern "C" fn(*mut c_void, *mut c_void, *const std::ffi::c_char) -> *mut c_void =
             std::mem::transmute(objc_msgSend as *const ());
         f(cls_str, sel_utf8, cstr.as_ptr())
@@ -390,7 +464,9 @@ mod tray_macos {
     /// a text title.
     unsafe fn set_button_mic_image(button: *mut c_void, active: bool) -> bool {
         let nsimage = cls(b"NSImage\0");
-        if nsimage.is_null() { return false; }
+        if nsimage.is_null() {
+            return false;
+        }
         // mic.fill when listen is running (the system shows the orange dot
         // anyway), mic.slash when stopped — so users can tell at a glance
         // that otoji is *not* recording, distinguishing the tray icon from
@@ -400,7 +476,9 @@ mod tray_macos {
         let f: extern "C" fn(*mut c_void, *mut c_void, *mut c_void, *mut c_void) -> *mut c_void =
             std::mem::transmute(objc_msgSend as *const ());
         let img = f(nsimage, sel_sym, nsstring(symbol), nsstring("otoji"));
-        if img.is_null() { return false; }
+        if img.is_null() {
+            return false;
+        }
         let sel_tmpl = sel(b"setTemplate:\0");
         let f_set: extern "C" fn(*mut c_void, *mut c_void, bool) =
             std::mem::transmute(objc_msgSend as *const ());
@@ -445,7 +523,11 @@ mod tray_macos {
         if utf8.is_null() {
             return None;
         }
-        Some(std::ffi::CStr::from_ptr(utf8).to_string_lossy().into_owned())
+        Some(
+            std::ffi::CStr::from_ptr(utf8)
+                .to_string_lossy()
+                .into_owned(),
+        )
     }
 
     /// Click → write the note's text to the system pasteboard.
@@ -454,7 +536,9 @@ mod tray_macos {
         _cmd: *mut c_void,
         sender: *mut c_void,
     ) {
-        let Some(text) = rep_obj_to_string(sender) else { return };
+        let Some(text) = rep_obj_to_string(sender) else {
+            return;
+        };
         let pb = msg0(cls(b"NSPasteboard\0"), sel(b"generalPasteboard\0"));
         if pb.is_null() {
             return;
@@ -488,11 +572,16 @@ mod tray_macos {
         let Some(n) = recent.first() else { return };
         let wav = otoji::notes::artifact_path(&n.stem, "wav");
         if wav.exists() {
-            let _ = std::process::Command::new("open").arg("-R").arg(&wav).spawn();
+            let _ = std::process::Command::new("open")
+                .arg("-R")
+                .arg(&wav)
+                .spawn();
         } else {
             // Fall back to opening the data folder if no audio sidecar exists
             // (PttFinal segments don't currently capture audio).
-            let _ = std::process::Command::new("open").arg(otoji::notes::data_dir()).spawn();
+            let _ = std::process::Command::new("open")
+                .arg(otoji::notes::data_dir())
+                .spawn();
         }
     }
 
@@ -605,11 +694,8 @@ mod tray_macos {
     unsafe fn ensure_action_class() {
         ACTION_CLASS_ONCE.call_once(|| {
             let superclass = cls(b"NSObject\0");
-            let new_cls = objc_allocateClassPair(
-                superclass,
-                b"OtojiTrayTarget\0".as_ptr() as *const _,
-                0,
-            );
+            let new_cls =
+                objc_allocateClassPair(superclass, b"OtojiTrayTarget\0".as_ptr() as *const _, 0);
             if new_cls.is_null() {
                 eprintln!("otoji-tray: failed to allocate OtojiTrayTarget");
                 return;
@@ -688,8 +774,11 @@ mod tray_macos {
         let menuitem_cls = cls(b"NSMenuItem\0");
         let init_sel = sel(b"initWithTitle:action:keyEquivalent:\0");
         let init_fn: extern "C" fn(
-            *mut c_void, *mut c_void,
-            *mut c_void, *mut c_void, *mut c_void,
+            *mut c_void,
+            *mut c_void,
+            *mut c_void,
+            *mut c_void,
+            *mut c_void,
         ) -> *mut c_void = std::mem::transmute(objc_msgSend as *const ());
 
         let target = action_target();
@@ -884,7 +973,9 @@ mod tray_macos {
     extern "C" fn refresh_tick(_timer: *mut c_void, _info: *mut c_void) {
         // SIGUSR1 pending → open settings window
         if OPEN_SETTINGS_FLAG.swap(false, std::sync::atomic::Ordering::SeqCst) {
-            unsafe { open_settings_window(); }
+            unsafe {
+                open_settings_window();
+            }
         }
 
         // Drain any pending model-download progress events.
@@ -896,7 +987,9 @@ mod tray_macos {
             return;
         }
         LAST_MTIME.store(mtime, std::sync::atomic::Ordering::Release);
-        unsafe { rebuild_menu(); }
+        unsafe {
+            rebuild_menu();
+        }
     }
 
     /// Pump every queued `DownloadEvt` to the WebView. Runs on the main
@@ -920,10 +1013,7 @@ mod tray_macos {
                     let json = serde_json::to_string(&payload).unwrap_or_default();
                     let escaped = json.replace('\\', "\\\\").replace('\'', "\\'");
                     unsafe {
-                        eval_settings_js(&format!(
-                            "window.handleModelProgress('{}')",
-                            escaped
-                        ));
+                        eval_settings_js(&format!("window.handleModelProgress('{}')", escaped));
                     }
                     if matches!(evt.stage, "done" | "error" | "cancelled") {
                         DOWNLOAD_ACTIVE.store(false, std::sync::atomic::Ordering::Release);
@@ -1044,8 +1134,12 @@ mod tray_macos {
         if !clx_path.exists() {
             return; // CLX 未設定 — 設定画面を初めて開いたときにデフォルトで作成される
         }
-        let Ok(data) = std::fs::read_to_string(&clx_path) else { return };
-        let Ok(val)  = serde_json::from_str::<serde_json::Value>(&data) else { return };
+        let Ok(data) = std::fs::read_to_string(&clx_path) else {
+            return;
+        };
+        let Ok(val) = serde_json::from_str::<serde_json::Value>(&data) else {
+            return;
+        };
         // OtojiConfig のフィールドは CLX FullConfig のサブセット。
         // serde が一致するフィールド名を取り込み、存在しないフィールドはデフォルト値にする。
         match serde_json::from_value::<otoji::config::OtojiConfig>(val) {
@@ -1054,7 +1148,10 @@ mod tray_macos {
                 eprintln!("[otoji-tray] CLX config から音声設定をマイグレーションしました");
             }
             Err(e) => {
-                eprintln!("[otoji-tray] CLX config のパース失敗、デフォルト値を使用: {}", e);
+                eprintln!(
+                    "[otoji-tray] CLX config のパース失敗、デフォルト値を使用: {}",
+                    e
+                );
             }
         }
     }
@@ -1106,7 +1203,10 @@ mod tray_macos {
             extern "C" fn sigusr1_handler(_: libc::c_int) {
                 OPEN_SETTINGS_FLAG.store(true, std::sync::atomic::Ordering::SeqCst);
             }
-            libc::signal(libc::SIGUSR1, sigusr1_handler as *const () as libc::sighandler_t);
+            libc::signal(
+                libc::SIGUSR1,
+                sigusr1_handler as *const () as libc::sighandler_t,
+            );
 
             // 200ms tick: drives both menu refresh (gated on notes mtime
             // change, so cheap when idle) and model-download progress drain

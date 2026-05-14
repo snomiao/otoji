@@ -11,10 +11,8 @@ use futures_util::StreamExt;
 use std::path::{Path, PathBuf};
 use tokio::io::AsyncWriteExt;
 
-const ASR_RELEASE_BASE: &str =
-    "https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models";
-const TTS_RELEASE_BASE: &str =
-    "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models";
+const ASR_RELEASE_BASE: &str = "https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models";
+const TTS_RELEASE_BASE: &str = "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models";
 
 /// One progress tick emitted by `download_variant`.
 #[derive(Debug, Clone, Copy)]
@@ -84,11 +82,7 @@ where
 ///
 /// `on_progress` is called from the async task that owns the download. It
 /// must not block; channel-send + return is the expected pattern.
-pub async fn download_asset<F>(
-    kind: AssetKind,
-    variant: &str,
-    mut on_progress: F,
-) -> Result<()>
+pub async fn download_asset<F>(kind: AssetKind, variant: &str, mut on_progress: F) -> Result<()>
 where
     F: FnMut(DownloadProgress) + Send,
 {
@@ -104,9 +98,9 @@ where
     }
 
     let cache = cache_dir();
-    tokio::fs::create_dir_all(&cache).await.map_err(|e| {
-        OtojiError::Provider(format!("cache_dir create failed: {e}"))
-    })?;
+    tokio::fs::create_dir_all(&cache)
+        .await
+        .map_err(|e| OtojiError::Provider(format!("cache_dir create failed: {e}")))?;
 
     let url = format!("{}/{variant}.tar.bz2", kind.release_base());
     let tarball = tarball_path(variant);
@@ -138,9 +132,9 @@ where
     }
     let total = resp.content_length().unwrap_or(0);
 
-    let mut file = tokio::fs::File::create(&partial).await.map_err(|e| {
-        OtojiError::Provider(format!("create {}: {e}", partial.display()))
-    })?;
+    let mut file = tokio::fs::File::create(&partial)
+        .await
+        .map_err(|e| OtojiError::Provider(format!("create {}: {e}", partial.display())))?;
     let mut stream = resp.bytes_stream();
     let mut downloaded: u64 = 0;
     let started = std::time::Instant::now();
@@ -184,9 +178,9 @@ where
     });
 
     // Promote .partial → final and extract via system tar.
-    tokio::fs::rename(&partial, &tarball).await.map_err(|e| {
-        OtojiError::Provider(format!("rename: {e}"))
-    })?;
+    tokio::fs::rename(&partial, &tarball)
+        .await
+        .map_err(|e| OtojiError::Provider(format!("rename: {e}")))?;
 
     on_progress(DownloadProgress {
         downloaded,

@@ -30,7 +30,9 @@ fn frame_peak(frame: &[f32]) -> f32 {
     let mut p = 0.0f32;
     for &s in frame {
         let a = s.abs();
-        if a > p { p = a; }
+        if a > p {
+            p = a;
+        }
     }
     p
 }
@@ -201,7 +203,13 @@ fn find_device(host: &cpal::Host, hint: &str) -> Result<cpal::Device> {
     // Special aliases.
     let keywords: &[&str] = match lower.as_str() {
         "default" | "mic" => &[],
-        "system" | "loopback" => &["blackhole", "loopback", "soundflower", "vb-cable", "vb cable"],
+        "system" | "loopback" => &[
+            "blackhole",
+            "loopback",
+            "soundflower",
+            "vb-cable",
+            "vb cable",
+        ],
         _ => &[],
     };
     if keywords.is_empty() && (lower == "default" || lower == "mic") {

@@ -45,11 +45,7 @@ pub async fn stream_pcm_file(
 /// This is a *synchronous* function intended to be called from
 /// `tokio::task::spawn_blocking`. It uses `tx.blocking_send` so the caller
 /// must ensure it runs on a blocking-friendly thread.
-pub fn stream_wav_reader_blocking<R: Read>(
-    reader: R,
-    frame_ms: u32,
-    tx: AudioTx,
-) -> Result<()> {
+pub fn stream_wav_reader_blocking<R: Read>(reader: R, frame_ms: u32, tx: AudioTx) -> Result<()> {
     let mut wav = hound::WavReader::new(reader).context("parse WAV header from stdin")?;
     let spec = wav.spec();
     if spec.sample_rate != 16_000 || spec.channels != 1 || spec.bits_per_sample != 16 {

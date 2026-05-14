@@ -240,8 +240,11 @@ mod tests {
 
     fn with_tmp_dir<F: FnOnce()>(f: F) {
         let _guard = TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
-        let tmp = std::env::temp_dir()
-            .join(format!("otoji-notes-{}-{}", std::process::id(), rand_suffix()));
+        let tmp = std::env::temp_dir().join(format!(
+            "otoji-notes-{}-{}",
+            std::process::id(),
+            rand_suffix()
+        ));
         let _ = std::fs::remove_dir_all(&tmp);
         std::env::set_var("OTOJI_DATA_DIR", &tmp);
         f();
@@ -250,7 +253,10 @@ mod tests {
     }
 
     fn rand_suffix() -> String {
-        format!("{:x}", chrono::Utc::now().timestamp_nanos_opt().unwrap_or(0))
+        format!(
+            "{:x}",
+            chrono::Utc::now().timestamp_nanos_opt().unwrap_or(0)
+        )
     }
 
     #[test]
