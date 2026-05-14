@@ -72,9 +72,7 @@ impl GeminiTts {
         if !resp.status().is_success() {
             let status = resp.status();
             let body = resp.text().await.unwrap_or_default();
-            return Err(OtojiError::Provider(format!(
-                "gemini tts {status}: {body}"
-            )));
+            return Err(OtojiError::Provider(format!("gemini tts {status}: {body}")));
         }
         let v: serde_json::Value = resp
             .json()

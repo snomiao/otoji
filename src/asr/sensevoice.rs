@@ -48,7 +48,7 @@ pub struct SenseVoiceConfig {
     pub vad_max_ms: u32,
 }
 
-fn cache_dir() -> std::path::PathBuf {
+pub fn cache_dir() -> std::path::PathBuf {
     std::env::var_os("OTOJI_CACHE_DIR")
         .map(std::path::PathBuf::from)
         .or_else(|| {
@@ -62,12 +62,55 @@ fn cache_dir() -> std::path::PathBuf {
         .unwrap_or_else(|| std::path::PathBuf::from(".otoji-cache"))
 }
 
+/// Resolve the SenseVoice model directory for a given variant name.
+/// e.g. "sherpa-onnx-sense-voice-zh-en-ja-ko-yue-2025-09-09"
+///   → ~/.cache/otoji/sherpa-onnx-sense-voice-zh-en-ja-ko-yue-2025-09-09
+pub fn model_dir_for_variant(variant: &str) -> std::path::PathBuf {
+    let mut d = cache_dir();
+    d.push(variant);
+    d
+}
+
+/// Pick the ONNX model file inside a directory. Prefers the int8 quantized
+/// version (faster on M-series); falls back to fp32. Returns the basename
+/// suffix (`"model.int8.onnx"` or `"model.onnx"`), or `None` if neither is
+/// present. The "full" sherpa-onnx bundles ship only `model.onnx`; the
+/// "int8" bundles ship only `model.int8.onnx`; the legacy 2024-07-17 full
+/// bundle ships both.
+pub fn pick_model_file(dir: &std::path::Path) -> Option<&'static str> {
+    if dir.join("model.int8.onnx").exists() {
+        Some("model.int8.onnx")
+    } else if dir.join("model.onnx").exists() {
+        Some("model.onnx")
+    } else {
+        None
+    }
+}
+
+/// True if the variant directory contains a usable model + tokens file.
+pub fn variant_is_present(variant: &str) -> bool {
+    let dir = model_dir_for_variant(variant);
+    pick_model_file(&dir).is_some() && dir.join("tokens.txt").exists()
+}
+
 impl SenseVoiceConfig {
     pub fn from_env() -> Self {
         let default_model_dir = {
-            let mut d = cache_dir();
-            d.push("sherpa-onnx-sense-voice-zh-en-ja-ko-yue-2024-07-17");
-            d.to_string_lossy().into_owned()
+            // Priority: OTOJI_SENSEVOICE_DIR env > persisted config variant > builtin default.
+            let variant = std::env::var("OTOJI_SENSEVOICE_VARIANT")
+                .ok()
+                .filter(|s| !s.is_empty())
+                .unwrap_or_else(|| {
+                    let cfg = crate::config::load();
+                    if cfg.sherpa_model_variant.is_empty() {
+                        crate::config::DEFAULT_SHERPA_VARIANT.to_string()
+                    } else {
+                        cfg.sherpa_model_variant
+                    }
+                });
+            model_dir_for_variant(&variant)
+                .to_string_lossy()
+                .into_owned()
         };
         Self {
             model_dir: std::env::var("OTOJI_SENSEVOICE_DIR").unwrap_or(default_model_dir),
@@ -126,14 +169,27 @@ pub enum WorkerMsg {
 /// Events from the worker thread to the async side.
 enum WorkerEvt {
     Open,
-    Partial { seg_id: u64, text: String },
-    Final { seg_id: u64, text: String, audio: Vec<f32> },
+    Partial {
+        seg_id: u64,
+        text: String,
+    },
+    Final {
+        seg_id: u64,
+        text: String,
+        audio: Vec<f32>,
+    },
     Status(String),
     Error(String),
     Closed,
-    PttPartial { text: String },
-    PttFinal { text: String },
-    LanguageDetected { lang: String },
+    PttPartial {
+        text: String,
+    },
+    PttFinal {
+        text: String,
+    },
+    LanguageDetected {
+        lang: String,
+    },
 }
 
 #[async_trait]
@@ -145,17 +201,26 @@ impl AsrProvider for SenseVoice {
     async fn run(&self, mut audio: AudioRx, events: AsrEventTx) -> Result<()> {
         let cfg = self.cfg.clone();
 
-        let model_path = format!("{}/model.int8.onnx", cfg.model_dir);
+        // Some sherpa-onnx bundles ship `model.int8.onnx` (quantized), others
+        // ship `model.onnx` (fp32). Prefer int8 when both exist.
+        let dir_path = std::path::Path::new(&cfg.model_dir);
+        let model_basename = pick_model_file(dir_path);
         let tokens_path = format!("{}/tokens.txt", cfg.model_dir);
-        if !std::path::Path::new(&model_path).exists()
-            || !std::path::Path::new(&tokens_path).exists()
-        {
+        if model_basename.is_none() || !std::path::Path::new(&tokens_path).exists() {
+            // Derive variant basename from the dir name so the hint matches
+            // whatever was configured (default or user-selected).
+            let variant = std::path::Path::new(&cfg.model_dir)
+                .file_name()
+                .and_then(|s| s.to_str())
+                .unwrap_or(crate::config::DEFAULT_SHERPA_VARIANT);
             return Err(OtojiError::Provider(format!(
                 "SenseVoice model not found at {dir}.\n\
-                 Download it once with:\n  \
-                 mkdir -p {dir} && curl -L https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/sherpa-onnx-sense-voice-zh-en-ja-ko-yue-2024-07-17.tar.bz2 \
+                 Open the otoji tray → 設定 → SenseVoice モデル to download it (progress shown inline).\n\
+                 Or run manually:\n  \
+                 mkdir -p {dir} && curl -L https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/{variant}.tar.bz2 \
                  | tar -xj -C $(dirname {dir})",
-                dir = cfg.model_dir
+                dir = cfg.model_dir,
+                variant = variant
             )));
         }
 
@@ -196,7 +261,11 @@ impl AsrProvider for SenseVoice {
                 let asr = match evt {
                     WorkerEvt::Open => AsrEvent::Open,
                     WorkerEvt::Partial { seg_id, text } => AsrEvent::Partial { seg_id, text },
-                    WorkerEvt::Final { seg_id, text, audio } => AsrEvent::Final {
+                    WorkerEvt::Final {
+                        seg_id,
+                        text,
+                        audio,
+                    } => AsrEvent::Final {
                         seg_id,
                         text,
                         words: Vec::new(),
@@ -247,9 +316,7 @@ fn parse_language_tag(raw: &str) -> Option<String> {
     let tag = &rest[..end];
     // SenseVoice tags include emotion / event tags too. Filter to likely
     // language codes — 2-4 ASCII lowercase letters.
-    if (2..=4).contains(&tag.len())
-        && tag.chars().all(|c| c.is_ascii_lowercase())
-    {
+    if (2..=4).contains(&tag.len()) && tag.chars().all(|c| c.is_ascii_lowercase()) {
         Some(tag.to_string())
     } else {
         None
@@ -269,8 +336,10 @@ fn worker_main(
 ) {
     let mut config = OfflineRecognizerConfig::default();
     config.model_config.tokens = Some(format!("{}/tokens.txt", cfg.model_dir));
+    let model_basename =
+        pick_model_file(std::path::Path::new(&cfg.model_dir)).unwrap_or("model.int8.onnx");
     config.model_config.sense_voice = OfflineSenseVoiceModelConfig {
-        model: Some(format!("{}/model.int8.onnx", cfg.model_dir)),
+        model: Some(format!("{}/{}", cfg.model_dir, model_basename)),
         language: Some(cfg.language.clone()),
         use_itn: true,
     };
@@ -290,8 +359,12 @@ fn worker_main(
                 return;
             }
             Ok(msg @ WorkerMsg::Pcm(_)) => break msg,
-            Ok(WorkerMsg::PttStart) => { ptt_pending = true; }
-            Ok(WorkerMsg::PttEnd) => { ptt_pending = false; }
+            Ok(WorkerMsg::PttStart) => {
+                ptt_pending = true;
+            }
+            Ok(WorkerMsg::PttEnd) => {
+                ptt_pending = false;
+            }
         }
     };
 
@@ -374,10 +447,15 @@ fn worker_main(
     let mut ptt_last_partial = String::new();
 
     fn normalize_sentence(s: &str) -> String {
-        s.chars().filter(|c| {
-            !c.is_ascii_whitespace()
-                && !matches!(*c, ' ' | '\u{3000}' | '、' | '，' | '。' | '.' | '？' | '?' | '！' | '!')
-        }).collect()
+        s.chars()
+            .filter(|c| {
+                !c.is_ascii_whitespace()
+                    && !matches!(
+                        *c,
+                        ' ' | '\u{3000}' | '、' | '，' | '。' | '.' | '？' | '?' | '！' | '!'
+                    )
+            })
+            .collect()
     }
     fn split_into_sentences(text: &str) -> Vec<String> {
         let ends: &[char] = &['。', '！', '？', '.', '!', '?'];
@@ -410,7 +488,9 @@ fn worker_main(
     let mut silence_run: usize = 0;
 
     fn rms(samples: &[f32]) -> f32 {
-        if samples.is_empty() { return 0.0; }
+        if samples.is_empty() {
+            return 0.0;
+        }
         let sum_sq: f32 = samples.iter().map(|s| s * s).sum();
         (sum_sq / samples.len() as f32).sqrt()
     }
@@ -425,14 +505,20 @@ fn worker_main(
         let raw = stream.get_result()?.text;
         // Language extraction now happens via DECODED_LANG thread-local so
         // callers can read it without mutable borrow conflicts.
-        DECODED_LANG.with(|slot| { *slot.borrow_mut() = parse_language_tag(&raw); });
+        DECODED_LANG.with(|slot| {
+            *slot.borrow_mut() = parse_language_tag(&raw);
+        });
         let text = raw.trim().to_string();
         let has_content = text.chars().any(|c| {
             !c.is_ascii_punctuation()
                 && !c.is_ascii_whitespace()
                 && !matches!(c, '。' | '、' | '？' | '！' | '・')
         });
-        if has_content { Some(text) } else { None }
+        if has_content {
+            Some(text)
+        } else {
+            None
+        }
     };
 
     // (split_sentences removed — replaced by split_into_sentences)
@@ -455,12 +541,23 @@ fn worker_main(
                         let sentences = split_into_sentences(&text);
                         for sentence in &sentences {
                             let norm = normalize_sentence(sentence);
-                            if norm.chars().count() < min_commit_chars { continue; }
+                            if norm.chars().count() < min_commit_chars {
+                                continue;
+                            }
                             let already = committed_sentence_norms.iter().any(|c| {
-                                let (short, long) = if c.len() < norm.len() { (c, &norm) } else { (&norm, c) };
-                                if short.is_empty() { return false; }
-                                if long.contains(short.as_str()) { return true; }
-                                let common: usize = short.chars().filter(|ch| long.contains(*ch)).count();
+                                let (short, long) = if c.len() < norm.len() {
+                                    (c, &norm)
+                                } else {
+                                    (&norm, c)
+                                };
+                                if short.is_empty() {
+                                    return false;
+                                }
+                                if long.contains(short.as_str()) {
+                                    return true;
+                                }
+                                let common: usize =
+                                    short.chars().filter(|ch| long.contains(*ch)).count();
                                 common * 100 / short.chars().count() > 70
                             });
                             if !already {
@@ -479,14 +576,20 @@ fn worker_main(
                         let last_end = {
                             let ends: &[char] = &['。', '！', '？', '.', '!', '?'];
                             text.rfind(ends)
-                                .map(|p| p + text[p..].chars().next().map(|c| c.len_utf8()).unwrap_or(0))
+                                .map(|p| {
+                                    p + text[p..].chars().next().map(|c| c.len_utf8()).unwrap_or(0)
+                                })
                                 .unwrap_or(0)
                         };
                         let trailing = text[last_end..].trim().to_string();
                         let trailing_norm = normalize_sentence(&trailing);
                         if trailing_norm.chars().count() >= min_commit_chars {
                             let already = committed_sentence_norms.iter().any(|c| {
-                                let (short, long) = if c.len() < trailing_norm.len() { (c, &trailing_norm) } else { (&trailing_norm, c) };
+                                let (short, long) = if c.len() < trailing_norm.len() {
+                                    (c, &trailing_norm)
+                                } else {
+                                    (&trailing_norm, c)
+                                };
                                 !short.is_empty() && long.contains(short.as_str())
                             });
                             if !already {
@@ -521,8 +624,13 @@ fn worker_main(
                     let silent = ptt_rms < (threshold * 0.7);
                     eprintln!(
                         "[sensevoice] PTT end ({ptt_ms}ms, {} samples, rms={:.4}{})",
-                        ptt_buf.len(), ptt_rms,
-                        if silent { ", SILENT — skipping decode" } else { "" }
+                        ptt_buf.len(),
+                        ptt_rms,
+                        if silent {
+                            ", SILENT — skipping decode"
+                        } else {
+                            ""
+                        }
                     );
                     // Use a lower threshold than normal VAD (250ms vs 1s).
                     let ptt_min = SAMPLE_RATE as usize / 4; // 250ms
@@ -566,10 +674,16 @@ fn worker_main(
                 // Calibrate noise floor from first ~2s.
                 if !calibrated {
                     let block_rms = rms(&block);
-                    if block_rms > 0.0 { calibration_rms.push(block_rms); }
+                    if block_rms > 0.0 {
+                        calibration_rms.push(block_rms);
+                    }
                     calibration_count += block.len();
                     if calibration_count >= calibration_samples {
-                        let noise_floor = calibration_rms.iter().copied().reduce(f32::min).unwrap_or(0.0);
+                        let noise_floor = calibration_rms
+                            .iter()
+                            .copied()
+                            .reduce(f32::min)
+                            .unwrap_or(0.0);
                         threshold = (noise_floor * 1.5).max(configured_threshold);
                         let _ = out_tx.send(WorkerEvt::Status(format!(
                             "vad: noise_floor={noise_floor:.5}, threshold={threshold:.5}"
@@ -582,7 +696,9 @@ fn worker_main(
                 let block_rms = rms(&block);
                 let active = block_rms >= threshold;
 
-                if !speech_active && !active { continue; }
+                if !speech_active && !active {
+                    continue;
+                }
                 speech_active = true;
 
                 // Noise gate: zero out non-speech blocks.
@@ -629,7 +745,9 @@ fn worker_main(
                         let last_end = {
                             let ends: &[char] = &['。', '！', '？', '.', '!', '?'];
                             text.rfind(ends)
-                                .map(|p| p + text[p..].chars().next().map(|c| c.len_utf8()).unwrap_or(0))
+                                .map(|p| {
+                                    p + text[p..].chars().next().map(|c| c.len_utf8()).unwrap_or(0)
+                                })
                                 .unwrap_or(0)
                         };
                         let trailing = text[last_end..].trim().to_string();
@@ -645,16 +763,18 @@ fn worker_main(
                         let buf_pressure = buf.len() * 4 >= max_samples * 3;
                         // 2-cycle stability: same trailing sentence appeared
                         // last decode AND this decode → commit it.
-                        let last_sent_norm = sentences.last()
+                        let last_sent_norm = sentences
+                            .last()
                             .map(|s| normalize_sentence(s))
                             .unwrap_or_default();
-                        let stable_held = !last_sent_norm.is_empty()
-                            && last_sent_norm == prev_held_sentence_norm;
-                        let commit_count = if !trailing.is_empty() || silent_now || buf_pressure || stable_held {
-                            sentences.len()
-                        } else {
-                            sentences.len().saturating_sub(1)
-                        };
+                        let stable_held =
+                            !last_sent_norm.is_empty() && last_sent_norm == prev_held_sentence_norm;
+                        let commit_count =
+                            if !trailing.is_empty() || silent_now || buf_pressure || stable_held {
+                                sentences.len()
+                            } else {
+                                sentences.len().saturating_sub(1)
+                            };
                         prev_held_sentence_norm = if commit_count < sentences.len() {
                             last_sent_norm
                         } else {
@@ -669,10 +789,19 @@ fn worker_main(
                                 continue;
                             }
                             let already = committed_sentence_norms.iter().any(|c| {
-                                let (short, long) = if c.len() < norm.len() { (c, &norm) } else { (&norm, c) };
-                                if short.len() == 0 { return false; }
-                                if long.contains(short.as_str()) { return true; }
-                                let common: usize = short.chars().filter(|ch| long.contains(*ch)).count();
+                                let (short, long) = if c.len() < norm.len() {
+                                    (c, &norm)
+                                } else {
+                                    (&norm, c)
+                                };
+                                if short.len() == 0 {
+                                    return false;
+                                }
+                                if long.contains(short.as_str()) {
+                                    return true;
+                                }
+                                let common: usize =
+                                    short.chars().filter(|ch| long.contains(*ch)).count();
                                 common * 100 / short.chars().count() > 70
                             });
                             if !already && cooldown_ok {
@@ -715,7 +844,11 @@ fn worker_main(
                         let trim_text = text.trim().to_string();
                         let trim_norm = normalize_sentence(&trim_text);
                         let already = committed_sentence_norms.iter().any(|c| {
-                            let (short, long) = if c.len() < trim_norm.len() { (c, &trim_norm) } else { (&trim_norm, c) };
+                            let (short, long) = if c.len() < trim_norm.len() {
+                                (c, &trim_norm)
+                            } else {
+                                (&trim_norm, c)
+                            };
                             !short.is_empty() && long.contains(short.as_str())
                         });
                         if !already && !trim_text.is_empty() {

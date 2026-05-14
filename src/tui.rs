@@ -220,7 +220,12 @@ async fn apply_event(
         AsrEvent::Partial { seg_id, text } => {
             s.partial = Some((seg_id, text));
         }
-        AsrEvent::Final { seg_id, text, audio, .. } => {
+        AsrEvent::Final {
+            seg_id,
+            text,
+            audio,
+            ..
+        } => {
             let now = chrono::Local::now();
             // Estimate start from audio length (f32 samples @ 16kHz).
             let dur_ms = audio.as_ref().map(|a| a.len() * 1000 / 16_000).unwrap_or(0);
@@ -274,7 +279,9 @@ fn diff_spans(raw: &str, polished: &str) -> Vec<Span<'static>> {
         let span = match change.tag() {
             ChangeTag::Equal => Span::styled(
                 text,
-                Style::default().fg(Color::White).add_modifier(Modifier::BOLD),
+                Style::default()
+                    .fg(Color::White)
+                    .add_modifier(Modifier::BOLD),
             ),
             ChangeTag::Delete => Span::styled(
                 text,
@@ -300,7 +307,11 @@ async fn draw<B: ratatui::backend::Backend>(
         // Build the header line; if it doesn't fit on one row (with the
         // status appended), wrap status onto a second row.
         let state_label = if s.closed { "closed" } else { "listening" };
-        let polished_count = s.finals.values().filter(|seg| seg.polished.is_some()).count();
+        let polished_count = s
+            .finals
+            .values()
+            .filter(|seg| seg.polished.is_some())
+            .count();
         let counts = format!(
             " · {} final · {} polished · {} partial",
             s.finals.len(),
@@ -310,7 +321,11 @@ async fn draw<B: ratatui::backend::Backend>(
         let toggles = format!(
             " · polish:{} · vad:{} · gain:{:.1}x",
             if s.polish_enabled { "on" } else { "off" },
-            if s.live.vad_enabled.load(Ordering::Relaxed) { "on" } else { "off" },
+            if s.live.vad_enabled.load(Ordering::Relaxed) {
+                "on"
+            } else {
+                "off"
+            },
             s.live.gain(),
         );
         let hint = "(q p v +/- 0)";
@@ -378,9 +393,9 @@ async fn draw<B: ratatui::backend::Backend>(
         for seg in s.finals.values() {
             let start_ts = seg.start_at.format("%H:%M:%S").to_string();
             let end_ts = seg.final_at.format("%H:%M:%S").to_string();
-            let polish_ms = seg.polish_at.map(|t| {
-                (t - seg.final_at).num_milliseconds().max(0)
-            });
+            let polish_ms = seg
+                .polish_at
+                .map(|t| (t - seg.final_at).num_milliseconds().max(0));
             let time_label = match polish_ms {
                 Some(ms) => format!("{start_ts}-{end_ts} +{ms}ms "),
                 None if seg.polished.is_some() => format!("{start_ts}-{end_ts}        "),
@@ -391,10 +406,7 @@ async fn draw<B: ratatui::backend::Backend>(
                     format!("[{:>3}] ", seg.seg_id),
                     Style::default().fg(Color::DarkGray),
                 ),
-                Span::styled(
-                    time_label,
-                    Style::default().fg(Color::DarkGray),
-                ),
+                Span::styled(time_label, Style::default().fg(Color::DarkGray)),
             ];
             match &seg.polished {
                 Some(polished) if *polished != seg.raw => {
@@ -404,11 +416,16 @@ async fn draw<B: ratatui::backend::Backend>(
                     // Polished but unchanged — show as bold white.
                     spans.push(Span::styled(
                         polished.clone(),
-                        Style::default().fg(Color::White).add_modifier(Modifier::BOLD),
+                        Style::default()
+                            .fg(Color::White)
+                            .add_modifier(Modifier::BOLD),
                     ));
                 }
                 None => {
-                    spans.push(Span::styled(seg.raw.clone(), Style::default().fg(Color::Gray)));
+                    spans.push(Span::styled(
+                        seg.raw.clone(),
+                        Style::default().fg(Color::Gray),
+                    ));
                 }
             }
             lines.push(Line::from(spans));

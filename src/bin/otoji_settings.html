@@ -1,0 +1,824 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8"/>
+  <title>otoji 設定</title>
+  <style>
+    :root {
+      --base:     #1e1e2e;
+      --mantle:   #181825;
+      --surface0: #313244;
+      --overlay1: #7f849c;
+      --text:     #cdd6f4;
+      --subtext0: #a6adc8;
+      --blue:     #89b4fa;
+      --green:    #a6e3a1;
+      --red:      #f38ba8;
+    }
+    @media (prefers-color-scheme: light) {
+      :root {
+        --base:     #eff1f5;
+        --mantle:   #e6e9ef;
+        --surface0: #ccd0da;
+        --overlay1: #8c8fa1;
+        --text:     #4c4f69;
+        --subtext0: #6c6f85;
+        --blue:     #1e66f5;
+        --green:    #40a02b;
+        --red:      #d20f39;
+      }
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background: var(--base);
+      color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, 'Helvetica Neue', sans-serif;
+      font-size: 14px;
+    }
+    #topbar {
+      position: sticky; top: 0; z-index: 50;
+      background: var(--base);
+      padding: 12px 20px 8px;
+      border-bottom: 1px solid var(--surface0);
+    }
+    #topbar h1 { font-size: 16px; font-weight: 600; margin-bottom: 4px; }
+    #status {
+      font-size: 12px; color: var(--green);
+      min-height: 18px; transition: opacity 0.3s;
+    }
+    #status.error { color: var(--red); }
+    #content { padding: 16px 20px 40px; }
+    section { margin-bottom: 24px; }
+    section h2 {
+      font-size: 12px; font-weight: 600; letter-spacing: 0.8px;
+      text-transform: uppercase; color: var(--subtext0);
+      margin-bottom: 10px; padding-bottom: 4px;
+      border-bottom: 1px solid var(--surface0);
+    }
+    .sl-row {
+      display: grid; grid-template-columns: 160px 1fr auto;
+      gap: 8px; align-items: center; margin-bottom: 8px;
+    }
+    .sl-row label { font-size: 13px; color: var(--subtext0); }
+    .sl-row span { font-size: 12px; color: var(--text); min-width: 40px; text-align: right; }
+    .cb-row { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+    .cb-row label { font-size: 13px; }
+    .hint { color: var(--overlay1); font-size: 11px; padding: 4px 0 0; }
+    select, input[type=text], input[type=number] {
+      background: var(--surface0); color: var(--text);
+      border: none; border-radius: 4px; padding: 4px 8px; font-size: 13px;
+    }
+    input[type=range] { accent-color: var(--blue); }
+    .mono { font-family: ui-monospace, monospace; font-size: 12px; }
+
+    /* Chain list */
+    .chain-list { list-style: none; margin: 6px 0; }
+    .chain-item {
+      display: flex; align-items: center; gap: 8px;
+      padding: 4px 0; border-bottom: 1px solid var(--surface0);
+    }
+    .chain-item:last-child { border-bottom: none; }
+    .chain-label { font-family: ui-monospace, monospace; font-size: 12px; flex: 0 0 auto; }
+    .chain-desc { font-size: 12px; color: var(--subtext0); flex: 1; }
+    .chain-btn {
+      background: var(--surface0); color: var(--text);
+      border: none; border-radius: 3px; padding: 2px 6px;
+      cursor: pointer; font-size: 10px;
+    }
+    .chain-btn:hover { background: var(--overlay1); }
+
+    /* Action buttons (download / cancel) */
+    .btn {
+      background: var(--blue); color: var(--base);
+      border: none; border-radius: 4px;
+      padding: 6px 14px; font-size: 12px; font-weight: 600;
+      cursor: pointer;
+    }
+    .btn:disabled { opacity: 0.4; cursor: not-allowed; }
+    .btn.danger { background: var(--red); color: var(--base); }
+    .btn.muted  { background: var(--surface0); color: var(--text); }
+
+    /* Model download UI */
+    .model-status { display: flex; align-items: center; gap: 8px; margin: 6px 0 8px; font-size: 12px; }
+    .model-status .badge {
+      padding: 2px 8px; border-radius: 10px; font-weight: 600; font-size: 11px;
+    }
+    .model-status .badge.ok      { background: var(--green); color: var(--base); }
+    .model-status .badge.missing { background: var(--red);   color: var(--base); }
+    .model-status .badge.loading { background: var(--blue);  color: var(--base); }
+    .progress {
+      height: 8px; background: var(--surface0); border-radius: 4px; overflow: hidden;
+      margin: 6px 0 4px;
+    }
+    .progress > .bar {
+      height: 100%; width: 0%; background: var(--blue);
+      transition: width 0.15s linear;
+    }
+    .progress-meta {
+      font-family: ui-monospace, monospace; font-size: 11px;
+      color: var(--subtext0); display: flex; justify-content: space-between;
+    }
+    .button-row { display: flex; gap: 8px; margin-top: 8px; }
+
+    .model-links {
+      display: flex; gap: 14px; flex-wrap: wrap;
+      margin: 4px 0 6px; font-size: 11px;
+    }
+    .model-links a {
+      color: var(--blue); text-decoration: none;
+    }
+    .model-links a:hover { text-decoration: underline; }
+    .hint a { color: var(--blue); text-decoration: none; }
+    .hint a:hover { text-decoration: underline; }
+  </style>
+</head>
+<body>
+<div id="topbar">
+  <h1>otoji 設定</h1>
+  <div id="status"></div>
+</div>
+<div id="content">
+
+  <section>
+    <h2>STT エンジン</h2>
+    <div class="sl-row">
+      <label for="stt_engine">エンジン</label>
+      <select id="stt_engine">
+        <option value="sherpa">SenseVoice (sherpa) — 高速・多言語</option>
+        <option value="whisper">Whisper (whisper.cpp) — 高精度</option>
+      </select>
+      <span></span>
+    </div>
+    <div class="cb-row">
+      <input type="checkbox" id="stt_correction">
+      <label for="stt_correction">LLM 誤り訂正 (AI で STT エラーを修正)</label>
+    </div>
+    <div style="margin-bottom:8px;">
+      <div style="font-size:12px;color:var(--subtext0);text-transform:uppercase;letter-spacing:0.8px;margin-bottom:4px;">PTT ポリッシュ LLM</div>
+      <select id="ptt_polish_provider" style="min-width:160px;">
+        <option value="openai">OpenAI</option>
+        <option value="gemini">Gemini</option>
+        <option value="anthropic">Anthropic</option>
+        <option value="auto">Auto</option>
+      </select>
+    </div>
+    <div style="margin-bottom:8px;">
+      <div style="font-size:12px;color:var(--subtext0);text-transform:uppercase;letter-spacing:0.8px;margin-bottom:4px;">PTT ポリッシュモデル (空 = デフォルト)</div>
+      <input type="text" id="ptt_polish_model" class="mono" placeholder="例: qwen2.5:7b" style="width:280px;">
+    </div>
+    <div class="sl-row">
+      <label for="ptt_vad_auto_release_ms">VAD 自動解除 (ms)</label>
+      <input type="range" id="ptt_vad_auto_release_ms" min="0" max="3000" step="100">
+      <span id="ptt_vad_auto_release_ms_val">0</span>
+    </div>
+    <div class="hint">0 = 無効。PTT 中に無音が続いたとき自動解除するまでの時間。</div>
+  </section>
+
+  <section id="sherpa_section">
+    <h2>SenseVoice モデル</h2>
+    <div class="sl-row">
+      <label for="sherpa_model_variant">モデル</label>
+      <select id="sherpa_model_variant"
+              data-homepages='{"sherpa-onnx-sense-voice-zh-en-ja-ko-yue-int8-2024-07-17":"https://huggingface.co/FunAudioLLM/SenseVoiceSmall","sherpa-onnx-sense-voice-zh-en-ja-ko-yue-2024-07-17":"https://huggingface.co/FunAudioLLM/SenseVoiceSmall","sherpa-onnx-sense-voice-funasr-nano-int8-2025-12-17":"https://huggingface.co/FunAudioLLM/Fun-ASR-Nano-2512","sherpa-onnx-sense-voice-funasr-nano-2025-12-17":"https://huggingface.co/FunAudioLLM/Fun-ASR-Nano-2512","sherpa-onnx-sense-voice-zh-en-ja-ko-yue-int8-2025-09-09":"https://huggingface.co/FunAudioLLM/SenseVoiceSmall","sherpa-onnx-sense-voice-zh-en-ja-ko-yue-2025-09-09":"https://huggingface.co/FunAudioLLM/SenseVoiceSmall"}'>
+        <option value="sherpa-onnx-sense-voice-zh-en-ja-ko-yue-int8-2024-07-17">2024-07-17 int8 (155MB) — 推奨・bench 最高精度・最速</option>
+        <option value="sherpa-onnx-sense-voice-zh-en-ja-ko-yue-2024-07-17">2024-07-17 full (999MB) — fp32+int8 同梱</option>
+        <option value="sherpa-onnx-sense-voice-funasr-nano-int8-2025-12-17">FunASR nano int8 2025-12-17 (178MB) — 蒸留・31言語</option>
+        <option value="sherpa-onnx-sense-voice-funasr-nano-2025-12-17">FunASR nano fp32 (431MB) — 蒸留・高精度</option>
+        <option value="sherpa-onnx-sense-voice-zh-en-ja-ko-yue-int8-2025-09-09">2025-09-09 int8 (158MB) — 中文寄り・ja/ko 弱</option>
+        <option value="sherpa-onnx-sense-voice-zh-en-ja-ko-yue-2025-09-09">2025-09-09 full fp32 (845MB) — 中文寄り・ja/ko 弱</option>
+      </select>
+      <span></span>
+    </div>
+    <div class="model-links">
+      <a id="model_homepage" href="#" target="_blank" rel="noopener">→ モデルページ</a>
+      <a href="https://github.com/k2-fsa/sherpa-onnx/releases/tag/asr-models" target="_blank" rel="noopener">→ sherpa-onnx リリース一覧</a>
+    </div>
+    <div class="model-status">
+      <span id="model_badge" class="badge missing">未ダウンロード</span>
+      <span id="model_size" class="mono"></span>
+    </div>
+    <div id="progress_wrap" style="display:none;">
+      <div class="progress"><div id="progress_bar" class="bar"></div></div>
+      <div class="progress-meta">
+        <span id="progress_text">準備中…</span>
+        <span id="progress_speed"></span>
+      </div>
+    </div>
+    <div class="button-row">
+      <button type="button" id="model_download_btn" class="btn">ダウンロード</button>
+      <button type="button" id="model_cancel_btn"   class="btn danger" style="display:none;">キャンセル</button>
+    </div>
+    <div class="hint">
+      sherpa-onnx 公式リリースから ~/.cache/otoji/ に保存。tar.bz2 を展開後、自動でロード可能になります。<br>
+      <strong>注意(ちゅうい):</strong> otoji はオープンソースプロジェクトです。各モデルは
+      <a href="https://github.com/k2-fsa/sherpa-onnx/releases/tag/asr-models" target="_blank">k2-fsa/sherpa-onnx</a>
+      など第三者(だいさんしゃ)の公開リリースに依存(いぞん)しており、otoji はモデル提供元(ていきょうもと)ではありません。
+      ライセンス・利用規約(りようきやく)は配布元(はいふもと)に従(したが)ってください。
+    </div>
+  </section>
+
+  <section id="tts_section">
+    <h2>TTS モデル (Kokoro)</h2>
+    <div class="sl-row">
+      <label for="kokoro_model_variant">モデル</label>
+      <select id="kokoro_model_variant"
+              data-homepages='{"kokoro-int8-multi-lang-v1_1":"https://huggingface.co/hexgrad/Kokoro-82M-v1.1-zh","kokoro-multi-lang-v1_1":"https://huggingface.co/hexgrad/Kokoro-82M-v1.1-zh","kokoro-int8-multi-lang-v1_0":"https://huggingface.co/hexgrad/Kokoro-82M","kokoro-multi-lang-v1_0":"https://huggingface.co/hexgrad/Kokoro-82M"}'>
+        <option value="kokoro-int8-multi-lang-v1_1">multi-lang v1.1 int8 (140MB) — 推奨・最新</option>
+        <option value="kokoro-multi-lang-v1_1">multi-lang v1.1 fp32 (347MB) — 高音質</option>
+        <option value="kokoro-int8-multi-lang-v1_0">multi-lang v1.0 int8 (125MB) — レガシー</option>
+        <option value="kokoro-multi-lang-v1_0">multi-lang v1.0 fp32 (333MB) — レガシー</option>
+      </select>
+      <span></span>
+    </div>
+    <div class="model-links">
+      <a id="tts_model_homepage" href="#" target="_blank" rel="noopener">→ モデルページ</a>
+      <a href="https://github.com/k2-fsa/sherpa-onnx/releases/tag/tts-models" target="_blank" rel="noopener">→ sherpa-onnx TTS リリース一覧</a>
+    </div>
+    <div class="model-status">
+      <span id="tts_model_badge" class="badge missing">未ダウンロード</span>
+      <span id="tts_model_size" class="mono"></span>
+    </div>
+    <div id="tts_progress_wrap" style="display:none;">
+      <div class="progress"><div id="tts_progress_bar" class="bar"></div></div>
+      <div class="progress-meta">
+        <span id="tts_progress_text">準備中…</span>
+        <span id="tts_progress_speed"></span>
+      </div>
+    </div>
+    <div class="button-row">
+      <button type="button" id="tts_model_download_btn" class="btn">ダウンロード</button>
+      <button type="button" id="tts_model_cancel_btn"   class="btn danger" style="display:none;">キャンセル</button>
+    </div>
+    <div class="hint">
+      en/ja/zh/ko/fr/it/es/hi/pt-br など多言語対応。tts_chain で `sherpa` プロバイダー利用時に使用。<br>
+      <strong>注意(ちゅうい):</strong> モデルは
+      <a href="https://huggingface.co/hexgrad/Kokoro-82M" target="_blank">hexgrad/Kokoro</a>
+      など第三者(だいさんしゃ)が公開しているもので、otoji は提供元(ていきょうもと)ではありません。
+    </div>
+  </section>
+
+  <section id="whisper_section">
+    <h2>Whisper 設定</h2>
+    <div style="margin-bottom:8px;">
+      <div style="font-size:12px;color:var(--subtext0);text-transform:uppercase;letter-spacing:0.8px;margin-bottom:4px;">モデルパス (空 = 自動検出)</div>
+      <input type="text" id="whisper_model_path" class="mono"
+             placeholder="/opt/homebrew/share/whisper-cpp/ggml-large-v3-turbo-q5_0.bin"
+             style="width:100%;">
+    </div>
+    <div style="margin-bottom:8px;">
+      <div style="font-size:12px;color:var(--subtext0);text-transform:uppercase;letter-spacing:0.8px;margin-bottom:4px;">言語コード</div>
+      <input type="text" id="whisper_language" placeholder="ja" style="width:100px;">
+    </div>
+    <div class="hint">whisper エンジン選択時のみ有効。空パスの場合は /opt/homebrew/share/whisper-cpp/ から自動検出。</div>
+  </section>
+
+  <section>
+    <h2>エコーキャンセル / AEC</h2>
+    <div class="sl-row">
+      <label for="aec_mode">モード</label>
+      <select id="aec_mode">
+        <option value="always">Always — 常時 AEC (スピーカー音を除去)</option>
+        <option value="dual-only">Dual-only — Shift+V 時のみ</option>
+        <option value="off">Off — 生マイク・最高音質</option>
+      </select>
+      <span></span>
+    </div>
+    <div class="sl-row">
+      <label for="aec_gain">AEC ゲイン</label>
+      <input type="range" id="aec_gain" min="1" max="50" step="0.5">
+      <span id="aec_gain_val">15</span>
+    </div>
+    <div class="sl-row">
+      <label for="noise_gate">ノイズゲート</label>
+      <input type="range" id="noise_gate" min="0.0005" max="0.1" step="0.0005">
+      <span id="noise_gate_val">0.003</span>
+    </div>
+    <div class="hint">Tune AEC and VAD. 変更は次回音声セッションから反映。</div>
+  </section>
+
+  <section>
+    <h2>VAD 詳細設定</h2>
+    <div class="sl-row">
+      <label for="speech_start_prob">音声開始確率</label>
+      <input type="range" id="speech_start_prob" min="0.3" max="1.0" step="0.05">
+      <span id="speech_start_prob_val">0.8</span>
+    </div>
+    <div class="sl-row">
+      <label for="speech_end_prob">音声終了確率</label>
+      <input type="range" id="speech_end_prob" min="0.2" max="0.9" step="0.05">
+      <span id="speech_end_prob_val">0.6</span>
+    </div>
+    <div class="sl-row">
+      <label for="speech_start_frames">開始フレーム数</label>
+      <input type="range" id="speech_start_frames" min="1" max="30" step="1">
+      <span id="speech_start_frames_val">10</span>
+    </div>
+    <div class="sl-row">
+      <label for="silence_end_frames">無音フレーム数</label>
+      <input type="range" id="silence_end_frames" min="5" max="60" step="1">
+      <span id="silence_end_frames_val">20</span>
+    </div>
+    <div class="cb-row">
+      <input type="checkbox" id="overlay_sharing">
+      <label for="overlay_sharing">オーバーレイをスクリーンショット・画面共有に表示</label>
+    </div>
+    <div class="hint">1 フレーム ≈ 16ms。高ゲイン = マイク音量大。高ゲート = 無音フィルタ強。再起動後反映。</div>
+  </section>
+
+  <section>
+    <h2>音声翻訳</h2>
+    <div class="hint" style="margin-bottom:10px;">有効時、PTT 音声を同時に翻訳します。</div>
+    <div class="cb-row">
+      <input type="checkbox" id="translate_enabled">
+      <label for="translate_enabled">翻訳を有効にする</label>
+    </div>
+    <div style="margin-bottom:10px;">
+      <div style="font-size:12px;color:var(--subtext0);text-transform:uppercase;letter-spacing:0.8px;margin-bottom:4px;">プリセット</div>
+      <select id="translate_preset" style="min-width:260px;">
+        <option value="off">Off</option>
+        <option value="learning">Learning (訳を入力・読み上げ)</option>
+        <option value="interpreter">Interpreter (原文入力、訳を TTS)</option>
+        <option value="chat">Chat (訳のみ入力、TTS なし)</option>
+        <option value="conversation">Conversation (両方 + 訳 TTS)</option>
+        <option value="custom">Custom…</option>
+      </select>
+    </div>
+
+    <datalist id="language_suggestions">
+      <option value="English">
+      <option value="Japanese">
+      <option value="Chinese (Simplified)">
+      <option value="Chinese (Traditional)">
+      <option value="Korean">
+      <option value="Spanish">
+      <option value="French">
+      <option value="German">
+      <option value="Russian">
+      <option value="Portuguese">
+    </datalist>
+
+    <div id="translate_langs_wrap" style="margin-bottom:10px;display:none;">
+      <div style="margin-bottom:6px;">
+        <label style="font-size:12px;color:var(--subtext0);text-transform:uppercase;letter-spacing:0.8px;margin-right:8px;">翻訳先言語</label>
+        <input type="text" id="translate_target" list="language_suggestions"
+               placeholder="English" style="min-width:200px;">
+      </div>
+      <div id="translate_other_wrap" style="display:none;margin-bottom:6px;">
+        <label style="font-size:12px;color:var(--subtext0);text-transform:uppercase;letter-spacing:0.8px;margin-right:8px;">↔ 第二言語</label>
+        <input type="text" id="translate_other" list="language_suggestions"
+               placeholder="Japanese" style="min-width:200px;">
+      </div>
+      <div class="hint" id="translate_langs_hint"></div>
+    </div>
+
+    <div id="translate_custom" style="display:none;border-left:2px solid var(--surface0);padding-left:10px;margin-left:4px;margin-bottom:10px;">
+      <div style="margin-bottom:8px;">
+        <div style="font-size:12px;color:var(--subtext0);text-transform:uppercase;letter-spacing:0.8px;margin-bottom:4px;">方向</div>
+        <label><input type="radio" name="translate_direction" value="one_way"> 一方向</label>
+        <label style="margin-left:14px;"><input type="radio" name="translate_direction" value="between"> 双方向</label>
+      </div>
+      <div style="margin-bottom:8px;">
+        <div style="font-size:12px;color:var(--subtext0);text-transform:uppercase;letter-spacing:0.8px;margin-bottom:4px;">出力</div>
+        <label><input type="radio" name="translate_type" value="original"> 原文</label>
+        <label style="margin-left:14px;"><input type="radio" name="translate_type" value="translated"> 訳文</label>
+        <label style="margin-left:14px;"><input type="radio" name="translate_type" value="both"> 両方</label>
+      </div>
+      <div id="translate_both_wrap" style="margin-bottom:8px;display:none;">
+        <div style="font-size:12px;color:var(--subtext0);text-transform:uppercase;letter-spacing:0.8px;margin-bottom:4px;">"両方" テンプレート</div>
+        <input type="text" id="translate_both_template" class="mono" style="width:360px;">
+        <div class="hint">プレースホルダー: <code>__ORIGINAL__</code>, <code>__TRANSLATION__</code></div>
+      </div>
+      <div style="margin-bottom:8px;">
+        <div style="font-size:12px;color:var(--subtext0);text-transform:uppercase;letter-spacing:0.8px;margin-bottom:4px;">TTS 音声</div>
+        <label><input type="radio" name="translate_tts_source" value="original"> 原文</label>
+        <label style="margin-left:14px;"><input type="radio" name="translate_tts_source" value="translated"> 訳文</label>
+        <label style="margin-left:14px;"><input type="radio" name="translate_tts_source" value="off"> Off</label>
+      </div>
+    </div>
+
+    <div style="display:flex;gap:14px;margin-bottom:8px;">
+      <div>
+        <div style="font-size:12px;color:var(--subtext0);text-transform:uppercase;letter-spacing:0.8px;margin-bottom:4px;">ポリッシュ</div>
+        <select id="translate_polish_provider">
+          <option value="gemini">Gemini</option>
+          <option value="openai">OpenAI</option>
+          <option value="anthropic">Anthropic</option>
+        </select>
+      </div>
+      <div>
+        <div style="font-size:12px;color:var(--subtext0);text-transform:uppercase;letter-spacing:0.8px;margin-bottom:4px;">TTS</div>
+        <select id="translate_tts_provider">
+          <option value="gemini">Gemini</option>
+          <option value="openai">OpenAI</option>
+          <option value="elevenlabs">ElevenLabs</option>
+          <option value="piper">Piper (ローカル)</option>
+          <option value="iflytek">iFlytek</option>
+        </select>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <h2>ノートモード翻訳</h2>
+    <div class="hint" style="margin-bottom:10px;">
+      連続リスニング中、各確定テキストを翻訳してオーバーレイに並べて表示。
+      PTT 翻訳とは独立して設定可能。
+    </div>
+    <div class="cb-row">
+      <input type="checkbox" id="note_translate_enabled">
+      <label for="note_translate_enabled">ノートモード翻訳を有効にする</label>
+    </div>
+    <div style="margin-bottom:10px;">
+      <div style="font-size:12px;color:var(--subtext0);text-transform:uppercase;letter-spacing:0.8px;margin-bottom:4px;">翻訳先言語</div>
+      <input type="text" id="note_translate_target" list="language_suggestions"
+             placeholder="Japanese" style="width:200px;">
+    </div>
+  </section>
+
+  <section>
+    <h2>フォールバックチェーン</h2>
+    <div style="margin-bottom:10px;">
+      <div style="font-size:12px;color:var(--subtext0);text-transform:uppercase;letter-spacing:0.8px;margin-bottom:4px;">TTS チェーン</div>
+      <ul id="tts_chain_list" class="chain-list"></ul>
+    </div>
+    <div>
+      <div style="font-size:12px;color:var(--subtext0);text-transform:uppercase;letter-spacing:0.8px;margin-bottom:4px;">STT ポリッシュチェーン</div>
+      <ul id="stt_polish_chain_list" class="chain-list"></ul>
+    </div>
+    <div class="hint">チェックで有効/無効切替。矢印で順序変更。最初に成功したプロバイダーを使用。</div>
+  </section>
+
+</div><!-- /#content -->
+
+<script>
+  var status = document.getElementById('status');
+  var debounce = null;
+
+  var TTS_PROVIDERS = {
+    'elevenlabs:rachel':            'ElevenLabs — Rachel',
+    'gemini-2.5-flash-preview-tts': 'Gemini TTS',
+    'openai:tts-1':                 'OpenAI — tts-1',
+    'msedge':                       'Edge TTS (無料)',
+    'native':                       'システム音声 (macOS say)'
+  };
+  var STT_PROVIDERS = {
+    'mlx:qwen2.5-3b':   'MLX ローカル LLM (port 8321)',
+    'gemini-2.5-flash': 'Gemini 再文字起こし',
+    'llm-corrector':    'LLM テキスト訂正',
+    'raw':              '生 (訂正なし)'
+  };
+
+  function populateChain(listId, allProviders, chainStr) {
+    var list = document.getElementById(listId);
+    list.innerHTML = '';
+    var enabled = (chainStr || '').split(',').map(function(s) { return s.trim(); }).filter(Boolean);
+    var all = Object.keys(allProviders);
+    var ordered = [];
+    enabled.forEach(function(p) { if (allProviders[p]) ordered.push({id: p, on: true}); });
+    all.forEach(function(p) { if (enabled.indexOf(p) === -1) ordered.push({id: p, on: false}); });
+    ordered.forEach(function(item) {
+      var li = document.createElement('li');
+      li.className = 'chain-item';
+      li.dataset.provider = item.id;
+      li.innerHTML =
+        '<input type="checkbox"' + (item.on ? ' checked' : '') + '>' +
+        '<span class="chain-label">' + item.id + '</span>' +
+        '<span class="chain-desc">' + allProviders[item.id] + '</span>' +
+        '<button class="chain-btn" data-dir="up">▲</button>' +
+        '<button class="chain-btn" data-dir="down">▼</button>';
+      list.appendChild(li);
+    });
+    list.querySelectorAll('input[type=checkbox]').forEach(function(cb) {
+      cb.addEventListener('change', scheduleSave);
+    });
+    list.querySelectorAll('.chain-btn').forEach(function(btn) {
+      btn.addEventListener('click', function() {
+        var li = btn.closest('.chain-item');
+        if (btn.dataset.dir === 'up' && li.previousElementSibling)
+          li.parentNode.insertBefore(li, li.previousElementSibling);
+        else if (btn.dataset.dir === 'down' && li.nextElementSibling)
+          li.parentNode.insertBefore(li.nextElementSibling, li);
+        scheduleSave();
+      });
+    });
+  }
+
+  function collectChain(listId) {
+    var result = [];
+    document.getElementById(listId).querySelectorAll('.chain-item').forEach(function(li) {
+      if (li.querySelector('input[type=checkbox]').checked)
+        result.push(li.dataset.provider);
+    });
+    return result.join(',');
+  }
+
+  function v(id) { return document.getElementById(id); }
+
+  function collectForm() {
+    return {
+      stt_engine:              v('stt_engine').value,
+      sherpa_model_variant:    v('sherpa_model_variant').value,
+      kokoro_model_variant:    v('kokoro_model_variant').value,
+      stt_correction:          v('stt_correction').checked,
+      ptt_polish_provider:     v('ptt_polish_provider').value,
+      ptt_polish_model:        v('ptt_polish_model').value,
+      ptt_vad_auto_release_ms: parseInt(v('ptt_vad_auto_release_ms').value) || 0,
+      whisper_model_path:      v('whisper_model_path').value,
+      whisper_language:        v('whisper_language').value || 'ja',
+      aec_mode:                v('aec_mode').value,
+      aec_gain:                parseFloat(v('aec_gain').value),
+      noise_gate:              parseFloat(v('noise_gate').value),
+      speech_start_prob:       parseFloat(v('speech_start_prob').value),
+      speech_end_prob:         parseFloat(v('speech_end_prob').value),
+      speech_start_frames:     parseInt(v('speech_start_frames').value),
+      silence_end_frames:      parseInt(v('silence_end_frames').value),
+      overlay_sharing:         v('overlay_sharing').checked,
+      tts_chain:               collectChain('tts_chain_list'),
+      stt_polish_chain:        collectChain('stt_polish_chain_list'),
+      translate_enabled:         v('translate_enabled').checked,
+      translate_preset:          v('translate_preset').value,
+      translate_target:          v('translate_target').value,
+      translate_other:           v('translate_other').value,
+      translate_direction:       (document.querySelector('input[name="translate_direction"]:checked') || {}).value || 'one_way',
+      translate_type:            (document.querySelector('input[name="translate_type"]:checked') || {}).value || 'translated',
+      translate_both_template:   v('translate_both_template').value,
+      translate_tts_source:      (document.querySelector('input[name="translate_tts_source"]:checked') || {}).value || 'original',
+      translate_polish_provider: v('translate_polish_provider').value,
+      translate_tts_provider:    v('translate_tts_provider').value,
+      note_translate_enabled:    v('note_translate_enabled').checked,
+      note_translate_target:     v('note_translate_target').value,
+    };
+  }
+
+  function setSlider(id, value) {
+    var el = v(id); if (!el) return;
+    el.value = value;
+    var lbl = v(id + '_val'); if (lbl) lbl.textContent = value;
+  }
+
+  function populateForm(cfg) {
+    if (cfg.stt_engine) v('stt_engine').value = cfg.stt_engine;
+    if (cfg.sherpa_model_variant) v('sherpa_model_variant').value = cfg.sherpa_model_variant;
+    if (cfg.kokoro_model_variant) v('kokoro_model_variant').value = cfg.kokoro_model_variant;
+    v('stt_correction').checked = cfg.stt_correction || false;
+    if (cfg.ptt_polish_provider) v('ptt_polish_provider').value = cfg.ptt_polish_provider;
+    v('ptt_polish_model').value = cfg.ptt_polish_model || '';
+    setSlider('ptt_vad_auto_release_ms', cfg.ptt_vad_auto_release_ms || 0);
+    v('whisper_model_path').value = cfg.whisper_model_path || '';
+    v('whisper_language').value = cfg.whisper_language || 'ja';
+    if (cfg.aec_mode) v('aec_mode').value = cfg.aec_mode;
+    setSlider('aec_gain',            cfg.aec_gain            || 15);
+    setSlider('noise_gate',          cfg.noise_gate          || 0.003);
+    setSlider('speech_start_prob',   cfg.speech_start_prob   || 0.8);
+    setSlider('speech_end_prob',     cfg.speech_end_prob     || 0.6);
+    setSlider('speech_start_frames', cfg.speech_start_frames || 10);
+    setSlider('silence_end_frames',  cfg.silence_end_frames  || 20);
+    v('overlay_sharing').checked = cfg.overlay_sharing || false;
+    populateChain('tts_chain_list',       TTS_PROVIDERS, cfg.tts_chain       || 'elevenlabs:rachel,gemini-2.5-flash-preview-tts,openai:tts-1,msedge,native');
+    populateChain('stt_polish_chain_list', STT_PROVIDERS, cfg.stt_polish_chain || 'mlx:qwen2.5-3b,llm-corrector,raw');
+
+    v('translate_enabled').checked = cfg.translate_enabled || false;
+    v('translate_preset').value = cfg.translate_preset || 'off';
+    v('translate_target').value = cfg.translate_target || 'English';
+    v('translate_other').value = cfg.translate_other || 'Japanese';
+    document.querySelectorAll('input[name="translate_direction"]').forEach(function(r) {
+      r.checked = (r.value === (cfg.translate_direction || 'one_way'));
+    });
+    document.querySelectorAll('input[name="translate_type"]').forEach(function(r) {
+      r.checked = (r.value === (cfg.translate_type || 'translated'));
+    });
+    v('translate_both_template').value = cfg.translate_both_template || '__ORIGINAL__\n__TRANSLATION__';
+    document.querySelectorAll('input[name="translate_tts_source"]').forEach(function(r) {
+      r.checked = (r.value === (cfg.translate_tts_source || 'original'));
+    });
+    if (cfg.translate_polish_provider) v('translate_polish_provider').value = cfg.translate_polish_provider;
+    if (cfg.translate_tts_provider)    v('translate_tts_provider').value    = cfg.translate_tts_provider;
+    updateTranslateVisibility();
+
+    v('note_translate_enabled').checked = cfg.note_translate_enabled || false;
+    v('note_translate_target').value = cfg.note_translate_target || '';
+
+    updateWhisperVisibility();
+  }
+
+  function updateTranslateVisibility() {
+    var preset = v('translate_preset').value;
+    v('translate_langs_wrap').style.display = (preset === 'off') ? 'none' : 'block';
+    v('translate_custom').style.display = (preset === 'custom') ? 'block' : 'none';
+    var showSecond = false;
+    var hint = '';
+    if (preset === 'conversation') {
+      showSecond = true;
+      hint = '発話言語を自動検出し、もう一方の言語に翻訳。';
+    } else if (preset === 'custom') {
+      var dir = document.querySelector('input[name="translate_direction"]:checked');
+      showSecond = !!(dir && dir.value === 'between');
+    } else if (preset === 'learning') {
+      hint = '任意の言語で話すと翻訳先言語に変換して読み上げ。';
+    } else if (preset === 'interpreter') {
+      hint = '原文を入力、TTS が翻訳先言語で読み上げ。';
+    } else if (preset === 'chat') {
+      hint = '翻訳先を入力。TTS なし。';
+    }
+    v('translate_other_wrap').style.display = showSecond ? 'block' : 'none';
+    v('translate_langs_hint').textContent = hint;
+    var typ = document.querySelector('input[name="translate_type"]:checked');
+    v('translate_both_wrap').style.display = (typ && typ.value === 'both') ? 'block' : 'none';
+  }
+
+  function updateWhisperVisibility() {
+    var eng = v('stt_engine').value;
+    v('whisper_section').style.opacity = (eng === 'whisper') ? '1' : '0.4';
+  }
+
+  // Live slider labels
+  ['aec_gain','noise_gate','speech_start_prob','speech_end_prob',
+   'speech_start_frames','silence_end_frames','ptt_vad_auto_release_ms'].forEach(function(id) {
+    var el = v(id); if (!el) return;
+    el.addEventListener('input', function(e) {
+      var lbl = v(id + '_val'); if (lbl) lbl.textContent = e.target.value;
+    });
+  });
+
+  function scheduleSave() {
+    clearTimeout(debounce);
+    debounce = setTimeout(function() {
+      webkit.messageHandlers.otoji.postMessage(JSON.stringify({cmd: 'set_config', cfg: collectForm()}));
+    }, 300);
+  }
+
+  document.querySelectorAll('input, select').forEach(function(el) {
+    el.addEventListener('change', scheduleSave);
+    el.addEventListener('input', scheduleSave);
+  });
+
+  v('translate_preset').addEventListener('change', updateTranslateVisibility);
+  document.querySelectorAll('input[name="translate_direction"]').forEach(function(r) {
+    r.addEventListener('change', updateTranslateVisibility);
+  });
+  document.querySelectorAll('input[name="translate_type"]').forEach(function(r) {
+    r.addEventListener('change', updateTranslateVisibility);
+  });
+  v('stt_engine').addEventListener('change', updateWhisperVisibility);
+
+  // ── モデル管理 (STT + TTS 共通) ───────────────────────────────────────────
+  function fmtBytes(n) {
+    if (!n || n <= 0) return '0 B';
+    var u = ['B','KB','MB','GB'];
+    var i = 0; var x = n;
+    while (x >= 1024 && i < u.length - 1) { x /= 1024; i++; }
+    return x.toFixed(i === 0 ? 0 : 1) + ' ' + u[i];
+  }
+  // Per-kind DOM id prefix lookup. STT uses bare ids for backward compat with
+  // the original section; TTS gets a `tts_` prefix.
+  var SECTIONS = {
+    stt: { variantId: 'sherpa_model_variant', badge: 'model_badge', size: 'model_size',
+           wrap: 'progress_wrap', bar: 'progress_bar', text: 'progress_text',
+           speed: 'progress_speed', dlBtn: 'model_download_btn', cnBtn: 'model_cancel_btn' },
+    tts: { variantId: 'kokoro_model_variant', badge: 'tts_model_badge', size: 'tts_model_size',
+           wrap: 'tts_progress_wrap', bar: 'tts_progress_bar', text: 'tts_progress_text',
+           speed: 'tts_progress_speed', dlBtn: 'tts_model_download_btn', cnBtn: 'tts_model_cancel_btn' },
+  };
+  function requestModelStatus(kind) {
+    var s = SECTIONS[kind];
+    webkit.messageHandlers.otoji.postMessage(JSON.stringify({
+      cmd: 'check_model_status', kind: kind, variant: v(s.variantId).value
+    }));
+  }
+  function setProgressVisible(kind, show) {
+    var s = SECTIONS[kind];
+    v(s.wrap).style.display = show ? 'block' : 'none';
+    v(s.cnBtn).style.display = show ? 'inline-block' : 'none';
+    v(s.dlBtn).disabled = show;
+  }
+  window.handleModelStatus = function(json) {
+    try {
+      var st = JSON.parse(json);
+      var s = SECTIONS[st.kind || 'stt'];
+      var badge = v(s.badge);
+      var size  = v(s.size);
+      if (st.present) {
+        badge.textContent = 'ダウンロード済み ✓';
+        badge.className = 'badge ok';
+        size.textContent = fmtBytes(st.size_bytes);
+        v(s.dlBtn).textContent = '再ダウンロード';
+        v(s.dlBtn).disabled = false;
+      } else {
+        badge.textContent = '未ダウンロード';
+        badge.className = 'badge missing';
+        size.textContent = '';
+        v(s.dlBtn).textContent = 'ダウンロード';
+        v(s.dlBtn).disabled = false;
+      }
+      if (st.downloading) {
+        setProgressVisible(st.kind || 'stt', true);
+        badge.textContent = 'ダウンロード中…';
+        badge.className = 'badge loading';
+      }
+    } catch(e) { /* ignore */ }
+  };
+  window.handleModelProgress = function(json) {
+    try {
+      var p = JSON.parse(json);
+      var kind = p.kind || 'stt';
+      var s = SECTIONS[kind];
+      var pct = (p.total > 0) ? Math.min(100, (p.downloaded * 100 / p.total)) : 0;
+      v(s.bar).style.width = pct.toFixed(1) + '%';
+      var stageLabel = ({
+        connecting:  '接続中…',
+        downloading: 'ダウンロード中',
+        extracting:  '展開中…',
+        done:        '完了 ✓',
+        error:       'エラー',
+        cancelled:   'キャンセル',
+      })[p.stage] || p.stage;
+      v(s.text).textContent = stageLabel + ' — '
+        + fmtBytes(p.downloaded) + (p.total > 0 ? ' / ' + fmtBytes(p.total) + ' (' + pct.toFixed(0) + '%)' : '');
+      v(s.speed).textContent = (p.bytes_per_sec > 0) ? fmtBytes(p.bytes_per_sec) + '/s' : '';
+      var badge = v(s.badge);
+      if (p.stage === 'done') {
+        badge.textContent = 'ダウンロード済み ✓';
+        badge.className = 'badge ok';
+        setTimeout(function() { setProgressVisible(kind, false); requestModelStatus(kind); }, 800);
+      } else if (p.stage === 'error') {
+        badge.textContent = 'エラー: ' + (p.error || '不明');
+        badge.className = 'badge missing';
+        setProgressVisible(kind, false);
+      } else if (p.stage === 'cancelled') {
+        badge.textContent = 'キャンセルしました';
+        badge.className = 'badge missing';
+        setProgressVisible(kind, false);
+      } else {
+        badge.textContent = 'ダウンロード中…';
+        badge.className = 'badge loading';
+      }
+    } catch(e) { /* ignore */ }
+  };
+  // Per-variant homepage link — updates when the dropdown changes so users
+  // can verify the upstream model card / license. Map is encoded as a
+  // data-homepages attribute on the <select>.
+  function updateHomepageLink(kind) {
+    var s = SECTIONS[kind];
+    var sel = v(s.variantId);
+    var linkId = (kind === 'tts') ? 'tts_model_homepage' : 'model_homepage';
+    var link = v(linkId);
+    if (!sel || !link) return;
+    try {
+      var map = JSON.parse(sel.dataset.homepages || '{}');
+      var url = map[sel.value];
+      if (url) { link.href = url; link.style.display = 'inline'; }
+      else     { link.style.display = 'none'; }
+    } catch (e) { link.style.display = 'none'; }
+  }
+
+  function bindSection(kind) {
+    var s = SECTIONS[kind];
+    v(s.dlBtn).addEventListener('click', function() {
+      setProgressVisible(kind, true);
+      v(s.bar).style.width = '0%';
+      v(s.text).textContent = '接続中…';
+      v(s.speed).textContent = '';
+      webkit.messageHandlers.otoji.postMessage(JSON.stringify({
+        cmd: 'download_model', kind: kind, variant: v(s.variantId).value
+      }));
+    });
+    v(s.cnBtn).addEventListener('click', function() {
+      webkit.messageHandlers.otoji.postMessage(JSON.stringify({cmd: 'cancel_download'}));
+    });
+    v(s.variantId).addEventListener('change', function() {
+      requestModelStatus(kind);
+      updateHomepageLink(kind);
+    });
+    updateHomepageLink(kind);
+  }
+  bindSection('stt');
+  bindSection('tts');
+
+  window.handleGetConfig = function(json) {
+    try {
+      populateForm(JSON.parse(json));
+      status.textContent = '';
+    } catch(e) {
+      status.textContent = '設定読み込みエラー: ' + e;
+      status.className = 'error';
+    }
+  };
+  window.handleSetConfig = function() {
+    status.textContent = '保存 ✓';
+    status.className = '';
+    setTimeout(function() { status.textContent = ''; }, 2000);
+  };
+
+  document.addEventListener('keydown', function(e) {
+    if ((e.metaKey || e.ctrlKey) && e.key === 'w') {
+      e.preventDefault();
+      webkit.messageHandlers.otoji.postMessage(JSON.stringify({cmd: 'close'}));
+    }
+  });
+
+  // Request initial config + model status for both kinds
+  webkit.messageHandlers.otoji.postMessage(JSON.stringify({cmd: 'get_config'}));
+  setTimeout(function() { requestModelStatus('stt'); requestModelStatus('tts'); }, 100);
+</script>
+</body>
+</html>

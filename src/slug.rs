@@ -13,7 +13,9 @@
 /// in 8 base36 chars (36^8 ≈ 2.8e12 > current ms).
 pub fn base36_ts(ms: i64) -> String {
     let mut n = ms.max(0) as u64;
-    if n == 0 { return "0".into(); }
+    if n == 0 {
+        return "0".into();
+    }
     let mut out = Vec::with_capacity(9);
     while n > 0 {
         let d = (n % 36) as u8;
@@ -47,9 +49,13 @@ pub fn slug_from_text(text: &str, max_chars: usize) -> Option<String> {
             _ if c.is_ascii() => c.is_ascii_alphanumeric(),
             _ => true, // keep non-ASCII (CJK etc.)
         };
-        if !keep { continue; }
+        if !keep {
+            continue;
+        }
         if c == '-' {
-            if last_dash { continue; }
+            if last_dash {
+                continue;
+            }
             last_dash = true;
         } else {
             last_dash = false;
@@ -57,13 +63,17 @@ pub fn slug_from_text(text: &str, max_chars: usize) -> Option<String> {
         buf.push(c.to_ascii_lowercase());
     }
     let trimmed = buf.trim_matches(|c: char| c == '-' || c == '.').to_string();
-    if trimmed.is_empty() { return None; }
+    if trimmed.is_empty() {
+        return None;
+    }
     Some(truncate_at_word(&trimmed, max_chars))
 }
 
 fn truncate_at_word(s: &str, max_chars: usize) -> String {
     let chars: Vec<char> = s.chars().collect();
-    if chars.len() <= max_chars { return s.to_string(); }
+    if chars.len() <= max_chars {
+        return s.to_string();
+    }
     let head: String = chars[..max_chars].iter().collect();
     // Prefer breaking at last dash to avoid mid-word cut.
     if let Some(pos) = head.rfind('-') {
@@ -95,9 +105,18 @@ mod tests {
 
     #[test]
     fn slug_basic() {
-        assert_eq!(slug_from_text("Hello, World!", 50).as_deref(), Some("hello-world"));
-        assert_eq!(slug_from_text("  multiple   spaces  ", 50).as_deref(), Some("multiple-spaces"));
-        assert_eq!(slug_from_text("path/with\\bad:chars?", 50).as_deref(), Some("pathwithbadchars"));
+        assert_eq!(
+            slug_from_text("Hello, World!", 50).as_deref(),
+            Some("hello-world")
+        );
+        assert_eq!(
+            slug_from_text("  multiple   spaces  ", 50).as_deref(),
+            Some("multiple-spaces")
+        );
+        assert_eq!(
+            slug_from_text("path/with\\bad:chars?", 50).as_deref(),
+            Some("pathwithbadchars")
+        );
     }
 
     #[test]
@@ -125,7 +144,10 @@ mod tests {
     fn compose_with_and_without_slug() {
         let ts = 1_745_151_893_020;
         let b36 = base36_ts(ts);
-        assert_eq!(compose_stem(ts, Some("hello-world")), format!("{b36}-hello-world"));
+        assert_eq!(
+            compose_stem(ts, Some("hello-world")),
+            format!("{b36}-hello-world")
+        );
         assert_eq!(compose_stem(ts, None), b36.clone());
         assert_eq!(compose_stem(ts, Some("")), b36);
     }

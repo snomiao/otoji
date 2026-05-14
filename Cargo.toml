@@ -67,6 +67,7 @@ napi-derive = { version = "2", optional = true }
 exec = "0.3.1"
 similar = "2"
 nnnoiseless = "0.5.2"
+libc = "0.2"
 
 [build-dependencies]
 napi-build = { version = "2", optional = true }

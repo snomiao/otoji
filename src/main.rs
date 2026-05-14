@@ -17,8 +17,11 @@ use otoji::asr::{
     sensevoice::{SenseVoice, SenseVoiceConfig},
     AsrProvider,
 };
-use otoji::audio::{self, file::{stream_pcm_file, stream_wav_reader_blocking}, mic};
-use std::io::IsTerminal;
+use otoji::audio::{
+    self,
+    file::{stream_pcm_file, stream_wav_reader_blocking},
+    mic,
+};
 use otoji::core::AudioFormat;
 use otoji::polish::{
     AnthropicPolisher, DeferredPolisher, GeminiPolisher, NoopPolisher, OpenAiPolisher, Polisher,
@@ -32,6 +35,7 @@ use otoji::tts::{
     piper::{PiperTts, PiperTtsConfig},
     TtsProvider,
 };
+use std::io::IsTerminal;
 use std::path::PathBuf;
 use std::sync::Arc;
 use tokio::sync::mpsc;
@@ -332,7 +336,7 @@ fn resolve_tts(kind: TtsKind) -> Result<Arc<dyn TtsProvider>> {
 /// `host:port` TCP address. Portable alternative to SIGUSR1/2 for
 /// non-Unix consumers.
 fn start_ptt_control_server(addr: String) {
-    use otoji::asr::sensevoice::{PTT_WORKER_TX, WorkerMsg};
+    use otoji::asr::sensevoice::{WorkerMsg, PTT_WORKER_TX};
     std::thread::Builder::new()
         .name("ptt-control".into())
         .spawn(move || {
@@ -379,24 +383,24 @@ where
     R: std::io::Read + Send + 'static,
 {
     use otoji::asr::sensevoice::{
-        PTT_SIGNAL_PENDING_END, PTT_SIGNAL_PENDING_START, PTT_WORKER_TX, WorkerMsg,
+        WorkerMsg, PTT_SIGNAL_PENDING_END, PTT_SIGNAL_PENDING_START, PTT_WORKER_TX,
     };
     use std::io::BufRead;
     std::thread::spawn(move || {
         let reader = std::io::BufReader::new(stream);
         for line in reader.lines().map_while(|r| r.ok()) {
             let line = line.trim();
-            if line.is_empty() { continue; }
+            if line.is_empty() {
+                continue;
+            }
             // Parse command.
             if line.eq_ignore_ascii_case("PTT_START") {
                 // Set the same flag used by the SIGUSR1 poller so the
                 // worker_tx path stays consistent.
-                PTT_SIGNAL_PENDING_START
-                    .store(true, std::sync::atomic::Ordering::Relaxed);
+                PTT_SIGNAL_PENDING_START.store(true, std::sync::atomic::Ordering::Relaxed);
                 eprintln!("[otoji-ctrl] PTT_START");
             } else if line.eq_ignore_ascii_case("PTT_END") {
-                PTT_SIGNAL_PENDING_END
-                    .store(true, std::sync::atomic::Ordering::Relaxed);
+                PTT_SIGNAL_PENDING_END.store(true, std::sync::atomic::Ordering::Relaxed);
                 eprintln!("[otoji-ctrl] PTT_END");
             } else if let Some(ctx) = line.strip_prefix("CONTEXT ") {
                 // Write to the standard context file path so the existing
@@ -420,7 +424,7 @@ fn apply_polish_preset(preset: &str) {
     match preset {
         "fast" => {
             let account = std::env::var("CLOUDFLARE_ACCOUNT_ID").unwrap_or_default();
-            let token   = std::env::var("CLOUDFLARE_API_TOKEN").unwrap_or_default();
+            let token = std::env::var("CLOUDFLARE_API_TOKEN").unwrap_or_default();
             if account.is_empty() || token.is_empty() {
                 eprintln!(
                     "[otoji] polish-preset fast: set CLOUDFLARE_ACCOUNT_ID \
@@ -455,9 +459,7 @@ fn apply_polish_preset(preset: &str) {
                 std::env::set_var("OTOJI_POLISH_MODEL", "gpt-4.1-mini");
                 eprintln!("[otoji] polish-preset=quality → OpenAI gpt-4.1-mini");
             } else {
-                eprintln!(
-                    "[otoji] polish-preset quality: set ANTHROPIC_API_KEY or OPENAI_API_KEY"
-                );
+                eprintln!("[otoji] polish-preset quality: set ANTHROPIC_API_KEY or OPENAI_API_KEY");
             }
         }
         "offline" => {
@@ -599,7 +601,7 @@ async fn main() -> Result<()> {
     #[cfg(unix)]
     {
         use otoji::asr::sensevoice::{
-            PTT_SIGNAL_PENDING_END, PTT_SIGNAL_PENDING_START, PTT_WORKER_TX, WorkerMsg,
+            WorkerMsg, PTT_SIGNAL_PENDING_END, PTT_SIGNAL_PENDING_START, PTT_WORKER_TX,
         };
         unsafe {
             extern "C" fn handler(sig: i32) {
@@ -672,10 +674,18 @@ async fn main() -> Result<()> {
             }
             let force_plain = plain || !std::io::stdout().is_terminal();
             run_listen(
-                provider, device, frame_ms, force_plain,
-                ptt_polish, ptt_tts, ptt_context_file,
-                ptt_translate_to, ptt_tts_source, aec,
-            ).await
+                provider,
+                device,
+                frame_ms,
+                force_plain,
+                ptt_polish,
+                ptt_tts,
+                ptt_context_file,
+                ptt_translate_to,
+                ptt_tts_source,
+                aec,
+            )
+            .await
         }
         Cmd::File {
             path,
@@ -683,7 +693,11 @@ async fn main() -> Result<()> {
             frame_ms,
             burst,
         } => run_file(provider, path, frame_ms, !burst).await,
-        Cmd::Say { text, provider, out } => {
+        Cmd::Say {
+            text,
+            provider,
+            out,
+        } => {
             if let Some(out_path) = out {
                 run_speak(text, out_path).await
             } else {
@@ -693,7 +707,11 @@ async fn main() -> Result<()> {
         Cmd::Devices => run_devices().await,
         Cmd::Mic { device, frame_ms } => run_mic(device, frame_ms).await,
         Cmd::Server { addr } => run_server(addr).await,
-        Cmd::Transcribe { path, model, translate_to } => {
+        Cmd::Transcribe {
+            path,
+            model,
+            translate_to,
+        } => {
             if let Some(ref dir) = model {
                 std::env::set_var("OTOJI_SENSEVOICE_DIR", dir);
             }
@@ -713,10 +731,18 @@ fn run_ls(n: usize) -> Result<()> {
     };
     for note in &notes {
         let dt = chrono::DateTime::from_timestamp_millis(note.ts)
-            .map(|d| d.with_timezone(&chrono::Local).format("%m-%d %H:%M:%S").to_string())
+            .map(|d| {
+                d.with_timezone(&chrono::Local)
+                    .format("%m-%d %H:%M:%S")
+                    .to_string()
+            })
             .unwrap_or_else(|| note.stem.clone());
         let preview: String = note.text.chars().take(40).collect();
-        let ellipsis = if note.text.chars().count() > 40 { "…" } else { "" };
+        let ellipsis = if note.text.chars().count() > 40 {
+            "…"
+        } else {
+            ""
+        };
         println!("{dt}  [{kind}]  {preview}{ellipsis}", kind = note.kind);
     }
     Ok(())
@@ -726,7 +752,9 @@ fn run_ls(n: usize) -> Result<()> {
 fn note_content(note: &otoji::notes::Note) -> String {
     let md = otoji::notes::artifact_path(&note.stem, "md");
     if md.exists() {
-        std::fs::read_to_string(&md).ok().unwrap_or_else(|| note.text.clone())
+        std::fs::read_to_string(&md)
+            .ok()
+            .unwrap_or_else(|| note.text.clone())
     } else {
         note.text.clone()
     }
@@ -755,8 +783,8 @@ fn note_content_await_polish(note: &otoji::notes::Note, max_wait: std::time::Dur
 }
 
 fn run_read(follow: bool, n: usize) -> Result<()> {
-    use std::io::{BufRead, BufReader, Seek, SeekFrom};
     use std::fs::File;
+    use std::io::{BufRead, BufReader, Seek, SeekFrom};
 
     let path = otoji::notes::notes_path();
 
@@ -805,10 +833,8 @@ fn run_read(follow: bool, n: usize) -> Result<()> {
                 if !trimmed.is_empty() {
                     if let Ok(note) = serde_json::from_str::<otoji::notes::Note>(trimmed) {
                         // Wait up to 3s for polish .md on ptt_final notes.
-                        let content = note_content_await_polish(
-                            &note,
-                            std::time::Duration::from_secs(3),
-                        );
+                        let content =
+                            note_content_await_polish(&note, std::time::Duration::from_secs(3));
                         println!("{content}");
                     }
                 }
@@ -841,18 +867,32 @@ async fn run_listen(
 ) -> Result<()> {
     if device.as_deref() == Some("-") {
         return run_listen_stdin(
-            kind, frame_ms, plain, ptt_polish, ptt_tts, ptt_context_file,
-            ptt_translate_to, ptt_tts_source,
-        ).await;
+            kind,
+            frame_ms,
+            plain,
+            ptt_polish,
+            ptt_tts,
+            ptt_context_file,
+            ptt_translate_to,
+            ptt_tts_source,
+        )
+        .await;
     }
 
     // On macOS with --aec, use VoiceProcessingIO instead of cpal.
     #[cfg(target_os = "macos")]
     if aec {
         return run_listen_vpio(
-            kind, frame_ms, plain, ptt_polish, ptt_tts, ptt_context_file,
-            ptt_translate_to, ptt_tts_source,
-        ).await;
+            kind,
+            frame_ms,
+            plain,
+            ptt_polish,
+            ptt_tts,
+            ptt_context_file,
+            ptt_translate_to,
+            ptt_tts_source,
+        )
+        .await;
     }
     #[cfg(not(target_os = "macos"))]
     if aec {
@@ -874,9 +914,15 @@ async fn run_listen(
             let _stream = mic::start(device.as_deref(), frame_ms, audio_tx).context("mic")?;
             if plain {
                 drive_plain(
-                    provider, audio_rx, ptt_polish, ptt_tts, ptt_context_file,
-                    ptt_translate_to, ptt_tts_source,
-                ).await
+                    provider,
+                    audio_rx,
+                    ptt_polish,
+                    ptt_tts,
+                    ptt_context_file,
+                    ptt_translate_to,
+                    ptt_tts_source,
+                )
+                .await
             } else {
                 drive(provider, audio_rx).await
             }
@@ -911,9 +957,15 @@ async fn run_listen_vpio(
             let _stream = vpio::start(frame_ms, audio_tx).context("VPIO mic")?;
             if plain {
                 drive_plain(
-                    provider, audio_rx, ptt_polish, ptt_tts, ptt_context_file,
-                    ptt_translate_to, ptt_tts_source,
-                ).await
+                    provider,
+                    audio_rx,
+                    ptt_polish,
+                    ptt_tts,
+                    ptt_context_file,
+                    ptt_translate_to,
+                    ptt_tts_source,
+                )
+                .await
             } else {
                 drive(provider, audio_rx).await
             }
@@ -954,9 +1006,15 @@ async fn run_listen_stdin(
             let provider = IflytekRtasr::new(cfg);
             if plain {
                 drive_plain(
-                    provider, audio_rx, ptt_polish.clone(), ptt_tts.clone(),
-                    ptt_context_file.clone(), ptt_translate_to.clone(), ptt_tts_source.clone(),
-                ).await
+                    provider,
+                    audio_rx,
+                    ptt_polish.clone(),
+                    ptt_tts.clone(),
+                    ptt_context_file.clone(),
+                    ptt_translate_to.clone(),
+                    ptt_tts_source.clone(),
+                )
+                .await
             } else {
                 drive(provider, audio_rx).await
             }
@@ -966,9 +1024,15 @@ async fn run_listen_stdin(
             let provider = SenseVoice::new(cfg);
             if plain {
                 drive_plain(
-                    provider, audio_rx, ptt_polish, ptt_tts,
-                    ptt_context_file, ptt_translate_to, ptt_tts_source,
-                ).await
+                    provider,
+                    audio_rx,
+                    ptt_polish,
+                    ptt_tts,
+                    ptt_context_file,
+                    ptt_translate_to,
+                    ptt_tts_source,
+                )
+                .await
             } else {
                 drive(provider, audio_rx).await
             }
@@ -1009,13 +1073,15 @@ async fn drive_plain<P: AsrProvider + 'static>(
     // the first ptt_final after startup.
     if let Some(p) = polisher.clone() {
         tokio::spawn(async move {
-            let _ = p.polish(otoji::polish::PolishInput {
-                text: "hi",
-                prev: None,
-                audio: None,
-                context: None,
-                translate_to: None,
-            }).await;
+            let _ = p
+                .polish(otoji::polish::PolishInput {
+                    text: "hi",
+                    prev: None,
+                    audio: None,
+                    context: None,
+                    translate_to: None,
+                })
+                .await;
             eprintln!("[otoji] polish connection prewarmed");
         });
     }
@@ -1028,13 +1094,31 @@ async fn drive_plain<P: AsrProvider + 'static>(
             "gemini" => TtsKind::Gemini,
             "iflytek" => TtsKind::Iflytek,
             "cloudflare" | "cf" => TtsKind::Cloudflare,
-            other => { eprintln!("[otoji] unknown --ptt-tts value: {other:?}"); return None; }
+            other => {
+                eprintln!("[otoji] unknown --ptt-tts value: {other:?}");
+                return None;
+            }
         };
         resolve_tts(kind).ok()
     });
-    if polisher.is_some() { eprintln!("[otoji] PTT polish enabled: {}", polisher.as_ref().unwrap().name()); }
-    if tts_provider.is_some() { eprintln!("[otoji] PTT TTS enabled: {}", tts_provider.as_ref().unwrap().name()); }
-    if ptt_context_file.is_some() { eprintln!("[otoji] PTT context file: {:?}", ptt_context_file.as_ref().unwrap()); }
+    if polisher.is_some() {
+        eprintln!(
+            "[otoji] PTT polish enabled: {}",
+            polisher.as_ref().unwrap().name()
+        );
+    }
+    if tts_provider.is_some() {
+        eprintln!(
+            "[otoji] PTT TTS enabled: {}",
+            tts_provider.as_ref().unwrap().name()
+        );
+    }
+    if ptt_context_file.is_some() {
+        eprintln!(
+            "[otoji] PTT context file: {:?}",
+            ptt_context_file.as_ref().unwrap()
+        );
+    }
 
     use std::io::Write;
     // Emit a single JSON event line with flush.
@@ -1077,7 +1161,9 @@ async fn drive_plain<P: AsrProvider + 'static>(
         match &ev {
             otoji::core::AsrEvent::PttFinal { text } => {
                 // 1. Emit RAW ptt_final IMMEDIATELY so consumer types ASAP.
-                if emit(&ev).is_err() { break; }
+                if emit(&ev).is_err() {
+                    break;
+                }
 
                 // 2. Spawn polish + optional translation + TTS in background.
                 let raw = text.clone();
@@ -1131,7 +1217,9 @@ async fn drive_plain<P: AsrProvider + 'static>(
 
                     // Emit ptt_translated if translation produced something
                     // distinct from the polished original.
-                    if let (Some(tr), Some(lang)) = (translated.as_ref(), translate_to_bg.as_deref()) {
+                    if let (Some(tr), Some(lang)) =
+                        (translated.as_ref(), translate_to_bg.as_deref())
+                    {
                         if !tr.is_empty() && tr != &polished {
                             let _ = emit(&otoji::core::AsrEvent::PttTranslated {
                                 text: tr.clone(),
@@ -1155,7 +1243,9 @@ async fn drive_plain<P: AsrProvider + 'static>(
                 break;
             }
             _ => {
-                if emit(&ev).is_err() { break; }
+                if emit(&ev).is_err() {
+                    break;
+                }
             }
         }
     }
@@ -1166,13 +1256,19 @@ async fn drive_plain<P: AsrProvider + 'static>(
 fn resolve_polisher(name: &str) -> Option<Arc<dyn Polisher>> {
     use otoji::polish::{AnthropicPolisher, GeminiPolisher, OpenAiPolisher};
     let try_gemini = || -> Option<Arc<dyn Polisher>> {
-        GeminiPolisher::from_env().ok().map(|p| Arc::new(p) as Arc<dyn Polisher>)
+        GeminiPolisher::from_env()
+            .ok()
+            .map(|p| Arc::new(p) as Arc<dyn Polisher>)
     };
     let try_anthropic = || -> Option<Arc<dyn Polisher>> {
-        AnthropicPolisher::from_env().ok().map(|p| Arc::new(p) as Arc<dyn Polisher>)
+        AnthropicPolisher::from_env()
+            .ok()
+            .map(|p| Arc::new(p) as Arc<dyn Polisher>)
     };
     let try_openai = || -> Option<Arc<dyn Polisher>> {
-        OpenAiPolisher::from_env().ok().map(|p| Arc::new(p) as Arc<dyn Polisher>)
+        OpenAiPolisher::from_env()
+            .ok()
+            .map(|p| Arc::new(p) as Arc<dyn Polisher>)
     };
     match name {
         "gemini" => try_gemini(),
@@ -1188,7 +1284,9 @@ fn resolve_polisher(name: &str) -> Option<Arc<dyn Polisher>> {
 
 /// Synthesize `text` via `tts` and play back via `afplay` (macOS).
 async fn speak_via_afplay(tts: Arc<dyn TtsProvider>, text: &str) {
-    if text.is_empty() { return; }
+    if text.is_empty() {
+        return;
+    }
     use bytes::BytesMut;
     let sample_rate = tts.sample_rate();
     let is_pcm = tts.is_pcm();
@@ -1201,7 +1299,9 @@ async fn speak_via_afplay(tts: Arc<dyn TtsProvider>, text: &str) {
     });
     // Collect audio bytes.
     let mut buf = BytesMut::new();
-    while let Some(chunk) = audio_rx.recv().await { buf.extend_from_slice(&chunk); }
+    while let Some(chunk) = audio_rx.recv().await {
+        buf.extend_from_slice(&chunk);
+    }
     let _ = tts_run.await;
 
     // Write to temp file and play via afplay. Wrap PCM in WAV header if needed.
@@ -1210,15 +1310,18 @@ async fn speak_via_afplay(tts: Arc<dyn TtsProvider>, text: &str) {
         eprintln!("[otoji] TTS write file error: {e}");
         return;
     }
-    let _ = std::process::Command::new("afplay")
-        .arg(&tmp)
-        .status();
+    let _ = std::process::Command::new("afplay").arg(&tmp).status();
     let _ = std::fs::remove_file(&tmp);
 }
 
 /// Write audio bytes to a WAV file. If `is_pcm`, wrap mono i16 LE PCM in
 /// a RIFF header; otherwise treat `bytes` as already-packaged audio (e.g. MP3).
-fn write_wav_file(path: &std::path::Path, bytes: &[u8], sample_rate: u32, is_pcm: bool) -> std::io::Result<()> {
+fn write_wav_file(
+    path: &std::path::Path,
+    bytes: &[u8],
+    sample_rate: u32,
+    is_pcm: bool,
+) -> std::io::Result<()> {
     use std::io::Write;
     let mut f = std::fs::File::create(path)?;
     if is_pcm {
@@ -1229,12 +1332,12 @@ fn write_wav_file(path: &std::path::Path, bytes: &[u8], sample_rate: u32, is_pcm
         f.write_all(b"WAVE")?;
         f.write_all(b"fmt ")?;
         f.write_all(&16u32.to_le_bytes())?;
-        f.write_all(&1u16.to_le_bytes())?;       // PCM
-        f.write_all(&1u16.to_le_bytes())?;       // mono
+        f.write_all(&1u16.to_le_bytes())?; // PCM
+        f.write_all(&1u16.to_le_bytes())?; // mono
         f.write_all(&sample_rate.to_le_bytes())?;
         f.write_all(&byte_rate.to_le_bytes())?;
-        f.write_all(&2u16.to_le_bytes())?;       // block align
-        f.write_all(&16u16.to_le_bytes())?;      // bits per sample
+        f.write_all(&2u16.to_le_bytes())?; // block align
+        f.write_all(&16u16.to_le_bytes())?; // bits per sample
         f.write_all(b"data")?;
         f.write_all(&data_len.to_le_bytes())?;
     }
@@ -1333,7 +1436,10 @@ async fn run_server(addr: String) -> Result<()> {
         tokio::spawn(async move {
             let ws = match tokio_tungstenite::accept_async(stream).await {
                 Ok(ws) => ws,
-                Err(e) => { eprintln!("[otoji] ws accept: {e}"); return; }
+                Err(e) => {
+                    eprintln!("[otoji] ws accept: {e}");
+                    return;
+                }
             };
             let (mut tx, mut rx) = ws.split();
 
@@ -1354,9 +1460,13 @@ async fn run_server(addr: String) -> Result<()> {
             let send_task = tokio::spawn(async move {
                 while let Some(ev) = event_rx.recv().await {
                     if let Ok(line) = serde_json::to_string(&ev) {
-                        if tx.send(Message::Text(line.into())).await.is_err() { break; }
+                        if tx.send(Message::Text(line.into())).await.is_err() {
+                            break;
+                        }
                     }
-                    if matches!(ev, otoji::core::AsrEvent::Closed) { break; }
+                    if matches!(ev, otoji::core::AsrEvent::Closed) {
+                        break;
+                    }
                 }
             });
 
@@ -1364,7 +1474,10 @@ async fn run_server(addr: String) -> Result<()> {
             while let Some(msg) = rx.next().await {
                 let msg = match msg {
                     Ok(m) => m,
-                    Err(e) => { eprintln!("[otoji-ws] recv: {e}"); break; }
+                    Err(e) => {
+                        eprintln!("[otoji-ws] recv: {e}");
+                        break;
+                    }
                 };
                 match msg {
                     Message::Binary(data) => {
@@ -1372,7 +1485,9 @@ async fn run_server(addr: String) -> Result<()> {
                             otoji::core::AudioFormat::PCM16K_MONO,
                             data.to_vec(),
                         );
-                        if audio_tx.send(chunk).await.is_err() { break; }
+                        if audio_tx.send(chunk).await.is_err() {
+                            break;
+                        }
                     }
                     Message::Text(t) => {
                         use otoji::asr::sensevoice::{
@@ -1445,7 +1560,9 @@ async fn run_transcribe(path: PathBuf, translate_to: Option<String>) -> Result<(
     while let Some(ev) = event_rx.recv().await {
         match ev {
             otoji::core::AsrEvent::Final { text, .. } => {
-                if !all_text.is_empty() { all_text.push(' '); }
+                if !all_text.is_empty() {
+                    all_text.push(' ');
+                }
                 all_text.push_str(text.trim());
             }
             otoji::core::AsrEvent::Closed => break,
@@ -1465,7 +1582,9 @@ async fn run_transcribe(path: PathBuf, translate_to: Option<String>) -> Result<(
                 context: None,
                 translate_to: Some(target),
             };
-            let out = p.polish_full(input).await
+            let out = p
+                .polish_full(input)
+                .await
                 .unwrap_or(otoji::polish::PolishOutput {
                     original: all_text.clone(),
                     translated: None,
@@ -1488,9 +1607,15 @@ async fn run_transcribe(path: PathBuf, translate_to: Option<String>) -> Result<(
 
 /// Try to build any polisher for `run_transcribe` — Gemini → OpenAI → Anthropic.
 fn resolve_any_polisher() -> Option<Arc<dyn Polisher>> {
-    if let Ok(p) = GeminiPolisher::from_env() { return Some(Arc::new(p) as Arc<dyn Polisher>); }
-    if let Ok(p) = OpenAiPolisher::from_env() { return Some(Arc::new(p) as Arc<dyn Polisher>); }
-    if let Ok(p) = AnthropicPolisher::from_env() { return Some(Arc::new(p) as Arc<dyn Polisher>); }
+    if let Ok(p) = GeminiPolisher::from_env() {
+        return Some(Arc::new(p) as Arc<dyn Polisher>);
+    }
+    if let Ok(p) = OpenAiPolisher::from_env() {
+        return Some(Arc::new(p) as Arc<dyn Polisher>);
+    }
+    if let Ok(p) = AnthropicPolisher::from_env() {
+        return Some(Arc::new(p) as Arc<dyn Polisher>);
+    }
     None
 }
 
@@ -1528,8 +1653,7 @@ async fn drive<P: AsrProvider + 'static>(provider: P, audio_rx: audio::AudioRx) 
         }
         // 2. OpenAI GPT-4o — fastest cloud, best accuracy, with conversation caching.
         else if let Ok(key) = std::env::var("OPENAI_API_KEY") {
-            let model = std::env::var("OTOJI_POLISH_MODEL")
-                .unwrap_or_else(|_| "gpt-4o".into());
+            let model = std::env::var("OTOJI_POLISH_MODEL").unwrap_or_else(|_| "gpt-4o".into());
             eprintln!("polish: using openai {model} (with history caching)");
             Arc::new(OpenAiPolisher::new("https://api.openai.com/v1", key, model))
         }
@@ -1576,7 +1700,10 @@ async fn drive<P: AsrProvider + 'static>(provider: P, audio_rx: audio::AudioRx) 
                                 if p.polish(test).await.is_ok() {
                                     let _ = status_tx
                                         .send(otoji::core::AsrEvent::Status {
-                                            message: format!("polish: ollama ready (model={})", p.model),
+                                            message: format!(
+                                                "polish: ollama ready (model={})",
+                                                p.model
+                                            ),
                                         })
                                         .await;
                                     d2.activate(Arc::new(p)).await;
@@ -1841,7 +1968,9 @@ fn which(bin: &str) -> bool {
         .unwrap_or(false)
 }
 
-fn which_ollama() -> bool { which("ollama") }
+fn which_ollama() -> bool {
+    which("ollama")
+}
 fn which_mlx() -> bool {
     std::process::Command::new("python3")
         .args(["-c", "import mlx_lm"])
