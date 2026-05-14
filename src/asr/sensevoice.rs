@@ -48,7 +48,7 @@ pub struct SenseVoiceConfig {
     pub vad_max_ms: u32,
 }
 
-fn cache_dir() -> std::path::PathBuf {
+pub fn cache_dir() -> std::path::PathBuf {
     std::env::var_os("OTOJI_CACHE_DIR")
         .map(std::path::PathBuf::from)
         .or_else(|| {
@@ -62,12 +62,53 @@ fn cache_dir() -> std::path::PathBuf {
         .unwrap_or_else(|| std::path::PathBuf::from(".otoji-cache"))
 }
 
+/// Resolve the SenseVoice model directory for a given variant name.
+/// e.g. "sherpa-onnx-sense-voice-zh-en-ja-ko-yue-2025-09-09"
+///   → ~/.cache/otoji/sherpa-onnx-sense-voice-zh-en-ja-ko-yue-2025-09-09
+pub fn model_dir_for_variant(variant: &str) -> std::path::PathBuf {
+    let mut d = cache_dir();
+    d.push(variant);
+    d
+}
+
+/// Pick the ONNX model file inside a directory. Prefers the int8 quantized
+/// version (faster on M-series); falls back to fp32. Returns the basename
+/// suffix (`"model.int8.onnx"` or `"model.onnx"`), or `None` if neither is
+/// present. The "full" sherpa-onnx bundles ship only `model.onnx`; the
+/// "int8" bundles ship only `model.int8.onnx`; the legacy 2024-07-17 full
+/// bundle ships both.
+pub fn pick_model_file(dir: &std::path::Path) -> Option<&'static str> {
+    if dir.join("model.int8.onnx").exists() {
+        Some("model.int8.onnx")
+    } else if dir.join("model.onnx").exists() {
+        Some("model.onnx")
+    } else {
+        None
+    }
+}
+
+/// True if the variant directory contains a usable model + tokens file.
+pub fn variant_is_present(variant: &str) -> bool {
+    let dir = model_dir_for_variant(variant);
+    pick_model_file(&dir).is_some() && dir.join("tokens.txt").exists()
+}
+
 impl SenseVoiceConfig {
     pub fn from_env() -> Self {
         let default_model_dir = {
-            let mut d = cache_dir();
-            d.push("sherpa-onnx-sense-voice-zh-en-ja-ko-yue-2024-07-17");
-            d.to_string_lossy().into_owned()
+            // Priority: OTOJI_SENSEVOICE_DIR env > persisted config variant > builtin default.
+            let variant = std::env::var("OTOJI_SENSEVOICE_VARIANT")
+                .ok()
+                .filter(|s| !s.is_empty())
+                .unwrap_or_else(|| {
+                    let cfg = crate::config::load();
+                    if cfg.sherpa_model_variant.is_empty() {
+                        crate::config::DEFAULT_SHERPA_VARIANT.to_string()
+                    } else {
+                        cfg.sherpa_model_variant
+                    }
+                });
+            model_dir_for_variant(&variant).to_string_lossy().into_owned()
         };
         Self {
             model_dir: std::env::var("OTOJI_SENSEVOICE_DIR").unwrap_or(default_model_dir),
@@ -145,17 +186,26 @@ impl AsrProvider for SenseVoice {
     async fn run(&self, mut audio: AudioRx, events: AsrEventTx) -> Result<()> {
         let cfg = self.cfg.clone();
 
-        let model_path = format!("{}/model.int8.onnx", cfg.model_dir);
+        // Some sherpa-onnx bundles ship `model.int8.onnx` (quantized), others
+        // ship `model.onnx` (fp32). Prefer int8 when both exist.
+        let dir_path = std::path::Path::new(&cfg.model_dir);
+        let model_basename = pick_model_file(dir_path);
         let tokens_path = format!("{}/tokens.txt", cfg.model_dir);
-        if !std::path::Path::new(&model_path).exists()
-            || !std::path::Path::new(&tokens_path).exists()
-        {
+        if model_basename.is_none() || !std::path::Path::new(&tokens_path).exists() {
+            // Derive variant basename from the dir name so the hint matches
+            // whatever was configured (default or user-selected).
+            let variant = std::path::Path::new(&cfg.model_dir)
+                .file_name()
+                .and_then(|s| s.to_str())
+                .unwrap_or(crate::config::DEFAULT_SHERPA_VARIANT);
             return Err(OtojiError::Provider(format!(
                 "SenseVoice model not found at {dir}.\n\
-                 Download it once with:\n  \
-                 mkdir -p {dir} && curl -L https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/sherpa-onnx-sense-voice-zh-en-ja-ko-yue-2024-07-17.tar.bz2 \
+                 Open the otoji tray → 設定 → SenseVoice モデル to download it (progress shown inline).\n\
+                 Or run manually:\n  \
+                 mkdir -p {dir} && curl -L https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/{variant}.tar.bz2 \
                  | tar -xj -C $(dirname {dir})",
-                dir = cfg.model_dir
+                dir = cfg.model_dir,
+                variant = variant
             )));
         }
 
@@ -269,8 +319,10 @@ fn worker_main(
 ) {
     let mut config = OfflineRecognizerConfig::default();
     config.model_config.tokens = Some(format!("{}/tokens.txt", cfg.model_dir));
+    let model_basename = pick_model_file(std::path::Path::new(&cfg.model_dir))
+        .unwrap_or("model.int8.onnx");
     config.model_config.sense_voice = OfflineSenseVoiceModelConfig {
-        model: Some(format!("{}/model.int8.onnx", cfg.model_dir)),
+        model: Some(format!("{}/{}", cfg.model_dir, model_basename)),
         language: Some(cfg.language.clone()),
         use_itn: true,
     };

@@ -14,6 +14,7 @@ use tokio::sync::mpsc;
 
 pub mod iflytek_rtasr;
 pub mod sensevoice;
+pub mod sensevoice_download;
 
 pub type AsrEventRx = mpsc::Receiver<AsrEvent>;
 pub type AsrEventTx = mpsc::Sender<AsrEvent>;
