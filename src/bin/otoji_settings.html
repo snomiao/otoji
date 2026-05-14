@@ -575,7 +575,7 @@
     setSlider('silence_end_frames',  cfg.silence_end_frames  || 20);
     v('overlay_sharing').checked = cfg.overlay_sharing || false;
     populateChain('tts_chain_list',       TTS_PROVIDERS, cfg.tts_chain       || 'elevenlabs:rachel,gemini-2.5-flash-preview-tts,openai:tts-1,msedge,native');
-    populateChain('stt_polish_chain_list', STT_PROVIDERS, cfg.stt_polish_chain || 'mlx:qwen2.5-3b,llm-corrector,raw');
+    populateChain('stt_polish_chain_list', STT_PROVIDERS, cfg.stt_polish_chain || 'min-chars:15,min-duration:5s,mlx:qwen2.5-3b,llm-corrector,raw');
 
     v('translate_enabled').checked = cfg.translate_enabled || false;
     v('translate_preset').value = cfg.translate_preset || 'off';
