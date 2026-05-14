@@ -160,7 +160,10 @@ fn default_tts_chain() -> String {
     "elevenlabs:rachel,gemini-2.5-flash-preview-tts,openai:tts-1,msedge,native".to_string()
 }
 fn default_stt_polish_chain() -> String {
-    "mlx:qwen2.5-3b,llm-corrector,raw".to_string()
+    // Length-gated by default: skips polish entirely on short voice commands
+    // (where LLM polish degrades CER ~6× per 2026-05-14 polish bench §5).
+    // Long dictation still flows through mlx/llm-corrector.
+    "min-chars:15,min-duration:5s,mlx:qwen2.5-3b,llm-corrector,raw".to_string()
 }
 fn default_aec_gain() -> f32 {
     15.0
