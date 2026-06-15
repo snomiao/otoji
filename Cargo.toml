@@ -64,10 +64,14 @@ dotenvy = "0.15"
 # Optional Node/Bun binding deps (enabled with `--features node`).
 napi = { version = "2", default-features = false, features = ["napi6", "async"], optional = true }
 napi-derive = { version = "2", optional = true }
-exec = "0.3.1"
 similar = "2"
 nnnoiseless = "0.5.2"
 libc = "0.2"
+
+# `exec` (execvp for the self-rebuild re-exec) is Unix-only — it fails to
+# compile on Windows (uses std::os::unix). Windows uses a spawn+exit fallback.
+[target.'cfg(unix)'.dependencies]
+exec = "0.3.1"
 
 [build-dependencies]
 napi-build = { version = "2", optional = true }

@@ -553,8 +553,23 @@ fn maybe_rebuild_and_reexec() {
                 .and_then(|p| p.canonicalize())
                 .unwrap_or(exe);
             let args: Vec<String> = std::env::args().collect();
-            let err = exec::execvp(&new_exe, &args);
-            eprintln!("otoji: re-exec failed: {err}");
+            #[cfg(unix)]
+            {
+                // Replace the process image so the PID/stdio stay stable.
+                let err = exec::execvp(&new_exe, &args);
+                eprintln!("otoji: re-exec failed: {err}");
+            }
+            #[cfg(not(unix))]
+            {
+                // Windows has no execv — spawn the rebuilt binary and exit.
+                match std::process::Command::new(&new_exe)
+                    .args(&args[1..])
+                    .spawn()
+                {
+                    Ok(_) => std::process::exit(0),
+                    Err(e) => eprintln!("otoji: re-exec (spawn) failed: {e}"),
+                }
+            }
         }
         Ok(o) => {
             eprintln!("failed (exit {})", o.status);
