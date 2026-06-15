@@ -383,7 +383,8 @@ where
     R: std::io::Read + Send + 'static,
 {
     use otoji::asr::sensevoice::{
-        WorkerMsg, PTT_SIGNAL_PENDING_END, PTT_SIGNAL_PENDING_START, PTT_WORKER_TX,
+        WorkerMsg, PTT_SIGNAL_PENDING_END, PTT_SIGNAL_PENDING_RESUME, PTT_SIGNAL_PENDING_STANDBY,
+        PTT_SIGNAL_PENDING_START, PTT_WORKER_TX,
     };
     use std::io::BufRead;
     std::thread::spawn(move || {
@@ -402,6 +403,12 @@ where
             } else if line.eq_ignore_ascii_case("PTT_END") {
                 PTT_SIGNAL_PENDING_END.store(true, std::sync::atomic::Ordering::Relaxed);
                 eprintln!("[otoji-ctrl] PTT_END");
+            } else if line.eq_ignore_ascii_case("STANDBY") {
+                PTT_SIGNAL_PENDING_STANDBY.store(true, std::sync::atomic::Ordering::Relaxed);
+                eprintln!("[otoji-ctrl] STANDBY");
+            } else if line.eq_ignore_ascii_case("RESUME") {
+                PTT_SIGNAL_PENDING_RESUME.store(true, std::sync::atomic::Ordering::Relaxed);
+                eprintln!("[otoji-ctrl] RESUME");
             } else if let Some(ctx) = line.strip_prefix("CONTEXT ") {
                 // Write to the standard context file path so the existing
                 // read path picks it up. Keeps integration simple.
@@ -601,7 +608,8 @@ async fn main() -> Result<()> {
     #[cfg(unix)]
     {
         use otoji::asr::sensevoice::{
-            WorkerMsg, PTT_SIGNAL_PENDING_END, PTT_SIGNAL_PENDING_START, PTT_WORKER_TX,
+            WorkerMsg, PTT_SIGNAL_PENDING_END, PTT_SIGNAL_PENDING_RESUME,
+            PTT_SIGNAL_PENDING_STANDBY, PTT_SIGNAL_PENDING_START, PTT_WORKER_TX,
         };
         unsafe {
             extern "C" fn handler(sig: i32) {
@@ -631,6 +639,16 @@ async fn main() -> Result<()> {
                     if PTT_SIGNAL_PENDING_END.swap(false, Ordering::Relaxed) {
                         if let Some(tx) = PTT_WORKER_TX.lock().unwrap().as_ref() {
                             let _ = tx.send(WorkerMsg::PttEnd);
+                        }
+                    }
+                    if PTT_SIGNAL_PENDING_STANDBY.swap(false, Ordering::Relaxed) {
+                        if let Some(tx) = PTT_WORKER_TX.lock().unwrap().as_ref() {
+                            let _ = tx.send(WorkerMsg::SetStandby(true));
+                        }
+                    }
+                    if PTT_SIGNAL_PENDING_RESUME.swap(false, Ordering::Relaxed) {
+                        if let Some(tx) = PTT_WORKER_TX.lock().unwrap().as_ref() {
+                            let _ = tx.send(WorkerMsg::SetStandby(false));
                         }
                     }
                     std::thread::sleep(std::time::Duration::from_millis(10));

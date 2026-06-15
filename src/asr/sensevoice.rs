@@ -31,6 +31,13 @@ pub static PTT_SIGNAL_PENDING_START: std::sync::atomic::AtomicBool =
     std::sync::atomic::AtomicBool::new(false);
 pub static PTT_SIGNAL_PENDING_END: std::sync::atomic::AtomicBool =
     std::sync::atomic::AtomicBool::new(false);
+/// Standby toggle (set by the control socket, forwarded by the poller). In
+/// standby the worker keeps the mic warm but suppresses the ambient VAD
+/// transcription path — used for pre-warming without recording everything.
+pub static PTT_SIGNAL_PENDING_STANDBY: std::sync::atomic::AtomicBool =
+    std::sync::atomic::AtomicBool::new(false);
+pub static PTT_SIGNAL_PENDING_RESUME: std::sync::atomic::AtomicBool =
+    std::sync::atomic::AtomicBool::new(false);
 
 #[derive(Debug, Clone)]
 pub struct SenseVoiceConfig {
@@ -164,6 +171,8 @@ pub enum WorkerMsg {
     PttStart,
     /// End the push-to-talk segment — transcribe and emit PttFinal.
     PttEnd,
+    /// Enter (true) / leave (false) standby — gate the ambient VAD path.
+    SetStandby(bool),
 }
 
 /// Events from the worker thread to the async side.
@@ -356,6 +365,9 @@ fn worker_main(
     // Track whether PTT was requested before model loaded, so we can
     // activate it as soon as the main loop starts.
     let mut ptt_pending = false;
+    // Initial standby (pre-warm) requested via env, possibly overridden by a
+    // control message arriving during model load.
+    let mut standby_pending = std::env::var_os("OTOJI_START_STANDBY").is_some();
     let first = loop {
         match in_rx.recv() {
             Ok(WorkerMsg::Eof) | Err(_) => {
@@ -368,6 +380,9 @@ fn worker_main(
             }
             Ok(WorkerMsg::PttEnd) => {
                 ptt_pending = false;
+            }
+            Ok(WorkerMsg::SetStandby(b)) => {
+                standby_pending = b;
             }
         }
     };
@@ -445,6 +460,11 @@ fn worker_main(
     let mut ptt_active = ptt_pending;
     if ptt_pending {
         eprintln!("[sensevoice] PTT was pending during model load → activating now");
+    }
+    // Standby gates the ambient VAD-final path (not PTT). Pre-warm starts here.
+    let mut standby = standby_pending;
+    if standby {
+        eprintln!("[sensevoice] starting in standby (pre-warm: mic warm, ambient VAD suppressed)");
     }
     let mut ptt_buf: Vec<f32> = Vec::new();
     let mut ptt_samples_since_partial: usize = 0;
@@ -609,6 +629,12 @@ fn worker_main(
                 }
                 break;
             }
+            WorkerMsg::SetStandby(b) => {
+                if standby != b {
+                    standby = b;
+                    eprintln!("[sensevoice] standby = {standby}");
+                }
+            }
             WorkerMsg::PttStart => {
                 ptt_active = true;
                 ptt_buf.clear();
@@ -706,6 +732,14 @@ fn worker_main(
                         calibration_rms = Vec::new();
                         calibrated = true;
                     }
+                }
+
+                // Standby (pre-warm): mic stays warm and calibrated, but the
+                // ambient VAD-final path is suppressed so we don't transcribe
+                // or save anything until activated. PTT segments (handled above
+                // via ptt_active) are unaffected.
+                if standby && !ptt_active {
+                    continue;
                 }
 
                 let block_rms = rms(&block);
