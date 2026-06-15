@@ -129,7 +129,10 @@ jobs:
           node-version: latest
           registry-url: https://registry.npmjs.org
 
-      - run: bun install
+      # --no-optional: skip the self-referential @otoji/core-* platform packages
+      # (not yet published in this run); the built .node files come from
+      # download-artifact below, and devDependencies still install.
+      - run: bun install --no-optional
 
       - uses: actions/download-artifact@v4
         with:

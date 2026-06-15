@@ -1235,7 +1235,10 @@ async fn drive_plain<P: AsrProvider + 'static>(
                     // Polish (+ translate if enabled) — skipped when whisper
                     // produced an upgrade.
                     let output = if let Some(w) = whisper_up {
-                        otoji::polish::PolishOutput { original: w, translated: None }
+                        otoji::polish::PolishOutput {
+                            original: w,
+                            translated: None,
+                        }
                     } else {
                         match polisher_bg {
                             Some(p) => {
