@@ -853,6 +853,32 @@ fn run_read(follow: bool, n: usize) -> Result<()> {
 // grants it, audio starts flowing immediately. If denied, the VAD sees
 // silence and the TUI shows rms=0.0000 (the warning is in the RMS meter).
 
+/// Re-transcribe a saved 16 kHz mono segment WAV with whisper.cpp (`whisper-cli`)
+/// for a higher-accuracy PTT upgrade. Best-effort: returns `None` (keeping the
+/// raw SenseVoice text) if the model/wav is missing, `whisper-cli` isn't on
+/// PATH, it exits non-zero, or the output is empty. `model` is a path to a ggml
+/// model (e.g. `…/ggml-large-v3-turbo-q5_0.bin`).
+fn whisper_cli_upgrade(model: &str, wav: &std::path::Path) -> Option<String> {
+    if model.is_empty() || !wav.exists() {
+        return None;
+    }
+    let out = std::process::Command::new("whisper-cli")
+        .args(["-m", model, "-f"])
+        .arg(wav)
+        .args(["-nt", "-np"]) // no timestamps, no progress prints
+        .output()
+        .ok()?;
+    if !out.status.success() {
+        return None;
+    }
+    let text = String::from_utf8_lossy(&out.stdout).trim().to_string();
+    if text.is_empty() {
+        None
+    } else {
+        Some(text)
+    }
+}
+
 async fn run_listen(
     kind: AsrKind,
     device: Option<String>,
@@ -1180,33 +1206,59 @@ async fn drive_plain<P: AsrProvider + 'static>(
                 let translate_to_bg = ptt_translate_to.clone();
                 let tts_source_bg = ptt_tts_source.clone();
                 let stem_bg = last_ptt_stem.clone();
+                // When OTOJI_PTT_WHISPER_MODEL points at a whisper.cpp ggml model,
+                // re-transcribe the held segment with whisper-cli and use THAT as
+                // the upgrade — SenseVoice streams live for instant feedback, then
+                // the more accurate whisper result rewrites it. Falls back to LLM
+                // polish when unset or on any failure.
+                let whisper_model_bg = std::env::var("OTOJI_PTT_WHISPER_MODEL")
+                    .ok()
+                    .filter(|s| !s.is_empty());
                 tokio::spawn(async move {
                     let ctx = ctx_path
                         .as_ref()
                         .and_then(|p| std::fs::read_to_string(p).ok());
 
-                    // Polish (+ translate if enabled).
-                    let output = match polisher_bg {
-                        Some(p) => {
-                            let input = otoji::polish::PolishInput {
-                                text: &raw,
-                                prev: None,
-                                audio: None,
-                                context: ctx.as_deref(),
-                                translate_to: translate_to_bg.as_deref(),
-                            };
-                            p.polish_full(input).await.unwrap_or_else(|e| {
-                                eprintln!("[otoji] PTT polish error: {e}");
-                                otoji::polish::PolishOutput {
-                                    original: raw.clone(),
-                                    translated: None,
-                                }
-                            })
+                    // Prefer a whisper.cpp re-transcription of the segment wav.
+                    let whisper_up = match (&whisper_model_bg, &stem_bg) {
+                        (Some(model), Some(stem)) => {
+                            let wav = otoji::notes::artifact_path(stem, "wav");
+                            let model = model.clone();
+                            tokio::task::spawn_blocking(move || whisper_cli_upgrade(&model, &wav))
+                                .await
+                                .ok()
+                                .flatten()
                         }
-                        None => otoji::polish::PolishOutput {
-                            original: raw.clone(),
-                            translated: None,
-                        },
+                        _ => None,
+                    };
+
+                    // Polish (+ translate if enabled) — skipped when whisper
+                    // produced an upgrade.
+                    let output = if let Some(w) = whisper_up {
+                        otoji::polish::PolishOutput { original: w, translated: None }
+                    } else {
+                        match polisher_bg {
+                            Some(p) => {
+                                let input = otoji::polish::PolishInput {
+                                    text: &raw,
+                                    prev: None,
+                                    audio: None,
+                                    context: ctx.as_deref(),
+                                    translate_to: translate_to_bg.as_deref(),
+                                };
+                                p.polish_full(input).await.unwrap_or_else(|e| {
+                                    eprintln!("[otoji] PTT polish error: {e}");
+                                    otoji::polish::PolishOutput {
+                                        original: raw.clone(),
+                                        translated: None,
+                                    }
+                                })
+                            }
+                            None => otoji::polish::PolishOutput {
+                                original: raw.clone(),
+                                translated: None,
+                            },
+                        }
                     };
 
                     let polished = output.original.trim().to_string();
