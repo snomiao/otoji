@@ -52,11 +52,13 @@ jobs:
         with:
           key: napi-${{ matrix.target }}
 
-      # --no-optional: the package's own platform binaries (@otoji/core-*) are
-      # self-referential optionalDependencies that don't exist in the registry
-      # yet at build time — installing them is both unnecessary (we're building
-      # them here) and fatal. Skip them; devDependencies (napi CLI) still install.
-      - run: bun install --frozen-lockfile --no-optional || bun install --no-optional
+      # The package's own platform binaries (@otoji/core-*) are self-referential
+      # optionalDependencies not yet in the registry during this build; bun
+      # attempts and fails them even with --no-optional ("Failed to install 5
+      # packages"). The build only needs the napi devDependency (@napi-rs/cli),
+      # which installs first — so tolerate the optional failures here and let
+      # the `bun run build` step below be the real gate.
+      - run: bun install --frozen-lockfile --no-optional || bun install --no-optional || true
 
       - name: Build .node
         run: bun run build -- --target ${{ matrix.target }}
