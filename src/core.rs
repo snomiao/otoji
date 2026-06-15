@@ -86,6 +86,11 @@ pub enum AsrEvent {
         /// keeps it out of the JSON event stream (consumers only see `text`).
         #[serde(skip)]
         audio: Option<Vec<f32>>,
+        /// SenseVoice-detected language code (e.g. "en", "ja", "zh", "ko").
+        /// Used to gate the whisper.cpp upgrade (whisper wins on English but
+        /// mis-detects short CJK as English). `#[serde(skip)]` — internal only.
+        #[serde(skip)]
+        lang: Option<String>,
     },
     /// Push-to-talk: polished version of the last `ptt_final`.
     /// Emitted after LLM polish completes (e.g. punctuation fixed based on

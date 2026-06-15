@@ -1176,7 +1176,7 @@ async fn drive_plain<P: AsrProvider + 'static>(
                 otoji::notes::mux_webm(&note.stem);
                 otoji::notes::append(&note);
             }
-            otoji::core::AsrEvent::PttFinal { text, audio } => {
+            otoji::core::AsrEvent::PttFinal { text, audio, .. } => {
                 let mut note = otoji::notes::Note::new("ptt_final", text, None);
                 // Persist the spoken audio as the `.wav` sibling so the exact
                 // segment can be re-transcribed by other models offline (the
@@ -1192,7 +1192,7 @@ async fn drive_plain<P: AsrProvider + 'static>(
             _ => {}
         }
         match &ev {
-            otoji::core::AsrEvent::PttFinal { text, .. } => {
+            otoji::core::AsrEvent::PttFinal { text, lang, .. } => {
                 // 1. Emit RAW ptt_final IMMEDIATELY so consumer types ASAP.
                 if emit(&ev).is_err() {
                     break;
@@ -1214,14 +1214,31 @@ async fn drive_plain<P: AsrProvider + 'static>(
                 let whisper_model_bg = std::env::var("OTOJI_PTT_WHISPER_MODEL")
                     .ok()
                     .filter(|s| !s.is_empty());
+                // Language gate: whisper.cpp wins on English but mis-detects
+                // short CJK speech as English (benched ja/ko errors >100%), so
+                // only upgrade when SenseVoice detected English. Unknown/other
+                // languages keep the SenseVoice result. Override the allow-list
+                // with OTOJI_PTT_WHISPER_LANGS (comma-separated, "*" = any).
+                let whisper_langs =
+                    std::env::var("OTOJI_PTT_WHISPER_LANGS").unwrap_or_else(|_| "en".into());
+                let lang_ok = {
+                    let allow: Vec<String> = whisper_langs
+                        .split(',')
+                        .map(|s| s.trim().to_ascii_lowercase())
+                        .filter(|s| !s.is_empty())
+                        .collect();
+                    let detected = lang.as_deref().unwrap_or("").to_ascii_lowercase();
+                    allow.iter().any(|a| a == "*") || allow.iter().any(|a| *a == detected)
+                };
                 tokio::spawn(async move {
                     let ctx = ctx_path
                         .as_ref()
                         .and_then(|p| std::fs::read_to_string(p).ok());
 
-                    // Prefer a whisper.cpp re-transcription of the segment wav.
-                    let whisper_up = match (&whisper_model_bg, &stem_bg) {
-                        (Some(model), Some(stem)) => {
+                    // Prefer a whisper.cpp re-transcription of the segment wav —
+                    // but only for languages where whisper beats SenseVoice.
+                    let whisper_up = match (&whisper_model_bg, &stem_bg, lang_ok) {
+                        (Some(model), Some(stem), true) => {
                             let wav = otoji::notes::artifact_path(stem, "wav");
                             let model = model.clone();
                             tokio::task::spawn_blocking(move || whisper_cli_upgrade(&model, &wav))

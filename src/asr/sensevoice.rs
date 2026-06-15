@@ -187,6 +187,7 @@ enum WorkerEvt {
     PttFinal {
         text: String,
         audio: Option<Vec<f32>>,
+        lang: Option<String>,
     },
     LanguageDetected {
         lang: String,
@@ -275,7 +276,9 @@ impl AsrProvider for SenseVoice {
                     WorkerEvt::Status(message) => AsrEvent::Status { message },
                     WorkerEvt::Error(message) => AsrEvent::Error { message },
                     WorkerEvt::PttPartial { text } => AsrEvent::PttPartial { text },
-                    WorkerEvt::PttFinal { text, audio } => AsrEvent::PttFinal { text, audio },
+                    WorkerEvt::PttFinal { text, audio, lang } => {
+                        AsrEvent::PttFinal { text, audio, lang }
+                    }
                     WorkerEvt::LanguageDetected { lang } => AsrEvent::LanguageDetected { lang },
                     WorkerEvt::Closed => break,
                 };
@@ -641,6 +644,10 @@ fn worker_main(
                         decode(&ptt_buf).unwrap_or_default()
                     };
                     flush_lang!();
+                    // Capture the language SenseVoice detected for this segment
+                    // (set by `decode`), so the consumer can gate the whisper
+                    // upgrade on it (whisper wins en, mis-detects short CJK).
+                    let lang = DECODED_LANG.with(|c| c.borrow().clone());
                     // Keep the raw audio for non-empty segments so the note's
                     // `.wav` sibling can be re-run through other ASR models.
                     let audio = if text.is_empty() {
@@ -648,7 +655,7 @@ fn worker_main(
                     } else {
                         Some(ptt_buf.clone())
                     };
-                    let _ = out_tx.send(WorkerEvt::PttFinal { text, audio });
+                    let _ = out_tx.send(WorkerEvt::PttFinal { text, audio, lang });
                     ptt_buf.clear();
                     ptt_samples_since_partial = 0;
                     ptt_last_partial.clear();

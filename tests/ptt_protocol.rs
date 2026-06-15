@@ -16,6 +16,7 @@ fn serialize_ptt_events_as_json_lines() {
         AsrEvent::PttFinal {
             text: "hello world".into(),
             audio: None,
+            lang: None,
         },
         AsrEvent::PttUpgrade {
             text: "Hello, world.".into(),
