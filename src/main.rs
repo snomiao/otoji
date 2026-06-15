@@ -1150,16 +1150,23 @@ async fn drive_plain<P: AsrProvider + 'static>(
                 otoji::notes::mux_webm(&note.stem);
                 otoji::notes::append(&note);
             }
-            otoji::core::AsrEvent::PttFinal { text } => {
-                let note = otoji::notes::Note::new("ptt_final", text, None);
-                otoji::notes::save_srt(&note.stem, &note.text, 0);
+            otoji::core::AsrEvent::PttFinal { text, audio } => {
+                let mut note = otoji::notes::Note::new("ptt_final", text, None);
+                // Persist the spoken audio as the `.wav` sibling so the exact
+                // segment can be re-transcribed by other models offline (the
+                // note text is the reference). Best-effort.
+                if let Some(samples) = audio {
+                    note.duration_ms = Some((samples.len() as u32 * 1000) / 16_000);
+                    otoji::notes::save_wav(&note.stem, samples, 16_000);
+                }
+                otoji::notes::save_srt(&note.stem, &note.text, note.duration_ms.unwrap_or(0));
                 otoji::notes::append(&note);
                 last_ptt_stem = Some(note.stem);
             }
             _ => {}
         }
         match &ev {
-            otoji::core::AsrEvent::PttFinal { text } => {
+            otoji::core::AsrEvent::PttFinal { text, .. } => {
                 // 1. Emit RAW ptt_final IMMEDIATELY so consumer types ASAP.
                 if emit(&ev).is_err() {
                     break;

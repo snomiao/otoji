@@ -186,6 +186,7 @@ enum WorkerEvt {
     },
     PttFinal {
         text: String,
+        audio: Option<Vec<f32>>,
     },
     LanguageDetected {
         lang: String,
@@ -274,7 +275,7 @@ impl AsrProvider for SenseVoice {
                     WorkerEvt::Status(message) => AsrEvent::Status { message },
                     WorkerEvt::Error(message) => AsrEvent::Error { message },
                     WorkerEvt::PttPartial { text } => AsrEvent::PttPartial { text },
-                    WorkerEvt::PttFinal { text } => AsrEvent::PttFinal { text },
+                    WorkerEvt::PttFinal { text, audio } => AsrEvent::PttFinal { text, audio },
                     WorkerEvt::LanguageDetected { lang } => AsrEvent::LanguageDetected { lang },
                     WorkerEvt::Closed => break,
                 };
@@ -640,7 +641,14 @@ fn worker_main(
                         decode(&ptt_buf).unwrap_or_default()
                     };
                     flush_lang!();
-                    let _ = out_tx.send(WorkerEvt::PttFinal { text });
+                    // Keep the raw audio for non-empty segments so the note's
+                    // `.wav` sibling can be re-run through other ASR models.
+                    let audio = if text.is_empty() {
+                        None
+                    } else {
+                        Some(ptt_buf.clone())
+                    };
+                    let _ = out_tx.send(WorkerEvt::PttFinal { text, audio });
                     ptt_buf.clear();
                     ptt_samples_since_partial = 0;
                     ptt_last_partial.clear();

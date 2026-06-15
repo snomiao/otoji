@@ -78,7 +78,15 @@ pub enum AsrEvent {
     PttPartial { text: String },
     /// Push-to-talk: final transcription of the held segment (raw).
     /// Emitted immediately so the consumer can type without waiting for polish.
-    PttFinal { text: String },
+    PttFinal {
+        text: String,
+        /// Raw PCM audio for the held segment (16kHz mono f32, -1.0..1.0).
+        /// Saved as the `.wav` sibling of the note so the exact spoken audio
+        /// can be re-run through other ASR models offline. `#[serde(skip)]`
+        /// keeps it out of the JSON event stream (consumers only see `text`).
+        #[serde(skip)]
+        audio: Option<Vec<f32>>,
+    },
     /// Push-to-talk: polished version of the last `ptt_final`.
     /// Emitted after LLM polish completes (e.g. punctuation fixed based on
     /// context). Consumers should diff-update (backspace + retype) the cursor.
