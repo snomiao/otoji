@@ -10,6 +10,7 @@ declare global {
 export class WebSpeechSttProvider implements SttProvider {
   readonly id = "webspeech";
   readonly name = "Browser Web Speech API";
+  readonly capturesOwnAudio = true;
   isAvailable(): boolean {
     if (typeof window === "undefined") return false;
     return !!(window.SpeechRecognition || window.webkitSpeechRecognition);

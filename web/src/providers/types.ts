@@ -12,6 +12,13 @@ export interface SttProvider {
   readonly id: string;
   readonly name: string;
   isAvailable(): boolean;
+  /**
+   * When true, the provider captures the microphone itself (e.g. the browser
+   * Web Speech API) and the app must NOT run its own mic pump / `sendAudio`.
+   * When false/undefined, the app captures the mic, downsamples to 16 kHz mono
+   * s16le, and feeds frames via `SttSession.sendAudio`.
+   */
+  readonly capturesOwnAudio?: boolean;
   start(onSegment: (seg: SttSegment) => void, onError?: (e: Error) => void): Promise<SttSession>;
 }
 

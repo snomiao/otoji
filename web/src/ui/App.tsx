@@ -2,10 +2,12 @@ import React, { useEffect, useMemo, useState } from "react";
 import { browserKeyStore, type OtojiKeys } from "../lib/keystore";
 import { ProviderRouter } from "../providers/router";
 import type { PolishProvider, SttProvider, SttSession, TtsProvider } from "../providers/types";
+import { OtojiLocalSttProvider } from "../providers/stt/otoji_local";
 import { IflytekRtasrProvider } from "../providers/stt/iflytek_rtasr";
 import { OpenAiWhisperProvider } from "../providers/stt/openai_whisper";
 import { WebSpeechSttProvider } from "../providers/stt/webspeech";
 import { TransformersWhisperProvider } from "../providers/stt/transformers";
+import { startMicPump, type MicPump } from "../lib/mic";
 import { IflytekTtsProvider } from "../providers/tts/iflytek_tts";
 import { OpenAiTtsProvider } from "../providers/tts/openai_tts";
 import { SpeechSynthesisTtsProvider } from "../providers/tts/speechsynthesis";
@@ -14,6 +16,8 @@ import { NoopPolishProvider } from "../providers/polish/noop";
 
 function buildRouters(keys: OtojiKeys) {
   const stt: SttProvider[] = [
+    // Local SenseVoice over the bundled `otoji server` sidecar — offline default.
+    new OtojiLocalSttProvider(),
     new IflytekRtasrProvider({ appId: keys.IFLYTEK_APP_ID ?? "", apiKey: keys.IFLYTEK_API_KEY ?? "" }),
     new OpenAiWhisperProvider({ apiKey: keys.OPENAI_API_KEY ?? "", baseUrl: keys.OPENAI_BASE_URL }),
     new WebSpeechSttProvider(),
@@ -50,6 +54,7 @@ export function App() {
   const [session, setSession] = useState<SttSession | null>(null);
   const [status, setStatus] = useState<string>("idle");
   const [showSettings, setShowSettings] = useState(false);
+  const micRef = React.useRef<MicPump | null>(null);
 
   const routers = useMemo(() => buildRouters(keys), [keys]);
 
@@ -57,27 +62,43 @@ export function App() {
   const ttsName = routers.tts.pick()?.name ?? "(none)";
   const polishName = routers.polish.pick()?.name ?? "(none)";
 
-  useEffect(() => () => { session?.stop().catch(() => {}); }, [session]);
+  useEffect(() => () => { micRef.current?.stop(); session?.stop().catch(() => {}); }, [session]);
 
   async function start() {
     const prov = routers.stt.pick();
     if (!prov) { setStatus("no stt provider"); return; }
     setStatus(`listening via ${prov.name}`);
-    const s = await prov.start(
-      (seg) => {
-        if (seg.final) {
-          setSegments((prev) => [...prev, seg]);
-          setPartial("");
-        } else {
-          setPartial(seg.text);
-        }
-      },
-      (e) => setStatus(`error: ${e.message}`),
-    );
+    let s: SttSession;
+    try {
+      s = await prov.start(
+        (seg) => {
+          if (seg.final) {
+            setSegments((prev) => [...prev, seg]);
+            setPartial("");
+          } else {
+            setPartial(seg.text);
+          }
+        },
+        (e) => setStatus(`error: ${e.message}`),
+      );
+    } catch (e: any) {
+      setStatus(`error: ${e?.message ?? String(e)}`);
+      return;
+    }
     setSession(s);
+    // Providers that capture their own mic (Web Speech API) need no pump.
+    if (!prov.capturesOwnAudio) {
+      try {
+        micRef.current = await startMicPump((frame) => s.sendAudio(frame));
+      } catch (e: any) {
+        setStatus(`mic error: ${e?.message ?? String(e)}`);
+      }
+    }
   }
 
   async function stop() {
+    micRef.current?.stop();
+    micRef.current = null;
     await session?.stop();
     setSession(null);
     setStatus("stopped");

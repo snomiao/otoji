@@ -6,3 +6,9 @@ userscript/dist
 .env.local
 *.log
 .DS_Store
+
+# Tauri
+src-tauri/target
+src-tauri/gen/schemas
+# Staged sidecar binary (large; rebuilt via `npm run sidecar`)
+src-tauri/binaries
