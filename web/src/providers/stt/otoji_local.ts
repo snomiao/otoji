@@ -9,8 +9,10 @@ import type { SttProvider, SttSegment, SttSession } from "../types";
  * `src/core.rs::AsrEvent`) and accepts the control text frames `PTT_START`,
  * `PTT_END`, and `CONTEXT <text>`.
  *
- * This provider needs no API keys — everything runs on the local machine, so
- * it is the offline default for the packaged desktop app.
+ * This provider needs no API keys — everything runs on the local machine. It
+ * is an OPTIONAL browser client for a separately-launched `otoji server`; the
+ * shareable desktop app is the native overlay (`otoji listen --aec
+ * --overlay`), not this web UI. Not registered by default in the playground.
  */
 export interface OtojiLocalConfig {
   /** Defaults to `ws://127.0.0.1:8080/`. */
