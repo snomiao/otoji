@@ -9,8 +9,18 @@ fn main() {
         println!("cargo:rustc-link-lib=framework=AppKit");
         println!("cargo:rustc-link-lib=framework=Foundation");
         println!("cargo:rustc-link-lib=framework=CoreFoundation");
+        println!("cargo:rustc-link-lib=framework=CoreGraphics");
         println!("cargo:rustc-link-lib=framework=AudioToolbox");
         println!("cargo:rustc-link-lib=dylib=objc");
+
+        // Compile the ObjC exception catcher used by the floating voice
+        // overlay (src/overlay.rs): a stray NSException in AppKit drawing is
+        // caught and logged instead of aborting the process.
+        cc::Build::new()
+            .file("objc_try.m")
+            .flag("-fobjc-arc")
+            .compile("otoji_objc_try");
+        println!("cargo:rerun-if-changed=objc_try.m");
     }
 
     // Embed build timestamp so `otoji --version` shows when it was compiled.

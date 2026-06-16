@@ -75,3 +75,5 @@ exec = "0.3.1"
 
 [build-dependencies]
 napi-build = { version = "2", optional = true }
+# Compiles objc_try.m (ObjC exception catcher) for the macOS voice overlay.
+cc = "1"

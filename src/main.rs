@@ -141,6 +141,12 @@ enum Cmd {
         /// macOS only — suppresses speaker bleed from system audio.
         #[arg(long)]
         aec: bool,
+        /// Show the floating native voice overlay (macOS only): a transparent,
+        /// always-on-top mic-waveform + live-subtitle panel. Implies `--plain`
+        /// and `--aec`. Runs the Cocoa event loop on the main thread; the mic
+        /// pipeline runs on a background thread.
+        #[arg(long)]
+        overlay: bool,
     },
     /// List available audio input devices.
     Devices,
@@ -490,6 +496,15 @@ fn maybe_rebuild_and_reexec() {
         return;
     }
 
+    // Never auto-rebuild when running as a bundled macOS .app — the binary is
+    // a shipped artifact, not a dev build, and `cargo` may not even be present.
+    if std::env::current_exe()
+        .map(|p| p.to_string_lossy().contains(".app/Contents/MacOS/"))
+        .unwrap_or(false)
+    {
+        return;
+    }
+
     let manifest_dir = env!("CARGO_MANIFEST_DIR");
     let manifest_path = std::path::Path::new(manifest_dir);
     if !manifest_path.join("Cargo.toml").exists() {
@@ -678,7 +693,23 @@ async fn main() -> Result<()> {
         .with_env_filter(tracing_subscriber::EnvFilter::from_default_env())
         .with_writer(std::io::stderr)
         .init();
-    let cli = Cli::parse();
+    // When double-clicked as a bundled macOS .app (Contents/MacOS/<exe>) with
+    // no arguments, default to the floating overlay so the app is usable
+    // without a terminal. CLI invocations (with args) are unaffected.
+    let cli = {
+        let mut raw: Vec<std::ffi::OsString> = std::env::args_os().collect();
+        #[cfg(target_os = "macos")]
+        if raw.len() == 1
+            && std::env::current_exe()
+                .map(|p| p.to_string_lossy().contains(".app/Contents/MacOS/"))
+                .unwrap_or(false)
+        {
+            raw.push("listen".into());
+            raw.push("--aec".into());
+            raw.push("--overlay".into());
+        }
+        Cli::parse_from(raw)
+    };
     match cli.cmd {
         Cmd::Listen {
             device,
@@ -694,6 +725,7 @@ async fn main() -> Result<()> {
             ptt_control_socket,
             polish_preset,
             aec,
+            overlay,
         } => {
             if let Some(ref dir) = model {
                 std::env::set_var("OTOJI_SENSEVOICE_DIR", dir);
@@ -705,6 +737,26 @@ async fn main() -> Result<()> {
             if let Some(addr) = ptt_control_socket {
                 start_ptt_control_server(addr);
             }
+
+            // Overlay mode (macOS): the Cocoa event loop must own the main
+            // thread, so run the mic→ASR pipeline on a background thread and
+            // block here on NSApplication.run(). `--overlay` implies plain+aec.
+            #[cfg(target_os = "macos")]
+            if overlay {
+                return run_overlay_app(
+                    provider,
+                    device,
+                    frame_ms,
+                    ptt_polish,
+                    ptt_tts,
+                    ptt_context_file,
+                    ptt_translate_to,
+                    ptt_tts_source,
+                );
+            }
+            #[cfg(not(target_os = "macos"))]
+            let _ = overlay;
+
             let force_plain = plain || !std::io::stdout().is_terminal();
             run_listen(
                 provider,
@@ -912,6 +964,124 @@ fn whisper_cli_upgrade(model: &str, wav: &std::path::Path) -> Option<String> {
     }
 }
 
+/// Map an outgoing `AsrEvent` into the native voice overlay (macOS).
+/// Transcript text → subtitle lane; translations → the sticky bottom lane.
+#[cfg(target_os = "macos")]
+fn overlay_push_event(ev: &otoji::core::AsrEvent) {
+    use otoji::core::AsrEvent;
+    if !otoji::overlay::is_enabled() {
+        return;
+    }
+    match ev {
+        AsrEvent::Partial { text, .. }
+        | AsrEvent::Final { text, .. }
+        | AsrEvent::PttPartial { text }
+        | AsrEvent::PttFinal { text, .. }
+        | AsrEvent::PttUpgrade { text } => {
+            let t = text.trim();
+            if !t.is_empty() {
+                otoji::overlay::update_subtitle(t);
+            }
+        }
+        AsrEvent::PttTranslated { text, .. } => {
+            otoji::overlay::update_translation(text.trim());
+        }
+        _ => {}
+    }
+}
+
+/// Compute a handful of RMS "bars" (0..1) from one s16le mono chunk, scaled for
+/// visibility, for the overlay waveform.
+#[cfg(target_os = "macos")]
+fn rms_bars(chunk: &otoji::core::AudioChunk) -> Vec<f32> {
+    const BARS: usize = 8;
+    const GAIN: f32 = 5.0;
+    let pcm = &chunk.pcm;
+    let n = pcm.len() / 2;
+    if n == 0 {
+        return Vec::new();
+    }
+    let per = (n / BARS).max(1);
+    let mut out = Vec::with_capacity(BARS);
+    let mut i = 0;
+    while i < n {
+        let end = (i + per).min(n);
+        let mut sum = 0.0f64;
+        for j in i..end {
+            let s = i16::from_le_bytes([pcm[j * 2], pcm[j * 2 + 1]]) as f32 / 32768.0;
+            sum += (s * s) as f64;
+        }
+        let rms = (sum / (end - i) as f64).sqrt() as f32;
+        out.push((rms * GAIN).clamp(0.0, 1.0));
+        i = end;
+    }
+    out
+}
+
+/// Tee audio chunks to the overlay (waveform + VAD) while forwarding them
+/// unchanged to the ASR provider.
+#[cfg(target_os = "macos")]
+async fn overlay_waveform_tee(mut rx: audio::AudioRx, tx: audio::AudioTx) {
+    while let Some(chunk) = rx.recv().await {
+        let levels = rms_bars(&chunk);
+        let vad = levels.iter().cloned().fold(0.0f32, f32::max) > 0.04;
+        otoji::overlay::update_waveform(&levels, vad);
+        if tx.send(chunk).await.is_err() {
+            break;
+        }
+    }
+}
+
+/// Run the floating overlay app: the Cocoa event loop owns the main thread,
+/// the mic→ASR pipeline runs on a background thread feeding the overlay.
+/// Blocks until the app quits. `--overlay` implies plain output + AEC mic.
+#[cfg(target_os = "macos")]
+fn run_overlay_app(
+    provider: AsrKind,
+    device: Option<String>,
+    frame_ms: u32,
+    ptt_polish: Option<String>,
+    ptt_tts: Option<String>,
+    ptt_context_file: Option<PathBuf>,
+    ptt_translate_to: Option<String>,
+    ptt_tts_source: String,
+) -> Result<()> {
+    otoji::overlay::set_enabled(true);
+    otoji::overlay::init();
+    std::thread::Builder::new()
+        .name("otoji-listen".into())
+        .spawn(move || {
+            let rt = match tokio::runtime::Builder::new_multi_thread()
+                .enable_all()
+                .build()
+            {
+                Ok(rt) => rt,
+                Err(e) => {
+                    eprintln!("[otoji] overlay: failed to build runtime: {e}");
+                    return;
+                }
+            };
+            if let Err(e) = rt.block_on(run_listen(
+                provider,
+                device,
+                frame_ms,
+                true, // force plain (no TUI — the overlay is the UI)
+                ptt_polish,
+                ptt_tts,
+                ptt_context_file,
+                ptt_translate_to,
+                ptt_tts_source,
+                true, // AEC mic (VoiceProcessingIO)
+            )) {
+                eprintln!("[otoji] overlay listen pipeline error: {e:#}");
+            }
+        })
+        .context("spawn overlay listen thread")?;
+    // Blocks on NSApplication.run() until the app quits.
+    otoji::overlay::run_event_loop();
+    Ok(())
+}
+
 async fn run_listen(
     kind: AsrKind,
     device: Option<String>,
@@ -1012,8 +1182,17 @@ async fn run_listen_vpio(
         AsrKind::Sensevoice => {
             let cfg = SenseVoiceConfig::from_env();
             let provider = SenseVoice::new(cfg);
-            let (audio_tx, audio_rx) = audio::channel(64);
+            let (audio_tx, raw_rx) = audio::channel(64);
             let _stream = vpio::start(frame_ms, audio_tx).context("VPIO mic")?;
+            // When the overlay is active, tee the mic audio to drive its live
+            // waveform before the chunks reach the ASR provider.
+            let audio_rx = if otoji::overlay::is_enabled() {
+                let (prov_tx, prov_rx) = audio::channel(64);
+                tokio::spawn(overlay_waveform_tee(raw_rx, prov_tx));
+                prov_rx
+            } else {
+                raw_rx
+            };
             if plain {
                 drive_plain(
                     provider,
@@ -1180,8 +1359,13 @@ async fn drive_plain<P: AsrProvider + 'static>(
     }
 
     use std::io::Write;
-    // Emit a single JSON event line with flush.
+    // Emit a single JSON event line with flush. Also mirrors the event into
+    // the native voice overlay (macOS) when one is active — this is the single
+    // chokepoint every outgoing event flows through (live, ptt, and the
+    // background polish/translate upgrades), so the overlay stays in sync.
     fn emit(ev: &otoji::core::AsrEvent) -> std::io::Result<()> {
+        #[cfg(target_os = "macos")]
+        overlay_push_event(ev);
         let line = serde_json::to_string(ev).unwrap_or_default();
         let stdout = std::io::stdout();
         let mut out = stdout.lock();

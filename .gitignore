@@ -4,6 +4,7 @@ node_modules
 /target
 Cargo.lock
 tmp/
+dist/
 out.mp3
 models/
 .claude/
