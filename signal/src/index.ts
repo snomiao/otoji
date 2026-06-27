@@ -44,7 +44,11 @@ interface PeerMeta {
   peerId: string;
   deviceId: string;
   name: string;
+  lastSeen: number;
 }
+
+const STALE_MS = 30000; // prune sockets silent for >30s (client pings every ~10s)
+const ALARM_MS = 15000;
 
 export class RoomDurableObject {
   constructor(
@@ -65,10 +69,11 @@ export class RoomDurableObject {
 
     const { 0: client, 1: server } = new WebSocketPair();
     this.state.acceptWebSocket(server, [peerId]);
-    server.serializeAttachment({ peerId, deviceId, name } satisfies PeerMeta);
+    server.serializeAttachment({ peerId, deviceId, name, lastSeen: Date.now() } satisfies PeerMeta);
 
     server.send(JSON.stringify({ type: "hello", peerId, peers: this.peers(peerId), graph: await this.getGraph() }));
     this.broadcast({ type: "peer-joined", peer: { peerId, deviceId, name } }, peerId);
+    await this.ensureAlarm();
 
     return new Response(null, { status: 101, webSocket: client });
   }
@@ -76,6 +81,9 @@ export class RoomDurableObject {
   async webSocketMessage(ws: WebSocket, message: string | ArrayBuffer): Promise<void> {
     const self = ws.deserializeAttachment() as PeerMeta | null;
     if (!self || typeof message !== "string") return;
+
+    // Liveness: refresh lastSeen on any inbound message (incl. heartbeat pings).
+    ws.serializeAttachment({ ...self, lastSeen: Date.now() } satisfies PeerMeta);
 
     let msg: any;
     try {
@@ -151,5 +159,31 @@ export class RoomDurableObject {
 
   private async getGraph(): Promise<unknown> {
     return (await this.state.storage.get("graph")) ?? null;
+  }
+
+  private async ensureAlarm(): Promise<void> {
+    if ((await this.state.storage.getAlarm()) == null) {
+      await this.state.storage.setAlarm(Date.now() + ALARM_MS);
+    }
+  }
+
+  // Prune ghost sockets: clients that dropped without a clean close stop sending
+  // heartbeats; close them and broadcast peer-left so devices show offline.
+  async alarm(): Promise<void> {
+    const now = Date.now();
+    for (const ws of this.state.getWebSockets()) {
+      const a = ws.deserializeAttachment() as PeerMeta | null;
+      if (a && now - a.lastSeen > STALE_MS) {
+        try {
+          ws.close(1001, "stale");
+        } catch {
+          /* already gone */
+        }
+        this.broadcast({ type: "peer-left", peerId: a.peerId, deviceId: a.deviceId }, a.peerId);
+      }
+    }
+    if (this.state.getWebSockets().length > 0) {
+      await this.state.storage.setAlarm(now + ALARM_MS);
+    }
   }
 }

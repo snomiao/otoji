@@ -19,6 +19,7 @@ export class SignalingClient {
   private closedByUser = false;
   private attempt = 0;
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+  private heartbeat: ReturnType<typeof setInterval> | null = null;
   peerId: string | null = null;
 
   constructor(
@@ -48,6 +49,9 @@ export class SignalingClient {
     ws.onopen = () => {
       this.attempt = 0;
       this.emit("open", {});
+      // Heartbeat so the server can detect & prune us if we drop uncleanly.
+      if (this.heartbeat) clearInterval(this.heartbeat);
+      this.heartbeat = setInterval(() => this.send({ type: "ping" }), 10000);
     };
     ws.onmessage = (ev) => {
       let msg: any;
@@ -60,6 +64,7 @@ export class SignalingClient {
       this.emit(msg.type, msg);
     };
     ws.onclose = () => {
+      if (this.heartbeat) clearInterval(this.heartbeat);
       this.emit("close", {});
       if (this.closedByUser) return;
       this.attempt += 1;
