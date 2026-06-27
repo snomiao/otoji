@@ -37,6 +37,7 @@ export interface RuntimeHooks {
   onLevel?: (nodeId: string, level: SttLevel) => void;
   onSegment?: (nodeId: string) => void; // a mic node produced a VAD segment
   onRecognized?: (nodeId: string, text: string) => void; // an STT node finished (text may be empty)
+  onNodeBusy?: (nodeId: string, busy: boolean) => void; // node started/finished processing
   onSink?: (nodeId: string, tr: TranscriptMsg) => void;
   onStatus?: (s: string) => void;
   onError?: (e: Error) => void;
@@ -175,12 +176,15 @@ export class GraphRuntime {
         input: (_port, msg) => {
           const seg = msg as SegmentMsg;
           chain = chain.then(async () => {
+            this.hooks.onNodeBusy?.(id, true);
             try {
               const text = await sttRecognize(seg.samples, modelId);
               this.hooks.onRecognized?.(id, text);
               this.emit(id, "out", { text, audio: seg } as TranscriptMsg);
             } catch (e) {
               this.hooks.onError?.(e instanceof Error ? e : new Error(String(e)));
+            } finally {
+              this.hooks.onNodeBusy?.(id, false);
             }
           });
         },

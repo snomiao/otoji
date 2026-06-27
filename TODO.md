@@ -126,8 +126,29 @@
 - [x] **Auto-run** (no Run button): the runtime auto-(re)starts when this device
       owns nodes and the graph changes; Pause/Resume toggle.
 - [x] Visualization tabs (Graph/Network/Timeline), animated typed edges, data badges.
-- [ ] (M5) opus-on-wire, **idle/ghost peer timeout in the DO** (stale sockets linger),
-      peer drop/rejoin during run, backpressure/ordering, TURN.
+- [x] **Ghost-peer cleanup**: client heartbeat (10s) + DO alarm prunes sockets
+      silent >30s (broadcasts peer-left).
+- [ ] (M5) opus-on-wire, peer drop/rejoin during run, backpressure/ordering, TURN.
+
+### Node introspection — live per-node previews (Phase 1+2 ✅)
+- [x] Local ephemeral `LiveStore` keyed by nodeId (NOT in the DO-synced graph);
+      high-rate levels via rAF (no re-render), low-rate text/busy via
+      useSyncExternalStore. Fed by runtime hooks (onLevel/onRecognized/onNodeBusy/onSink).
+- [x] Per-node previews in `VoiceNode`: mic-vad rolling waveform (`NodeMicPreview`),
+      stt/sink last-3 sentences, stt busy dot.
+- [x] **Per-device show/hide** preview toggle (👁), local-only (`lib/prefs.ts`).
+- [ ] (Phase 3) formalize hooks; (Phase 4) **polish node** = on-device LLM
+      (WebLLM/WebGPU, Qwen2.5-0.5B/1.5B, gated, never blocks STT path).
+
+### Device roles + perspective network (next)
+- Roles map onto node ownership: **mic** (owns mic-vad), **model provider**
+  (owns stt/polish; can be headless/beefy), **viewer** (owns sink to receive
+  transcripts). Add **capabilities in presence** (`hasMic`, `canCompute`, `role`)
+  for smart auto-assignment ("+ Pipeline" distributes across roles) + gating
+  (don't assign mic-vad to a device with no mic). Manual assignment stays.
+- **Egocentric Network view**: "I send `voice segments` → `laptop` for `STT`;
+  results → `viewer`" — render the cross-device links from *my* perspective
+  (what I send/receive, to/from whom, for what help).
 
 ### M5 — Future / hardening
 - [ ] Cloudflare TURN for symmetric-NAT / cross-network reliability.

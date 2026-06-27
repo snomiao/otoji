@@ -1,8 +1,11 @@
-import React, { useContext } from "react";
+import React, { useContext, useState } from "react";
 import { Handle, Position, type NodeProps } from "@xyflow/react";
 import { NODE_SPECS, type NodeType, type PortType } from "../graph/model";
 import { GraphContext } from "./graph-context";
 import { SENSEVOICE_MODELS, DEFAULT_SENSEVOICE_MODEL } from "../providers/stt/sensevoice-models";
+import { useNodeLive } from "./useNodeLive";
+import { NodeMicPreview } from "./NodeMicPreview";
+import { isPreviewShown, setPreviewShown } from "../lib/prefs";
 
 export interface DeviceOpt {
   deviceId: string;
@@ -25,11 +28,14 @@ const PORT_COLOR: Record<PortType, string> = {
 
 export function VoiceNode({ id, data }: NodeProps) {
   const d = data as VoiceNodeData;
-  const { devices, onAssign, onConfig, counts } = useContext(GraphContext);
+  const { devices, onAssign, onConfig, counts, live } = useContext(GraphContext);
   const spec = NODE_SPECS[d.voiceType];
   const assigned = devices.find((x) => x.deviceId === d.device);
   const count = counts[id] ?? 0;
   const model = ((d as any).config?.model as string | undefined) ?? DEFAULT_SENSEVOICE_MODEL;
+  const { texts, busy } = useNodeLive(live, id);
+  const [shown, setShown] = useState(() => isPreviewShown(id));
+  const toggleShown = () => { const v = !shown; setShown(v); setPreviewShown(id, v); };
 
   return (
     <div
@@ -42,11 +48,23 @@ export function VoiceNode({ id, data }: NodeProps) {
         boxShadow: "0 1px 3px rgba(0,0,0,0.08)",
       }}
     >
-      <div style={{ padding: "6px 10px", borderBottom: "1px solid #edf2f7", fontWeight: 600, display: "flex", justifyContent: "space-between", gap: 6 }}>
-        <span>{spec.label}</span>
-        {count > 0 && (
-          <span style={{ fontSize: 11, color: "#2b6cb0", background: "#ebf4ff", borderRadius: 8, padding: "0 6px" }}>▤ {count}</span>
-        )}
+      <div style={{ padding: "6px 10px", borderBottom: "1px solid #edf2f7", fontWeight: 600, display: "flex", justifyContent: "space-between", gap: 6, alignItems: "center" }}>
+        <span style={{ display: "flex", gap: 5, alignItems: "center" }}>
+          {busy && <span title="processing" style={{ width: 7, height: 7, borderRadius: 4, background: "#dd6b20", display: "inline-block" }} />}
+          {spec.label}
+        </span>
+        <span style={{ display: "flex", gap: 6, alignItems: "center" }}>
+          {count > 0 && (
+            <span style={{ fontSize: 11, color: "#2b6cb0", background: "#ebf4ff", borderRadius: 8, padding: "0 6px" }}>▤ {count}</span>
+          )}
+          <button
+            onClick={toggleShown}
+            title={shown ? "hide preview" : "show preview"}
+            style={{ fontSize: 10, border: "none", background: "transparent", cursor: "pointer", color: "#a0aec0" }}
+          >
+            {shown ? "👁" : "🚫"}
+          </button>
+        </span>
       </div>
       <div style={{ padding: "6px 10px" }}>
         <label style={{ display: "flex", gap: 6, alignItems: "center", color: "#718096" }}>
@@ -87,6 +105,21 @@ export function VoiceNode({ id, data }: NodeProps) {
           <div style={{ color: "#c05621", fontSize: 10, marginTop: 2 }}>● {assigned.name} offline</div>
         )}
       </div>
+
+      {shown && (d.voiceType === "mic-vad" || texts.length > 0) && (
+        <div style={{ padding: "0 10px 8px" }}>
+          {d.voiceType === "mic-vad" && <NodeMicPreview live={live} nodeId={id} width={150} height={28} />}
+          {(d.voiceType === "stt" || d.voiceType === "sink") && (
+            <div style={{ fontSize: 11, color: "#4a5568", lineHeight: 1.35 }}>
+              {texts.map((t, i) => (
+                <div key={i} style={{ opacity: 1 - i * 0.3, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", maxWidth: 150 }}>
+                  {t}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
 
       {spec.inputs.map((p, i) => (
         <Handle

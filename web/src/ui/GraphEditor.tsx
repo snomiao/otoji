@@ -17,6 +17,7 @@ import { PeerMesh } from "../net/peers";
 import { VoiceNode, type DeviceOpt } from "./VoiceNode";
 import { GraphContext } from "./graph-context";
 import { GraphRuntime, nodeOwner, type TranscriptMsg } from "../graph/runtime";
+import { LiveStore } from "../graph/live-store";
 import { PeerMeshTransport } from "../graph/mesh-transport";
 import { RecordingPlayer, type Recording } from "./RecordingPlayer";
 import { computePeaks } from "../lib/peaks";
@@ -106,6 +107,7 @@ function Editor({ initialRoom }: { initialRoom?: string }) {
   const versionRef = useRef(0);
   const activityRef = useRef({ segments: 0, stt: 0 });
   const micLevelRef = useRef(0);
+  const liveRef = useRef(new LiveStore());
   const nameCacheRef = useRef<Record<string, string>>({});
   const nodesRef = useRef(nodes);
   const edgesRef = useRef(edges);
@@ -348,14 +350,18 @@ function Editor({ initialRoom }: { initialRoom?: string }) {
       return;
     }
     activityRef.current = { segments: 0, stt: 0 };
+    liveRef.current.reset();
+    const live = liveRef.current;
     const rt = new GraphRuntime(graph, {
       self: { myId: myDeviceId, deviceIds: onlineRef.current, transport },
       onStatus: (s) => setRunStatus(s),
       onError: (e) => setRunStatus(`error: ${e.message}`),
-      onLevel: (_id, l) => { micLevelRef.current = l.rms; },
+      onLevel: (id, l) => { micLevelRef.current = l.rms; live.pushLevel(id, l); },
       onSegment: () => { activityRef.current.segments++; },
-      onRecognized: () => { activityRef.current.stt++; },
+      onRecognized: (id, text) => { activityRef.current.stt++; if (isReadableTranscript(text)) live.pushText(id, text); },
+      onNodeBusy: (id, b) => live.setBusy(id, b),
       onSink: (sinkId, tr: TranscriptMsg) => {
+        if (isReadableTranscript(tr.text)) live.pushText(sinkId, tr.text);
         if (!isReadableTranscript(tr.text)) return;
         const rec: Recording = {
           id: `g-${recCounter.current++}`,
@@ -429,7 +435,10 @@ function Editor({ initialRoom }: { initialRoom?: string }) {
 
   const currentGraph = useMemo(() => fromRF(nodes, edges, versionRef.current), [nodes, edges]);
 
-  const ctx = useMemo(() => ({ devices, onAssign, onConfig, counts }), [devices, onAssign, onConfig, counts]);
+  const ctx = useMemo(
+    () => ({ devices, onAssign, onConfig, counts, live: liveRef.current }),
+    [devices, onAssign, onConfig, counts],
+  );
 
   if (!joined) {
     return (
