@@ -16,7 +16,7 @@ import { SignalingClient, type Peer } from "../net/signaling";
 import { PeerMesh } from "../net/peers";
 import { VoiceNode, type DeviceOpt } from "./VoiceNode";
 import { GraphContext } from "./graph-context";
-import { GraphRuntime, type TranscriptMsg } from "../graph/runtime";
+import { GraphRuntime, nodeOwner, type TranscriptMsg } from "../graph/runtime";
 import { PeerMeshTransport } from "../graph/mesh-transport";
 import { RecordingPlayer, type Recording } from "./RecordingPlayer";
 import { computePeaks } from "../lib/peaks";
@@ -87,6 +87,8 @@ function Editor({ initialRoom }: { initialRoom?: string }) {
   const [running, setRunning] = useState(false);
   const [runStatus, setRunStatus] = useState("");
   const [sinkRecs, setSinkRecs] = useState<Recording[]>([]);
+  const [peerStates, setPeerStates] = useState<Record<string, string>>({});
+  const [, setTick] = useState(0); // periodic refresh for live counters
 
   const sigRef = useRef<SignalingClient | null>(null);
   const meshRef = useRef<PeerMesh | null>(null);
@@ -102,6 +104,12 @@ function Editor({ initialRoom }: { initialRoom?: string }) {
   edgesRef.current = edges;
 
   useEffect(() => () => { meshRef.current?.destroy(); sigRef.current?.close(); }, []);
+
+  useEffect(() => {
+    if (!joined) return;
+    const t = setInterval(() => setTick((x) => x + 1), 1000);
+    return () => clearInterval(t);
+  }, [joined]);
 
   const broadcast = useCallback((ns: Node[], es: Edge[]) => {
     versionRef.current += 1;
@@ -136,6 +144,7 @@ function Editor({ initialRoom }: { initialRoom?: string }) {
       meshRef.current?.destroy();
       const mesh = new PeerMesh(sig, m.peerId, {
         onData: (_peer, _label, data) => transportRef.current?.handleData(data),
+        onPeerState: (id, st) => setPeerStates((p) => ({ ...p, [id]: st })),
       });
       meshRef.current = mesh;
       if (!transportRef.current) transportRef.current = new PeerMeshTransport(mesh);
@@ -333,19 +342,56 @@ function Editor({ initialRoom }: { initialRoom?: string }) {
             <Controls />
           </ReactFlow>
           </div>
-          {(running || sinkRecs.length > 0) && (
-            <div style={{ width: 340, borderLeft: "1px solid #e2e8f0", overflow: "auto", padding: "8px 12px" }}>
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                <strong style={{ fontSize: 13 }}>Sink output ({sinkRecs.length})</strong>
-                {sinkRecs.length > 0 && <button onClick={() => setSinkRecs([])} style={{ fontSize: 11 }}>Clear</button>}
+          <div style={{ width: 340, borderLeft: "1px solid #e2e8f0", overflow: "auto", padding: "8px 12px" }}>
+            <strong style={{ fontSize: 13 }}>Network</strong>
+            <div style={{ fontSize: 12, color: "#4a5568", margin: "4px 0 8px" }}>
+              {devices.map((dv) => {
+                const st = dv.me ? "this device" : peerStates[dv.peerId] ?? "connecting…";
+                const ok = dv.me || st === "connected";
+                return (
+                  <div key={dv.peerId} style={{ display: "flex", justifyContent: "space-between" }}>
+                    <span>{dv.name}{dv.me ? " (me)" : ""}</span>
+                    <span style={{ color: ok ? "#2f855a" : "#c05621" }}>{st}</span>
+                  </div>
+                );
+              })}
+              {(() => {
+                const t = transportRef.current;
+                return t ? (
+                  <div style={{ color: "#a0aec0", marginTop: 4 }}>
+                    frames sent {t.sent} · recv {t.recv}{t.dropped ? ` · dropped ${t.dropped}` : ""}
+                  </div>
+                ) : null;
+              })()}
+            </div>
+            <strong style={{ fontSize: 13 }}>Nodes</strong>
+            <div style={{ fontSize: 12, color: "#4a5568", margin: "4px 0 8px" }}>
+              {nodes.map((n) => {
+                const owner = nodeOwner(
+                  { id: n.id, type: (n.data as any).voiceType, device: ((n.data as any).device ?? null), pos: { x: 0, y: 0 } },
+                  devices.map((d) => d.peerId),
+                );
+                const ownerName = owner === myId ? "me" : devices.find((d) => d.peerId === owner)?.name ?? "—";
+                return (
+                  <div key={n.id} style={{ display: "flex", justifyContent: "space-between" }}>
+                    <span>{(n.data as any).voiceType}</span>
+                    <span style={{ color: owner === myId ? "#2b6cb0" : "#718096" }}>{ownerName}</span>
+                  </div>
+                );
+              })}
+            </div>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+              <strong style={{ fontSize: 13 }}>Sink output ({sinkRecs.length})</strong>
+              {sinkRecs.length > 0 && <button onClick={() => setSinkRecs([])} style={{ fontSize: 11 }}>Clear</button>}
               </div>
               {sinkRecs.length === 0 ? (
-                <p style={{ color: "#a0aec0", fontSize: 12 }}>Running — speak to produce transcripts.</p>
+                <p style={{ color: "#a0aec0", fontSize: 12 }}>
+                  {running ? "Running — speak to produce transcripts." : "Run the graph to produce transcripts."}
+                </p>
               ) : (
                 sinkRecs.map((r, i) => <RecordingPlayer key={r.id} rec={r} index={sinkRecs.length - 1 - i} />)
               )}
             </div>
-          )}
         </div>
       </div>
     </GraphContext.Provider>

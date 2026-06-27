@@ -9,6 +9,9 @@ import type { PeerMesh } from "../net/peers";
 export class PeerMeshTransport implements Transport {
   private receiver: ((f: EdgeFrame) => void) | null = null;
   private mesh: PeerMesh | null;
+  sent = 0;
+  recv = 0;
+  dropped = 0; // sends that failed because no open channel to the target
 
   constructor(mesh: PeerMesh | null = null) {
     this.mesh = mesh;
@@ -21,7 +24,9 @@ export class PeerMeshTransport implements Transport {
   }
 
   send(toDevice: string, frame: EdgeFrame): void {
-    this.mesh?.send(toDevice, JSON.stringify(frame));
+    const ok = this.mesh?.send(toDevice, JSON.stringify(frame)) ?? false;
+    if (ok) this.sent++;
+    else this.dropped++;
   }
 
   setReceiver(cb: (f: EdgeFrame) => void): void {
@@ -32,7 +37,10 @@ export class PeerMeshTransport implements Transport {
   handleData(data: string): void {
     try {
       const f = JSON.parse(data);
-      if (f?.kind === "edge") this.receiver?.(f as EdgeFrame);
+      if (f?.kind === "edge") {
+        this.recv++;
+        this.receiver?.(f as EdgeFrame);
+      }
     } catch {
       /* not an edge frame */
     }
