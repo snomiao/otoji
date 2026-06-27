@@ -86,11 +86,13 @@
       loopback (ping↔pong over data channel, both pcs `connected`) passes.
 - [x] Codex review: destroy stale mesh + unregister handlers on reconnect.
 
-### M2 — Graph editor UI (React Flow)
-- [ ] Add `@xyflow/react`; node palette (Mic+VAD, STT, Sink) with typed handles.
-- [ ] Per-device subgraph view + network view (devices + inter-device links).
-- [ ] Create/move/connect/delete; type-checked edges; assign node → device.
-- [ ] Bind graph to DO: load on join, edit → patch → broadcast → re-render.
+### M2 — Graph editor UI (React Flow) ✅ DONE
+- [x] Add `@xyflow/react`; node palette (Mic+VAD, STT, Sink) with typed handles. `graph/model.ts`, `ui/VoiceNode.tsx`
+- [x] Create/move/connect/delete; type-checked edges (`canConnect`); assign node → device (per-node selector).
+- [x] Bind graph to DO: load on join (hello/graph-get), edit → `patchGraph` → broadcast → re-render. `ui/GraphEditor.tsx` (`?graph=1`)
+- [x] Verified live: 3 nodes added + device-assigned, persisted to DO (probe read back version 3, 3 nodes).
+- [x] Codex review: committed valid `web/pnpm-workspace.yaml` (allowBuilds) so pnpm build/test don't break.
+- [ ] (deferred) dedicated network view of devices + inter-device links (per-device grouping shown via node device labels for now).
 
 ### M3 — Node runtime (local execution)
 - [ ] Node interface: `start/stop`, typed input/output ports, config.

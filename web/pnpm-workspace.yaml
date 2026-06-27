@@ -1,0 +1,5 @@
+# Approve build scripts for these deps so pnpm v11 doesn't emit
+# ERR_PNPM_IGNORED_BUILDS (and stop auto-recreating a placeholder stub).
+allowBuilds:
+  esbuild: true
+  protobufjs: true
