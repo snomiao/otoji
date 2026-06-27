@@ -15,6 +15,10 @@ import "@xyflow/react/dist/style.css";
 import { SignalingClient, type Peer } from "../net/signaling";
 import { VoiceNode, type DeviceOpt } from "./VoiceNode";
 import { GraphContext } from "./graph-context";
+import { GraphRuntime, type TranscriptMsg } from "../graph/runtime";
+import { RecordingPlayer, type Recording } from "./RecordingPlayer";
+import { computePeaks } from "../lib/peaks";
+import { isReadableTranscript } from "../lib/text";
 import {
   NODE_SPECS,
   canConnect,
@@ -76,7 +80,13 @@ function Editor() {
   const [nodes, setNodes, onNodesChange] = useNodesState<Node>([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([]);
 
+  const [running, setRunning] = useState(false);
+  const [runStatus, setRunStatus] = useState("");
+  const [sinkRecs, setSinkRecs] = useState<Recording[]>([]);
+
   const sigRef = useRef<SignalingClient | null>(null);
+  const runtimeRef = useRef<GraphRuntime | null>(null);
+  const recCounter = useRef(0);
   const versionRef = useRef(0);
   const nodesRef = useRef(nodes);
   const edgesRef = useRef(edges);
@@ -182,6 +192,44 @@ function Editor() {
     setTimeout(() => broadcast(nodesRef.current, edgesRef.current), 0);
   }, [broadcast]);
 
+  const run = useCallback(async () => {
+    if (runtimeRef.current) return;
+    const graph = fromRF(nodesRef.current, edgesRef.current, versionRef.current);
+    const rt = new GraphRuntime(graph, {
+      onStatus: (s) => setRunStatus(s),
+      onError: (e) => setRunStatus(`error: ${e.message}`),
+      onSink: (_id, tr: TranscriptMsg) => {
+        if (!isReadableTranscript(tr.text)) return;
+        const rec: Recording = {
+          id: `g-${recCounter.current++}`,
+          at: Date.now(),
+          durationMs: tr.audio.durationMs,
+          text: tr.text,
+          peaks: computePeaks(tr.audio.samples, 400),
+          sampleRate: tr.audio.sampleRate,
+          samples: tr.audio.samples,
+        };
+        setSinkRecs((prev) => [rec, ...prev].slice(0, 100));
+      },
+    });
+    runtimeRef.current = rt;
+    setRunning(true);
+    try {
+      await rt.start();
+    } catch (e: any) {
+      setRunStatus(`error: ${e?.message ?? e}`);
+    }
+  }, []);
+
+  const stopRun = useCallback(async () => {
+    await runtimeRef.current?.stop();
+    runtimeRef.current = null;
+    setRunning(false);
+    setRunStatus("stopped");
+  }, []);
+
+  useEffect(() => () => { runtimeRef.current?.stop(); }, []);
+
   const ctx = useMemo(() => ({ devices, onAssign }), [devices, onAssign]);
 
   if (!joined) {
@@ -211,8 +259,17 @@ function Editor() {
           {(Object.keys(NODE_SPECS) as NodeType[]).map((t) => (
             <button key={t} onClick={() => addNode(t)} style={{ fontSize: 12 }}>+ {NODE_SPECS[t].label}</button>
           ))}
+          <span style={{ marginLeft: "auto", display: "flex", gap: 8, alignItems: "center" }}>
+            {runStatus && <span style={{ fontSize: 12, color: "#718096" }}>{runStatus}</span>}
+            {running ? (
+              <button onClick={stopRun} style={{ fontSize: 12 }}>■ Stop</button>
+            ) : (
+              <button onClick={run} style={{ fontSize: 12 }}>▶ Run</button>
+            )}
+          </span>
         </div>
-        <div style={{ flex: 1 }}>
+        <div style={{ flex: 1, display: "flex", minHeight: 0 }}>
+          <div style={{ flex: 1 }}>
           <ReactFlow
             nodes={nodes}
             edges={edges}
@@ -229,6 +286,20 @@ function Editor() {
             <Background />
             <Controls />
           </ReactFlow>
+          </div>
+          {(running || sinkRecs.length > 0) && (
+            <div style={{ width: 340, borderLeft: "1px solid #e2e8f0", overflow: "auto", padding: "8px 12px" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                <strong style={{ fontSize: 13 }}>Sink output ({sinkRecs.length})</strong>
+                {sinkRecs.length > 0 && <button onClick={() => setSinkRecs([])} style={{ fontSize: 11 }}>Clear</button>}
+              </div>
+              {sinkRecs.length === 0 ? (
+                <p style={{ color: "#a0aec0", fontSize: 12 }}>Running — speak to produce transcripts.</p>
+              ) : (
+                sinkRecs.map((r, i) => <RecordingPlayer key={r.id} rec={r} index={sinkRecs.length - 1 - i} />)
+              )}
+            </div>
+          )}
         </div>
       </div>
     </GraphContext.Provider>

@@ -2,6 +2,7 @@ import type { SttProvider, SttSegment, SttSession, SttLevel } from "../types";
 import { computeFbank, SENSEVOICE_FBANK } from "../../lib/fbank";
 import { parseOnnxMetadata, parseFloatList } from "../../lib/onnx-meta";
 import { backoffDelay, sleep } from "../../lib/backoff";
+import { startMicVad, MIC_VAD_SR } from "../../lib/mic-vad";
 import {
   getSenseVoiceModel,
   DEFAULT_SENSEVOICE_MODEL,
@@ -10,7 +11,6 @@ import {
 
 const CACHE_NAME = "otoji-models-v1";
 const ORT_VERSION = "1.27.0";
-const TARGET_SR = 16000;
 
 export interface LoadProgress {
   stage: "fetch-model" | "fetch-tokens" | "init" | "ready";
@@ -275,30 +275,10 @@ export function warmSenseVoice(modelId?: string, onProgress?: (p: LoadProgress) 
 // Mic capture + energy VAD -> SttProvider
 // ---------------------------------------------------------------------------
 
-const VAD_WIN = 480; // 30 ms @ 16k
-const SILENCE_WINS = 20; // ~600 ms trailing silence closes an utterance
-const PREROLL = TARGET_SR * 0.3; // keep 300 ms before speech onset
-const MAX_UTTER = TARGET_SR * 20; // 20 s hard cap
-const RMS_THRESHOLD = 0.012;
-
-function downsample(buffer: Float32Array, srcRate: number): Float32Array {
-  if (srcRate === TARGET_SR) return buffer;
-  const ratio = srcRate / TARGET_SR;
-  const out = new Float32Array(Math.round(buffer.length / ratio));
-  let oi = 0;
-  let bi = 0;
-  while (oi < out.length) {
-    const next = Math.round((oi + 1) * ratio);
-    let acc = 0;
-    let cnt = 0;
-    for (let i = bi; i < next && i < buffer.length; i++) {
-      acc += buffer[i];
-      cnt++;
-    }
-    out[oi++] = cnt ? acc / cnt : 0;
-    bi = next;
-  }
-  return out;
+/** Recognize one utterance using the (memoized) engine for a model id. */
+export async function sttRecognize(samples: Float32Array, modelId?: string): Promise<string> {
+  const engine = await SenseVoiceEngine.load(getSenseVoiceModel(modelId));
+  return engine.recognize(samples);
 }
 
 export class SenseVoiceSttProvider implements SttProvider {
@@ -323,107 +303,31 @@ export class SenseVoiceSttProvider implements SttProvider {
       throw e;
     }
 
-    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-    const AudioCtor: typeof AudioContext =
-      (window as any).AudioContext || (window as any).webkitAudioContext;
-    const audioCtx = new AudioCtor({ sampleRate: TARGET_SR });
-    const srcRate = audioCtx.sampleRate;
-    const source = audioCtx.createMediaStreamSource(stream);
-    const proc = audioCtx.createScriptProcessor(4096, 1, 1);
-
-    let inSpeech = false;
-    let silence = 0;
-    let voiced = 0;
-    let segment: number[] = [];
-    let preroll: number[] = [];
-    let carry: number[] = [];
     let recogChain: Promise<void> = Promise.resolve();
-
-    const flush = () => {
-      if (segment.length < VAD_WIN) {
-        segment = [];
-        return;
-      }
-      const samples = Float32Array.from(segment);
-      segment = [];
-      onSegment({ text: "", final: false }); // clear interim marker
-      const audio = { samples, sampleRate: TARGET_SR, durationMs: (samples.length / TARGET_SR) * 1000 };
-      recogChain = recogChain.then(async () => {
-        try {
-          const text = await engine.recognize(samples);
-          // Emit the recording even when ASR returns empty, so nothing is lost.
-          onSegment({ text, final: true, audio });
-        } catch (e: any) {
-          onSegment({ text: "", final: true, audio });
-          onError?.(e instanceof Error ? e : new Error(String(e)));
-        }
-      });
-    };
-
-    proc.onaudioprocess = (e) => {
-      const ds = downsample(new Float32Array(e.inputBuffer.getChannelData(0)), srcRate);
-      for (let i = 0; i < ds.length; i++) carry.push(ds[i]);
-
-      while (carry.length >= VAD_WIN) {
-        const win = carry.splice(0, VAD_WIN);
-        let sum = 0;
-        for (let i = 0; i < VAD_WIN; i++) sum += win[i] * win[i];
-        const rms = Math.sqrt(sum / VAD_WIN);
-        const active = rms > RMS_THRESHOLD;
-        onLevel?.({ rms, active: inSpeech || active });
-
-        if (!inSpeech) {
-          for (const s of win) preroll.push(s);
-          if (preroll.length > PREROLL) preroll.splice(0, preroll.length - PREROLL);
-          if (active) {
-            if (++voiced >= 2) {
-              inSpeech = true;
-              segment = preroll.slice();
-              preroll = [];
-              silence = 0;
-              onSegment({ text: "…", final: false });
-            }
-          } else {
-            voiced = 0;
+    const handle = await startMicVad({
+      onLevel: (l) => onLevel?.(l),
+      onSpeechStart: () => onSegment({ text: "…", final: false }),
+      onSegment: (samples, durationMs) => {
+        onSegment({ text: "", final: false }); // clear interim marker
+        const audio = { samples, sampleRate: MIC_VAD_SR, durationMs };
+        recogChain = recogChain.then(async () => {
+          try {
+            const text = await engine.recognize(samples);
+            onSegment({ text, final: true, audio });
+          } catch (e: any) {
+            onSegment({ text: "", final: true, audio });
+            onError?.(e instanceof Error ? e : new Error(String(e)));
           }
-        } else {
-          for (const s of win) segment.push(s);
-          if (active) {
-            silence = 0;
-          } else if (++silence >= SILENCE_WINS) {
-            inSpeech = false;
-            voiced = 0;
-            flush();
-          }
-          if (segment.length >= MAX_UTTER) {
-            inSpeech = false;
-            voiced = 0;
-            silence = 0;
-            flush();
-          }
-        }
-      }
-    };
+        });
+      },
+    });
 
-    source.connect(proc);
-    proc.connect(audioCtx.destination);
-
-    let stopped = false;
     return {
       sendAudio() {
         /* self-capturing; not used */
       },
       stop: async () => {
-        if (stopped) return;
-        stopped = true;
-        if (inSpeech) {
-          inSpeech = false;
-          flush();
-        }
-        proc.disconnect();
-        source.disconnect();
-        stream.getTracks().forEach((t) => t.stop());
-        await audioCtx.close().catch(() => {});
+        await handle.stop();
         await recogChain;
       },
     };

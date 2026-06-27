@@ -94,11 +94,17 @@
 - [x] Codex review: committed valid `web/pnpm-workspace.yaml` (allowBuilds) so pnpm build/test don't break.
 - [ ] (deferred) dedicated network view of devices + inter-device links (per-device grouping shown via node device labels for now).
 
-### M3 — Node runtime (local execution)
-- [ ] Node interface: `start/stop`, typed input/output ports, config.
-- [ ] Wrap existing pipeline as nodes: Mic+VAD (from `sensevoice.ts` capture/VAD),
-      SenseVoice STT (recognize), Transcript+Recordings sink (current UI).
-- [ ] Run a whole graph on a single device first (no WebRTC) end-to-end.
+### M3 — Node runtime (local execution) ✅ DONE
+- [x] Extracted reusable mic+VAD into `lib/mic-vad.ts` (provider now reuses it);
+      `sttRecognize()` exported from `sensevoice.ts`.
+- [x] `graph/runtime.ts`: `GraphRuntime` wires node runners per edges
+      (mic-vad source, stt transform, sink) + testable `buildAdjacency`.
+- [x] Run/Stop + sink-output panel in `GraphEditor` (transcripts → recordings,
+      readable-filtered).
+- [x] Verified live: seeded mic→stt→sink graph, hit Run → real audio produced
+      4 sink recordings with waveforms end-to-end (single device, no WebRTC).
+- [x] Codex review: abort run if model load fails; STT `stop()` drains its
+      chain (stop sources first) so the final utterance isn't lost.
 
 ### M4 — Cross-device chaining (**v1 goal**)
 - [ ] Realize cross-device edges as data channels; serialize `segment`/`text` frames.
