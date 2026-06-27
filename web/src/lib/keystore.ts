@@ -13,6 +13,10 @@ export interface OtojiKeys {
   ANTHROPIC_MODEL?: string;
   GOOGLE_OAUTH_TOKEN?: string;
   GOOGLE_DOC_ID?: string;
+  /** Selected STT engine id (defaults to "sensevoice"). */
+  STT_PROVIDER?: string;
+  /** Selected SenseVoice ONNX model variant id. */
+  SENSEVOICE_MODEL?: string;
 }
 
 export type KeyName = keyof OtojiKeys;
@@ -53,6 +57,8 @@ export class KeyStore {
       "ANTHROPIC_MODEL",
       "GOOGLE_OAUTH_TOKEN",
       "GOOGLE_DOC_ID",
+      "STT_PROVIDER",
+      "SENSEVOICE_MODEL",
     ];
     const out: OtojiKeys = {};
     for (const n of names) {

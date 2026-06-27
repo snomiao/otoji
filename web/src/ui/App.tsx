@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { browserKeyStore, type OtojiKeys } from "../lib/keystore";
 import { ProviderRouter } from "../providers/router";
 import type { PolishProvider, SttProvider, SttSession, TtsProvider } from "../providers/types";
@@ -6,6 +6,9 @@ import { IflytekRtasrProvider } from "../providers/stt/iflytek_rtasr";
 import { OpenAiWhisperProvider } from "../providers/stt/openai_whisper";
 import { WebSpeechSttProvider } from "../providers/stt/webspeech";
 import { TransformersWhisperProvider } from "../providers/stt/transformers";
+import { SenseVoiceSttProvider, warmSenseVoice, type LoadProgress } from "../providers/stt/sensevoice";
+import { SENSEVOICE_MODELS, DEFAULT_SENSEVOICE_MODEL } from "../providers/stt/sensevoice-models";
+import { backoffDelay, sleep } from "../lib/backoff";
 import { IflytekTtsProvider } from "../providers/tts/iflytek_tts";
 import { OpenAiTtsProvider } from "../providers/tts/openai_tts";
 import { SpeechSynthesisTtsProvider } from "../providers/tts/speechsynthesis";
@@ -14,6 +17,7 @@ import { NoopPolishProvider } from "../providers/polish/noop";
 
 function buildRouters(keys: OtojiKeys) {
   const stt: SttProvider[] = [
+    new SenseVoiceSttProvider(keys.SENSEVOICE_MODEL ?? DEFAULT_SENSEVOICE_MODEL),
     new IflytekRtasrProvider({ appId: keys.IFLYTEK_APP_ID ?? "", apiKey: keys.IFLYTEK_API_KEY ?? "" }),
     new OpenAiWhisperProvider({ apiKey: keys.OPENAI_API_KEY ?? "", baseUrl: keys.OPENAI_BASE_URL }),
     new WebSpeechSttProvider(),
@@ -35,7 +39,7 @@ function buildRouters(keys: OtojiKeys) {
     new NoopPolishProvider(),
   ];
   return {
-    stt: new ProviderRouter<SttProvider>(stt),
+    stt: new ProviderRouter<SttProvider>(stt, keys.STT_PROVIDER ?? "sensevoice"),
     tts: new ProviderRouter<TtsProvider>(tts),
     polish: new ProviderRouter<PolishProvider>(polish),
   };
@@ -47,40 +51,95 @@ export function App() {
   const [segments, setSegments] = useState<{ text: string; final: boolean }[]>([]);
   const [partial, setPartial] = useState("");
   const [polished, setPolished] = useState("");
-  const [session, setSession] = useState<SttSession | null>(null);
+  const [listening, setListening] = useState(false);
   const [status, setStatus] = useState<string>("idle");
+  const [modelStatus, setModelStatus] = useState<string>("");
   const [showSettings, setShowSettings] = useState(false);
 
   const routers = useMemo(() => buildRouters(keys), [keys]);
+  const listenRef = useRef(false);
+  const sessionRef = useRef<SttSession | null>(null);
 
   const sttName = routers.stt.pick()?.name ?? "(none)";
   const ttsName = routers.tts.pick()?.name ?? "(none)";
   const polishName = routers.polish.pick()?.name ?? "(none)";
 
-  useEffect(() => () => { session?.stop().catch(() => {}); }, [session]);
+  // Eager default: warm (download + init + cache) the SenseVoice model on load
+  // and whenever the selected model changes, so it's ready instantly.
+  const selectedModel = keys.SENSEVOICE_MODEL ?? DEFAULT_SENSEVOICE_MODEL;
+  useEffect(() => {
+    if ((keys.STT_PROVIDER ?? "sensevoice") !== "sensevoice") return;
+    let cancelled = false;
+    const onProg = (p: LoadProgress) => {
+      if (cancelled) return;
+      if (p.stage === "fetch-model" && p.total) {
+        setModelStatus(`Downloading model… ${((p.received! / p.total) * 100).toFixed(0)}%`);
+      } else if (p.stage === "fetch-tokens") setModelStatus("Downloading tokens…");
+      else if (p.stage === "init") setModelStatus("Initializing recognizer…");
+      else if (p.stage === "ready") setModelStatus("Model ready ✓");
+    };
+    setModelStatus("Loading model…");
+    warmSenseVoice(selectedModel, onProg)
+      .then(() => !cancelled && setModelStatus("Model ready ✓"))
+      .catch((e) => !cancelled && setModelStatus(`Model load failed: ${e.message}`));
+    return () => { cancelled = true; };
+  }, [selectedModel, keys.STT_PROVIDER]);
 
-  async function start() {
-    const prov = routers.stt.pick();
-    if (!prov) { setStatus("no stt provider"); return; }
-    setStatus(`listening via ${prov.name}`);
-    const s = await prov.start(
-      (seg) => {
-        if (seg.final) {
-          setSegments((prev) => [...prev, seg]);
-          setPartial("");
-        } else {
-          setPartial(seg.text);
-        }
-      },
-      (e) => setStatus(`error: ${e.message}`),
-    );
-    setSession(s);
+  useEffect(() => () => { listenRef.current = false; sessionRef.current?.stop().catch(() => {}); }, []);
+
+  // Infinite listen: keep a session alive, auto-restart on error/end with
+  // golden-ratio (φ) exponential backoff.
+  async function startListening() {
+    if (listenRef.current) return;
+    listenRef.current = true;
+    setListening(true);
+    let attempt = 0;
+    while (listenRef.current) {
+      const prov = routers.stt.pick();
+      if (!prov) { setStatus("no stt provider"); break; }
+      try {
+        setStatus(`listening via ${prov.name}`);
+        await new Promise<void>((resolve, reject) => {
+          let settled = false;
+          const done = (fn: () => void) => { if (!settled) { settled = true; fn(); } };
+          prov
+            .start(
+              (seg) => {
+                attempt = 0; // healthy output resets backoff
+                if (seg.final) { setSegments((prev) => [...prev, seg]); setPartial(""); }
+                else setPartial(seg.text);
+              },
+              (e) => done(() => reject(e)),
+            )
+            .then((s) => {
+              sessionRef.current = s;
+              if (!listenRef.current) { s.stop().catch(() => {}); done(resolve); }
+            })
+            .catch((e) => done(() => reject(e)));
+          // resolve only when the user stops (checked via poll below)
+          const poll = setInterval(() => {
+            if (!listenRef.current) { clearInterval(poll); done(resolve); }
+          }, 200);
+        });
+      } catch (e: any) {
+        if (!listenRef.current) break;
+        attempt += 1;
+        const d = backoffDelay(attempt);
+        setStatus(`error: ${e?.message ?? e} — retrying in ${(d / 1000).toFixed(1)}s`);
+        await sleep(d);
+      } finally {
+        await sessionRef.current?.stop().catch(() => {});
+        sessionRef.current = null;
+      }
+    }
+    setListening(false);
+    setStatus("stopped");
   }
 
-  async function stop() {
-    await session?.stop();
-    setSession(null);
-    setStatus("stopped");
+  async function stopListening() {
+    listenRef.current = false;
+    await sessionRef.current?.stop().catch(() => {});
+    sessionRef.current = null;
   }
 
   async function polishAll() {
@@ -115,14 +174,38 @@ export function App() {
         <button onClick={() => setShowSettings((v) => !v)}>Settings</button>
       </header>
       <p style={{ color: "#666" }}>STT: {sttName} · TTS: {ttsName} · Polish: {polishName}</p>
-      <div style={{ display: "flex", gap: 8 }}>
-        {session
-          ? <button onClick={stop}>Stop</button>
-          : <button onClick={start}>Start</button>}
+      <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+        {listening
+          ? <button onClick={stopListening}>Stop</button>
+          : <button onClick={startListening}>Start</button>}
         <button onClick={polishAll} disabled={!segments.length}>Polish</button>
         <button onClick={speak} disabled={!segments.length && !polished}>Speak</button>
+        <label style={{ marginLeft: "auto", fontSize: 12, display: "flex", gap: 6, alignItems: "center" }}>
+          Model:
+          <select
+            value={keys.STT_PROVIDER ?? "sensevoice"}
+            onChange={(e) => saveKeys({ ...keys, STT_PROVIDER: e.target.value })}
+          >
+            {routers.stt.all().map((p) => (
+              <option key={p.id} value={p.id}>{p.name}</option>
+            ))}
+          </select>
+        </label>
+        {(keys.STT_PROVIDER ?? "sensevoice") === "sensevoice" && (
+          <label style={{ fontSize: 12, display: "flex", gap: 6, alignItems: "center" }}>
+            Variant:
+            <select
+              value={selectedModel}
+              onChange={(e) => saveKeys({ ...keys, SENSEVOICE_MODEL: e.target.value })}
+            >
+              {SENSEVOICE_MODELS.map((m) => (
+                <option key={m.id} value={m.id}>{m.name}</option>
+              ))}
+            </select>
+          </label>
+        )}
       </div>
-      <p style={{ color: "#888", fontSize: 12 }}>{status}</p>
+      <p style={{ color: "#888", fontSize: 12 }}>{status}{modelStatus ? ` · ${modelStatus}` : ""}</p>
       <section>
         <h2>Transcript</h2>
         <div data-testid="transcript">

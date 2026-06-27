@@ -26,10 +26,13 @@ export class WebSpeechSttProvider implements SttProvider {
       }
     };
     rec.onerror = (e: any) => onError?.(new Error(e.error ?? "webspeech error"));
+    // Auto-restart on silent end so listening stays continuous (infinite listen).
+    let stopped = false;
+    rec.onend = () => { if (!stopped) { try { rec.start(); } catch { /* already starting */ } } };
     rec.start();
     return {
       sendAudio() { /* not used; webspeech captures mic itself */ },
-      async stop() { rec.stop(); },
+      async stop() { stopped = true; rec.stop(); },
     };
   }
 }
