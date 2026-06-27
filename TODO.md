@@ -77,11 +77,14 @@
       win over the Pages site** (path approach works; subdomain fallback not needed).
 - [x] Deployed via wrangler (SNOLAB); two-peer signaling smoke test passes live.
 
-### M1 — Mesh transport
-- [ ] Signaling client (WS) in web: join/leave, presence, reconnect (φ backoff).
-- [ ] Peer manager: create `RTCPeerConnection` per peer, perfect-negotiation
-      pattern, STUN config; labeled `RTCDataChannel`s per logical edge.
-- [ ] Bare demo: two tabs join a room → data-channel echo + presence list.
+### M1 — Mesh transport ✅ DONE
+- [x] Signaling client (WS) in web: join/leave, presence, reconnect (φ backoff). `net/signaling.ts`
+- [x] Peer manager: `RTCPeerConnection` per peer, perfect-negotiation, STUN,
+      labeled `RTCDataChannel`s. `net/peers.ts`
+- [x] Demo at `?mesh=1` (`ui/MeshPanel.tsx`): join room, presence, broadcast/echo.
+- [x] Verified live: bundled signaling client connects to worker; WebRTC
+      loopback (ping↔pong over data channel, both pcs `connected`) passes.
+- [x] Codex review: destroy stale mesh + unregister handlers on reconnect.
 
 ### M2 — Graph editor UI (React Flow)
 - [ ] Add `@xyflow/react`; node palette (Mic+VAD, STT, Sink) with typed handles.
