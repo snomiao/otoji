@@ -31,6 +31,23 @@ export function computePeaks(samples: Float32Array, buckets: number): Peak[] {
   return out;
 }
 
+/** Pack peaks into a compact Int16Array [min0,max0,min1,max1,...] for storage. */
+export function packPeaks(peaks: Peak[]): Int16Array {
+  const out = new Int16Array(peaks.length * 2);
+  for (let i = 0; i < peaks.length; i++) {
+    out[i * 2] = Math.max(-32768, Math.min(32767, Math.round(peaks[i].min * 32767)));
+    out[i * 2 + 1] = Math.max(-32768, Math.min(32767, Math.round(peaks[i].max * 32767)));
+  }
+  return out;
+}
+
+/** Inverse of packPeaks. */
+export function unpackPeaks(packed: Int16Array): Peak[] {
+  const out: Peak[] = [];
+  for (let i = 0; i < packed.length; i += 2) out.push({ min: packed[i] / 32767, max: packed[i + 1] / 32767 });
+  return out;
+}
+
 /** Encode mono float samples in [-1,1] to a 16-bit PCM WAV Blob (for download). */
 export function samplesToWavBlob(samples: Float32Array, sampleRate: number): Blob {
   const buf = new ArrayBuffer(44 + samples.length * 2);

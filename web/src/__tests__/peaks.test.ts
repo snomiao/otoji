@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { computePeaks, samplesToWavBlob } from "../lib/peaks";
+import { computePeaks, samplesToWavBlob, packPeaks, unpackPeaks } from "../lib/peaks";
 
 describe("computePeaks", () => {
   it("returns min/max per bucket", () => {
@@ -19,6 +19,18 @@ describe("computePeaks", () => {
     const peaks = computePeaks(new Float32Array([0.5, -0.5]), 4);
     expect(peaks).toHaveLength(4);
     expect(peaks.every((p) => p.min <= p.max)).toBe(true);
+  });
+});
+
+describe("pack/unpack peaks", () => {
+  it("round-trips within int16 precision", () => {
+    const peaks = computePeaks(new Float32Array([0, 1, -1, 0.5, -0.25, 0.1]), 3);
+    const back = unpackPeaks(packPeaks(peaks));
+    expect(back).toHaveLength(peaks.length);
+    for (let i = 0; i < peaks.length; i++) {
+      expect(back[i].min).toBeCloseTo(peaks[i].min, 3);
+      expect(back[i].max).toBeCloseTo(peaks[i].max, 3);
+    }
   });
 });
 

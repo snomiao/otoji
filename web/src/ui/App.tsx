@@ -12,6 +12,9 @@ import { backoffDelay, sleep } from "../lib/backoff";
 import { LiveWaveform } from "./LiveWaveform";
 import { RecordingPlayer, type Recording } from "./RecordingPlayer";
 import type { SttLevel } from "../providers/types";
+import { computePeaks, packPeaks, unpackPeaks } from "../lib/peaks";
+import { encodeOpus, isOpusSupported } from "../lib/opus";
+import { recordingsDB, requestPersistentStorage } from "../lib/recordings-db";
 import { IflytekTtsProvider } from "../providers/tts/iflytek_tts";
 import { OpenAiTtsProvider } from "../providers/tts/openai_tts";
 import { SpeechSynthesisTtsProvider } from "../providers/tts/speechsynthesis";
@@ -65,6 +68,7 @@ export function App() {
   const sessionRef = useRef<SttSession | null>(null);
   const levelsRef = useRef<SttLevel[]>([]);
   const recCounter = useRef(0);
+  const clearGenRef = useRef(0);
 
   const sttName = routers.stt.pick()?.name ?? "(none)";
   const ttsName = routers.tts.pick()?.name ?? "(none)";
@@ -93,6 +97,60 @@ export function App() {
 
   useEffect(() => () => { listenRef.current = false; sessionRef.current?.stop().catch(() => {}); }, []);
 
+  // Restore persisted recordings on load + request durable storage.
+  useEffect(() => {
+    let cancelled = false;
+    requestPersistentStorage().catch(() => {});
+    if (!recordingsDB.available()) return;
+    recordingsDB
+      .all()
+      .then((list) => {
+        if (cancelled) return;
+        setRecordings(
+          list.map((r) => ({
+            id: r.id,
+            at: r.at,
+            durationMs: r.durationMs,
+            text: r.text,
+            peaks: unpackPeaks(r.peaks),
+            sampleRate: r.opus.sampleRate,
+            opus: r.opus,
+          })),
+        );
+      })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, []);
+
+  // Capture a VAD segment: show instantly (in-memory PCM), then compress to
+  // Opus and persist to IndexedDB (~10x smaller than WAV).
+  function addRecording(audio: { samples: Float32Array; sampleRate: number; durationMs: number }, text: string) {
+    const peaks = computePeaks(audio.samples, 400);
+    const id = `rec-${recCounter.current++}-${Date.now()}`;
+    const at = Date.now();
+    const gen = clearGenRef.current;
+    setRecordings((prev) => [
+      { id, at, durationMs: audio.durationMs, text, peaks, sampleRate: audio.sampleRate, samples: audio.samples },
+      ...prev,
+    ]);
+    if (isOpusSupported() && recordingsDB.available()) {
+      encodeOpus(audio.samples, audio.sampleRate)
+        .then((opus) => {
+          // Skip if the user cleared recordings while we were encoding —
+          // otherwise the cleared clip reappears on reload.
+          if (clearGenRef.current !== gen) return;
+          return recordingsDB.put({ id, at, durationMs: audio.durationMs, text, peaks: packPeaks(peaks), opus });
+        })
+        .catch(() => {});
+    }
+  }
+
+  async function clearRecordings() {
+    clearGenRef.current += 1; // invalidate any in-flight encode→persist
+    setRecordings([]);
+    await recordingsDB.clear().catch(() => {});
+  }
+
   // Infinite listen: keep a session alive, auto-restart on error/end with
   // golden-ratio (φ) exponential backoff.
   async function startListening() {
@@ -115,17 +173,7 @@ export function App() {
                 if (seg.final) {
                   if (seg.text) setSegments((prev) => [...prev, { text: seg.text, final: true }]);
                   setPartial("");
-                  if (seg.audio) {
-                    const rec: Recording = {
-                      id: `rec-${recCounter.current++}`,
-                      samples: seg.audio.samples,
-                      sampleRate: seg.audio.sampleRate,
-                      durationMs: seg.audio.durationMs,
-                      text: seg.text,
-                      at: Date.now(),
-                    };
-                    setRecordings((prev) => [rec, ...prev]);
-                  }
+                  if (seg.audio) addRecording(seg.audio, seg.text);
                 } else setPartial(seg.text);
               },
               (e) => done(() => reject(e)),
@@ -237,7 +285,7 @@ export function App() {
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
           <h2>Recordings ({recordings.length})</h2>
           {recordings.length > 0 && (
-            <button onClick={() => setRecordings([])} style={{ fontSize: 12 }}>Clear</button>
+            <button onClick={clearRecordings} style={{ fontSize: 12 }}>Clear</button>
           )}
         </div>
         {recordings.length === 0 ? (

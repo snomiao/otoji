@@ -1,8 +1,8 @@
 import React, { useEffect, useRef } from "react";
-import { computePeaks } from "../lib/peaks";
+import type { Peak } from "../lib/peaks";
 
 interface WaveformProps {
-  samples: Float32Array;
+  peaks: Peak[];
   width?: number;
   height?: number;
   /** 0..1 playback position; the played part is highlighted. */
@@ -14,7 +14,7 @@ interface WaveformProps {
 
 /** Static waveform (min/max peaks) with an optional played-progress overlay. */
 export function Waveform({
-  samples,
+  peaks,
   width = 320,
   height = 48,
   progress = 0,
@@ -32,24 +32,26 @@ export function Waveform({
     canvas.height = height * dpr;
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
-    ctx.scale(dpr, dpr);
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     ctx.clearRect(0, 0, width, height);
 
-    const peaks = computePeaks(samples, width);
     const mid = height / 2;
     const playedX = progress * width;
+    const n = peaks.length || 1;
+    const bw = width / n;
 
-    for (let x = 0; x < peaks.length; x++) {
-      const { min, max } = peaks[x];
+    for (let i = 0; i < peaks.length; i++) {
+      const { min, max } = peaks[i];
+      const x = i * bw;
       const y1 = mid - max * mid;
       const y2 = mid - min * mid;
       ctx.strokeStyle = x <= playedX ? playedColor : color;
       ctx.beginPath();
-      ctx.moveTo(x + 0.5, y1);
-      ctx.lineTo(x + 0.5, Math.max(y2, y1 + 1));
+      ctx.moveTo(x + bw / 2, y1);
+      ctx.lineTo(x + bw / 2, Math.max(y2, y1 + 1));
       ctx.stroke();
     }
-  }, [samples, width, height, progress, color, playedColor]);
+  }, [peaks, width, height, progress, color, playedColor]);
 
   return (
     <canvas
