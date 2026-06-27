@@ -5,6 +5,8 @@ import { decodeOpus, type StoredOpus } from "../lib/opus";
 
 export interface Recording {
   id: string;
+  /** Producing sink node id (for graph badges / grouping). */
+  nodeId?: string;
   at: number;
   durationMs: number;
   text: string;

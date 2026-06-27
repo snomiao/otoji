@@ -22,9 +22,10 @@ const PORT_COLOR: Record<PortType, string> = {
 
 export function VoiceNode({ id, data }: NodeProps) {
   const d = data as VoiceNodeData;
-  const { devices, onAssign } = useContext(GraphContext);
+  const { devices, onAssign, counts } = useContext(GraphContext);
   const spec = NODE_SPECS[d.voiceType];
   const deviceName = devices.find((x) => x.peerId === d.device)?.name;
+  const count = counts[id] ?? 0;
 
   return (
     <div
@@ -37,7 +38,12 @@ export function VoiceNode({ id, data }: NodeProps) {
         boxShadow: "0 1px 3px rgba(0,0,0,0.08)",
       }}
     >
-      <div style={{ padding: "6px 10px", borderBottom: "1px solid #edf2f7", fontWeight: 600 }}>{spec.label}</div>
+      <div style={{ padding: "6px 10px", borderBottom: "1px solid #edf2f7", fontWeight: 600, display: "flex", justifyContent: "space-between", gap: 6 }}>
+        <span>{spec.label}</span>
+        {count > 0 && (
+          <span style={{ fontSize: 11, color: "#2b6cb0", background: "#ebf4ff", borderRadius: 8, padding: "0 6px" }}>▤ {count}</span>
+        )}
+      </div>
       <div style={{ padding: "6px 10px" }}>
         <label style={{ display: "flex", gap: 6, alignItems: "center", color: "#718096" }}>
           on:

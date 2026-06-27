@@ -16,12 +16,15 @@ import { SignalingClient, type Peer } from "../net/signaling";
 import { PeerMesh } from "../net/peers";
 import { VoiceNode, type DeviceOpt } from "./VoiceNode";
 import { GraphContext } from "./graph-context";
-import { GraphRuntime, nodeOwner, type TranscriptMsg } from "../graph/runtime";
+import { GraphRuntime, type TranscriptMsg } from "../graph/runtime";
 import { PeerMeshTransport } from "../graph/mesh-transport";
 import { RecordingPlayer, type Recording } from "./RecordingPlayer";
 import { computePeaks } from "../lib/peaks";
 import { isReadableTranscript } from "../lib/text";
 import { generateRoomCode, isRoomCode, joinUrl } from "../lib/roomcode";
+import { NetworkView } from "./NetworkView";
+import { TimelineView } from "./TimelineView";
+import type { PortType } from "../graph/model";
 import {
   NODE_SPECS,
   canConnect,
@@ -89,6 +92,7 @@ function Editor({ initialRoom }: { initialRoom?: string }) {
   const [sinkRecs, setSinkRecs] = useState<Recording[]>([]);
   const [peerStates, setPeerStates] = useState<Record<string, string>>({});
   const [, setTick] = useState(0); // periodic refresh for live counters
+  const [view, setView] = useState<"graph" | "network" | "timeline">("graph");
 
   const sigRef = useRef<SignalingClient | null>(null);
   const meshRef = useRef<PeerMesh | null>(null);
@@ -247,10 +251,11 @@ function Editor({ initialRoom }: { initialRoom?: string }) {
       self,
       onStatus: (s) => setRunStatus(s),
       onError: (e) => setRunStatus(`error: ${e.message}`),
-      onSink: (_id, tr: TranscriptMsg) => {
+      onSink: (sinkId, tr: TranscriptMsg) => {
         if (!isReadableTranscript(tr.text)) return;
         const rec: Recording = {
           id: `g-${recCounter.current++}`,
+          nodeId: sinkId,
           at: Date.now(),
           durationMs: tr.audio.durationMs,
           text: tr.text,
@@ -279,7 +284,30 @@ function Editor({ initialRoom }: { initialRoom?: string }) {
 
   useEffect(() => () => { runtimeRef.current?.stop(); }, []);
 
-  const ctx = useMemo(() => ({ devices, onAssign }), [devices, onAssign]);
+  const PORT_COLOR: Record<PortType, string> = { segment: "#dd6b20", transcript: "#2b6cb0" };
+  // Color edges by their source port type; animate while running (data in motion).
+  const styledEdges = useMemo(
+    () =>
+      edges.map((e) => {
+        const src = nodes.find((n) => n.id === e.source);
+        const t = src
+          ? NODE_SPECS[(src.data as any).voiceType as NodeType].outputs.find((o) => o.id === (e.sourceHandle ?? "out"))?.type
+          : undefined;
+        const stroke = t ? PORT_COLOR[t] : "#b0b6c0";
+        return { ...e, animated: running, style: { stroke, strokeWidth: 2 } };
+      }),
+    [edges, nodes, running],
+  );
+
+  const counts = useMemo(() => {
+    const c: Record<string, number> = {};
+    for (const r of sinkRecs) if (r.nodeId) c[r.nodeId] = (c[r.nodeId] ?? 0) + 1;
+    return c;
+  }, [sinkRecs]);
+
+  const currentGraph = useMemo(() => fromRF(nodes, edges, versionRef.current), [nodes, edges]);
+
+  const ctx = useMemo(() => ({ devices, onAssign, counts }), [devices, onAssign, counts]);
 
   if (!joined) {
     return (
@@ -310,10 +338,25 @@ function Editor({ initialRoom }: { initialRoom?: string }) {
           <strong>otoji graph</strong>
           <span style={{ fontSize: 12, color: "#718096" }}>room {room} · {status} · {devices.length} device(s)</span>
           <button onClick={share} style={{ fontSize: 12 }}>{copied ? "✓ link copied" : "Share link"}</button>
-          <span style={{ marginLeft: 12, fontSize: 12, color: "#a0aec0" }}>add:</span>
-          {(Object.keys(NODE_SPECS) as NodeType[]).map((t) => (
-            <button key={t} onClick={() => addNode(t)} style={{ fontSize: 12 }}>+ {NODE_SPECS[t].label}</button>
-          ))}
+          <span style={{ display: "flex", gap: 4, marginLeft: 12 }}>
+            {(["graph", "network", "timeline"] as const).map((v) => (
+              <button
+                key={v}
+                onClick={() => setView(v)}
+                style={{ fontSize: 12, fontWeight: view === v ? 700 : 400, background: view === v ? "#ebf4ff" : undefined }}
+              >
+                {v[0].toUpperCase() + v.slice(1)}
+              </button>
+            ))}
+          </span>
+          {view === "graph" && (
+            <>
+              <span style={{ marginLeft: 12, fontSize: 12, color: "#a0aec0" }}>add:</span>
+              {(Object.keys(NODE_SPECS) as NodeType[]).map((t) => (
+                <button key={t} onClick={() => addNode(t)} style={{ fontSize: 12 }}>+ {NODE_SPECS[t].label}</button>
+              ))}
+            </>
+          )}
           <span style={{ marginLeft: "auto", display: "flex", gap: 8, alignItems: "center" }}>
             {runStatus && <span style={{ fontSize: 12, color: "#718096" }}>{runStatus}</span>}
             {running ? (
@@ -323,75 +366,46 @@ function Editor({ initialRoom }: { initialRoom?: string }) {
             )}
           </span>
         </div>
-        <div style={{ flex: 1, display: "flex", minHeight: 0 }}>
-          <div style={{ flex: 1 }}>
-          <ReactFlow
-            nodes={nodes}
-            edges={edges}
-            nodeTypes={nodeTypes}
-            onNodesChange={onNodesChange}
-            onEdgesChange={onEdgesChange}
-            onConnect={onConnect}
-            isValidConnection={isValidConnection}
-            onNodeDragStop={() => broadcast(nodesRef.current, edgesRef.current)}
-            onNodesDelete={afterDelete}
-            onEdgesDelete={afterDelete}
-            fitView
-          >
-            <Background />
-            <Controls />
-          </ReactFlow>
-          </div>
-          <div style={{ width: 340, borderLeft: "1px solid #e2e8f0", overflow: "auto", padding: "8px 12px" }}>
-            <strong style={{ fontSize: 13 }}>Network</strong>
-            <div style={{ fontSize: 12, color: "#4a5568", margin: "4px 0 8px" }}>
-              {devices.map((dv) => {
-                const st = dv.me ? "this device" : peerStates[dv.peerId] ?? "connecting…";
-                const ok = dv.me || st === "connected";
-                return (
-                  <div key={dv.peerId} style={{ display: "flex", justifyContent: "space-between" }}>
-                    <span>{dv.name}{dv.me ? " (me)" : ""}</span>
-                    <span style={{ color: ok ? "#2f855a" : "#c05621" }}>{st}</span>
-                  </div>
-                );
-              })}
-              {(() => {
-                const t = transportRef.current;
-                return t ? (
-                  <div style={{ color: "#a0aec0", marginTop: 4 }}>
-                    frames sent {t.sent} · recv {t.recv}{t.dropped ? ` · dropped ${t.dropped}` : ""}
-                  </div>
-                ) : null;
-              })()}
-            </div>
-            <strong style={{ fontSize: 13 }}>Nodes</strong>
-            <div style={{ fontSize: 12, color: "#4a5568", margin: "4px 0 8px" }}>
-              {nodes.map((n) => {
-                const owner = nodeOwner(
-                  { id: n.id, type: (n.data as any).voiceType, device: ((n.data as any).device ?? null), pos: { x: 0, y: 0 } },
-                  devices.map((d) => d.peerId),
-                );
-                const ownerName = owner === myId ? "me" : devices.find((d) => d.peerId === owner)?.name ?? "—";
-                return (
-                  <div key={n.id} style={{ display: "flex", justifyContent: "space-between" }}>
-                    <span>{(n.data as any).voiceType}</span>
-                    <span style={{ color: owner === myId ? "#2b6cb0" : "#718096" }}>{ownerName}</span>
-                  </div>
-                );
-              })}
-            </div>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-              <strong style={{ fontSize: 13 }}>Sink output ({sinkRecs.length})</strong>
-              {sinkRecs.length > 0 && <button onClick={() => setSinkRecs([])} style={{ fontSize: 11 }}>Clear</button>}
+        <div style={{ flex: 1, minHeight: 0, display: "flex" }}>
+          {view === "graph" && (
+            <>
+              <div style={{ flex: 1 }}>
+                <ReactFlow
+                  nodes={nodes}
+                  edges={styledEdges}
+                  nodeTypes={nodeTypes}
+                  onNodesChange={onNodesChange}
+                  onEdgesChange={onEdgesChange}
+                  onConnect={onConnect}
+                  isValidConnection={isValidConnection}
+                  onNodeDragStop={() => broadcast(nodesRef.current, edgesRef.current)}
+                  onNodesDelete={afterDelete}
+                  onEdgesDelete={afterDelete}
+                  fitView
+                >
+                  <Background />
+                  <Controls />
+                </ReactFlow>
               </div>
-              {sinkRecs.length === 0 ? (
-                <p style={{ color: "#a0aec0", fontSize: 12 }}>
-                  {running ? "Running — speak to produce transcripts." : "Run the graph to produce transcripts."}
-                </p>
-              ) : (
-                sinkRecs.map((r, i) => <RecordingPlayer key={r.id} rec={r} index={sinkRecs.length - 1 - i} />)
-              )}
-            </div>
+              <div style={{ width: 340, borderLeft: "1px solid #e2e8f0", overflow: "auto", padding: "8px 12px" }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                  <strong style={{ fontSize: 13 }}>Sink output ({sinkRecs.length})</strong>
+                  {sinkRecs.length > 0 && <button onClick={() => setSinkRecs([])} style={{ fontSize: 11 }}>Clear</button>}
+                </div>
+                {sinkRecs.length === 0 ? (
+                  <p style={{ color: "#a0aec0", fontSize: 12 }}>
+                    {running ? "Running — speak to produce transcripts." : "Run the graph to produce transcripts."}
+                  </p>
+                ) : (
+                  sinkRecs.map((r, i) => <RecordingPlayer key={r.id} rec={r} index={sinkRecs.length - 1 - i} />)
+                )}
+              </div>
+            </>
+          )}
+          {view === "network" && (
+            <NetworkView myId={myId} devices={devices} peerStates={peerStates} graph={currentGraph} stats={transportRef.current} />
+          )}
+          {view === "timeline" && <TimelineView recordings={sinkRecs} />}
         </div>
       </div>
     </GraphContext.Provider>
