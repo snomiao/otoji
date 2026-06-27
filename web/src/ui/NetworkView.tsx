@@ -4,7 +4,6 @@ import { nodeOwner } from "../graph/runtime";
 import { NODE_SPECS, type VoiceGraph, type PortType } from "../graph/model";
 
 interface NetworkViewProps {
-  myId: string | null;
   devices: DeviceOpt[];
   peerStates: Record<string, string>;
   graph: VoiceGraph;
@@ -20,41 +19,45 @@ function outPortType(graph: VoiceGraph, source: string, handle: string): PortTyp
 }
 
 /** Device-centric view: each device, its nodes, and the cross-device links. */
-export function NetworkView({ myId, devices, peerStates, graph, stats }: NetworkViewProps) {
-  const ids = devices.map((d) => d.peerId);
+export function NetworkView({ devices, peerStates, graph, stats }: NetworkViewProps) {
+  const onlineIds = devices.filter((d) => d.online).map((d) => d.deviceId);
 
   const nodesByDevice = new Map<string, string[]>();
   for (const n of Object.values(graph.nodes)) {
-    const owner = nodeOwner(n, ids) ?? "(unassigned)";
+    const owner = nodeOwner(n, onlineIds) ?? "(unassigned)";
     if (!nodesByDevice.has(owner)) nodesByDevice.set(owner, []);
     nodesByDevice.get(owner)!.push(NODE_SPECS[n.type].label);
   }
 
   const links: { from: string; to: string; kind: PortType }[] = [];
   for (const e of graph.edges) {
-    const from = nodeOwner(graph.nodes[e.source], ids);
-    const to = nodeOwner(graph.nodes[e.target], ids);
+    const from = nodeOwner(graph.nodes[e.source], onlineIds);
+    const to = nodeOwner(graph.nodes[e.target], onlineIds);
     const kind = outPortType(graph, e.source, e.sourceHandle);
     if (from && to && from !== to && kind) links.push({ from, to, kind });
   }
-  const nameOf = (id: string) => devices.find((d) => d.peerId === id)?.name ?? id.slice(0, 6);
+  const nameOf = (id: string) => devices.find((d) => d.deviceId === id)?.name ?? id.slice(0, 6);
 
   return (
     <div style={{ padding: 16, overflow: "auto", height: "100%", fontFamily: "system-ui, sans-serif" }}>
       <h3 style={{ marginTop: 0 }}>Devices</h3>
       <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
         {devices.map((dv) => {
-          const state = dv.me ? "this device" : peerStates[dv.peerId] ?? "connecting…";
+          const state = dv.me ? "this device" : !dv.online ? "offline" : (dv.peerId && peerStates[dv.peerId]) || "connecting…";
           const ok = dv.me || state === "connected";
+          const list = nodesByDevice.get(dv.deviceId) ?? [];
           return (
-            <div key={dv.peerId} style={{ border: "1px solid #cbd5e0", borderRadius: 10, padding: 12, minWidth: 180 }}>
+            <div
+              key={dv.deviceId}
+              style={{ border: "1px solid #cbd5e0", borderRadius: 10, padding: 12, minWidth: 180, opacity: dv.online || dv.me ? 1 : 0.6 }}
+            >
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                 <strong>{dv.name}{dv.me ? " (me)" : ""}</strong>
                 <span style={{ fontSize: 11, color: ok ? "#2f855a" : "#c05621" }}>● {state}</span>
               </div>
               <div style={{ fontSize: 12, color: "#4a5568", marginTop: 6 }}>
-                {(nodesByDevice.get(dv.peerId) ?? []).map((l, i) => <div key={i}>• {l}</div>)}
-                {!(nodesByDevice.get(dv.peerId) ?? []).length && <em style={{ color: "#a0aec0" }}>no nodes</em>}
+                {list.map((l, i) => <div key={i}>• {l}</div>)}
+                {!list.length && <em style={{ color: "#a0aec0" }}>no nodes</em>}
               </div>
             </div>
           );

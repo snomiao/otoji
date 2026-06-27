@@ -16,12 +16,13 @@ import { SignalingClient, type Peer } from "../net/signaling";
 import { PeerMesh } from "../net/peers";
 import { VoiceNode, type DeviceOpt } from "./VoiceNode";
 import { GraphContext } from "./graph-context";
-import { GraphRuntime, type TranscriptMsg } from "../graph/runtime";
+import { GraphRuntime, nodeOwner, type TranscriptMsg } from "../graph/runtime";
 import { PeerMeshTransport } from "../graph/mesh-transport";
 import { RecordingPlayer, type Recording } from "./RecordingPlayer";
 import { computePeaks } from "../lib/peaks";
 import { isReadableTranscript } from "../lib/text";
 import { generateRoomCode, isRoomCode, joinUrl } from "../lib/roomcode";
+import { getDeviceId, getDeviceName, setDeviceName } from "../lib/device-id";
 import { NetworkView } from "./NetworkView";
 import { TimelineView } from "./TimelineView";
 import type { PortType } from "../graph/model";
@@ -77,12 +78,14 @@ function fromRF(nodes: Node[], edges: Edge[], version: number): VoiceGraph {
 
 function Editor({ initialRoom }: { initialRoom?: string }) {
   const [room, setRoom] = useState(initialRoom ?? "");
-  const [name, setName] = useState("device");
+  const [name, setName] = useState(getDeviceName() || "device");
   const [copied, setCopied] = useState(false);
   const [joined, setJoined] = useState(false);
-  const [myId, setMyId] = useState<string | null>(null);
-  const [devices, setDevices] = useState<DeviceOpt[]>([]);
+  const myDeviceId = useMemo(() => getDeviceId(), []);
+  const [myPeerId, setMyPeerId] = useState<string | null>(null);
+  const [present, setPresent] = useState<Record<string, { peerId: string; name: string }>>({});
   const [status, setStatus] = useState("not connected");
+  const [paused, setPaused] = useState(false);
 
   const [nodes, setNodes, onNodesChange] = useNodesState<Node>([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([]);
@@ -100,12 +103,46 @@ function Editor({ initialRoom }: { initialRoom?: string }) {
   const runtimeRef = useRef<GraphRuntime | null>(null);
   const recCounter = useRef(0);
   const versionRef = useRef(0);
-  const devicesRef = useRef<DeviceOpt[]>([]);
-  devicesRef.current = devices;
+  const nameCacheRef = useRef<Record<string, string>>({});
   const nodesRef = useRef(nodes);
   const edgesRef = useRef(edges);
   nodesRef.current = nodes;
   edgesRef.current = edges;
+
+  // Derived device list: online (present) ∪ devices referenced by node
+  // assignments (shown offline). Names are cached so offline devices keep a label.
+  const devices: DeviceOpt[] = useMemo(() => {
+    for (const [dev, info] of Object.entries(present)) nameCacheRef.current[dev] = info.name;
+    const referenced = new Set<string>();
+    for (const n of nodes) {
+      const dv = (n.data as any).device as string | null;
+      if (dv) referenced.add(dv);
+    }
+    const ids = new Set<string>([myDeviceId, ...Object.keys(present), ...referenced]);
+    return [...ids]
+      .map((deviceId) => {
+        const on = present[deviceId];
+        return {
+          deviceId,
+          peerId: on?.peerId,
+          name: on?.name ?? nameCacheRef.current[deviceId] ?? deviceId.slice(0, 6),
+          online: !!on,
+          me: deviceId === myDeviceId,
+        };
+      })
+      .sort((a, b) => (a.me ? -1 : b.me ? 1 : Number(b.online) - Number(a.online) || a.name.localeCompare(b.name)));
+  }, [present, nodes, myDeviceId]);
+
+  const onlineDeviceIds = useMemo(() => Object.keys(present), [present]);
+  const onlineRef = useRef<string[]>([]);
+  onlineRef.current = onlineDeviceIds;
+
+  // Keep transport routing (deviceId -> current peerId) current as peers come/go.
+  useEffect(() => {
+    const map: Record<string, string> = {};
+    for (const [dev, info] of Object.entries(present)) map[dev] = info.peerId;
+    transportRef.current?.setRouting(map);
+  }, [present]);
 
   useEffect(() => () => { meshRef.current?.destroy(); sigRef.current?.close(); }, []);
 
@@ -133,13 +170,19 @@ function Editor({ initialRoom }: { initialRoom?: string }) {
 
   function join() {
     if (joined || !room.trim()) return;
-    const sig = new SignalingClient(room.trim(), name.trim() || "device");
+    const dn = name.trim() || "device";
+    setDeviceName(dn);
+    const sig = new SignalingClient(room.trim(), dn, myDeviceId);
     sigRef.current = sig;
     sig.on("open", () => setStatus("connected"));
     sig.on("close", () => setStatus("reconnecting…"));
     sig.on("hello", (m) => {
-      setMyId(m.peerId);
-      setDevices([{ peerId: m.peerId, name: name.trim() || "device", me: true }, ...m.peers.map(asDev)]);
+      setMyPeerId(m.peerId);
+      setPresent(() => {
+        const p: Record<string, { peerId: string; name: string }> = { [myDeviceId]: { peerId: m.peerId, name: dn } };
+        for (const peer of m.peers as Peer[]) p[peer.deviceId] = { peerId: peer.peerId, name: peer.name };
+        return p;
+      });
       applyRemote(m.graph);
       sig.getGraph();
       // (re)establish the WebRTC mesh for cross-device edge transport. Keep a
@@ -148,18 +191,28 @@ function Editor({ initialRoom }: { initialRoom?: string }) {
       meshRef.current?.destroy();
       const mesh = new PeerMesh(sig, m.peerId, {
         onData: (_peer, _label, data) => transportRef.current?.handleData(data),
-        onPeerState: (id, st) => setPeerStates((p) => ({ ...p, [id]: st })),
+        onPeerState: (id, st) => setPeerStates((s) => ({ ...s, [id]: st })),
       });
       meshRef.current = mesh;
       if (!transportRef.current) transportRef.current = new PeerMeshTransport(mesh);
       else transportRef.current.setMesh(mesh);
-      m.peers.forEach((p: Peer) => mesh.consider(p.peerId));
+      (m.peers as Peer[]).forEach((peer) => mesh.consider(peer.peerId));
     });
     sig.on("peer-joined", (m) => {
-      setDevices((d) => [...d, asDev(m.peer)]);
-      meshRef.current?.consider(m.peer.peerId);
+      const peer = m.peer as Peer;
+      setPresent((p) => ({ ...p, [peer.deviceId]: { peerId: peer.peerId, name: peer.name } }));
+      meshRef.current?.consider(peer.peerId);
     });
-    sig.on("peer-left", (m) => setDevices((d) => d.filter((x) => x.peerId !== m.peerId)));
+    sig.on("peer-left", (m) => {
+      setPresent((p) => {
+        // Ignore a stale leave for a device that has since reconnected with a
+        // new peerId (only remove when the stored peerId matches).
+        if (!m.deviceId || p[m.deviceId]?.peerId !== m.peerId) return p;
+        const n = { ...p };
+        delete n[m.deviceId];
+        return n;
+      });
+    });
     sig.on("graph", (m) => applyRemote(m.graph));
     sig.connect();
     setJoined(true);
@@ -177,8 +230,6 @@ function Editor({ initialRoom }: { initialRoom?: string }) {
       })
       .catch(() => {});
   }
-
-  const asDev = (p: Peer): DeviceOpt => ({ peerId: p.peerId, name: p.name, me: false });
 
   const onAssign = useCallback(
     (nodeId: string, device: string | null) => {
@@ -199,14 +250,14 @@ function Editor({ initialRoom }: { initialRoom?: string }) {
         id,
         type: "voice",
         position: { x: 80 + Math.random() * 120, y: 80 + Math.random() * 160 },
-        data: { voiceType: type, device: myId },
+        data: { voiceType: type, device: myDeviceId },
       };
       const next = [...nodesRef.current, n];
       nodesRef.current = next; // keep ref synchronous across batched calls
       setNodes(next);
       broadcast(next, edgesRef.current);
     },
-    [myId, setNodes, broadcast],
+    [myDeviceId, setNodes, broadcast],
   );
 
   const onConnect = useCallback(
@@ -240,15 +291,28 @@ function Editor({ initialRoom }: { initialRoom?: string }) {
     setTimeout(() => broadcast(nodesRef.current, edgesRef.current), 0);
   }, [broadcast]);
 
-  const run = useCallback(async () => {
+  const stopRuntime = useCallback(async () => {
+    const rt = runtimeRef.current;
+    runtimeRef.current = null;
+    setRunning(false);
+    await rt?.stop();
+  }, []);
+
+  const startRuntime = useCallback(async () => {
     if (runtimeRef.current) return;
     const graph = fromRF(nodesRef.current, edgesRef.current, versionRef.current);
-    const self =
-      myId && transportRef.current
-        ? { myId, deviceIds: devicesRef.current.map((d) => d.peerId), transport: transportRef.current }
-        : undefined;
+    // Only run if this device owns at least one node.
+    // Require the mesh transport: we're always in a room, so never fall back to
+    // single-device mode (which would treat every node as local). Re-fires after hello.
+    const transport = transportRef.current;
+    if (!transport) return;
+    const mine = Object.values(graph.nodes).some((n) => nodeOwner(n, onlineRef.current) === myDeviceId);
+    if (!mine) {
+      setRunStatus(Object.keys(graph.nodes).length ? "no nodes assigned here" : "");
+      return;
+    }
     const rt = new GraphRuntime(graph, {
-      self,
+      self: { myId: myDeviceId, deviceIds: onlineRef.current, transport },
       onStatus: (s) => setRunStatus(s),
       onError: (e) => setRunStatus(`error: ${e.message}`),
       onSink: (sinkId, tr: TranscriptMsg) => {
@@ -273,14 +337,32 @@ function Editor({ initialRoom }: { initialRoom?: string }) {
     } catch (e: any) {
       setRunStatus(`error: ${e?.message ?? e}`);
     }
-  }, [myId]);
+  }, [myDeviceId]);
 
-  const stopRun = useCallback(async () => {
-    await runtimeRef.current?.stop();
-    runtimeRef.current = null;
-    setRunning(false);
-    setRunStatus("stopped");
-  }, []);
+  // Structural signature — changes when the runnable graph changes (NOT on
+  // node drags), so we can auto-(re)start without thrashing on every edit.
+  const runtimeSig = useMemo(() => {
+    const ns = nodes
+      .map((n) => `${n.id}:${(n.data as any).voiceType}@${(n.data as any).device ?? ""}`)
+      .sort()
+      .join("|");
+    const es = edges.map((e) => `${e.source}.${e.sourceHandle}->${e.target}.${e.targetHandle}`).sort().join("|");
+    return `${ns}#${es}#${[...onlineDeviceIds].sort().join(",")}`;
+  }, [nodes, edges, onlineDeviceIds]);
+
+  // Auto-run: start automatically once nodes are assigned; restart on structural
+  // changes; stop when paused or left. No explicit Run button.
+  useEffect(() => {
+    if (!joined || paused) {
+      stopRuntime();
+      return;
+    }
+    const t = setTimeout(async () => {
+      await stopRuntime();
+      await startRuntime();
+    }, 600);
+    return () => clearTimeout(t);
+  }, [joined, paused, runtimeSig, startRuntime, stopRuntime]);
 
   useEffect(() => () => { runtimeRef.current?.stop(); }, []);
 
@@ -359,11 +441,8 @@ function Editor({ initialRoom }: { initialRoom?: string }) {
           )}
           <span style={{ marginLeft: "auto", display: "flex", gap: 8, alignItems: "center" }}>
             {runStatus && <span style={{ fontSize: 12, color: "#718096" }}>{runStatus}</span>}
-            {running ? (
-              <button onClick={stopRun} style={{ fontSize: 12 }}>■ Stop</button>
-            ) : (
-              <button onClick={run} style={{ fontSize: 12 }}>▶ Run</button>
-            )}
+            <span style={{ fontSize: 12, color: running ? "#2f855a" : "#a0aec0" }}>{running ? "● live" : paused ? "paused" : "idle"}</span>
+            <button onClick={() => setPaused((v) => !v)} style={{ fontSize: 12 }}>{paused ? "Resume" : "Pause"}</button>
           </span>
         </div>
         <div style={{ flex: 1, minHeight: 0, display: "flex" }}>
@@ -403,7 +482,7 @@ function Editor({ initialRoom }: { initialRoom?: string }) {
             </>
           )}
           {view === "network" && (
-            <NetworkView myId={myId} devices={devices} peerStates={peerStates} graph={currentGraph} stats={transportRef.current} />
+            <NetworkView devices={devices} peerStates={peerStates} graph={currentGraph} stats={transportRef.current} />
           )}
           {view === "timeline" && <TimelineView recordings={sinkRecs} />}
         </div>

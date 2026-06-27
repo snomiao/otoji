@@ -42,6 +42,7 @@ export default {
 
 interface PeerMeta {
   peerId: string;
+  deviceId: string;
   name: string;
 }
 
@@ -59,14 +60,15 @@ export class RoomDurableObject {
     }
 
     const name = (url.searchParams.get("name") || "device").slice(0, 64);
+    const deviceId = (url.searchParams.get("deviceId") || crypto.randomUUID()).slice(0, 100);
     const peerId = crypto.randomUUID();
 
     const { 0: client, 1: server } = new WebSocketPair();
     this.state.acceptWebSocket(server, [peerId]);
-    server.serializeAttachment({ peerId, name } satisfies PeerMeta);
+    server.serializeAttachment({ peerId, deviceId, name } satisfies PeerMeta);
 
     server.send(JSON.stringify({ type: "hello", peerId, peers: this.peers(peerId), graph: await this.getGraph() }));
-    this.broadcast({ type: "peer-joined", peer: { peerId, name } }, peerId);
+    this.broadcast({ type: "peer-joined", peer: { peerId, deviceId, name } }, peerId);
 
     return new Response(null, { status: 101, webSocket: client });
   }
@@ -113,7 +115,7 @@ export class RoomDurableObject {
 
   private dropped(ws: WebSocket): void {
     const self = ws.deserializeAttachment() as PeerMeta | null;
-    if (self) this.broadcast({ type: "peer-left", peerId: self.peerId }, self.peerId);
+    if (self) this.broadcast({ type: "peer-left", peerId: self.peerId, deviceId: self.deviceId }, self.peerId);
   }
 
   private peers(exceptId?: string): PeerMeta[] {

@@ -120,7 +120,14 @@
       keep a stable transport across signaling reconnects.
 - [ ] **User check**: real phone+laptop — phone `[Mic+VAD]` → laptop `[STT→Sink]`
       (assign nodes per device, open the share link on both, Run on each).
-- [ ] (M5) opus-on-wire, peer drop/rejoin during run, backpressure/ordering, TURN.
+- [x] Stable device identity (`lib/device-id.ts`): nodes assigned to a persisted
+      deviceId, so a device keeps its nodes across reconnect and **reclaims them on
+      rejoin**; offline devices shown as such (not unassigned).
+- [x] **Auto-run** (no Run button): the runtime auto-(re)starts when this device
+      owns nodes and the graph changes; Pause/Resume toggle.
+- [x] Visualization tabs (Graph/Network/Timeline), animated typed edges, data badges.
+- [ ] (M5) opus-on-wire, **idle/ghost peer timeout in the DO** (stale sockets linger),
+      peer drop/rejoin during run, backpressure/ordering, TURN.
 
 ### M5 — Future / hardening
 - [ ] Cloudflare TURN for symmetric-NAT / cross-network reliability.

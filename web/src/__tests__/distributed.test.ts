@@ -12,9 +12,9 @@ describe("nodeOwner", () => {
   it("assigns unassigned nodes to the smallest device id (single owner)", () => {
     expect(nodeOwner(node(null), ["dev-c", "dev-a", "dev-b"])).toBe("dev-a");
   });
-  it("falls back when the assigned device id is stale (not present)", () => {
-    // peer ids are ephemeral; a reloaded graph may reference a dead peer
-    expect(nodeOwner(node("ghost-peer"), ["dev-a", "dev-b"])).toBe("dev-a");
+  it("honors an explicit assignment even if that device is offline (stable id)", () => {
+    // device ids are persisted, so an offline owner keeps its node (reclaimed on rejoin)
+    expect(nodeOwner(node("offline-dev"), ["dev-a", "dev-b"])).toBe("offline-dev");
   });
   it("returns null with no devices", () => {
     expect(nodeOwner(node(null), [])).toBeNull();

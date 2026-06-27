@@ -7,6 +7,7 @@ export const DEFAULT_SIGNAL_BASE = "wss://otoji.org/signal";
 
 export interface Peer {
   peerId: string;
+  deviceId: string;
   name: string;
 }
 
@@ -23,6 +24,7 @@ export class SignalingClient {
   constructor(
     private room: string,
     private name: string,
+    private deviceId: string = "",
     private base: string = DEFAULT_SIGNAL_BASE,
   ) {}
 
@@ -39,7 +41,7 @@ export class SignalingClient {
 
   connect(): void {
     this.closedByUser = false;
-    const url = `${this.base}/${encodeURIComponent(this.room)}?name=${encodeURIComponent(this.name)}`;
+    const url = `${this.base}/${encodeURIComponent(this.room)}?name=${encodeURIComponent(this.name)}&deviceId=${encodeURIComponent(this.deviceId)}`;
     const ws = new WebSocket(url);
     this.ws = ws;
 

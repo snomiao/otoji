@@ -9,9 +9,10 @@ import type { PeerMesh } from "../net/peers";
 export class PeerMeshTransport implements Transport {
   private receiver: ((f: EdgeFrame) => void) | null = null;
   private mesh: PeerMesh | null;
+  private routing: Record<string, string> = {}; // stable deviceId -> current ephemeral peerId
   sent = 0;
   recv = 0;
-  dropped = 0; // sends that failed because no open channel to the target
+  dropped = 0; // sends that failed (no route / no open channel)
 
   constructor(mesh: PeerMesh | null = null) {
     this.mesh = mesh;
@@ -23,8 +24,14 @@ export class PeerMeshTransport implements Transport {
     this.mesh = mesh;
   }
 
+  /** deviceId -> peerId map for currently-online devices (updated on presence). */
+  setRouting(map: Record<string, string>): void {
+    this.routing = map;
+  }
+
   send(toDevice: string, frame: EdgeFrame): void {
-    const ok = this.mesh?.send(toDevice, JSON.stringify(frame)) ?? false;
+    const peerId = this.routing[toDevice];
+    const ok = peerId ? this.mesh?.send(peerId, JSON.stringify(frame)) ?? false : false;
     if (ok) this.sent++;
     else this.dropped++;
   }

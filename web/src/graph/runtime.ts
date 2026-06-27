@@ -45,13 +45,14 @@ export interface RuntimeHooks {
  * nodes — a single deterministic owner (smallest device id) so exactly one
  * device executes it. With no devices known, returns null.
  */
-export function nodeOwner(node: VoiceNode, deviceIds: string[]): string | null {
-  // Honor an explicit assignment only if that device is still present — peer ids
-  // are ephemeral, so a reloaded/persisted graph may reference dead peers.
-  if (node.device && deviceIds.includes(node.device)) return node.device;
-  if (deviceIds.length === 0) return null;
-  // Unassigned (or stale): a single deterministic owner so exactly one device runs it.
-  return [...deviceIds].sort()[0];
+export function nodeOwner(node: VoiceNode, onlineDeviceIds: string[]): string | null {
+  // Device ids are STABLE (persisted), so an explicit assignment is honored even
+  // when that device is offline — the node stays owned by it (shown offline, not
+  // run) and is reclaimed when the device rejoins.
+  if (node.device) return node.device;
+  if (onlineDeviceIds.length === 0) return null;
+  // Unassigned: a single deterministic owner among online devices.
+  return [...onlineDeviceIds].sort()[0];
 }
 
 interface RuntimeNode {

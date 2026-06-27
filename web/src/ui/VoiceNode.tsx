@@ -4,9 +4,11 @@ import { NODE_SPECS, type NodeType, type PortType } from "../graph/model";
 import { GraphContext } from "./graph-context";
 
 export interface DeviceOpt {
-  peerId: string;
+  deviceId: string;
+  peerId?: string; // current ephemeral peer id when online
   name: string;
   me: boolean;
+  online: boolean;
 }
 
 export interface VoiceNodeData {
@@ -24,7 +26,7 @@ export function VoiceNode({ id, data }: NodeProps) {
   const d = data as VoiceNodeData;
   const { devices, onAssign, counts } = useContext(GraphContext);
   const spec = NODE_SPECS[d.voiceType];
-  const deviceName = devices.find((x) => x.peerId === d.device)?.name;
+  const assigned = devices.find((x) => x.deviceId === d.device);
   const count = counts[id] ?? 0;
 
   return (
@@ -53,15 +55,21 @@ export function VoiceNode({ id, data }: NodeProps) {
             style={{ fontSize: 11, flex: 1 }}
           >
             <option value="">(unassigned)</option>
+            {assigned && !devices.some((x) => x.deviceId === d.device) && (
+              <option value={d.device!}>offline device</option>
+            )}
             {devices.map((x) => (
-              <option key={x.peerId} value={x.peerId}>
+              <option key={x.deviceId} value={x.deviceId}>
                 {x.name}
-                {x.me ? " (me)" : ""}
+                {x.me ? " (me)" : x.online ? "" : " (offline)"}
               </option>
             ))}
           </select>
         </label>
-        {!deviceName && <div style={{ color: "#e53e3e", fontSize: 10, marginTop: 2 }}>unassigned</div>}
+        {!d.device && <div style={{ color: "#e53e3e", fontSize: 10, marginTop: 2 }}>unassigned</div>}
+        {assigned && !assigned.online && (
+          <div style={{ color: "#c05621", fontSize: 10, marginTop: 2 }}>● {assigned.name} offline</div>
+        )}
       </div>
 
       {spec.inputs.map((p, i) => (
