@@ -15,6 +15,7 @@ import type { SttLevel } from "../providers/types";
 import { computePeaks, packPeaks, unpackPeaks } from "../lib/peaks";
 import { encodeOpus, isOpusSupported } from "../lib/opus";
 import { recordingsDB, requestPersistentStorage } from "../lib/recordings-db";
+import { isReadableTranscript } from "../lib/text";
 import { IflytekTtsProvider } from "../providers/tts/iflytek_tts";
 import { OpenAiTtsProvider } from "../providers/tts/openai_tts";
 import { SpeechSynthesisTtsProvider } from "../providers/tts/speechsynthesis";
@@ -106,8 +107,11 @@ export function App() {
       .all()
       .then((list) => {
         if (cancelled) return;
+        // Purge previously-stored noise segments with no readable transcript.
+        const readable = list.filter((r) => isReadableTranscript(r.text));
+        for (const r of list) if (!isReadableTranscript(r.text)) recordingsDB.delete(r.id).catch(() => {});
         setRecordings(
-          list.map((r) => ({
+          readable.map((r) => ({
             id: r.id,
             at: r.at,
             durationMs: r.durationMs,
@@ -171,9 +175,12 @@ export function App() {
               (seg) => {
                 attempt = 0; // healthy output resets backoff
                 if (seg.final) {
-                  if (seg.text) setSegments((prev) => [...prev, { text: seg.text, final: true }]);
                   setPartial("");
-                  if (seg.audio) addRecording(seg.audio, seg.text);
+                  // Drop noise/non-speech segments that yield no readable text.
+                  if (isReadableTranscript(seg.text)) {
+                    setSegments((prev) => [...prev, { text: seg.text, final: true }]);
+                    if (seg.audio) addRecording(seg.audio, seg.text);
+                  }
                 } else setPartial(seg.text);
               },
               (e) => done(() => reject(e)),
