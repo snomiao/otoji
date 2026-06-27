@@ -114,6 +114,8 @@ export async function startMicVad(opts: MicVadOptions): Promise<MicVadHandle> {
 
   source.connect(proc);
   proc.connect(audioCtx.destination);
+  // Auto-run starts without a click; resume in case the context is suspended.
+  if (audioCtx.state === "suspended") audioCtx.resume().catch(() => {});
 
   let stopped = false;
   return {

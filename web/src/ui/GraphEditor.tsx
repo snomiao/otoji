@@ -43,7 +43,7 @@ function toRF(g: VoiceGraph): { nodes: Node[]; edges: Edge[] } {
     id: n.id,
     type: "voice",
     position: n.pos,
-    data: { voiceType: n.type, device: n.device },
+    data: { voiceType: n.type, device: n.device, config: n.config ?? {} },
   }));
   const edges = g.edges.map((e) => ({
     id: e.id,
@@ -64,6 +64,7 @@ function fromRF(nodes: Node[], edges: Edge[], version: number): VoiceGraph {
       type: (n.data as any).voiceType as NodeType,
       device: ((n.data as any).device ?? null) as string | null,
       pos: { x: n.position.x, y: n.position.y },
+      config: (n.data as any).config ?? undefined,
     };
   }
   g.edges = edges.map((e) => ({
@@ -103,6 +104,8 @@ function Editor({ initialRoom }: { initialRoom?: string }) {
   const runtimeRef = useRef<GraphRuntime | null>(null);
   const recCounter = useRef(0);
   const versionRef = useRef(0);
+  const activityRef = useRef({ segments: 0, stt: 0 });
+  const micLevelRef = useRef(0);
   const nameCacheRef = useRef<Record<string, string>>({});
   const nodesRef = useRef(nodes);
   const edgesRef = useRef(edges);
@@ -250,7 +253,7 @@ function Editor({ initialRoom }: { initialRoom?: string }) {
         id,
         type: "voice",
         position: { x: 80 + Math.random() * 120, y: 80 + Math.random() * 160 },
-        data: { voiceType: type, device: myDeviceId },
+        data: { voiceType: type, device: myDeviceId, config: {} },
       };
       const next = [...nodesRef.current, n];
       nodesRef.current = next; // keep ref synchronous across batched calls
@@ -259,6 +262,39 @@ function Editor({ initialRoom }: { initialRoom?: string }) {
     },
     [myDeviceId, setNodes, broadcast],
   );
+
+  const onConfig = useCallback(
+    (nodeId: string, patch: Record<string, unknown>) => {
+      const next = nodesRef.current.map((n) =>
+        n.id === nodeId ? { ...n, data: { ...n.data, config: { ...((n.data as any).config ?? {}), ...patch } } } : n,
+      );
+      nodesRef.current = next;
+      setNodes(next);
+      broadcast(next, edgesRef.current);
+    },
+    [setNodes, broadcast],
+  );
+
+  // One-click pre-wired Mic+VAD -> STT -> Sink, assigned to me. Removes the
+  // manual add+connect friction (the usual reason "no transcript" appears).
+  const addPipeline = useCallback(() => {
+    const sfx = Math.random().toString(36).slice(2, 6);
+    const mic = `mic-vad-${sfx}`, stt = `stt-${sfx}`, sink = `sink-${sfx}`;
+    const mk = (id: string, type: NodeType, x: number): Node => ({
+      id,
+      type: "voice",
+      position: { x, y: 120 },
+      data: { voiceType: type, device: myDeviceId, config: {} },
+    });
+    const nextNodes = [...nodesRef.current, mk(mic, "mic-vad", 60), mk(stt, "stt", 320), mk(sink, "sink", 580)];
+    const mkEdge = (s: string, t: string): Edge => ({ id: edgeId({ source: s, sourceHandle: "out", target: t, targetHandle: "in" }), source: s, sourceHandle: "out", target: t, targetHandle: "in" });
+    const nextEdges = [...edgesRef.current, mkEdge(mic, stt), mkEdge(stt, sink)];
+    nodesRef.current = nextNodes;
+    edgesRef.current = nextEdges;
+    setNodes(nextNodes);
+    setEdges(nextEdges);
+    broadcast(nextNodes, nextEdges);
+  }, [myDeviceId, setNodes, setEdges, broadcast]);
 
   const onConnect = useCallback(
     (params: Connection) => {
@@ -311,10 +347,14 @@ function Editor({ initialRoom }: { initialRoom?: string }) {
       setRunStatus(Object.keys(graph.nodes).length ? "no nodes assigned here" : "");
       return;
     }
+    activityRef.current = { segments: 0, stt: 0 };
     const rt = new GraphRuntime(graph, {
       self: { myId: myDeviceId, deviceIds: onlineRef.current, transport },
       onStatus: (s) => setRunStatus(s),
       onError: (e) => setRunStatus(`error: ${e.message}`),
+      onLevel: (_id, l) => { micLevelRef.current = l.rms; },
+      onSegment: () => { activityRef.current.segments++; },
+      onRecognized: () => { activityRef.current.stt++; },
       onSink: (sinkId, tr: TranscriptMsg) => {
         if (!isReadableTranscript(tr.text)) return;
         const rec: Recording = {
@@ -343,7 +383,7 @@ function Editor({ initialRoom }: { initialRoom?: string }) {
   // node drags), so we can auto-(re)start without thrashing on every edit.
   const runtimeSig = useMemo(() => {
     const ns = nodes
-      .map((n) => `${n.id}:${(n.data as any).voiceType}@${(n.data as any).device ?? ""}`)
+      .map((n) => `${n.id}:${(n.data as any).voiceType}@${(n.data as any).device ?? ""}#${JSON.stringify((n.data as any).config ?? {})}`)
       .sort()
       .join("|");
     const es = edges.map((e) => `${e.source}.${e.sourceHandle}->${e.target}.${e.targetHandle}`).sort().join("|");
@@ -389,7 +429,7 @@ function Editor({ initialRoom }: { initialRoom?: string }) {
 
   const currentGraph = useMemo(() => fromRF(nodes, edges, versionRef.current), [nodes, edges]);
 
-  const ctx = useMemo(() => ({ devices, onAssign, counts }), [devices, onAssign, counts]);
+  const ctx = useMemo(() => ({ devices, onAssign, onConfig, counts }), [devices, onAssign, onConfig, counts]);
 
   if (!joined) {
     return (
@@ -433,7 +473,8 @@ function Editor({ initialRoom }: { initialRoom?: string }) {
           </span>
           {view === "graph" && (
             <>
-              <span style={{ marginLeft: 12, fontSize: 12, color: "#a0aec0" }}>add:</span>
+              <button onClick={addPipeline} style={{ fontSize: 12, fontWeight: 700 }}>+ Pipeline</button>
+              <span style={{ marginLeft: 6, fontSize: 12, color: "#a0aec0" }}>add:</span>
               {(Object.keys(NODE_SPECS) as NodeType[]).map((t) => (
                 <button key={t} onClick={() => addNode(t)} style={{ fontSize: 12 }}>+ {NODE_SPECS[t].label}</button>
               ))}
@@ -467,6 +508,17 @@ function Editor({ initialRoom }: { initialRoom?: string }) {
                 </ReactFlow>
               </div>
               <div style={{ width: 340, borderLeft: "1px solid #e2e8f0", overflow: "auto", padding: "8px 12px" }}>
+                {running && (
+                  <div style={{ fontSize: 11, color: "#718096", marginBottom: 6 }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                      mic
+                      <span style={{ display: "inline-block", width: 80, height: 6, background: "#e2e8f0", borderRadius: 3, overflow: "hidden" }}>
+                        <span style={{ display: "block", height: "100%", width: `${Math.min(100, micLevelRef.current * 600)}%`, background: "#2f855a" }} />
+                      </span>
+                    </div>
+                    <div>segments {activityRef.current.segments} · recognized {activityRef.current.stt}</div>
+                  </div>
+                )}
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                   <strong style={{ fontSize: 13 }}>Sink output ({sinkRecs.length})</strong>
                   {sinkRecs.length > 0 && <button onClick={() => setSinkRecs([])} style={{ fontSize: 11 }}>Clear</button>}

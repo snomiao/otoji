@@ -35,6 +35,8 @@ export interface RuntimeHooks {
   /** Distributed mode: which device we are + transport. Omit for single-device. */
   self?: RuntimeSelf;
   onLevel?: (nodeId: string, level: SttLevel) => void;
+  onSegment?: (nodeId: string) => void; // a mic node produced a VAD segment
+  onRecognized?: (nodeId: string, text: string) => void; // an STT node finished (text may be empty)
   onSink?: (nodeId: string, tr: TranscriptMsg) => void;
   onStatus?: (s: string) => void;
   onError?: (e: Error) => void;
@@ -123,10 +125,14 @@ export class GraphRuntime {
     }
     this.hooks.self?.transport.setReceiver((f) => this.onFrame(f));
 
-    if (Object.values(this.graph.nodes).some((n) => n.type === "stt" && this.isLocal(n.id))) {
+    const sttModels = new Set<string | undefined>();
+    for (const n of Object.values(this.graph.nodes)) {
+      if (n.type === "stt" && this.isLocal(n.id)) sttModels.add((n.config?.model as string | undefined) ?? this.hooks.modelId);
+    }
+    if (sttModels.size) {
       this.hooks.onStatus?.("loading model…");
       try {
-        await warmSenseVoice(this.hooks.modelId);
+        await Promise.all([...sttModels].map((m) => warmSenseVoice(m)));
       } catch (e) {
         // Required model failed to load — abort instead of capturing audio that
         // every STT segment would then fail on.
@@ -150,8 +156,10 @@ export class GraphRuntime {
         start: async () => {
           handle = await startMicVad({
             onLevel: (l) => this.hooks.onLevel?.(id, l),
-            onSegment: (samples, durationMs) =>
-              this.emit(id, "out", { samples, sampleRate: MIC_VAD_SR, durationMs } as SegmentMsg),
+            onSegment: (samples, durationMs) => {
+              this.hooks.onSegment?.(id);
+              this.emit(id, "out", { samples, sampleRate: MIC_VAD_SR, durationMs } as SegmentMsg);
+            },
           });
         },
         stop: async () => {
@@ -162,12 +170,14 @@ export class GraphRuntime {
 
     if (type === "stt") {
       let chain: Promise<void> = Promise.resolve();
+      const modelId = (this.graph.nodes[id]?.config?.model as string | undefined) ?? this.hooks.modelId;
       return {
         input: (_port, msg) => {
           const seg = msg as SegmentMsg;
           chain = chain.then(async () => {
             try {
-              const text = await sttRecognize(seg.samples, this.hooks.modelId);
+              const text = await sttRecognize(seg.samples, modelId);
+              this.hooks.onRecognized?.(id, text);
               this.emit(id, "out", { text, audio: seg } as TranscriptMsg);
             } catch (e) {
               this.hooks.onError?.(e instanceof Error ? e : new Error(String(e)));

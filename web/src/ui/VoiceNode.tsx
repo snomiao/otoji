@@ -2,6 +2,7 @@ import React, { useContext } from "react";
 import { Handle, Position, type NodeProps } from "@xyflow/react";
 import { NODE_SPECS, type NodeType, type PortType } from "../graph/model";
 import { GraphContext } from "./graph-context";
+import { SENSEVOICE_MODELS, DEFAULT_SENSEVOICE_MODEL } from "../providers/stt/sensevoice-models";
 
 export interface DeviceOpt {
   deviceId: string;
@@ -24,10 +25,11 @@ const PORT_COLOR: Record<PortType, string> = {
 
 export function VoiceNode({ id, data }: NodeProps) {
   const d = data as VoiceNodeData;
-  const { devices, onAssign, counts } = useContext(GraphContext);
+  const { devices, onAssign, onConfig, counts } = useContext(GraphContext);
   const spec = NODE_SPECS[d.voiceType];
   const assigned = devices.find((x) => x.deviceId === d.device);
   const count = counts[id] ?? 0;
+  const model = ((d as any).config?.model as string | undefined) ?? DEFAULT_SENSEVOICE_MODEL;
 
   return (
     <div
@@ -66,6 +68,20 @@ export function VoiceNode({ id, data }: NodeProps) {
             ))}
           </select>
         </label>
+        {d.voiceType === "stt" && (
+          <label style={{ display: "flex", gap: 6, alignItems: "center", color: "#718096", marginTop: 4 }}>
+            model:
+            <select
+              value={model}
+              onChange={(e) => onConfig(id, { model: e.target.value })}
+              style={{ fontSize: 11, flex: 1 }}
+            >
+              {SENSEVOICE_MODELS.map((m) => (
+                <option key={m.id} value={m.id}>{m.name}</option>
+              ))}
+            </select>
+          </label>
+        )}
         {!d.device && <div style={{ color: "#e53e3e", fontSize: 10, marginTop: 2 }}>unassigned</div>}
         {assigned && !assigned.online && (
           <div style={{ color: "#c05621", fontSize: 10, marginTop: 2 }}>● {assigned.name} offline</div>
