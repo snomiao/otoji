@@ -23,7 +23,7 @@ import { RecordingPlayer, type Recording } from "./RecordingPlayer";
 import { computePeaks } from "../lib/peaks";
 import { isReadableTranscript } from "../lib/text";
 import { generateRoomCode, isRoomCode, joinUrl } from "../lib/roomcode";
-import { getDeviceId, getDeviceName, setDeviceName } from "../lib/device-id";
+import { getDeviceId, getDeviceName, setDeviceName, generateDeviceName } from "../lib/device-id";
 import { getRole, setRole, detectCaps, ROLES, type DeviceRole } from "../lib/device-role";
 import { NetworkView } from "./NetworkView";
 import { TimelineView } from "./TimelineView";
@@ -81,7 +81,7 @@ function fromRF(nodes: Node[], edges: Edge[], version: number): VoiceGraph {
 
 function Editor({ initialRoom }: { initialRoom?: string }) {
   const [room, setRoom] = useState(initialRoom ?? "");
-  const [name, setName] = useState(getDeviceName() || "device");
+  const [name, setName] = useState(getDeviceName());
   const [copied, setCopied] = useState(false);
   const [joined, setJoined] = useState(false);
   const myDeviceId = useMemo(() => getDeviceId(), []);
@@ -465,7 +465,13 @@ function Editor({ initialRoom }: { initialRoom?: string }) {
         </p>
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
           <input placeholder="room code" value={room} onChange={(e) => setRoom(e.target.value)} style={{ width: 150 }} />
-          <input placeholder="your name" value={name} onChange={(e) => setName(e.target.value)} style={{ width: 120 }} />
+          <input
+            placeholder="your name"
+            value={name}
+            onChange={(e) => { setName(e.target.value); setDeviceName(e.target.value); }}
+            style={{ width: 120 }}
+          />
+          <button onClick={() => { const n = generateDeviceName(); setName(n); setDeviceName(n); }} title="random name">🎲</button>
           <select value={role} onChange={(e) => { setRoleState(e.target.value as DeviceRole); setRole(e.target.value as DeviceRole); }} title="this device's role">
             {ROLES.map((r) => <option key={r.id} value={r.id}>{r.label}</option>)}
           </select>

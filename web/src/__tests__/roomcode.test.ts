@@ -9,11 +9,12 @@ describe("room codes (Google-Meet style)", () => {
       expect(isRoomCode(c)).toBe(true);
     }
   });
-  it("rejects non-conforming strings", () => {
+  it("accepts word-based and legacy codes, rejects others", () => {
     expect(isRoomCode("123456")).toBe(false);
-    expect(isRoomCode("ab-cdef-ghi")).toBe(false); // first group too short
+    expect(isRoomCode("swift-otter")).toBe(false); // only two groups
     expect(isRoomCode("ABC-defg-hij")).toBe(false); // uppercase
-    expect(isRoomCode("kru-dfmq-atg")).toBe(true);
+    expect(isRoomCode("kru-dfmq-atg")).toBe(true); // legacy meet-style
+    expect(isRoomCode("swift-otter-falcon")).toBe(true); // word-based
   });
   it("builds a path-style join URL", () => {
     expect(joinUrl("kru-dfmq-atg", "https://otoji.org")).toBe("https://otoji.org/kru-dfmq-atg");

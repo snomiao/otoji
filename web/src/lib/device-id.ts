@@ -3,6 +3,8 @@
 // reloads/reconnects, so graph node assignments and "offline/online" status
 // track a device across disconnects.
 
+import { ADJECTIVES, ANIMALS, pickWord } from "./words";
+
 const ID_KEY = "otoji.deviceId";
 const NAME_KEY = "otoji.deviceName";
 
@@ -24,11 +26,22 @@ export function getDeviceId(): string {
   }
 }
 
+/** A friendly random device name like "swift-otter". */
+export function generateDeviceName(): string {
+  return `${pickWord(ADJECTIVES)}-${pickWord(ANIMALS)}`;
+}
+
+/** Persisted friendly device name; generated + cached on first use. */
 export function getDeviceName(): string {
   try {
-    return localStorage.getItem(NAME_KEY) ?? "";
+    let n = localStorage.getItem(NAME_KEY);
+    if (!n) {
+      n = generateDeviceName();
+      localStorage.setItem(NAME_KEY, n);
+    }
+    return n;
   } catch {
-    return "";
+    return generateDeviceName();
   }
 }
 
