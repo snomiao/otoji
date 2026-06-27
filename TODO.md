@@ -67,16 +67,15 @@
 
 ## Milestones
 
-### M0 — Signaling backend (Worker + Durable Object)
-- [ ] New Worker (wrangler) in `signal/` exporting `RoomDurableObject`.
-- [ ] WebSocket endpoint `/{room}` with hibernatable WS; track peers/presence.
-- [ ] Pairing-code create/validate; room lifecycle (create on first peer, GC empty).
-- [ ] Relay `signal` messages between peers; broadcast presence.
-- [ ] Store + broadcast authoritative graph JSON (LWW patches) in DO storage.
-- [ ] **Routing**: bind `otoji.org/signal/*` to the Worker (Workers route on the
-      zone, coexisting with the Pages site). **Fallback**: `signal.otoji.org`
-      custom domain. ⚠️ verify a Workers route can override a Pages path; else subdomain.
-- [ ] Deploy via wrangler (SNOLAB acct); smoke-test WS connect.
+### M0 — Signaling backend (Worker + Durable Object) ✅ DONE
+- [x] New Worker (wrangler) in `signal/` exporting `RoomDurableObject`.
+- [x] WebSocket endpoint `/{room}` with hibernatable WS; track peers/presence.
+- [x] Room = pairing code (room key); first peer implicitly hosts. (Code gen is client-side.)
+- [x] Relay `signal` messages between peers; broadcast presence.
+- [x] Store + broadcast authoritative graph JSON (LWW patches) in DO storage.
+- [x] **Routing**: `otoji.org/signal` + `/signal/*` Workers routes — **verified they
+      win over the Pages site** (path approach works; subdomain fallback not needed).
+- [x] Deployed via wrangler (SNOLAB); two-peer signaling smoke test passes live.
 
 ### M1 — Mesh transport
 - [ ] Signaling client (WS) in web: join/leave, presence, reconnect (φ backoff).
@@ -110,8 +109,8 @@
 - [ ] Mobile/iOS mic + background constraints.
 
 ## Open questions / risks
-- **Pages + Worker on same host**: confirm `otoji.org/signal/*` Workers route can
-  override the Pages app for that path; if not, ship on `signal.otoji.org`.
+- ~~**Pages + Worker on same host**: confirm `otoji.org/signal/*` route overrides
+  Pages.~~ ✅ Resolved — Workers routes win over Pages; `/signal` served by the Worker.
 - **DO + WebSocket hibernation** semantics for long-idle rooms.
 - **Model location**: only the STT device downloads the 228 MB SenseVoice model.
 - **Security**: room/pairing codes are bearer tokens (anyone with the code joins) —
