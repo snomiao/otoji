@@ -1,4 +1,4 @@
-import type { SttProvider, SttSegment, SttSession } from "../types";
+import type { SttProvider, SttSegment, SttSession, SttLevel } from "../types";
 import { computeFbank, SENSEVOICE_FBANK } from "../../lib/fbank";
 import { parseOnnxMetadata, parseFloatList } from "../../lib/onnx-meta";
 import { backoffDelay, sleep } from "../../lib/backoff";
@@ -310,7 +310,11 @@ export class SenseVoiceSttProvider implements SttProvider {
     return typeof navigator !== "undefined" && !!navigator.mediaDevices?.getUserMedia;
   }
 
-  async start(onSegment: (s: SttSegment) => void, onError?: (e: Error) => void): Promise<SttSession> {
+  async start(
+    onSegment: (s: SttSegment) => void,
+    onError?: (e: Error) => void,
+    onLevel?: (l: SttLevel) => void,
+  ): Promise<SttSession> {
     let engine: SenseVoiceEngine;
     try {
       engine = (await SenseVoiceEngine.load(getSenseVoiceModel(this.modelId))) as SenseVoiceEngine;
@@ -343,11 +347,14 @@ export class SenseVoiceSttProvider implements SttProvider {
       const samples = Float32Array.from(segment);
       segment = [];
       onSegment({ text: "", final: false }); // clear interim marker
+      const audio = { samples, sampleRate: TARGET_SR, durationMs: (samples.length / TARGET_SR) * 1000 };
       recogChain = recogChain.then(async () => {
         try {
           const text = await engine.recognize(samples);
-          if (text) onSegment({ text, final: true });
+          // Emit the recording even when ASR returns empty, so nothing is lost.
+          onSegment({ text, final: true, audio });
         } catch (e: any) {
+          onSegment({ text: "", final: true, audio });
           onError?.(e instanceof Error ? e : new Error(String(e)));
         }
       });
@@ -363,6 +370,7 @@ export class SenseVoiceSttProvider implements SttProvider {
         for (let i = 0; i < VAD_WIN; i++) sum += win[i] * win[i];
         const rms = Math.sqrt(sum / VAD_WIN);
         const active = rms > RMS_THRESHOLD;
+        onLevel?.({ rms, active: inSpeech || active });
 
         if (!inSpeech) {
           for (const s of win) preroll.push(s);

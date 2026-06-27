@@ -1,6 +1,21 @@
+export interface SttAudio {
+  /** Mono float samples in [-1, 1]. */
+  samples: Float32Array;
+  sampleRate: number;
+  durationMs: number;
+}
+
 export interface SttSegment {
   text: string;
   final: boolean;
+  /** Captured VAD segment audio (set by self-capturing providers on finals). */
+  audio?: SttAudio;
+}
+
+/** Per-window input level, for the live wave-chart. */
+export interface SttLevel {
+  rms: number;
+  active: boolean;
 }
 
 export interface SttSession {
@@ -12,7 +27,11 @@ export interface SttProvider {
   readonly id: string;
   readonly name: string;
   isAvailable(): boolean;
-  start(onSegment: (seg: SttSegment) => void, onError?: (e: Error) => void): Promise<SttSession>;
+  start(
+    onSegment: (seg: SttSegment) => void,
+    onError?: (e: Error) => void,
+    onLevel?: (level: SttLevel) => void,
+  ): Promise<SttSession>;
 }
 
 export interface TtsProvider {

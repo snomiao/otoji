@@ -9,6 +9,9 @@ import { TransformersWhisperProvider } from "../providers/stt/transformers";
 import { SenseVoiceSttProvider, warmSenseVoice, type LoadProgress } from "../providers/stt/sensevoice";
 import { SENSEVOICE_MODELS, DEFAULT_SENSEVOICE_MODEL } from "../providers/stt/sensevoice-models";
 import { backoffDelay, sleep } from "../lib/backoff";
+import { LiveWaveform } from "./LiveWaveform";
+import { RecordingPlayer, type Recording } from "./RecordingPlayer";
+import type { SttLevel } from "../providers/types";
 import { IflytekTtsProvider } from "../providers/tts/iflytek_tts";
 import { OpenAiTtsProvider } from "../providers/tts/openai_tts";
 import { SpeechSynthesisTtsProvider } from "../providers/tts/speechsynthesis";
@@ -56,9 +59,12 @@ export function App() {
   const [modelStatus, setModelStatus] = useState<string>("");
   const [showSettings, setShowSettings] = useState(false);
 
+  const [recordings, setRecordings] = useState<Recording[]>([]);
   const routers = useMemo(() => buildRouters(keys), [keys]);
   const listenRef = useRef(false);
   const sessionRef = useRef<SttSession | null>(null);
+  const levelsRef = useRef<SttLevel[]>([]);
+  const recCounter = useRef(0);
 
   const sttName = routers.stt.pick()?.name ?? "(none)";
   const ttsName = routers.tts.pick()?.name ?? "(none)";
@@ -106,10 +112,28 @@ export function App() {
             .start(
               (seg) => {
                 attempt = 0; // healthy output resets backoff
-                if (seg.final) { setSegments((prev) => [...prev, seg]); setPartial(""); }
-                else setPartial(seg.text);
+                if (seg.final) {
+                  if (seg.text) setSegments((prev) => [...prev, { text: seg.text, final: true }]);
+                  setPartial("");
+                  if (seg.audio) {
+                    const rec: Recording = {
+                      id: `rec-${recCounter.current++}`,
+                      samples: seg.audio.samples,
+                      sampleRate: seg.audio.sampleRate,
+                      durationMs: seg.audio.durationMs,
+                      text: seg.text,
+                      at: Date.now(),
+                    };
+                    setRecordings((prev) => [rec, ...prev]);
+                  }
+                } else setPartial(seg.text);
               },
               (e) => done(() => reject(e)),
+              (level) => {
+                const buf = levelsRef.current;
+                buf.push(level);
+                if (buf.length > 600) buf.splice(0, buf.length - 600);
+              },
             )
             .then((s) => {
               sessionRef.current = s;
@@ -206,6 +230,28 @@ export function App() {
         )}
       </div>
       <p style={{ color: "#888", fontSize: 12 }}>{status}{modelStatus ? ` · ${modelStatus}` : ""}</p>
+      <section style={{ margin: "8px 0" }}>
+        <LiveWaveform levelsRef={levelsRef} running={listening} width={480} height={64} />
+      </section>
+      <section>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+          <h2>Recordings ({recordings.length})</h2>
+          {recordings.length > 0 && (
+            <button onClick={() => setRecordings([])} style={{ fontSize: 12 }}>Clear</button>
+          )}
+        </div>
+        {recordings.length === 0 ? (
+          <p style={{ color: "#aaa", fontSize: 13 }}>
+            VAD-segmented utterances appear here — each with a waveform you can replay.
+          </p>
+        ) : (
+          <div data-testid="recordings">
+            {recordings.map((r, i) => (
+              <RecordingPlayer key={r.id} rec={r} index={recordings.length - 1 - i} />
+            ))}
+          </div>
+        )}
+      </section>
       <section>
         <h2>Transcript</h2>
         <div data-testid="transcript">
