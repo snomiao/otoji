@@ -1,0 +1,4 @@
+# SPA fallback: serve the app for room paths like /kru-dfmq-atg.
+# Real static assets are served first; /signal/* is a Workers route (takes
+# precedence over Pages), so it is unaffected.
+/*  /index.html  200

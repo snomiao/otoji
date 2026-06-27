@@ -2,10 +2,11 @@
 // and wire them per edges. Messages flow in-process; cross-device edges (M4)
 // will later be realized over data channels.
 
-import type { VoiceGraph, NodeType } from "./model";
+import type { VoiceGraph, NodeType, VoiceNode } from "./model";
 import { startMicVad, MIC_VAD_SR, type MicVadHandle } from "../lib/mic-vad";
 import { sttRecognize, warmSenseVoice } from "../providers/stt/sensevoice";
 import type { SttLevel } from "../providers/types";
+import { buildSegmentFrame, buildTranscriptFrame, frameToMessage, type EdgeFrame } from "./frames";
 
 export interface SegmentMsg {
   samples: Float32Array;
@@ -17,12 +18,40 @@ export interface TranscriptMsg {
   audio: SegmentMsg;
 }
 
+/** Cross-device transport (implemented over the WebRTC PeerMesh). */
+export interface Transport {
+  send(toDevice: string, frame: EdgeFrame): void;
+  setReceiver(cb: (frame: EdgeFrame) => void): void;
+}
+
+export interface RuntimeSelf {
+  myId: string;
+  deviceIds: string[];
+  transport: Transport;
+}
+
 export interface RuntimeHooks {
   modelId?: string;
+  /** Distributed mode: which device we are + transport. Omit for single-device. */
+  self?: RuntimeSelf;
   onLevel?: (nodeId: string, level: SttLevel) => void;
   onSink?: (nodeId: string, tr: TranscriptMsg) => void;
   onStatus?: (s: string) => void;
   onError?: (e: Error) => void;
+}
+
+/**
+ * The device that runs a node: its explicit assignment, or — for unassigned
+ * nodes — a single deterministic owner (smallest device id) so exactly one
+ * device executes it. With no devices known, returns null.
+ */
+export function nodeOwner(node: VoiceNode, deviceIds: string[]): string | null {
+  // Honor an explicit assignment only if that device is still present — peer ids
+  // are ephemeral, so a reloaded/persisted graph may reference dead peers.
+  if (node.device && deviceIds.includes(node.device)) return node.device;
+  if (deviceIds.length === 0) return null;
+  // Unassigned (or stale): a single deterministic owner so exactly one device runs it.
+  return [...deviceIds].sort()[0];
 }
 
 interface RuntimeNode {
@@ -52,10 +81,34 @@ export class GraphRuntime {
     private hooks: RuntimeHooks = {},
   ) {}
 
+  private isLocal(nodeId: string): boolean {
+    const node = this.graph.nodes[nodeId];
+    if (!node) return false;
+    const self = this.hooks.self;
+    if (!self) return true; // single-device: every node runs here
+    return nodeOwner(node, self.deviceIds) === self.myId;
+  }
+
   private emit(nodeId: string, port: string, msg: unknown): void {
     for (const t of this.adj.get(`${nodeId}:${port}`) ?? []) {
-      this.nodes.get(t.node)?.input?.(t.port, msg);
+      if (this.isLocal(t.node)) {
+        this.nodes.get(t.node)?.input?.(t.port, msg);
+      } else if (this.hooks.self) {
+        const owner = nodeOwner(this.graph.nodes[t.node], this.hooks.self.deviceIds);
+        if (!owner) continue;
+        const m = msg as Partial<TranscriptMsg> & Partial<SegmentMsg>;
+        const frame =
+          m.text !== undefined
+            ? buildTranscriptFrame(t.node, t.port, m as TranscriptMsg)
+            : buildSegmentFrame(t.node, t.port, m as SegmentMsg);
+        this.hooks.self.transport.send(owner, frame);
+      }
     }
+  }
+
+  private onFrame(frame: EdgeFrame): void {
+    if (!this.isLocal(frame.target)) return;
+    this.nodes.get(frame.target)?.input?.(frame.port, frameToMessage(frame));
   }
 
   async start(): Promise<void> {
@@ -63,11 +116,13 @@ export class GraphRuntime {
     this.running = true;
     this.adj = buildAdjacency(this.graph);
 
+    // Instantiate only the nodes this device owns.
     for (const n of Object.values(this.graph.nodes)) {
-      this.nodes.set(n.id, this.build(n.id, n.type));
+      if (this.isLocal(n.id)) this.nodes.set(n.id, this.build(n.id, n.type));
     }
+    this.hooks.self?.transport.setReceiver((f) => this.onFrame(f));
 
-    if (Object.values(this.graph.nodes).some((n) => n.type === "stt")) {
+    if (Object.values(this.graph.nodes).some((n) => n.type === "stt" && this.isLocal(n.id))) {
       this.hooks.onStatus?.("loading model…");
       try {
         await warmSenseVoice(this.hooks.modelId);

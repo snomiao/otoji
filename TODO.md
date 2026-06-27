@@ -106,11 +106,21 @@
 - [x] Codex review: abort run if model load fails; STT `stop()` drains its
       chain (stop sources first) so the final utterance isn't lost.
 
-### M4 — Cross-device chaining (**v1 goal**)
-- [ ] Realize cross-device edges as data channels; serialize `segment`/`text` frames.
-- [ ] phone `[Mic+VAD]` → (opus over RTC) → laptop `[STT]` → `[Sink]`.
-- [ ] Handle peer drop/rejoin; backpressure; ordering.
-- [ ] Verify on real phone + laptop (different networks → may need TURN, see M5).
+### M4 — Cross-device chaining (**v1 goal**) ✅ DONE (pending real 2-device check)
+- [x] Distributed runtime: each device runs only its owned nodes (`nodeOwner`);
+      cross-device edges serialize `segment`/`transcript` frames (`graph/frames.ts`,
+      raw 16 kHz Float32 — opus-on-wire deferred to avoid 48 kHz resample).
+- [x] Transport over the WebRTC mesh (`graph/mesh-transport.ts`); editor wires
+      PeerMesh + stable transport (survives reconnect) into the runtime.
+- [x] **Shareable join URLs, Google-Meet style**: `otoji.org/kru-dfmq-atg`
+      (`lib/roomcode.ts` + SPA `_redirects`); prefills room + Share-link button.
+- [x] Verified: routing (SPA path + `/signal` worker + assets coexist), URL
+      prefill, single-device distributed run starts clean (model+mic, running).
+- [x] Codex review: ignore stale peer-id assignments (graceful owner fallback);
+      keep a stable transport across signaling reconnects.
+- [ ] **User check**: real phone+laptop — phone `[Mic+VAD]` → laptop `[STT→Sink]`
+      (assign nodes per device, open the share link on both, Run on each).
+- [ ] (M5) opus-on-wire, peer drop/rejoin during run, backpressure/ordering, TURN.
 
 ### M5 — Future / hardening
 - [ ] Cloudflare TURN for symmetric-NAT / cross-network reliability.

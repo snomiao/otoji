@@ -13,12 +13,15 @@ import {
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 import { SignalingClient, type Peer } from "../net/signaling";
+import { PeerMesh } from "../net/peers";
 import { VoiceNode, type DeviceOpt } from "./VoiceNode";
 import { GraphContext } from "./graph-context";
 import { GraphRuntime, type TranscriptMsg } from "../graph/runtime";
+import { PeerMeshTransport } from "../graph/mesh-transport";
 import { RecordingPlayer, type Recording } from "./RecordingPlayer";
 import { computePeaks } from "../lib/peaks";
 import { isReadableTranscript } from "../lib/text";
+import { generateRoomCode, isRoomCode, joinUrl } from "../lib/roomcode";
 import {
   NODE_SPECS,
   canConnect,
@@ -69,9 +72,10 @@ function fromRF(nodes: Node[], edges: Edge[], version: number): VoiceGraph {
   return g;
 }
 
-function Editor() {
-  const [room, setRoom] = useState("");
+function Editor({ initialRoom }: { initialRoom?: string }) {
+  const [room, setRoom] = useState(initialRoom ?? "");
   const [name, setName] = useState("device");
+  const [copied, setCopied] = useState(false);
   const [joined, setJoined] = useState(false);
   const [myId, setMyId] = useState<string | null>(null);
   const [devices, setDevices] = useState<DeviceOpt[]>([]);
@@ -85,15 +89,19 @@ function Editor() {
   const [sinkRecs, setSinkRecs] = useState<Recording[]>([]);
 
   const sigRef = useRef<SignalingClient | null>(null);
+  const meshRef = useRef<PeerMesh | null>(null);
+  const transportRef = useRef<PeerMeshTransport | null>(null);
   const runtimeRef = useRef<GraphRuntime | null>(null);
   const recCounter = useRef(0);
   const versionRef = useRef(0);
+  const devicesRef = useRef<DeviceOpt[]>([]);
+  devicesRef.current = devices;
   const nodesRef = useRef(nodes);
   const edgesRef = useRef(edges);
   nodesRef.current = nodes;
   edgesRef.current = edges;
 
-  useEffect(() => () => sigRef.current?.close(), []);
+  useEffect(() => () => { meshRef.current?.destroy(); sigRef.current?.close(); }, []);
 
   const broadcast = useCallback((ns: Node[], es: Edge[]) => {
     versionRef.current += 1;
@@ -122,12 +130,39 @@ function Editor() {
       setDevices([{ peerId: m.peerId, name: name.trim() || "device", me: true }, ...m.peers.map(asDev)]);
       applyRemote(m.graph);
       sig.getGraph();
+      // (re)establish the WebRTC mesh for cross-device edge transport. Keep a
+      // STABLE transport object across reconnects (just swap its mesh) so a
+      // running runtime's captured transport keeps delivering frames.
+      meshRef.current?.destroy();
+      const mesh = new PeerMesh(sig, m.peerId, {
+        onData: (_peer, _label, data) => transportRef.current?.handleData(data),
+      });
+      meshRef.current = mesh;
+      if (!transportRef.current) transportRef.current = new PeerMeshTransport(mesh);
+      else transportRef.current.setMesh(mesh);
+      m.peers.forEach((p: Peer) => mesh.consider(p.peerId));
     });
-    sig.on("peer-joined", (m) => setDevices((d) => [...d, asDev(m.peer)]));
+    sig.on("peer-joined", (m) => {
+      setDevices((d) => [...d, asDev(m.peer)]);
+      meshRef.current?.consider(m.peer.peerId);
+    });
     sig.on("peer-left", (m) => setDevices((d) => d.filter((x) => x.peerId !== m.peerId)));
     sig.on("graph", (m) => applyRemote(m.graph));
     sig.connect();
     setJoined(true);
+    // Reflect the room in the address bar so it's a shareable join URL.
+    if (isRoomCode(room.trim())) history.replaceState(null, "", `/${room.trim()}`);
+  }
+
+  function share() {
+    const url = joinUrl(room.trim(), location.origin);
+    navigator.clipboard
+      ?.writeText(url)
+      .then(() => {
+        setCopied(true);
+        setTimeout(() => setCopied(false), 1500);
+      })
+      .catch(() => {});
   }
 
   const asDev = (p: Peer): DeviceOpt => ({ peerId: p.peerId, name: p.name, me: false });
@@ -195,7 +230,12 @@ function Editor() {
   const run = useCallback(async () => {
     if (runtimeRef.current) return;
     const graph = fromRF(nodesRef.current, edgesRef.current, versionRef.current);
+    const self =
+      myId && transportRef.current
+        ? { myId, deviceIds: devicesRef.current.map((d) => d.peerId), transport: transportRef.current }
+        : undefined;
     const rt = new GraphRuntime(graph, {
+      self,
       onStatus: (s) => setRunStatus(s),
       onError: (e) => setRunStatus(`error: ${e.message}`),
       onSink: (_id, tr: TranscriptMsg) => {
@@ -219,7 +259,7 @@ function Editor() {
     } catch (e: any) {
       setRunStatus(`error: ${e?.message ?? e}`);
     }
-  }, []);
+  }, [myId]);
 
   const stopRun = useCallback(async () => {
     await runtimeRef.current?.stop();
@@ -240,11 +280,16 @@ function Editor() {
           Join a room (pairing code), then build a node graph. Open on multiple devices to assign nodes per device.
         </p>
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-          <input placeholder="pairing code" value={room} onChange={(e) => setRoom(e.target.value)} />
-          <input placeholder="name" value={name} onChange={(e) => setName(e.target.value)} style={{ width: 120 }} />
-          <button onClick={() => setRoom(Math.floor(100000 + Math.random() * 900000).toString())}>random</button>
+          <input placeholder="room code" value={room} onChange={(e) => setRoom(e.target.value)} style={{ width: 150 }} />
+          <input placeholder="your name" value={name} onChange={(e) => setName(e.target.value)} style={{ width: 120 }} />
+          <button onClick={() => setRoom(generateRoomCode())}>new room</button>
           <button onClick={join} disabled={!room.trim()}>Join</button>
         </div>
+        {isRoomCode(room.trim()) && (
+          <p style={{ fontSize: 12, color: "#718096", marginTop: 10 }}>
+            Shareable link: <code>{joinUrl(room.trim(), location.origin)}</code>
+          </p>
+        )}
       </div>
     );
   }
@@ -255,6 +300,7 @@ function Editor() {
         <div style={{ display: "flex", gap: 8, alignItems: "center", padding: "8px 12px", borderBottom: "1px solid #e2e8f0", flexWrap: "wrap" }}>
           <strong>otoji graph</strong>
           <span style={{ fontSize: 12, color: "#718096" }}>room {room} · {status} · {devices.length} device(s)</span>
+          <button onClick={share} style={{ fontSize: 12 }}>{copied ? "✓ link copied" : "Share link"}</button>
           <span style={{ marginLeft: 12, fontSize: 12, color: "#a0aec0" }}>add:</span>
           {(Object.keys(NODE_SPECS) as NodeType[]).map((t) => (
             <button key={t} onClick={() => addNode(t)} style={{ fontSize: 12 }}>+ {NODE_SPECS[t].label}</button>
@@ -306,10 +352,10 @@ function Editor() {
   );
 }
 
-export function GraphEditor() {
+export function GraphEditor({ initialRoom }: { initialRoom?: string }) {
   return (
     <ReactFlowProvider>
-      <Editor />
+      <Editor initialRoom={initialRoom} />
     </ReactFlowProvider>
   );
 }
