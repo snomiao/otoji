@@ -13,6 +13,8 @@ export interface DeviceOpt {
   name: string;
   me: boolean;
   online: boolean;
+  role: string;
+  hasMic: boolean;
 }
 
 export interface VoiceNodeData {

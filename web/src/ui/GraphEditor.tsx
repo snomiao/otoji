@@ -24,6 +24,7 @@ import { computePeaks } from "../lib/peaks";
 import { isReadableTranscript } from "../lib/text";
 import { generateRoomCode, isRoomCode, joinUrl } from "../lib/roomcode";
 import { getDeviceId, getDeviceName, setDeviceName } from "../lib/device-id";
+import { getRole, setRole, detectCaps, ROLES, type DeviceRole } from "../lib/device-role";
 import { NetworkView } from "./NetworkView";
 import { TimelineView } from "./TimelineView";
 import type { PortType } from "../graph/model";
@@ -85,9 +86,11 @@ function Editor({ initialRoom }: { initialRoom?: string }) {
   const [joined, setJoined] = useState(false);
   const myDeviceId = useMemo(() => getDeviceId(), []);
   const [myPeerId, setMyPeerId] = useState<string | null>(null);
-  const [present, setPresent] = useState<Record<string, { peerId: string; name: string }>>({});
+  const [present, setPresent] = useState<Record<string, { peerId: string; name: string; role: string; hasMic: boolean }>>({});
   const [status, setStatus] = useState("not connected");
   const [paused, setPaused] = useState(false);
+  const [role, setRoleState] = useState<DeviceRole>(() => getRole());
+  const caps = useMemo(() => detectCaps(), []);
 
   const [nodes, setNodes, onNodesChange] = useNodesState<Node>([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([]);
@@ -133,6 +136,8 @@ function Editor({ initialRoom }: { initialRoom?: string }) {
           name: on?.name ?? nameCacheRef.current[deviceId] ?? deviceId.slice(0, 6),
           online: !!on,
           me: deviceId === myDeviceId,
+          role: on?.role ?? (deviceId === myDeviceId ? role : "general"),
+          hasMic: on?.hasMic ?? (deviceId === myDeviceId ? caps.hasMic : true),
         };
       })
       .sort((a, b) => (a.me ? -1 : b.me ? 1 : Number(b.online) - Number(a.online) || a.name.localeCompare(b.name)));
@@ -177,15 +182,17 @@ function Editor({ initialRoom }: { initialRoom?: string }) {
     if (joined || !room.trim()) return;
     const dn = name.trim() || "device";
     setDeviceName(dn);
-    const sig = new SignalingClient(room.trim(), dn, myDeviceId);
+    const sig = new SignalingClient(room.trim(), dn, myDeviceId, role, caps.hasMic);
     sigRef.current = sig;
     sig.on("open", () => setStatus("connected"));
     sig.on("close", () => setStatus("reconnecting…"));
     sig.on("hello", (m) => {
       setMyPeerId(m.peerId);
       setPresent(() => {
-        const p: Record<string, { peerId: string; name: string }> = { [myDeviceId]: { peerId: m.peerId, name: dn } };
-        for (const peer of m.peers as Peer[]) p[peer.deviceId] = { peerId: peer.peerId, name: peer.name };
+        const p: Record<string, { peerId: string; name: string; role: string; hasMic: boolean }> = {
+          [myDeviceId]: { peerId: m.peerId, name: dn, role, hasMic: caps.hasMic },
+        };
+        for (const peer of m.peers as Peer[]) p[peer.deviceId] = { peerId: peer.peerId, name: peer.name, role: peer.role, hasMic: peer.hasMic };
         return p;
       });
       applyRemote(m.graph);
@@ -205,7 +212,7 @@ function Editor({ initialRoom }: { initialRoom?: string }) {
     });
     sig.on("peer-joined", (m) => {
       const peer = m.peer as Peer;
-      setPresent((p) => ({ ...p, [peer.deviceId]: { peerId: peer.peerId, name: peer.name } }));
+      setPresent((p) => ({ ...p, [peer.deviceId]: { peerId: peer.peerId, name: peer.name, role: peer.role, hasMic: peer.hasMic } }));
       meshRef.current?.consider(peer.peerId);
     });
     sig.on("peer-left", (m) => {
@@ -282,11 +289,20 @@ function Editor({ initialRoom }: { initialRoom?: string }) {
   const addPipeline = useCallback(() => {
     const sfx = Math.random().toString(36).slice(2, 6);
     const mic = `mic-vad-${sfx}`, stt = `stt-${sfx}`, sink = `sink-${sfx}`;
+    // Distribute across devices by role (falls back to this device).
+    const online = devices.filter((d) => d.online);
+    const pickFor = (t: NodeType): string => {
+      if (t === "mic-vad")
+        return online.find((d) => d.role === "mic" && d.hasMic)?.deviceId ?? (caps.hasMic ? myDeviceId : online.find((d) => d.hasMic)?.deviceId ?? myDeviceId);
+      if (t === "stt") return online.find((d) => d.role === "model")?.deviceId ?? myDeviceId;
+      if (t === "sink") return online.find((d) => d.role === "viewer")?.deviceId ?? myDeviceId;
+      return myDeviceId;
+    };
     const mk = (id: string, type: NodeType, x: number): Node => ({
       id,
       type: "voice",
       position: { x, y: 120 },
-      data: { voiceType: type, device: myDeviceId, config: {} },
+      data: { voiceType: type, device: pickFor(type), config: {} },
     });
     const nextNodes = [...nodesRef.current, mk(mic, "mic-vad", 60), mk(stt, "stt", 320), mk(sink, "sink", 580)];
     const mkEdge = (s: string, t: string): Edge => ({ id: edgeId({ source: s, sourceHandle: "out", target: t, targetHandle: "in" }), source: s, sourceHandle: "out", target: t, targetHandle: "in" });
@@ -296,7 +312,7 @@ function Editor({ initialRoom }: { initialRoom?: string }) {
     setNodes(nextNodes);
     setEdges(nextEdges);
     broadcast(nextNodes, nextEdges);
-  }, [myDeviceId, setNodes, setEdges, broadcast]);
+  }, [myDeviceId, devices, caps.hasMic, setNodes, setEdges, broadcast]);
 
   const onConnect = useCallback(
     (params: Connection) => {
@@ -450,6 +466,9 @@ function Editor({ initialRoom }: { initialRoom?: string }) {
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
           <input placeholder="room code" value={room} onChange={(e) => setRoom(e.target.value)} style={{ width: 150 }} />
           <input placeholder="your name" value={name} onChange={(e) => setName(e.target.value)} style={{ width: 120 }} />
+          <select value={role} onChange={(e) => { setRoleState(e.target.value as DeviceRole); setRole(e.target.value as DeviceRole); }} title="this device's role">
+            {ROLES.map((r) => <option key={r.id} value={r.id}>{r.label}</option>)}
+          </select>
           <button onClick={() => setRoom(generateRoomCode())}>new room</button>
           <button onClick={join} disabled={!room.trim()}>Join</button>
         </div>
@@ -467,7 +486,7 @@ function Editor({ initialRoom }: { initialRoom?: string }) {
       <div style={{ display: "flex", flexDirection: "column", height: "100vh", fontFamily: "system-ui, sans-serif" }}>
         <div style={{ display: "flex", gap: 8, alignItems: "center", padding: "8px 12px", borderBottom: "1px solid #e2e8f0", flexWrap: "wrap" }}>
           <strong>otoji graph</strong>
-          <span style={{ fontSize: 12, color: "#718096" }}>room {room} · {status} · {devices.length} device(s)</span>
+          <span style={{ fontSize: 12, color: "#718096" }}>room {room} · {status} · {role} · {devices.length} device(s)</span>
           <button onClick={share} style={{ fontSize: 12 }}>{copied ? "✓ link copied" : "Share link"}</button>
           <span style={{ display: "flex", gap: 4, marginLeft: 12 }}>
             {(["graph", "network", "timeline"] as const).map((v) => (
@@ -543,7 +562,7 @@ function Editor({ initialRoom }: { initialRoom?: string }) {
             </>
           )}
           {view === "network" && (
-            <NetworkView devices={devices} peerStates={peerStates} graph={currentGraph} stats={transportRef.current} />
+            <NetworkView myId={myDeviceId} devices={devices} peerStates={peerStates} graph={currentGraph} stats={transportRef.current} />
           )}
           {view === "timeline" && <TimelineView recordings={sinkRecs} />}
         </div>

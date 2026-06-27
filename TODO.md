@@ -140,15 +140,17 @@
 - [ ] (Phase 3) formalize hooks; (Phase 4) **polish node** = on-device LLM
       (WebLLM/WebGPU, Qwen2.5-0.5B/1.5B, gated, never blocks STT path).
 
-### Device roles + perspective network (next)
-- Roles map onto node ownership: **mic** (owns mic-vad), **model provider**
-  (owns stt/polish; can be headless/beefy), **viewer** (owns sink to receive
-  transcripts). Add **capabilities in presence** (`hasMic`, `canCompute`, `role`)
-  for smart auto-assignment ("+ Pipeline" distributes across roles) + gating
-  (don't assign mic-vad to a device with no mic). Manual assignment stays.
-- **Egocentric Network view**: "I send `voice segments` → `laptop` for `STT`;
-  results → `viewer`" — render the cross-device links from *my* perspective
-  (what I send/receive, to/from whom, for what help).
+### Device roles + perspective network ✅ DONE
+- [x] Roles (`lib/device-role.ts`): general / mic / model / viewer, picked on the
+      join screen, shared via presence (signal worker carries role + hasMic).
+- [x] Role-aware "+ Pipeline": mic→a mic device, stt→a model device, sink→viewer
+      (falls back to this device). Capability `hasMic` surfaced.
+- [x] Egocentric Network view: a "You" panel — your role, what you run, and
+      "↗ sending voice → laptop for SenseVoice STT" / "↘ receiving transcript ← …";
+      device boxes show role + no-mic.
+- [ ] (later) gate auto-assign harder (never mic-vad to no-mic device); change
+      role while joined (currently set at join); viewer w/o sink needs remote
+      preview sync (deferred).
 
 ### M5 — Future / hardening
 - [ ] Cloudflare TURN for symmetric-NAT / cross-network reliability.

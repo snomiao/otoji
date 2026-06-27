@@ -44,6 +44,8 @@ interface PeerMeta {
   peerId: string;
   deviceId: string;
   name: string;
+  role: string;
+  hasMic: boolean;
   lastSeen: number;
 }
 
@@ -65,14 +67,16 @@ export class RoomDurableObject {
 
     const name = (url.searchParams.get("name") || "device").slice(0, 64);
     const deviceId = (url.searchParams.get("deviceId") || crypto.randomUUID()).slice(0, 100);
+    const role = (url.searchParams.get("role") || "general").slice(0, 16);
+    const hasMic = url.searchParams.get("hasMic") !== "0";
     const peerId = crypto.randomUUID();
 
     const { 0: client, 1: server } = new WebSocketPair();
     this.state.acceptWebSocket(server, [peerId]);
-    server.serializeAttachment({ peerId, deviceId, name, lastSeen: Date.now() } satisfies PeerMeta);
+    server.serializeAttachment({ peerId, deviceId, name, role, hasMic, lastSeen: Date.now() } satisfies PeerMeta);
 
     server.send(JSON.stringify({ type: "hello", peerId, peers: this.peers(peerId), graph: await this.getGraph() }));
-    this.broadcast({ type: "peer-joined", peer: { peerId, deviceId, name } }, peerId);
+    this.broadcast({ type: "peer-joined", peer: { peerId, deviceId, name, role, hasMic } }, peerId);
     await this.ensureAlarm();
 
     return new Response(null, { status: 101, webSocket: client });

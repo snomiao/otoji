@@ -9,6 +9,8 @@ export interface Peer {
   peerId: string;
   deviceId: string;
   name: string;
+  role: string;
+  hasMic: boolean;
 }
 
 type Handler = (msg: any) => void;
@@ -26,6 +28,8 @@ export class SignalingClient {
     private room: string,
     private name: string,
     private deviceId: string = "",
+    private role: string = "general",
+    private hasMic: boolean = true,
     private base: string = DEFAULT_SIGNAL_BASE,
   ) {}
 
@@ -42,7 +46,7 @@ export class SignalingClient {
 
   connect(): void {
     this.closedByUser = false;
-    const url = `${this.base}/${encodeURIComponent(this.room)}?name=${encodeURIComponent(this.name)}&deviceId=${encodeURIComponent(this.deviceId)}`;
+    const url = `${this.base}/${encodeURIComponent(this.room)}?name=${encodeURIComponent(this.name)}&deviceId=${encodeURIComponent(this.deviceId)}&role=${encodeURIComponent(this.role)}&hasMic=${this.hasMic ? "1" : "0"}`;
     const ws = new WebSocket(url);
     this.ws = ws;
 
