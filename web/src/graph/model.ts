@@ -3,7 +3,7 @@
 // authoritative state synced via the Durable Object (see signaling graph-patch).
 
 export type PortType = "segment" | "transcript";
-export type NodeType = "mic-vad" | "stt" | "sink";
+export type NodeType = "mic-vad" | "stt" | "translate" | "sink";
 
 export interface NodeSpec {
   type: NodeType;
@@ -23,6 +23,12 @@ export const NODE_SPECS: Record<NodeType, NodeSpec> = {
     type: "stt",
     label: "SenseVoice STT",
     inputs: [{ id: "in", type: "segment" }],
+    outputs: [{ id: "out", type: "transcript" }],
+  },
+  translate: {
+    type: "translate",
+    label: "Translate (in-browser LLM)",
+    inputs: [{ id: "in", type: "transcript" }],
     outputs: [{ id: "out", type: "transcript" }],
   },
   sink: {

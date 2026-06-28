@@ -47,3 +47,19 @@ export interface PolishProvider {
   isAvailable(): boolean;
   polish(text: string, instruction?: string): Promise<string>;
 }
+
+export interface TranslateLoadProgress {
+  /** 0..1 model download/init progress, when known. */
+  progress?: number;
+  text?: string;
+}
+
+export interface TranslateProvider {
+  readonly id: string;
+  readonly name: string;
+  isAvailable(): boolean;
+  /** Preload the model so the first translation isn't blocked on a big download. */
+  warm(modelId?: string, onProgress?: (p: TranslateLoadProgress) => void): Promise<void>;
+  /** Translate `text` into `targetLang` (a human language name, e.g. "English"). */
+  translate(text: string, targetLang: string, modelId?: string): Promise<string>;
+}

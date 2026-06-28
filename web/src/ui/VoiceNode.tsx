@@ -3,6 +3,12 @@ import { Handle, Position, type NodeProps } from "@xyflow/react";
 import { NODE_SPECS, type NodeType, type PortType } from "../graph/model";
 import { GraphContext } from "./graph-context";
 import { SENSEVOICE_MODELS, DEFAULT_SENSEVOICE_MODEL } from "../providers/stt/sensevoice-models";
+import {
+  TRANSLATE_MODELS,
+  TRANSLATE_LANGUAGES,
+  DEFAULT_TRANSLATE_MODEL,
+  DEFAULT_TRANSLATE_LANG,
+} from "../providers/translate/translate-config";
 import { useNodeLive } from "./useNodeLive";
 import { NodeMicPreview } from "./NodeMicPreview";
 import { isPreviewShown, setPreviewShown } from "../lib/prefs";
@@ -102,6 +108,34 @@ export function VoiceNode({ id, data }: NodeProps) {
             </select>
           </label>
         )}
+        {d.voiceType === "translate" && (
+          <>
+            <label style={{ display: "flex", gap: 6, alignItems: "center", color: "#718096", marginTop: 4 }}>
+              to:
+              <select
+                value={((d as any).config?.lang as string | undefined) ?? DEFAULT_TRANSLATE_LANG}
+                onChange={(e) => onConfig(id, { lang: e.target.value })}
+                style={{ fontSize: 11, flex: 1 }}
+              >
+                {TRANSLATE_LANGUAGES.map((l) => (
+                  <option key={l} value={l}>{l}</option>
+                ))}
+              </select>
+            </label>
+            <label style={{ display: "flex", gap: 6, alignItems: "center", color: "#718096", marginTop: 4 }}>
+              model:
+              <select
+                value={((d as any).config?.model as string | undefined) ?? DEFAULT_TRANSLATE_MODEL}
+                onChange={(e) => onConfig(id, { model: e.target.value })}
+                style={{ fontSize: 11, flex: 1 }}
+              >
+                {TRANSLATE_MODELS.map((m) => (
+                  <option key={m.id} value={m.id}>{m.name} · {m.size}</option>
+                ))}
+              </select>
+            </label>
+          </>
+        )}
         {!d.device && <div style={{ color: "#e53e3e", fontSize: 10, marginTop: 2 }}>unassigned</div>}
         {assigned && !assigned.online && (
           <div style={{ color: "#c05621", fontSize: 10, marginTop: 2 }}>● {assigned.name} offline</div>
@@ -111,7 +145,7 @@ export function VoiceNode({ id, data }: NodeProps) {
       {shown && (d.voiceType === "mic-vad" || texts.length > 0) && (
         <div style={{ padding: "0 10px 8px" }}>
           {d.voiceType === "mic-vad" && <NodeMicPreview live={live} nodeId={id} width={150} height={28} />}
-          {(d.voiceType === "stt" || d.voiceType === "sink") && (
+          {(d.voiceType === "stt" || d.voiceType === "translate" || d.voiceType === "sink") && (
             <div style={{ fontSize: 11, color: "#4a5568", lineHeight: 1.35 }}>
               {texts.map((t, i) => (
                 <div key={i} style={{ opacity: 1 - i * 0.3, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", maxWidth: 150 }}>

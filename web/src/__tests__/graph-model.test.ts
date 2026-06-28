@@ -6,6 +6,7 @@ function graph(): VoiceGraph {
   g.nodes = {
     mic: { id: "mic", type: "mic-vad", device: null, pos: { x: 0, y: 0 } },
     stt: { id: "stt", type: "stt", device: null, pos: { x: 0, y: 0 } },
+    translate: { id: "translate", type: "translate", device: null, pos: { x: 0, y: 0 } },
     sink: { id: "sink", type: "sink", device: null, pos: { x: 0, y: 0 } },
   };
   return g;
@@ -16,6 +17,14 @@ describe("canConnect", () => {
     const g = graph();
     expect(canConnect(g, "mic", "out", "stt", "in")).toBe(true); // segment->segment
     expect(canConnect(g, "stt", "out", "sink", "in")).toBe(true); // transcript->transcript
+    // translate sits inline on the transcript stream: stt -> translate -> sink
+    expect(canConnect(g, "stt", "out", "translate", "in")).toBe(true);
+    expect(canConnect(g, "translate", "out", "sink", "in")).toBe(true);
+  });
+
+  it("rejects audio feeding straight into translate", () => {
+    const g = graph();
+    expect(canConnect(g, "mic", "out", "translate", "in")).toBe(false); // segment->transcript
   });
 
   it("rejects mismatched port types", () => {

@@ -5,6 +5,8 @@
 import type { VoiceGraph, NodeType, VoiceNode } from "./model";
 import { startMicVad, MIC_VAD_SR, type MicVadHandle } from "../lib/mic-vad";
 import { sttRecognize, warmSenseVoice } from "../providers/stt/sensevoice";
+import { webllmTranslate } from "../providers/translate/webllm";
+import { DEFAULT_TRANSLATE_LANG, DEFAULT_TRANSLATE_MODEL } from "../providers/translate/translate-config";
 import type { SttLevel } from "../providers/types";
 import { buildSegmentFrame, buildTranscriptFrame, frameToMessage, type EdgeFrame } from "./frames";
 
@@ -146,6 +148,28 @@ export class GraphRuntime {
       }
     }
 
+    // Preload translate (in-browser LLM) models. Non-fatal: a failure here (no
+    // WebGPU, download error) should only disable translate nodes, not abort the
+    // STT/sink pipeline, so we warn and keep going.
+    const translateModels = new Set<string>();
+    for (const n of Object.values(this.graph.nodes)) {
+      if (n.type === "translate" && this.isLocal(n.id))
+        translateModels.add((n.config?.model as string | undefined) ?? DEFAULT_TRANSLATE_MODEL);
+    }
+    if (translateModels.size) {
+      this.hooks.onStatus?.("loading translate model…");
+      await Promise.all(
+        [...translateModels].map((m) =>
+          webllmTranslate
+            .warm(m, (p) => {
+              if (p.progress !== undefined) this.hooks.onStatus?.(`translate model ${Math.round(p.progress * 100)}%`);
+              else if (p.text) this.hooks.onStatus?.(p.text);
+            })
+            .catch((e) => this.hooks.onError?.(e instanceof Error ? e : new Error(String(e)))),
+        ),
+      );
+    }
+
     for (const node of this.nodes.values()) await node.start?.();
     this.hooks.onStatus?.("running");
   }
@@ -190,6 +214,37 @@ export class GraphRuntime {
         },
         // Wait for in-flight recognition so a just-spoken / stop-time segment
         // isn't dropped before its result reaches the sink.
+        stop: () => chain,
+      };
+    }
+
+    if (type === "translate") {
+      let chain: Promise<void> = Promise.resolve();
+      const cfg = this.graph.nodes[id]?.config ?? {};
+      const modelId = (cfg.model as string | undefined) ?? DEFAULT_TRANSLATE_MODEL;
+      const targetLang = (cfg.lang as string | undefined) ?? DEFAULT_TRANSLATE_LANG;
+      return {
+        input: (_port, msg) => {
+          const tr = msg as TranscriptMsg;
+          chain = chain.then(async () => {
+            if (!tr.text.trim()) return; // nothing recognized — don't echo empties
+            this.hooks.onNodeBusy?.(id, true);
+            // Pass through the original text on any failure (no WebGPU, download
+            // error, inference error) so downstream sink/recordings keep working.
+            let text = tr.text;
+            try {
+              if (webllmTranslate.isAvailable()) text = await webllmTranslate.translate(tr.text, targetLang, modelId);
+            } catch (e) {
+              this.hooks.onError?.(e instanceof Error ? e : new Error(String(e)));
+            } finally {
+              this.hooks.onNodeBusy?.(id, false);
+            }
+            this.hooks.onRecognized?.(id, text);
+            // Carry the original audio downstream so a sink can still record it.
+            this.emit(id, "out", { text, audio: tr.audio } as TranscriptMsg);
+          });
+        },
+        // Drain in-flight translations so a final utterance reaches the sink.
         stop: () => chain,
       };
     }
