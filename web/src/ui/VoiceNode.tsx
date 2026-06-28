@@ -6,8 +6,10 @@ import { SENSEVOICE_MODELS, DEFAULT_SENSEVOICE_MODEL } from "../providers/stt/se
 import {
   TRANSLATE_MODELS,
   TRANSLATE_LANGUAGES,
+  TRANSLATE_PROVIDERS,
   DEFAULT_TRANSLATE_MODEL,
   DEFAULT_TRANSLATE_LANG,
+  DEFAULT_TRANSLATE_PROVIDER,
 } from "../providers/translate/translate-config";
 import { useNodeLive } from "./useNodeLive";
 import { NodeMicPreview } from "./NodeMicPreview";
@@ -123,17 +125,31 @@ export function VoiceNode({ id, data }: NodeProps) {
               </select>
             </label>
             <label style={{ display: "flex", gap: 6, alignItems: "center", color: "#718096", marginTop: 4 }}>
-              model:
+              via:
               <select
-                value={((d as any).config?.model as string | undefined) ?? DEFAULT_TRANSLATE_MODEL}
-                onChange={(e) => onConfig(id, { model: e.target.value })}
+                value={((d as any).config?.provider as string | undefined) ?? DEFAULT_TRANSLATE_PROVIDER}
+                onChange={(e) => onConfig(id, { provider: e.target.value })}
                 style={{ fontSize: 11, flex: 1 }}
               >
-                {TRANSLATE_MODELS.map((m) => (
-                  <option key={m.id} value={m.id}>{m.name} · {m.size}</option>
+                {TRANSLATE_PROVIDERS.map((p) => (
+                  <option key={p.id} value={p.id}>{p.name}</option>
                 ))}
               </select>
             </label>
+            {(((d as any).config?.provider as string | undefined) ?? DEFAULT_TRANSLATE_PROVIDER) === "llm" && (
+              <label style={{ display: "flex", gap: 6, alignItems: "center", color: "#718096", marginTop: 4 }}>
+                model:
+                <select
+                  value={((d as any).config?.model as string | undefined) ?? DEFAULT_TRANSLATE_MODEL}
+                  onChange={(e) => onConfig(id, { model: e.target.value })}
+                  style={{ fontSize: 11, flex: 1 }}
+                >
+                  {TRANSLATE_MODELS.map((m) => (
+                    <option key={m.id} value={m.id}>{m.name} · {m.size}</option>
+                  ))}
+                </select>
+              </label>
+            )}
           </>
         )}
         {!d.device && <div style={{ color: "#e53e3e", fontSize: 10, marginTop: 2 }}>unassigned</div>}

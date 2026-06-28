@@ -6,6 +6,7 @@ import type { VoiceGraph, NodeType, VoiceNode } from "./model";
 import { startMicVad, MIC_VAD_SR, type MicVadHandle } from "../lib/mic-vad";
 import { sttRecognize, warmSenseVoice } from "../providers/stt/sensevoice";
 import { webllmTranslate } from "../providers/translate/webllm";
+import { browserTranslate } from "../providers/translate/browser-translator";
 import { DEFAULT_TRANSLATE_LANG, DEFAULT_TRANSLATE_MODEL } from "../providers/translate/translate-config";
 import type { SttLevel } from "../providers/types";
 import { buildSegmentFrame, buildTranscriptFrame, frameToMessage, type EdgeFrame } from "./frames";
@@ -148,12 +149,12 @@ export class GraphRuntime {
       }
     }
 
-    // Preload translate (in-browser LLM) models. Non-fatal: a failure here (no
-    // WebGPU, download error) should only disable translate nodes, not abort the
-    // STT/sink pipeline, so we warn and keep going.
+    // Preload translate (in-browser LLM) models — only for nodes using the LLM
+    // backend; the browser Translator API downloads packs lazily. Non-fatal: a
+    // failure here only disables translate (passthrough), never aborts STT/sink.
     const translateModels = new Set<string>();
     for (const n of Object.values(this.graph.nodes)) {
-      if (n.type === "translate" && this.isLocal(n.id))
+      if (n.type === "translate" && this.isLocal(n.id) && (n.config?.provider ?? "llm") === "llm")
         translateModels.add((n.config?.model as string | undefined) ?? DEFAULT_TRANSLATE_MODEL);
     }
     if (translateModels.size) {
@@ -166,6 +167,23 @@ export class GraphRuntime {
               else if (p.text) this.hooks.onStatus?.(p.text);
             })
             .catch((e) => this.hooks.onError?.(e instanceof Error ? e : new Error(String(e)))),
+        ),
+      );
+    }
+
+    // Browser Translator API nodes: pre-download detector + likely packs now,
+    // while we still have user activation from the Join click (Chrome needs it
+    // to start a pack download, which would otherwise fail on first transcript).
+    const browserTargets = new Set<string>();
+    for (const n of Object.values(this.graph.nodes)) {
+      if (n.type === "translate" && this.isLocal(n.id) && n.config?.provider === "browser")
+        browserTargets.add((n.config?.lang as string | undefined) ?? DEFAULT_TRANSLATE_LANG);
+    }
+    if (browserTargets.size) {
+      this.hooks.onStatus?.("preparing browser translator…");
+      await Promise.all(
+        [...browserTargets].map((t) =>
+          browserTranslate.warm(t).catch((e) => this.hooks.onError?.(e instanceof Error ? e : new Error(String(e)))),
         ),
       );
     }
@@ -223,6 +241,7 @@ export class GraphRuntime {
       const cfg = this.graph.nodes[id]?.config ?? {};
       const modelId = (cfg.model as string | undefined) ?? DEFAULT_TRANSLATE_MODEL;
       const targetLang = (cfg.lang as string | undefined) ?? DEFAULT_TRANSLATE_LANG;
+      const provider = (cfg.provider as string | undefined) === "browser" ? browserTranslate : webllmTranslate;
       return {
         input: (_port, msg) => {
           const tr = msg as TranscriptMsg;
@@ -233,7 +252,7 @@ export class GraphRuntime {
             // error, inference error) so downstream sink/recordings keep working.
             let text = tr.text;
             try {
-              if (webllmTranslate.isAvailable()) text = await webllmTranslate.translate(tr.text, targetLang, modelId);
+              if (provider.isAvailable()) text = await provider.translate(tr.text, targetLang, modelId);
             } catch (e) {
               this.hooks.onError?.(e instanceof Error ? e : new Error(String(e)));
             } finally {

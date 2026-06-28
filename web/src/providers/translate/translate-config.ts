@@ -49,6 +49,25 @@ const LANG_BY_PREFIX: Record<string, string> = {
   hi: "Hindi", vi: "Vietnamese", th: "Thai", id: "Indonesian",
 };
 
+const NAME_TO_CODE: Record<string, string> = Object.fromEntries(
+  Object.entries(LANG_BY_PREFIX).map(([code, name]) => [name, code]),
+);
+
+/** Map a target-language name ("Chinese") to a BCP-47 code ("zh") for the
+ *  browser Translator API. Returns null for unknown names. */
+export function langNameToCode(name: string): string | null {
+  return NAME_TO_CODE[name] ?? null;
+}
+
+// Translate backends. On-device LLM is the default (multilingual, no source
+// needed); the browser Translator API is a lighter Chrome-only alternative.
+export const TRANSLATE_PROVIDERS = [
+  { id: "llm", name: "On-device LLM (WebLLM)" },
+  { id: "browser", name: "Browser Translator API" },
+] as const;
+
+export const DEFAULT_TRANSLATE_PROVIDER = "llm";
+
 /** The user's browser language as a target, falling back to English. */
 export function browserTargetLang(): string {
   try {
