@@ -481,7 +481,14 @@ function Editor({ initialRoom }: { initialRoom?: string }) {
           ? NODE_SPECS[(src.data as any).voiceType as NodeType].outputs.find((o) => o.id === (e.sourceHandle ?? "out"))?.type
           : undefined;
         const stroke = t ? PORT_COLOR[t] : "#b0b6c0";
-        return { ...e, animated: running, style: { stroke, strokeWidth: 2 } };
+        return {
+          ...e,
+          animated: running,
+          interactionWidth: 24, // wider invisible hit area so edges are easy to click
+          style: e.selected
+            ? { stroke: "#1a202c", strokeWidth: 4 }
+            : { stroke, strokeWidth: 2 },
+        };
       }),
     [edges, nodes, running],
   );

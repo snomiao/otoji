@@ -118,8 +118,10 @@
       prefill, single-device distributed run starts clean (model+mic, running).
 - [x] Codex review: ignore stale peer-id assignments (graceful owner fallback);
       keep a stable transport across signaling reconnects.
-- [ ] **User check**: real phone+laptop — phone `[Mic+VAD]` → laptop `[STT→Sink]`
-      (assign nodes per device, open the share link on both, Run on each).
+- [x] **Cross-device transport fixed + verified**: raw segment frames exceeded the
+      RTCDataChannel max-message-size (send threw → silently dropped) → now chunked
+      + reassembled. Verified via Playwright (4 separate browser contexts, fake-mic):
+      mic(A)→stt(B)→translate JP(C)+EN(D), all stored back on B (B sink=6).
 - [x] Stable device identity (`lib/device-id.ts`): nodes assigned to a persisted
       deviceId, so a device keeps its nodes across reconnect and **reclaims them on
       rejoin**; offline devices shown as such (not unassigned).
