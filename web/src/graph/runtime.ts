@@ -10,7 +10,7 @@ import { webllmTranslate } from "../providers/translate/webllm";
 import { browserTranslate } from "../providers/translate/browser-translator";
 import { DEFAULT_TRANSLATE_LANG, DEFAULT_TRANSLATE_MODEL, langNameToCode } from "../providers/translate/translate-config";
 import { neuralTts } from "../providers/tts/neural";
-import { DEFAULT_NEURAL_TTS_MODEL } from "../providers/tts/tts-config";
+import { DEFAULT_NEURAL_TTS_MODEL, AUTO_TTS_MODEL, langToTtsModel } from "../providers/tts/tts-config";
 import type { SttLevel } from "../providers/types";
 import { buildSegmentFrame, buildTranscriptFrame, frameToMessage, type EdgeFrame } from "./frames";
 
@@ -202,8 +202,12 @@ export class GraphRuntime {
     // failure only disables that node, never aborts the rest of the graph.
     const ttsModels = new Set<string>();
     for (const n of Object.values(this.graph.nodes)) {
-      if (n.type === "tts-model" && this.isLocal(n.id))
-        ttsModels.add((n.config?.model as string | undefined) ?? DEFAULT_NEURAL_TTS_MODEL);
+      if (n.type === "tts-model" && this.isLocal(n.id)) {
+        // Auto-mode nodes resolve their model per-utterance from the transcript's
+        // language, so they can't be preloaded here — they load lazily on first use.
+        const m = n.config?.model as string | undefined;
+        if (m && m !== AUTO_TTS_MODEL) ttsModels.add(m);
+      }
     }
     if (ttsModels.size) {
       this.hooks.onStatus?.("loading TTS model…");
@@ -485,13 +489,28 @@ export class GraphRuntime {
     if (type === "tts-model") {
       // Synthesize each transcript to PCM with an on-device ONNX model and emit it
       // as a segment, so it can feed a (device-targetable) speaker / audio-out.
-      const modelId = (this.graph.nodes[id]?.config?.model as string | undefined) ?? DEFAULT_NEURAL_TTS_MODEL;
+      const configured = (this.graph.nodes[id]?.config?.model as string | undefined) ?? AUTO_TTS_MODEL;
       let chain: Promise<void> = Promise.resolve();
       return {
         input: (_port, msg) => {
           const tr = msg as TranscriptMsg;
           const text = tr.text?.trim();
           if (!text) return;
+          // Resolve the voice: an explicit pick, or — in auto mode — the MMS model
+          // matching the transcript's (detected/translated) language.
+          let modelId: string;
+          if (configured !== AUTO_TTS_MODEL) {
+            modelId = configured;
+          } else if (tr.lang) {
+            const m = langToTtsModel(tr.lang);
+            if (!m) {
+              this.hooks.onError?.(new Error(`no on-device TTS voice for "${tr.lang}"`));
+              return;
+            }
+            modelId = m;
+          } else {
+            modelId = DEFAULT_NEURAL_TTS_MODEL;
+          }
           chain = chain.then(async () => {
             this.hooks.onNodeBusy?.(id, true);
             try {
