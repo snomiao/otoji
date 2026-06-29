@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import { parseOnnxMetadata, parseFloatList } from "../lib/onnx-meta";
 import { computeFbank, SENSEVOICE_FBANK } from "../lib/fbank";
 import { backoffDelay, PHI } from "../lib/backoff";
-import { applyLFR, applyCMVN, ctcGreedy, detokenize, parseTokens } from "../providers/stt/sensevoice";
+import { applyLFR, applyCMVN, ctcGreedy, detokenize, detectLang, parseTokens } from "../providers/stt/sensevoice";
 
 // Build a tiny protobuf ModelProto with two metadata_props entries plus a fake
 // large field 7 (graph) in between, to prove the scanner skips it.
@@ -79,12 +79,21 @@ describe("CTC greedy + detokenize", () => {
     const seq = [0, 1, 1, 2, 0, 3, 4, 4];
     const logits = new Float32Array(seq.length * vocab);
     seq.forEach((y, t) => (logits[t * vocab + y] = 10));
-    const tokens = ctcGreedy(logits, seq.length, vocab, 0);
+    const { tokens, frames } = ctcGreedy(logits, seq.length, vocab, 0);
     expect(tokens).toEqual([1, 2, 3, 4]);
+    // frame index each token was emitted at (1@t1, 2@t3, 3@t5, 4@t6)
+    expect(frames).toEqual([1, 3, 5, 6]);
 
     const table = ["<blk>", "<|zh|>", "<|NEUTRAL|>", "<|Speech|>", "<|woitn|>", "▁hi", "▁world"];
     // 4 specials skipped -> from index 4 onward of the token list; ▁ -> space
     expect(detokenize([1, 2, 3, 4, 5, 6], table)).toBe("hi world");
+  });
+
+  it("detectLang reads the leading <lang> special, ignoring non-language tags", () => {
+    const table = ["<blk>", "<|zh|>", "<|en|>", "<|NEUTRAL|>"];
+    expect(detectLang([1, 0, 0, 0], table)).toBe("zh");
+    expect(detectLang([2, 0, 0, 0], table)).toBe("en");
+    expect(detectLang([3, 0, 0, 0], table)).toBeUndefined(); // emotion tag, not a lang
   });
 });
 

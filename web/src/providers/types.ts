@@ -60,6 +60,8 @@ export interface TranslateProvider {
   isAvailable(): boolean;
   /** Preload the model so the first translation isn't blocked on a big download. */
   warm(modelId?: string, onProgress?: (p: TranslateLoadProgress) => void): Promise<void>;
-  /** Translate `text` into `targetLang` (a human language name, e.g. "English"). */
-  translate(text: string, targetLang: string, modelId?: string): Promise<string>;
+  /** Translate `text` into `targetLang` (a human language name, e.g. "English").
+   *  `sourceLang` is an optional BCP-47 code (e.g. SenseVoice's detected "zh");
+   *  when given, providers skip their own detection. */
+  translate(text: string, targetLang: string, modelId?: string, sourceLang?: string): Promise<string>;
 }

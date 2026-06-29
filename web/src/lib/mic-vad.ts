@@ -13,7 +13,7 @@ const MAX_UTTER = MIC_VAD_SR * 20; // 20 s hard cap
 const RMS_THRESHOLD = 0.012;
 
 export interface MicVadOptions {
-  onSegment: (samples: Float32Array, durationMs: number) => void;
+  onSegment: (samples: Float32Array, durationMs: number, offsetMs: number) => void;
   onLevel?: (level: SttLevel) => void;
   onSpeechStart?: () => void;
 }
@@ -47,17 +47,21 @@ function downsample(buffer: Float32Array, srcRate: number): Float32Array {
  * decoded audio file), emitting one segment per detected utterance. Shares the
  * thresholds with the live mic path.
  */
-export function segmentSamples(samples: Float32Array, onSegment: (s: Float32Array, durationMs: number) => void): void {
+export function segmentSamples(
+  samples: Float32Array,
+  onSegment: (s: Float32Array, durationMs: number, offsetMs: number) => void,
+): void {
   let inSpeech = false;
   let silence = 0;
   let voiced = 0;
   let segment: number[] = [];
   let preroll: number[] = [];
+  let segStart = 0; // absolute sample index of the current segment's first sample
 
   const flush = () => {
     if (segment.length >= VAD_WIN) {
       const s = Float32Array.from(segment);
-      onSegment(s, (s.length / MIC_VAD_SR) * 1000);
+      onSegment(s, (s.length / MIC_VAD_SR) * 1000, (Math.max(0, segStart) / MIC_VAD_SR) * 1000);
     }
     segment = [];
   };
@@ -74,6 +78,8 @@ export function segmentSamples(samples: Float32Array, onSegment: (s: Float32Arra
       if (active) {
         if (++voiced >= 2) {
           inSpeech = true;
+          // preroll currently ends at sample off+VAD_WIN (current window included).
+          segStart = off + VAD_WIN - preroll.length;
           segment = preroll.slice();
           preroll = [];
           silence = 0;
@@ -114,6 +120,8 @@ export async function startMicVad(opts: MicVadOptions): Promise<MicVadHandle> {
   let segment: number[] = [];
   let preroll: number[] = [];
   let carry: number[] = [];
+  let cursor = 0; // absolute sample index consumed since mic start
+  let segStart = 0; // absolute sample index of the current segment's first sample
 
   const flush = () => {
     if (segment.length < VAD_WIN) {
@@ -122,7 +130,7 @@ export async function startMicVad(opts: MicVadOptions): Promise<MicVadHandle> {
     }
     const samples = Float32Array.from(segment);
     segment = [];
-    opts.onSegment(samples, (samples.length / MIC_VAD_SR) * 1000);
+    opts.onSegment(samples, (samples.length / MIC_VAD_SR) * 1000, (Math.max(0, segStart) / MIC_VAD_SR) * 1000);
   };
 
   proc.onaudioprocess = (e) => {
@@ -131,6 +139,8 @@ export async function startMicVad(opts: MicVadOptions): Promise<MicVadHandle> {
 
     while (carry.length >= VAD_WIN) {
       const win = carry.splice(0, VAD_WIN);
+      const winStart = cursor; // absolute index of this window's first sample
+      cursor += VAD_WIN;
       let sum = 0;
       for (let i = 0; i < VAD_WIN; i++) sum += win[i] * win[i];
       const rms = Math.sqrt(sum / VAD_WIN);
@@ -143,6 +153,8 @@ export async function startMicVad(opts: MicVadOptions): Promise<MicVadHandle> {
         if (active) {
           if (++voiced >= 2) {
             inSpeech = true;
+            // preroll ends at this window's last sample (winStart+VAD_WIN).
+            segStart = winStart + VAD_WIN - preroll.length;
             segment = preroll.slice();
             preroll = [];
             silence = 0;

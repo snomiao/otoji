@@ -14,6 +14,15 @@ describe("buildSrt", () => {
     // second cue's clock advances past the skipped one (1000+500)
     expect(srt).toContain("2\n00:00:01,500 --> 00:00:02,500\nworld");
   });
+
+  it("uses absolute CTC start/end times when present (real timeline with gaps)", () => {
+    const srt = buildSrt([
+      { text: "hello", durationMs: 800, startMs: 1200, endMs: 2000 },
+      { text: "world", durationMs: 900, startMs: 5000, endMs: 5900 },
+    ]);
+    expect(srt).toContain("1\n00:00:01,200 --> 00:00:02,000\nhello");
+    expect(srt).toContain("2\n00:00:05,000 --> 00:00:05,900\nworld");
+  });
 });
 
 describe("fileKindForName", () => {

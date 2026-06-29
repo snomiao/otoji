@@ -59,6 +59,11 @@ export function langNameToCode(name: string): string | null {
   return NAME_TO_CODE[name] ?? null;
 }
 
+/** Map a BCP-47 code (incl. SenseVoice's "yue") to a language name for prompts. */
+export function codeToLangName(code: string): string | null {
+  return LANG_BY_PREFIX[code] ?? ({ yue: "Cantonese" } as Record<string, string>)[code] ?? null;
+}
+
 // Translate backends. On-device LLM is the default (multilingual, no source
 // needed); the browser Translator API is a lighter Chrome-only alternative.
 export const TRANSLATE_PROVIDERS = [

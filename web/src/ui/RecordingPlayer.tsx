@@ -12,6 +12,11 @@ export interface Recording {
   text: string;
   peaks: Peak[];
   sampleRate: number;
+  /** SenseVoice-detected source language (BCP-47-ish), if known. */
+  lang?: string;
+  /** Absolute speech window in the source timeline (CTC-derived), for SRT. */
+  tStartMs?: number;
+  tEndMs?: number;
   /** Compressed source (persisted). */
   opus?: StoredOpus;
   /** Optional in-memory PCM (live session, before/instead of decode). */
@@ -150,6 +155,10 @@ export function RecordingPlayer({ rec, index }: { rec: Recording; index: number 
       <div style={{ fontSize: 13, minWidth: 0, flex: 1 }}>
         <div style={{ color: "#999", fontSize: 11 }}>
           #{index + 1} · {(rec.durationMs / 1000).toFixed(1)}s
+          {rec.lang && <span style={{ marginLeft: 6, color: "#2b6cb0" }}>🌐 {rec.lang}</span>}
+          {rec.tStartMs !== undefined && (
+            <span style={{ marginLeft: 6 }}>⏱ {(rec.tStartMs / 1000).toFixed(1)}s</span>
+          )}
         </div>
         <div style={{ whiteSpace: "pre-wrap", wordBreak: "break-word" }}>
           {rec.text || <em style={{ color: "#bbb" }}>(no transcript)</em>}

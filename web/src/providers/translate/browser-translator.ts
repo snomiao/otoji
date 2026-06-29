@@ -74,12 +74,13 @@ export class BrowserTranslateProvider implements TranslateProvider {
     }
   }
 
-  async translate(text: string, targetLang: string): Promise<string> {
+  async translate(text: string, targetLang: string, _modelId?: string, sourceLang?: string): Promise<string> {
     const src0 = text.trim();
     if (!src0) return "";
     const tgt = langNameToCode(targetLang);
     if (!tgt || !hasTranslator()) return text; // passthrough
-    const src = await detectSource(src0);
+    // Prefer the caller's detected source (e.g. SenseVoice LID); else detect.
+    const src = sourceLang || (await detectSource(src0));
     if (!src || src === "und") return text; // unknown source -> passthrough
     if (src === tgt) return text; // already in target
     try {

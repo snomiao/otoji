@@ -1,5 +1,5 @@
 import type { TranslateLoadProgress, TranslateProvider } from "../types";
-import { DEFAULT_TRANSLATE_MODEL } from "./translate-config";
+import { DEFAULT_TRANSLATE_MODEL, codeToLangName } from "./translate-config";
 
 // In-browser LLM translation via WebLLM (https://github.com/mlc-ai/web-llm).
 // Runs a quantized instruct model entirely on-device over WebGPU — no audio or
@@ -54,10 +54,11 @@ export class WebLLMTranslateProvider implements TranslateProvider {
     await getEngine(modelId, onProgress);
   }
 
-  async translate(text: string, targetLang: string, modelId = DEFAULT_TRANSLATE_MODEL): Promise<string> {
+  async translate(text: string, targetLang: string, modelId = DEFAULT_TRANSLATE_MODEL, sourceLang?: string): Promise<string> {
     const src = text.trim();
     if (!src) return "";
     const engine = await getEngine(modelId);
+    const srcName = sourceLang ? codeToLangName(sourceLang) : null;
     const reply = await engine.chat.completions.create({
       // temperature 0 → deterministic; we want a faithful translation, not prose.
       temperature: 0,
@@ -65,7 +66,9 @@ export class WebLLMTranslateProvider implements TranslateProvider {
         {
           role: "system",
           content:
-            `You are a translation engine. Translate the user's text into ${targetLang}. ` +
+            `You are a translation engine. Translate the user's text` +
+            (srcName ? ` from ${srcName}` : "") +
+            ` into ${targetLang}. ` +
             `Output ONLY the translation, with no quotes, notes, or explanations. ` +
             `If the text is already in ${targetLang}, return it unchanged.`,
         },

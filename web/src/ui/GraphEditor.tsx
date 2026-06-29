@@ -538,6 +538,9 @@ function Editor({ initialRoom }: { initialRoom?: string }) {
           peaks: computePeaks(tr.audio.samples, 400),
           sampleRate: tr.audio.sampleRate,
           samples: tr.audio.samples,
+          lang: tr.lang,
+          tStartMs: tr.tStartMs,
+          tEndMs: tr.tEndMs,
         };
         const arr = recordsByNodeRef.current.get(sinkId) ?? [];
         arr.push(rec);

@@ -18,6 +18,15 @@ export interface LoadProgress {
   total?: number;
 }
 
+/** Rich STT output. `lang` is SenseVoice's detected LID; `startMs`/`endMs` are the
+ *  speech extent within the segment, derived from the CTC frame alignment. */
+export interface SttResult {
+  text: string;
+  lang?: string;
+  startMs?: number;
+  endMs?: number;
+}
+
 // ---------------------------------------------------------------------------
 // Pure decode pipeline (exported for unit tests)
 // ---------------------------------------------------------------------------
@@ -49,9 +58,18 @@ export function applyCMVN(data: Float32Array, dim: number, negMean: Float32Array
   }
 }
 
-/** CTC greedy decode: argmax per frame, collapse repeats, drop blank. */
-export function ctcGreedy(logits: Float32Array, numFrames: number, vocab: number, blankId: number): number[] {
+/**
+ * CTC greedy decode: argmax per frame, collapse repeats, drop blank. Returns the
+ * emitted token ids plus the frame index each was emitted at (for timestamps).
+ */
+export function ctcGreedy(
+  logits: Float32Array,
+  numFrames: number,
+  vocab: number,
+  blankId: number,
+): { tokens: number[]; frames: number[] } {
   const tokens: number[] = [];
+  const frames: number[] = [];
   let prev = -1;
   for (let t = 0; t < numFrames; t++) {
     const base = t * vocab;
@@ -64,10 +82,22 @@ export function ctcGreedy(logits: Float32Array, numFrames: number, vocab: number
         best = v;
       }
     }
-    if (best !== blankId && best !== prev) tokens.push(best);
+    if (best !== blankId && best !== prev) {
+      tokens.push(best);
+      frames.push(t);
+    }
     prev = best;
   }
-  return tokens;
+  return { tokens, frames };
+}
+
+/** Known SenseVoice language tags (the first special token is the detected LID). */
+const SV_LANGS = new Set(["zh", "en", "ja", "ko", "yue"]);
+
+/** Parse the leading `<lang>` special token into a BCP-47-ish code, or undefined. */
+export function detectLang(tokens: number[], table: string[]): string | undefined {
+  const m = (table[tokens[0]] ?? "").match(/^<\|([a-z]{2,3})\|>$/);
+  return m && SV_LANGS.has(m[1]) ? m[1] : undefined;
 }
 
 /**
@@ -240,16 +270,16 @@ class SenseVoiceEngine {
   }
 
   /** Recognize one utterance of 16k mono float samples in [-1, 1]. */
-  async recognize(samples: Float32Array): Promise<string> {
+  async recognize(samples: Float32Array): Promise<SttResult> {
     const ort: any = await import("onnxruntime-web");
     const scale = this.normalizeSamples ? 1 : 32768;
     const input = scale === 1 ? samples : samples.map((s) => s * scale);
 
     const { feats, numFrames, numBins } = computeFbank(input, SENSEVOICE_FBANK);
-    if (numFrames < this.lfrM) return "";
+    if (numFrames < this.lfrM) return { text: "" };
 
     const lfr = applyLFR(feats, numFrames, numBins, this.lfrM, this.lfrN);
-    if (lfr.frames === 0) return "";
+    if (lfr.frames === 0) return { text: "" };
     applyCMVN(lfr.data, lfr.dim, this.negMean, this.invStddev);
 
     const feeds: Record<string, any> = {};
@@ -261,8 +291,19 @@ class SenseVoiceEngine {
     const out = await this.session.run(feeds);
     const logits = out[this.outputName];
     const [, t, vocab] = logits.dims as number[];
-    const tokens = ctcGreedy(logits.data as Float32Array, t, vocab, this.blankId);
-    return detokenize(tokens, this.table);
+    const { tokens, frames } = ctcGreedy(logits.data as Float32Array, t, vocab, this.blankId);
+    const text = detokenize(tokens, this.table);
+    const lang = detectLang(tokens, this.table);
+    // CTC frames -> ms: each LFR frame advances `lfrN` fbank frames of frameShiftMs.
+    // The first 4 tokens are specials (lang/emotion/event/itn); content starts at 4.
+    const strideMs = SENSEVOICE_FBANK.frameShiftMs * this.lfrN;
+    let startMs: number | undefined;
+    let endMs: number | undefined;
+    if (tokens.length > 4) {
+      startMs = frames[4] * strideMs;
+      endMs = (frames[frames.length - 1] + 1) * strideMs;
+    }
+    return { text, lang, startMs, endMs };
   }
 }
 
@@ -276,7 +317,7 @@ export function warmSenseVoice(modelId?: string, onProgress?: (p: LoadProgress) 
 // ---------------------------------------------------------------------------
 
 /** Recognize one utterance using the (memoized) engine for a model id. */
-export async function sttRecognize(samples: Float32Array, modelId?: string): Promise<string> {
+export async function sttRecognize(samples: Float32Array, modelId?: string): Promise<SttResult> {
   const engine = await SenseVoiceEngine.load(getSenseVoiceModel(modelId));
   return engine.recognize(samples);
 }
@@ -312,7 +353,7 @@ export class SenseVoiceSttProvider implements SttProvider {
         const audio = { samples, sampleRate: MIC_VAD_SR, durationMs };
         recogChain = recogChain.then(async () => {
           try {
-            const text = await engine.recognize(samples);
+            const { text } = await engine.recognize(samples);
             onSegment({ text, final: true, audio });
           } catch (e: any) {
             onSegment({ text: "", final: true, audio });

@@ -13,7 +13,11 @@ export interface EdgeFrame {
   mtype: "segment" | "transcript";
   sampleRate: number;
   durationMs: number;
+  offsetMs?: number; // segment offset in source timeline
   text?: string;
+  lang?: string; // detected source language (transcript)
+  tStartMs?: number; // CTC speech start (transcript, absolute)
+  tEndMs?: number; // CTC speech end (transcript, absolute)
   samplesB64: string; // Float32 PCM bytes, base64
 }
 
@@ -34,6 +38,7 @@ export function buildSegmentFrame(target: string, port: string, seg: SegmentMsg)
     mtype: "segment",
     sampleRate: seg.sampleRate,
     durationMs: seg.durationMs,
+    offsetMs: seg.offsetMs,
     samplesB64: encodeSamples(seg.samples),
   };
 }
@@ -46,14 +51,19 @@ export function buildTranscriptFrame(target: string, port: string, tr: Transcrip
     mtype: "transcript",
     sampleRate: tr.audio.sampleRate,
     durationMs: tr.audio.durationMs,
+    offsetMs: tr.audio.offsetMs,
     text: tr.text,
+    lang: tr.lang,
+    tStartMs: tr.tStartMs,
+    tEndMs: tr.tEndMs,
     samplesB64: encodeSamples(tr.audio.samples),
   };
 }
 
 export function frameToMessage(f: EdgeFrame): SegmentMsg | TranscriptMsg {
   const samples = decodeSamples(f.samplesB64);
-  const seg: SegmentMsg = { samples, sampleRate: f.sampleRate, durationMs: f.durationMs };
-  if (f.mtype === "transcript") return { text: f.text ?? "", audio: seg };
+  const seg: SegmentMsg = { samples, sampleRate: f.sampleRate, durationMs: f.durationMs, offsetMs: f.offsetMs };
+  if (f.mtype === "transcript")
+    return { text: f.text ?? "", audio: seg, lang: f.lang, tStartMs: f.tStartMs, tEndMs: f.tEndMs };
   return seg;
 }

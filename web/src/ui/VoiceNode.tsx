@@ -205,7 +205,9 @@ export function VoiceNode({ id, data }: NodeProps) {
             style={{ fontSize: 11, marginTop: 4 }}
             disabled={getRecords(id).length === 0}
             onClick={() => {
-              const srt = buildSrt(getRecords(id).map((r) => ({ text: r.text, durationMs: r.durationMs })));
+              const srt = buildSrt(
+                getRecords(id).map((r) => ({ text: r.text, durationMs: r.durationMs, startMs: r.tStartMs, endMs: r.tEndMs })),
+              );
               download(new Blob([srt], { type: "text/plain" }), "otoji.srt");
             }}
           >

@@ -18,7 +18,7 @@ vi.mock("../lib/mic-vad", () => ({
 
 vi.mock("../providers/stt/sensevoice", () => ({
   warmSenseVoice: async () => {},
-  sttRecognize: async () => "hello world",
+  sttRecognize: async () => ({ text: "hello world", lang: "zh" }),
 }));
 
 vi.mock("../providers/translate/webllm", () => ({

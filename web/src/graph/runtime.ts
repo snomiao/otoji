@@ -8,7 +8,7 @@ import { fileStore } from "./file-store";
 import { sttRecognize, warmSenseVoice } from "../providers/stt/sensevoice";
 import { webllmTranslate } from "../providers/translate/webllm";
 import { browserTranslate } from "../providers/translate/browser-translator";
-import { DEFAULT_TRANSLATE_LANG, DEFAULT_TRANSLATE_MODEL } from "../providers/translate/translate-config";
+import { DEFAULT_TRANSLATE_LANG, DEFAULT_TRANSLATE_MODEL, langNameToCode } from "../providers/translate/translate-config";
 import type { SttLevel } from "../providers/types";
 import { buildSegmentFrame, buildTranscriptFrame, frameToMessage, type EdgeFrame } from "./frames";
 
@@ -16,10 +16,14 @@ export interface SegmentMsg {
   samples: Float32Array;
   sampleRate: number;
   durationMs: number;
+  offsetMs?: number; // start of this segment in the source timeline (file/mic)
 }
 export interface TranscriptMsg {
   text: string;
   audio: SegmentMsg;
+  lang?: string; // SenseVoice-detected source language (BCP-47-ish)
+  tStartMs?: number; // absolute speech start in the source timeline (CTC-derived)
+  tEndMs?: number; // absolute speech end
 }
 
 /** Cross-device transport (implemented over the WebRTC PeerMesh). */
@@ -201,9 +205,9 @@ export class GraphRuntime {
         start: async () => {
           handle = await startMicVad({
             onLevel: (l) => this.hooks.onLevel?.(id, l),
-            onSegment: (samples, durationMs) => {
+            onSegment: (samples, durationMs, offsetMs) => {
               this.hooks.onSegment?.(id);
-              this.emit(id, "out", { samples, sampleRate: MIC_VAD_SR, durationMs } as SegmentMsg);
+              this.emit(id, "out", { samples, sampleRate: MIC_VAD_SR, durationMs, offsetMs } as SegmentMsg);
             },
           });
         },
@@ -228,9 +232,9 @@ export class GraphRuntime {
               const d = decoded.getChannelData(c);
               for (let i = 0; i < len; i++) mono[i] += d[i] / decoded.numberOfChannels;
             }
-            segmentSamples(mono, (s, durationMs) => {
+            segmentSamples(mono, (s, durationMs, offsetMs) => {
               this.hooks.onSegment?.(id);
-              this.emit(id, "out", { samples: s, sampleRate: MIC_VAD_SR, durationMs } as SegmentMsg);
+              this.emit(id, "out", { samples: s, sampleRate: MIC_VAD_SR, durationMs, offsetMs } as SegmentMsg);
             });
           } catch (e) {
             this.hooks.onError?.(e instanceof Error ? e : new Error(String(e)));
@@ -265,9 +269,15 @@ export class GraphRuntime {
           chain = chain.then(async () => {
             this.hooks.onNodeBusy?.(id, true);
             try {
-              const text = await sttRecognize(seg.samples, modelId);
-              this.hooks.onRecognized?.(id, text);
-              this.emit(id, "out", { text, audio: seg } as TranscriptMsg);
+              const res = await sttRecognize(seg.samples, modelId);
+              this.hooks.onRecognized?.(id, res.text);
+              // Promote CTC speech extent to absolute timeline using the segment
+              // offset (file/mic). Without an offset, leave times undefined so the
+              // SRT builder falls back to sequential timing.
+              const base = seg.offsetMs;
+              const tStartMs = base !== undefined && res.startMs !== undefined ? base + res.startMs : undefined;
+              const tEndMs = base !== undefined && res.endMs !== undefined ? base + res.endMs : undefined;
+              this.emit(id, "out", { text: res.text, audio: seg, lang: res.lang, tStartMs, tEndMs } as TranscriptMsg);
             } catch (e) {
               this.hooks.onError?.(e instanceof Error ? e : new Error(String(e)));
             } finally {
@@ -297,15 +307,25 @@ export class GraphRuntime {
             // error, inference error) so downstream sink/recordings keep working.
             let text = tr.text;
             try {
-              if (provider.isAvailable()) text = await provider.translate(tr.text, targetLang, modelId);
+              // Feed SenseVoice's detected source language so the provider can skip
+              // its own detection (browser API) / steer the prompt (LLM).
+              if (provider.isAvailable()) text = await provider.translate(tr.text, targetLang, modelId, tr.lang);
             } catch (e) {
               this.hooks.onError?.(e instanceof Error ? e : new Error(String(e)));
             } finally {
               this.hooks.onNodeBusy?.(id, false);
             }
             this.hooks.onRecognized?.(id, text);
-            // Carry the original audio downstream so a sink can still record it.
-            this.emit(id, "out", { text, audio: tr.audio } as TranscriptMsg);
+            // The text is now in the target language, so `lang` becomes the target
+            // code — keeps the sink badge accurate AND lets a chained translate node
+            // use the correct source. Carry CTC timing through for the cue's SRT.
+            this.emit(id, "out", {
+              text,
+              audio: tr.audio,
+              lang: langNameToCode(targetLang) ?? undefined,
+              tStartMs: tr.tStartMs,
+              tEndMs: tr.tEndMs,
+            } as TranscriptMsg);
           });
         },
         // Drain in-flight translations so a final utterance reaches the sink.
