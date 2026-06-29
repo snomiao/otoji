@@ -38,7 +38,7 @@ const PORT_COLOR: Record<PortType, string> = {
 
 export function VoiceNode({ id, data }: NodeProps) {
   const d = data as VoiceNodeData;
-  const { devices, onAssign, onConfig, counts, live } = useContext(GraphContext);
+  const { devices, onAssign, onConfig, onDelete, counts, live } = useContext(GraphContext);
   const spec = NODE_SPECS[d.voiceType];
   const assigned = devices.find((x) => x.deviceId === d.device);
   const count = counts[id] ?? 0;
@@ -73,6 +73,14 @@ export function VoiceNode({ id, data }: NodeProps) {
             style={{ fontSize: 10, border: "none", background: "transparent", cursor: "pointer", color: "#a0aec0" }}
           >
             {shown ? "👁" : "🚫"}
+          </button>
+          <button
+            className="nodrag"
+            onClick={(e) => { e.stopPropagation(); onDelete(id); }}
+            title="remove node"
+            style={{ fontSize: 12, lineHeight: 1, border: "none", background: "transparent", cursor: "pointer", color: "#e53e3e" }}
+          >
+            ✕
           </button>
         </span>
       </div>

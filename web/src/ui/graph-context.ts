@@ -7,6 +7,8 @@ export interface GraphCtx {
   onAssign: (nodeId: string, device: string | null) => void;
   /** Update a node's config (e.g. STT model selection). */
   onConfig: (nodeId: string, patch: Record<string, unknown>) => void;
+  /** Remove a node (and its edges). */
+  onDelete: (nodeId: string) => void;
   /** Stored-data count per node id (badge), e.g. sink transcript/recording count. */
   counts: Record<string, number>;
   /** Per-device ephemeral live preview state (not synced). */
@@ -17,6 +19,7 @@ export const GraphContext = createContext<GraphCtx>({
   devices: [],
   onAssign: () => {},
   onConfig: () => {},
+  onDelete: () => {},
   counts: {},
   live: new LiveStore(),
 });

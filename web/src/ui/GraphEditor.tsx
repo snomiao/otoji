@@ -284,6 +284,19 @@ function Editor({ initialRoom }: { initialRoom?: string }) {
     [setNodes, broadcast],
   );
 
+  const onDelete = useCallback(
+    (nodeId: string) => {
+      const nextNodes = nodesRef.current.filter((n) => n.id !== nodeId);
+      const nextEdges = edgesRef.current.filter((e) => e.source !== nodeId && e.target !== nodeId);
+      nodesRef.current = nextNodes;
+      edgesRef.current = nextEdges;
+      setNodes(nextNodes);
+      setEdges(nextEdges);
+      broadcast(nextNodes, nextEdges);
+    },
+    [setNodes, setEdges, broadcast],
+  );
+
   // One-click pre-wired Mic+VAD -> STT -> Sink, assigned to me. Removes the
   // manual add+connect friction (the usual reason "no transcript" appears).
   const addPipeline = useCallback(() => {
@@ -452,8 +465,8 @@ function Editor({ initialRoom }: { initialRoom?: string }) {
   const currentGraph = useMemo(() => fromRF(nodes, edges, versionRef.current), [nodes, edges]);
 
   const ctx = useMemo(
-    () => ({ devices, onAssign, onConfig, counts, live: liveRef.current }),
-    [devices, onAssign, onConfig, counts],
+    () => ({ devices, onAssign, onConfig, onDelete, counts, live: liveRef.current }),
+    [devices, onAssign, onConfig, onDelete, counts],
   );
 
   if (!joined) {
