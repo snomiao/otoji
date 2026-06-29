@@ -23,6 +23,8 @@ export interface LoadProgress {
 export interface SttResult {
   text: string;
   lang?: string;
+  emotion?: string; // SER tag, e.g. "HAPPY"
+  event?: string; // AED tag, e.g. "Applause" / "BGM" ("Speech" for ordinary speech)
   startMs?: number;
   endMs?: number;
 }
@@ -91,13 +93,31 @@ export function ctcGreedy(
   return { tokens, frames };
 }
 
-/** Known SenseVoice language tags (the first special token is the detected LID). */
+// SenseVoice prepends 4 specials: <lang> <emotion> <event> <itn>.
 const SV_LANGS = new Set(["zh", "en", "ja", "ko", "yue"]);
+const SV_EMOTIONS = new Set(["HAPPY", "SAD", "ANGRY", "NEUTRAL", "FEARFUL", "DISGUSTED", "SURPRISED"]);
+const SV_EVENTS = new Set(["Speech", "BGM", "Applause", "Laughter", "Cry", "Sneeze", "Breath", "Cough"]);
+
+/** Read the special token at `index`, returning its inner tag iff it's in `valid`. */
+function specialTag(tokens: number[], table: string[], index: number, valid: Set<string>): string | undefined {
+  const m = (table[tokens[index]] ?? "").match(/^<\|([A-Za-z_]+)\|>$/);
+  return m && valid.has(m[1]) ? m[1] : undefined;
+}
 
 /** Parse the leading `<lang>` special token into a BCP-47-ish code, or undefined. */
 export function detectLang(tokens: number[], table: string[]): string | undefined {
   const m = (table[tokens[0]] ?? "").match(/^<\|([a-z]{2,3})\|>$/);
   return m && SV_LANGS.has(m[1]) ? m[1] : undefined;
+}
+
+/** Parse the `<emotion>` (2nd) special token, e.g. "HAPPY"; undefined if unknown. */
+export function detectEmotion(tokens: number[], table: string[]): string | undefined {
+  return specialTag(tokens, table, 1, SV_EMOTIONS);
+}
+
+/** Parse the `<event>` (3rd) special token, e.g. "Applause"/"BGM"; undefined if unknown. */
+export function detectEvent(tokens: number[], table: string[]): string | undefined {
+  return specialTag(tokens, table, 2, SV_EVENTS);
 }
 
 /**
@@ -294,6 +314,8 @@ class SenseVoiceEngine {
     const { tokens, frames } = ctcGreedy(logits.data as Float32Array, t, vocab, this.blankId);
     const text = detokenize(tokens, this.table);
     const lang = detectLang(tokens, this.table);
+    const emotion = detectEmotion(tokens, this.table);
+    const event = detectEvent(tokens, this.table);
     // CTC frames -> ms: each LFR frame advances `lfrN` fbank frames of frameShiftMs.
     // The first 4 tokens are specials (lang/emotion/event/itn); content starts at 4.
     const strideMs = SENSEVOICE_FBANK.frameShiftMs * this.lfrN;
@@ -303,7 +325,7 @@ class SenseVoiceEngine {
       startMs = frames[4] * strideMs;
       endMs = (frames[frames.length - 1] + 1) * strideMs;
     }
-    return { text, lang, startMs, endMs };
+    return { text, lang, emotion, event, startMs, endMs };
   }
 }
 

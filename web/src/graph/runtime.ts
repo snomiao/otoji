@@ -22,6 +22,8 @@ export interface TranscriptMsg {
   text: string;
   audio: SegmentMsg;
   lang?: string; // SenseVoice-detected source language (BCP-47-ish)
+  emotion?: string; // SenseVoice SER tag (e.g. "HAPPY")
+  event?: string; // SenseVoice AED tag (e.g. "Applause"/"BGM")
   tStartMs?: number; // absolute speech start in the source timeline (CTC-derived)
   tEndMs?: number; // absolute speech end
 }
@@ -277,7 +279,15 @@ export class GraphRuntime {
               const base = seg.offsetMs;
               const tStartMs = base !== undefined && res.startMs !== undefined ? base + res.startMs : undefined;
               const tEndMs = base !== undefined && res.endMs !== undefined ? base + res.endMs : undefined;
-              this.emit(id, "out", { text: res.text, audio: seg, lang: res.lang, tStartMs, tEndMs } as TranscriptMsg);
+              this.emit(id, "out", {
+                text: res.text,
+                audio: seg,
+                lang: res.lang,
+                emotion: res.emotion,
+                event: res.event,
+                tStartMs,
+                tEndMs,
+              } as TranscriptMsg);
             } catch (e) {
               this.hooks.onError?.(e instanceof Error ? e : new Error(String(e)));
             } finally {
@@ -323,6 +333,8 @@ export class GraphRuntime {
               text,
               audio: tr.audio,
               lang: langNameToCode(targetLang) ?? undefined,
+              emotion: tr.emotion, // emotion/event describe the source audio — unchanged
+              event: tr.event,
               tStartMs: tr.tStartMs,
               tEndMs: tr.tEndMs,
             } as TranscriptMsg);

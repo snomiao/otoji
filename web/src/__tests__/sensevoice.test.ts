@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import { parseOnnxMetadata, parseFloatList } from "../lib/onnx-meta";
 import { computeFbank, SENSEVOICE_FBANK } from "../lib/fbank";
 import { backoffDelay, PHI } from "../lib/backoff";
-import { applyLFR, applyCMVN, ctcGreedy, detokenize, detectLang, parseTokens } from "../providers/stt/sensevoice";
+import { applyLFR, applyCMVN, ctcGreedy, detokenize, detectLang, detectEmotion, detectEvent, parseTokens } from "../providers/stt/sensevoice";
 
 // Build a tiny protobuf ModelProto with two metadata_props entries plus a fake
 // large field 7 (graph) in between, to prove the scanner skips it.
@@ -94,6 +94,14 @@ describe("CTC greedy + detokenize", () => {
     expect(detectLang([1, 0, 0, 0], table)).toBe("zh");
     expect(detectLang([2, 0, 0, 0], table)).toBe("en");
     expect(detectLang([3, 0, 0, 0], table)).toBeUndefined(); // emotion tag, not a lang
+  });
+
+  it("detectEmotion/detectEvent read the 2nd/3rd specials, validating the tag set", () => {
+    // table ids: 1=<|en|> 2=<|HAPPY|> 3=<|Applause|> 4=<|woitn|> 5=<|BOGUS|>
+    const table = ["<blk>", "<|en|>", "<|HAPPY|>", "<|Applause|>", "<|woitn|>", "<|BOGUS|>"];
+    expect(detectEmotion([1, 2, 3, 4], table)).toBe("HAPPY"); // token[1]
+    expect(detectEvent([1, 2, 3, 4], table)).toBe("Applause"); // token[2]
+    expect(detectEmotion([1, 5, 3, 4], table)).toBeUndefined(); // not a known emotion
   });
 });
 

@@ -16,6 +16,8 @@ export interface EdgeFrame {
   offsetMs?: number; // segment offset in source timeline
   text?: string;
   lang?: string; // detected source language (transcript)
+  emotion?: string; // SER tag (transcript)
+  event?: string; // AED tag (transcript)
   tStartMs?: number; // CTC speech start (transcript, absolute)
   tEndMs?: number; // CTC speech end (transcript, absolute)
   samplesB64: string; // Float32 PCM bytes, base64
@@ -54,6 +56,8 @@ export function buildTranscriptFrame(target: string, port: string, tr: Transcrip
     offsetMs: tr.audio.offsetMs,
     text: tr.text,
     lang: tr.lang,
+    emotion: tr.emotion,
+    event: tr.event,
     tStartMs: tr.tStartMs,
     tEndMs: tr.tEndMs,
     samplesB64: encodeSamples(tr.audio.samples),
@@ -64,6 +68,6 @@ export function frameToMessage(f: EdgeFrame): SegmentMsg | TranscriptMsg {
   const samples = decodeSamples(f.samplesB64);
   const seg: SegmentMsg = { samples, sampleRate: f.sampleRate, durationMs: f.durationMs, offsetMs: f.offsetMs };
   if (f.mtype === "transcript")
-    return { text: f.text ?? "", audio: seg, lang: f.lang, tStartMs: f.tStartMs, tEndMs: f.tEndMs };
+    return { text: f.text ?? "", audio: seg, lang: f.lang, emotion: f.emotion, event: f.event, tStartMs: f.tStartMs, tEndMs: f.tEndMs };
   return seg;
 }

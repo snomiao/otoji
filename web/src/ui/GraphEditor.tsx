@@ -539,6 +539,8 @@ function Editor({ initialRoom }: { initialRoom?: string }) {
           sampleRate: tr.audio.sampleRate,
           samples: tr.audio.samples,
           lang: tr.lang,
+          emotion: tr.emotion,
+          event: tr.event,
           tStartMs: tr.tStartMs,
           tEndMs: tr.tEndMs,
         };

@@ -14,6 +14,9 @@ export interface Recording {
   sampleRate: number;
   /** SenseVoice-detected source language (BCP-47-ish), if known. */
   lang?: string;
+  /** SenseVoice emotion (SER) / audio-event (AED) tags, if known. */
+  emotion?: string;
+  event?: string;
   /** Absolute speech window in the source timeline (CTC-derived), for SRT. */
   tStartMs?: number;
   tEndMs?: number;
@@ -22,6 +25,15 @@ export interface Recording {
   /** Optional in-memory PCM (live session, before/instead of decode). */
   samples?: Float32Array;
 }
+
+const EMOTION_EMOJI: Record<string, string> = {
+  HAPPY: "😊", SAD: "😢", ANGRY: "😠", NEUTRAL: "😐",
+  FEARFUL: "😨", DISGUSTED: "🤢", SURPRISED: "😮",
+};
+const EVENT_EMOJI: Record<string, string> = {
+  BGM: "🎵", Applause: "👏", Laughter: "😂", Cry: "😭",
+  Sneeze: "🤧", Breath: "💨", Cough: "😷",
+};
 
 // One shared AudioContext for all playback (created lazily on first play).
 let sharedCtx: AudioContext | null = null;
@@ -156,6 +168,16 @@ export function RecordingPlayer({ rec, index }: { rec: Recording; index: number 
         <div style={{ color: "#999", fontSize: 11 }}>
           #{index + 1} · {(rec.durationMs / 1000).toFixed(1)}s
           {rec.lang && <span style={{ marginLeft: 6, color: "#2b6cb0" }}>🌐 {rec.lang}</span>}
+          {rec.emotion && rec.emotion !== "NEUTRAL" && (
+            <span style={{ marginLeft: 6 }} title={`emotion: ${rec.emotion}`}>
+              {EMOTION_EMOJI[rec.emotion] ?? "🙂"} {rec.emotion.toLowerCase()}
+            </span>
+          )}
+          {rec.event && rec.event !== "Speech" && (
+            <span style={{ marginLeft: 6 }} title={`audio event: ${rec.event}`}>
+              {EVENT_EMOJI[rec.event] ?? "🔊"} {rec.event}
+            </span>
+          )}
           {rec.tStartMs !== undefined && (
             <span style={{ marginLeft: 6 }}>⏱ {(rec.tStartMs / 1000).toFixed(1)}s</span>
           )}
