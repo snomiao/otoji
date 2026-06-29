@@ -16,6 +16,7 @@ export interface MicVadOptions {
   onSegment: (samples: Float32Array, durationMs: number, offsetMs: number) => void;
   onLevel?: (level: SttLevel) => void;
   onSpeechStart?: () => void;
+  deviceId?: string; // hardware INPUT device to capture from (default mic if unset)
 }
 
 export interface MicVadHandle {
@@ -107,7 +108,9 @@ export function segmentSamples(
 }
 
 export async function startMicVad(opts: MicVadOptions): Promise<MicVadHandle> {
-  const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+  const stream = await navigator.mediaDevices.getUserMedia({
+    audio: opts.deviceId ? { deviceId: { exact: opts.deviceId } } : true,
+  });
   const AudioCtor: typeof AudioContext = (window as any).AudioContext || (window as any).webkitAudioContext;
   const audioCtx = new AudioCtor({ sampleRate: MIC_VAD_SR });
   const srcRate = audioCtx.sampleRate;

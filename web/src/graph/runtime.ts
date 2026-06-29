@@ -203,9 +203,11 @@ export class GraphRuntime {
   private build(id: string, type: NodeType): RuntimeNode {
     if (type === "mic-vad") {
       let handle: MicVadHandle | null = null;
+      const inputDeviceId = this.graph.nodes[id]?.config?.inputDeviceId as string | undefined;
       return {
         start: async () => {
           handle = await startMicVad({
+            deviceId: inputDeviceId,
             onLevel: (l) => this.hooks.onLevel?.(id, l),
             onSegment: (samples, durationMs, offsetMs) => {
               this.hooks.onSegment?.(id);
@@ -356,6 +358,55 @@ export class GraphRuntime {
               ? { samples: m.samples, sampleRate: m.sampleRate ?? MIC_VAD_SR, durationMs: m.durationMs ?? 0 }
               : null;
           if (audio && audio.samples.length) this.hooks.onAudio?.(id, audio);
+        },
+      };
+    }
+
+    if (type === "speaker") {
+      // Play audio (from a raw segment or a transcript's .audio) out a chosen
+      // hardware OUTPUT device. Lazily build one AudioContext for this node and
+      // serialize playback so segments don't overlap.
+      const sinkId = this.graph.nodes[id]?.config?.sinkId as string | undefined;
+      let ctx: AudioContext | null = null;
+      let chain: Promise<void> = Promise.resolve();
+      return {
+        input: (_port, msg) => {
+          const m = msg as Partial<TranscriptMsg> & Partial<SegmentMsg>;
+          const audio: SegmentMsg | null = m.audio
+            ? m.audio
+            : m.samples
+              ? { samples: m.samples, sampleRate: m.sampleRate ?? MIC_VAD_SR, durationMs: m.durationMs ?? 0 }
+              : null;
+          if (!audio || !audio.samples.length) return;
+          chain = chain.then(async () => {
+            try {
+              if (!ctx) {
+                const AudioCtor: typeof AudioContext = (window as any).AudioContext || (window as any).webkitAudioContext;
+                ctx = new AudioCtor();
+                // setSinkId routes output to a non-default device (Chrome 110+);
+                // not in all browsers/headless, so guard it.
+                if (sinkId && typeof (ctx as any).setSinkId === "function") {
+                  await (ctx as any).setSinkId(sinkId).catch(() => {});
+                }
+              }
+              if (ctx.state === "suspended") await ctx.resume().catch(() => {}); // autoplay policy
+              const buf = ctx.createBuffer(1, audio.samples.length, audio.sampleRate);
+              buf.copyToChannel(audio.samples as Float32Array<ArrayBuffer>, 0);
+              const source = ctx.createBufferSource();
+              source.buffer = buf;
+              source.connect(ctx.destination);
+              // Resolve when this segment finishes so the next one waits for it.
+              await new Promise<void>((resolve) => {
+                source.onended = () => resolve();
+                source.start();
+              });
+            } catch (e) {
+              this.hooks.onError?.(e instanceof Error ? e : new Error(String(e)));
+            }
+          });
+        },
+        stop: async () => {
+          await ctx?.close().catch(() => {});
         },
       };
     }

@@ -9,6 +9,7 @@ function graph(): VoiceGraph {
     translate: { id: "translate", type: "translate", device: null, pos: { x: 0, y: 0 } },
     sink: { id: "sink", type: "sink", device: null, pos: { x: 0, y: 0 } },
     aud: { id: "aud", type: "audio-out", device: null, pos: { x: 0, y: 0 } },
+    spk: { id: "spk", type: "speaker", device: null, pos: { x: 0, y: 0 } },
   };
   return g;
 }
@@ -46,6 +47,15 @@ describe("canConnect", () => {
     // wrong port type into the wrong handle is rejected
     expect(canConnect(g, "mic", "out", "aud", "in")).toBe(false); // segment->transcript handle
     expect(canConnect(g, "stt", "out", "aud", "seg")).toBe(false); // transcript->segment handle
+  });
+
+  it("speaker accepts both a raw segment (seg) and a transcript (in)", () => {
+    const g = graph();
+    expect(canConnect(g, "mic", "out", "spk", "seg")).toBe(true); // segment->seg
+    expect(canConnect(g, "stt", "out", "spk", "in")).toBe(true); // transcript->in
+    // wrong port type into the wrong handle is rejected
+    expect(canConnect(g, "mic", "out", "spk", "in")).toBe(false); // segment->transcript handle
+    expect(canConnect(g, "stt", "out", "spk", "seg")).toBe(false); // transcript->segment handle
   });
 
   it("rejects a second edge into an occupied input", () => {

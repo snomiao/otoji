@@ -1,4 +1,4 @@
-import React, { useContext, useState } from "react";
+import React, { useContext, useEffect, useState } from "react";
 import { Handle, Position, type NodeProps } from "@xyflow/react";
 import { NODE_SPECS, type NodeType, type PortType } from "../graph/model";
 import { GraphContext } from "./graph-context";
@@ -47,6 +47,31 @@ const PORT_COLOR: Record<PortType, string> = {
   transcript: "#2b6cb0", // text (blue)
 };
 
+/**
+ * Enumerate hardware audio devices of one kind ("audioinput"/"audiooutput").
+ * Labels are empty until mic permission is granted — callers fall back to a
+ * shortened deviceId. Re-reads on devicechange (plug/unplug).
+ */
+function useAudioDevices(kind: "audioinput" | "audiooutput"): MediaDeviceInfo[] {
+  const [devices, setDevices] = useState<MediaDeviceInfo[]>([]);
+  useEffect(() => {
+    if (!navigator.mediaDevices?.enumerateDevices) return;
+    let alive = true;
+    const refresh = () =>
+      navigator.mediaDevices
+        .enumerateDevices()
+        .then((all) => { if (alive) setDevices(all.filter((d) => d.kind === kind)); })
+        .catch(() => {});
+    refresh();
+    navigator.mediaDevices.addEventListener?.("devicechange", refresh);
+    return () => {
+      alive = false;
+      navigator.mediaDevices.removeEventListener?.("devicechange", refresh);
+    };
+  }, [kind]);
+  return devices;
+}
+
 export function VoiceNode({ id, data }: NodeProps) {
   const d = data as VoiceNodeData;
   const { devices, onAssign, onConfig, onDelete, getRecords, setFile, counts, live } = useContext(GraphContext);
@@ -56,6 +81,9 @@ export function VoiceNode({ id, data }: NodeProps) {
   const count = counts[id] ?? 0;
   const model = ((d as any).config?.model as string | undefined) ?? DEFAULT_SENSEVOICE_MODEL;
   const { texts, busy } = useNodeLive(live, id);
+  const config = (d as any).config as Record<string, unknown> | undefined;
+  const inputDevices = useAudioDevices("audioinput");
+  const outputDevices = useAudioDevices("audiooutput");
   const [shown, setShown] = useState(() => isPreviewShown(id));
   const toggleShown = () => { const v = !shown; setShown(v); setPreviewShown(id, v); };
 
@@ -171,6 +199,40 @@ export function VoiceNode({ id, data }: NodeProps) {
               </label>
             )}
           </>
+        )}
+        {d.voiceType === "mic-vad" && (
+          <label style={{ display: "flex", gap: 6, alignItems: "center", color: "#718096", marginTop: 4 }}>
+            mic:
+            <select
+              value={(config?.inputDeviceId as string | undefined) ?? ""}
+              onChange={(e) => onConfig(id, { inputDeviceId: e.target.value || undefined })}
+              style={{ fontSize: 11, flex: 1 }}
+            >
+              <option value="">(default mic)</option>
+              {inputDevices.map((dev) => (
+                <option key={dev.deviceId} value={dev.deviceId}>
+                  {dev.label || `mic ${dev.deviceId.slice(0, 8)}`}
+                </option>
+              ))}
+            </select>
+          </label>
+        )}
+        {d.voiceType === "speaker" && (
+          <label style={{ display: "flex", gap: 6, alignItems: "center", color: "#718096", marginTop: 4 }}>
+            out:
+            <select
+              value={(config?.sinkId as string | undefined) ?? ""}
+              onChange={(e) => onConfig(id, { sinkId: e.target.value || undefined })}
+              style={{ fontSize: 11, flex: 1 }}
+            >
+              <option value="">(default speaker)</option>
+              {outputDevices.map((dev) => (
+                <option key={dev.deviceId} value={dev.deviceId}>
+                  {dev.label || `speaker ${dev.deviceId.slice(0, 8)}`}
+                </option>
+              ))}
+            </select>
+          </label>
         )}
         {(d.voiceType === "file-audio" || d.voiceType === "file-text") && (
           <div style={{ marginTop: 4, fontSize: 11, color: "#718096" }}>

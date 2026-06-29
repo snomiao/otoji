@@ -11,6 +11,7 @@ export type NodeType =
   | "translate"
   | "sink"
   | "audio-out"
+  | "speaker"
   | "srt-out";
 
 export interface NodeSpec {
@@ -61,6 +62,16 @@ export const NODE_SPECS: Record<NodeType, NodeSpec> = {
     type: "audio-out",
     label: "Audio file (out)",
     // Accepts raw audio (tap mic/file directly) OR transcripts (uses their audio).
+    inputs: [
+      { id: "seg", type: "segment" },
+      { id: "in", type: "transcript" },
+    ],
+    outputs: [],
+  },
+  speaker: {
+    type: "speaker",
+    label: "Speaker (play)",
+    // Plays raw audio (tap mic/file directly) OR transcripts (uses their audio).
     inputs: [
       { id: "seg", type: "segment" },
       { id: "in", type: "transcript" },
