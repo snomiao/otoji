@@ -11,6 +11,7 @@ import {
   DEFAULT_TRANSLATE_LANG,
   DEFAULT_TRANSLATE_PROVIDER,
 } from "../providers/translate/translate-config";
+import { NEURAL_TTS_MODELS, DEFAULT_NEURAL_TTS_MODEL } from "../providers/tts/tts-config";
 import { useNodeLive } from "./useNodeLive";
 import { NodeMicPreview } from "./NodeMicPreview";
 import { isPreviewShown, setPreviewShown } from "../lib/prefs";
@@ -278,6 +279,20 @@ export function VoiceNode({ id, data }: NodeProps) {
               </select>
             </label>
           </>
+        )}
+        {d.voiceType === "tts-model" && (
+          <label style={{ display: "flex", gap: 6, alignItems: "center", color: "#718096", marginTop: 4 }}>
+            model:
+            <select
+              value={(config?.model as string | undefined) ?? DEFAULT_NEURAL_TTS_MODEL}
+              onChange={(e) => onConfig(id, { model: e.target.value })}
+              style={{ fontSize: 11, flex: 1 }}
+            >
+              {NEURAL_TTS_MODELS.map((m) => (
+                <option key={m.id} value={m.id}>{m.name}</option>
+              ))}
+            </select>
+          </label>
         )}
         {(d.voiceType === "file-audio" || d.voiceType === "file-text") && (
           <div style={{ marginTop: 4, fontSize: 11, color: "#718096" }}>

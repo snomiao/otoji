@@ -13,6 +13,7 @@ export type NodeType =
   | "audio-out"
   | "speaker"
   | "tts"
+  | "tts-model"
   | "srt-out";
 
 export interface NodeSpec {
@@ -85,6 +86,14 @@ export const NODE_SPECS: Record<NodeType, NodeSpec> = {
     // Speaks a transcript via the browser's on-device SpeechSynthesis.
     inputs: [{ id: "in", type: "transcript" }],
     outputs: [],
+  },
+  "tts-model": {
+    type: "tts-model",
+    label: "Neural TTS (on-device)",
+    // Synthesizes a transcript to raw PCM (ONNX MMS-TTS) so it can route to a
+    // device-targetable speaker / audio-out.
+    inputs: [{ id: "in", type: "transcript" }],
+    outputs: [{ id: "out", type: "segment" }],
   },
   "srt-out": {
     type: "srt-out",

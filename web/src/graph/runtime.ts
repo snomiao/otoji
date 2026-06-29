@@ -9,6 +9,8 @@ import { sttRecognize, warmSenseVoice } from "../providers/stt/sensevoice";
 import { webllmTranslate } from "../providers/translate/webllm";
 import { browserTranslate } from "../providers/translate/browser-translator";
 import { DEFAULT_TRANSLATE_LANG, DEFAULT_TRANSLATE_MODEL, langNameToCode } from "../providers/translate/translate-config";
+import { neuralTts } from "../providers/tts/neural";
+import { DEFAULT_NEURAL_TTS_MODEL } from "../providers/tts/tts-config";
 import type { SttLevel } from "../providers/types";
 import { buildSegmentFrame, buildTranscriptFrame, frameToMessage, type EdgeFrame } from "./frames";
 
@@ -192,6 +194,27 @@ export class GraphRuntime {
       await Promise.all(
         [...browserTargets].map((t) =>
           browserTranslate.warm(t).catch((e) => this.hooks.onError?.(e instanceof Error ? e : new Error(String(e)))),
+        ),
+      );
+    }
+
+    // Neural TTS (on-device ONNX) models — preload weights now. Non-fatal: a
+    // failure only disables that node, never aborts the rest of the graph.
+    const ttsModels = new Set<string>();
+    for (const n of Object.values(this.graph.nodes)) {
+      if (n.type === "tts-model" && this.isLocal(n.id))
+        ttsModels.add((n.config?.model as string | undefined) ?? DEFAULT_NEURAL_TTS_MODEL);
+    }
+    if (ttsModels.size) {
+      this.hooks.onStatus?.("loading TTS model…");
+      await Promise.all(
+        [...ttsModels].map((m) =>
+          neuralTts
+            .warm(m, (p) => {
+              if (p.progress !== undefined) this.hooks.onStatus?.(`TTS model ${Math.round(p.progress * 100)}%`);
+              else if (p.text) this.hooks.onStatus?.(p.text);
+            })
+            .catch((e) => this.hooks.onError?.(e instanceof Error ? e : new Error(String(e)))),
         ),
       );
     }
@@ -456,6 +479,36 @@ export class GraphRuntime {
             /* ignore */
           }
         },
+      };
+    }
+
+    if (type === "tts-model") {
+      // Synthesize each transcript to PCM with an on-device ONNX model and emit it
+      // as a segment, so it can feed a (device-targetable) speaker / audio-out.
+      const modelId = (this.graph.nodes[id]?.config?.model as string | undefined) ?? DEFAULT_NEURAL_TTS_MODEL;
+      let chain: Promise<void> = Promise.resolve();
+      return {
+        input: (_port, msg) => {
+          const tr = msg as TranscriptMsg;
+          const text = tr.text?.trim();
+          if (!text) return;
+          chain = chain.then(async () => {
+            this.hooks.onNodeBusy?.(id, true);
+            try {
+              const { samples, sampleRate } = await neuralTts.synthesize(text, modelId);
+              if (samples.length) {
+                const durationMs = (samples.length / sampleRate) * 1000;
+                this.emit(id, "out", { samples, sampleRate, durationMs } as SegmentMsg);
+              }
+            } catch (e) {
+              this.hooks.onError?.(e instanceof Error ? e : new Error(String(e)));
+            } finally {
+              this.hooks.onNodeBusy?.(id, false);
+            }
+          });
+        },
+        // Drain in-flight synthesis so a final utterance still reaches the speaker.
+        stop: () => chain,
       };
     }
 

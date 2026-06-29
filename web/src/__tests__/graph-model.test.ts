@@ -11,6 +11,7 @@ function graph(): VoiceGraph {
     aud: { id: "aud", type: "audio-out", device: null, pos: { x: 0, y: 0 } },
     spk: { id: "spk", type: "speaker", device: null, pos: { x: 0, y: 0 } },
     tts: { id: "tts", type: "tts", device: null, pos: { x: 0, y: 0 } },
+    ttsm: { id: "ttsm", type: "tts-model", device: null, pos: { x: 0, y: 0 } },
   };
   return g;
 }
@@ -64,6 +65,14 @@ describe("canConnect", () => {
     expect(canConnect(g, "stt", "out", "tts", "in")).toBe(true); // transcript->transcript
     expect(canConnect(g, "translate", "out", "tts", "in")).toBe(true);
     expect(canConnect(g, "mic", "out", "tts", "in")).toBe(false); // segment->transcript
+  });
+
+  it("neural tts-model takes a transcript and outputs a segment into a speaker", () => {
+    const g = graph();
+    expect(canConnect(g, "translate", "out", "ttsm", "in")).toBe(true); // transcript->in
+    expect(canConnect(g, "mic", "out", "ttsm", "in")).toBe(false); // segment->transcript
+    expect(canConnect(g, "ttsm", "out", "spk", "seg")).toBe(true); // segment out -> speaker
+    expect(canConnect(g, "ttsm", "out", "sink", "in")).toBe(false); // segment->transcript
   });
 
   it("rejects a second edge into an occupied input", () => {
