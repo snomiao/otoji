@@ -72,6 +72,19 @@ function useAudioDevices(kind: "audioinput" | "audiooutput"): MediaDeviceInfo[] 
   return devices;
 }
 
+/** On-device SpeechSynthesis voices. Populated async via the voiceschanged event. */
+function useVoices(): SpeechSynthesisVoice[] {
+  const [voices, setVoices] = useState<SpeechSynthesisVoice[]>([]);
+  useEffect(() => {
+    if (typeof window === "undefined" || !window.speechSynthesis) return;
+    const refresh = () => setVoices(window.speechSynthesis.getVoices());
+    refresh();
+    window.speechSynthesis.addEventListener?.("voiceschanged", refresh);
+    return () => window.speechSynthesis.removeEventListener?.("voiceschanged", refresh);
+  }, []);
+  return voices;
+}
+
 export function VoiceNode({ id, data }: NodeProps) {
   const d = data as VoiceNodeData;
   const { devices, onAssign, onConfig, onDelete, getRecords, setFile, counts, live } = useContext(GraphContext);
@@ -84,6 +97,7 @@ export function VoiceNode({ id, data }: NodeProps) {
   const config = (d as any).config as Record<string, unknown> | undefined;
   const inputDevices = useAudioDevices("audioinput");
   const outputDevices = useAudioDevices("audiooutput");
+  const voices = useVoices();
   const [shown, setShown] = useState(() => isPreviewShown(id));
   const toggleShown = () => { const v = !shown; setShown(v); setPreviewShown(id, v); };
 
@@ -233,6 +247,37 @@ export function VoiceNode({ id, data }: NodeProps) {
               ))}
             </select>
           </label>
+        )}
+        {d.voiceType === "tts" && (
+          <>
+            <label style={{ display: "flex", gap: 6, alignItems: "center", color: "#718096", marginTop: 4 }}>
+              voice:
+              <select
+                value={(config?.voice as string | undefined) ?? ""}
+                onChange={(e) => onConfig(id, { voice: e.target.value || undefined })}
+                style={{ fontSize: 11, flex: 1 }}
+              >
+                <option value="">(default voice)</option>
+                {voices.map((v) => (
+                  <option key={v.voiceURI} value={v.voiceURI}>
+                    {v.name} · {v.lang}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label style={{ display: "flex", gap: 6, alignItems: "center", color: "#718096", marginTop: 4 }}>
+              rate:
+              <select
+                value={String((config?.rate as number | undefined) ?? 1)}
+                onChange={(e) => onConfig(id, { rate: Number(e.target.value) })}
+                style={{ fontSize: 11, flex: 1 }}
+              >
+                {[0.75, 1, 1.25, 1.5, 2].map((r) => (
+                  <option key={r} value={r}>{r}×</option>
+                ))}
+              </select>
+            </label>
+          </>
         )}
         {(d.voiceType === "file-audio" || d.voiceType === "file-text") && (
           <div style={{ marginTop: 4, fontSize: 11, color: "#718096" }}>

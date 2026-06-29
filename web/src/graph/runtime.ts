@@ -411,6 +411,54 @@ export class GraphRuntime {
       };
     }
 
+    if (type === "tts") {
+      // Speak each transcript via the browser's on-device SpeechSynthesis, on the
+      // device that runs this node. Serialize so utterances don't overlap.
+      const cfg = this.graph.nodes[id]?.config ?? {};
+      const voiceURI = cfg.voice as string | undefined;
+      const rate = typeof cfg.rate === "number" ? (cfg.rate as number) : 1;
+      let chain: Promise<void> = Promise.resolve();
+      let stopped = false;
+      return {
+        input: (_port, msg) => {
+          const tr = msg as TranscriptMsg;
+          const text = tr.text?.trim();
+          if (!text) return;
+          const synth = typeof window !== "undefined" ? window.speechSynthesis : undefined;
+          if (!synth) return;
+          chain = chain.then(
+            () =>
+              new Promise<void>((resolve) => {
+                if (stopped) return resolve(); // runtime stopped while queued — don't speak
+                try {
+                  const u = new SpeechSynthesisUtterance(text);
+                  u.rate = rate;
+                  const v = voiceURI ? synth.getVoices().find((x) => x.voiceURI === voiceURI) : undefined;
+                  if (v) {
+                    u.voice = v;
+                    u.lang = v.lang;
+                  }
+                  u.onend = () => resolve();
+                  u.onerror = () => resolve();
+                  synth.speak(u);
+                } catch (e) {
+                  this.hooks.onError?.(e instanceof Error ? e : new Error(String(e)));
+                  resolve();
+                }
+              }),
+          );
+        },
+        stop: () => {
+          stopped = true; // queued continuations check this and skip speaking
+          try {
+            window.speechSynthesis?.cancel();
+          } catch {
+            /* ignore */
+          }
+        },
+      };
+    }
+
     // sink / srt-out
     return {
       input: (_port, msg) => this.hooks.onSink?.(id, msg as TranscriptMsg),

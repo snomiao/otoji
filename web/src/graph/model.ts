@@ -12,6 +12,7 @@ export type NodeType =
   | "sink"
   | "audio-out"
   | "speaker"
+  | "tts"
   | "srt-out";
 
 export interface NodeSpec {
@@ -76,6 +77,13 @@ export const NODE_SPECS: Record<NodeType, NodeSpec> = {
       { id: "seg", type: "segment" },
       { id: "in", type: "transcript" },
     ],
+    outputs: [],
+  },
+  tts: {
+    type: "tts",
+    label: "Text-to-Speech (local)",
+    // Speaks a transcript via the browser's on-device SpeechSynthesis.
+    inputs: [{ id: "in", type: "transcript" }],
     outputs: [],
   },
   "srt-out": {
