@@ -41,6 +41,15 @@ import {
 
 const nodeTypes = { voice: VoiceNode };
 
+// Floating overlay card shared by the toolbar, palette, sink and view panels.
+const CARD: React.CSSProperties = {
+  background: "rgba(255,255,255,0.95)",
+  border: "1px solid #e2e8f0",
+  borderRadius: 10,
+  boxShadow: "0 4px 16px rgba(0,0,0,0.12)",
+  backdropFilter: "blur(4px)",
+};
+
 // ---- VoiceGraph <-> React Flow conversion -------------------------------
 function toRF(g: VoiceGraph): { nodes: Node[]; edges: Edge[] } {
   const nodes = Object.values(g.nodes).map((n) => ({
@@ -101,7 +110,7 @@ function Editor({ initialRoom }: { initialRoom?: string }) {
   const [runStatus, setRunStatus] = useState("");
   const [sinkRecs, setSinkRecs] = useState<Recording[]>([]);
   const [peerStates, setPeerStates] = useState<Record<string, string>>({});
-  const [, setTick] = useState(0); // periodic refresh for live counters
+  const [tick, setTick] = useState(0); // periodic refresh for live counters
   const [view, setView] = useState<"graph" | "network" | "timeline">("graph");
 
   const sigRef = useRef<SignalingClient | null>(null);
@@ -259,13 +268,18 @@ function Editor({ initialRoom }: { initialRoom?: string }) {
     [setNodes, broadcast],
   );
 
+  const rf = useReactFlow();
+
   const addNode = useCallback(
-    (type: NodeType) => {
+    (type: NodeType, screen?: { x: number; y: number }) => {
       const id = `${type}-${Math.random().toString(36).slice(2, 8)}`;
+      const position = screen
+        ? rf.screenToFlowPosition(screen)
+        : { x: 80 + Math.random() * 120, y: 80 + Math.random() * 160 };
       const n: Node = {
         id,
         type: "voice",
-        position: { x: 80 + Math.random() * 120, y: 80 + Math.random() * 160 },
+        position,
         data: { voiceType: type, device: myDeviceId, config: {} },
       };
       const next = [...nodesRef.current, n];
@@ -273,7 +287,7 @@ function Editor({ initialRoom }: { initialRoom?: string }) {
       setNodes(next);
       broadcast(next, edgesRef.current);
     },
-    [myDeviceId, setNodes, broadcast],
+    [myDeviceId, setNodes, broadcast, rf],
   );
 
   const onConfig = useCallback(
@@ -305,8 +319,6 @@ function Editor({ initialRoom }: { initialRoom?: string }) {
   );
 
   const onDelete = useCallback((nodeId: string) => removeNodes([nodeId]), [removeNodes]);
-
-  const rf = useReactFlow();
 
   // Records collected at a sink/output node (oldest first) for file export — from
   // the uncapped per-node buffer (sinkRecs is capped for the live panel only).
@@ -477,6 +489,23 @@ function Editor({ initialRoom }: { initialRoom?: string }) {
         recordsByNodeRef.current.set(sinkId, arr);
         setSinkRecs((prev) => [rec, ...prev].slice(0, 100));
       },
+      onAudio: (nodeId, audio) => {
+        // raw audio capture (audio-out seg input) — no readable-text filter
+        const rec: Recording = {
+          id: `a-${recCounter.current++}`,
+          nodeId,
+          at: Date.now(),
+          durationMs: audio.durationMs,
+          text: "",
+          peaks: computePeaks(audio.samples, 400),
+          sampleRate: audio.sampleRate,
+          samples: audio.samples,
+        };
+        const arr = recordsByNodeRef.current.get(nodeId) ?? [];
+        arr.push(rec);
+        recordsByNodeRef.current.set(nodeId, arr);
+        setTick((x) => x + 1); // refresh counts so audio-out's label updates promptly
+      },
     });
     runtimeRef.current = rt;
     setRunning(true);
@@ -536,11 +565,14 @@ function Editor({ initialRoom }: { initialRoom?: string }) {
     [edges, nodes, running],
   );
 
+  // Per-node record counts from the uncapped export buffer (sink transcripts AND
+  // raw audio collected at audio-out). Recomputed on tick so memoized nodes that
+  // read getRecords() (e.g. audio-out's download label) re-render as records land.
   const counts = useMemo(() => {
     const c: Record<string, number> = {};
-    for (const r of sinkRecs) if (r.nodeId) c[r.nodeId] = (c[r.nodeId] ?? 0) + 1;
+    for (const [nodeId, recs] of recordsByNodeRef.current) c[nodeId] = recs.length;
     return c;
-  }, [sinkRecs]);
+  }, [tick, sinkRecs]);
 
   const currentGraph = useMemo(() => fromRF(nodes, edges, versionRef.current), [nodes, edges]);
 
@@ -582,12 +614,42 @@ function Editor({ initialRoom }: { initialRoom?: string }) {
 
   return (
     <GraphContext.Provider value={ctx}>
-      <div style={{ display: "flex", flexDirection: "column", height: "100vh", fontFamily: "system-ui, sans-serif" }}>
-        <div style={{ display: "flex", gap: 8, alignItems: "center", padding: "8px 12px", borderBottom: "1px solid #e2e8f0", flexWrap: "wrap" }}>
-          <strong>otoji graph</strong>
+      <div style={{ position: "relative", height: "100vh", overflow: "hidden", fontFamily: "system-ui, sans-serif" }}>
+        {/* full-bleed graph canvas — the whole background */}
+        <div style={{ position: "absolute", inset: 0 }}>
+          <ReactFlow
+            nodes={nodes}
+            edges={styledEdges}
+            nodeTypes={nodeTypes}
+            onNodesChange={onNodesChange}
+            onEdgesChange={onEdgesChange}
+            onConnect={onConnect}
+            isValidConnection={isValidConnection}
+            onNodeDragStop={() => broadcast(nodesRef.current, edgesRef.current)}
+            onNodesDelete={afterDelete}
+            onEdgesDelete={afterDelete}
+            deleteKeyCode={null}
+            onDragOver={(e) => { e.preventDefault(); e.dataTransfer.dropEffect = "copy"; }}
+            onDrop={(e) => {
+              e.preventDefault();
+              const f = e.dataTransfer.files?.[0];
+              if (f) { addFileNodeAt(f, e.clientX, e.clientY); return; }
+              const t = e.dataTransfer.getData("application/otoji-node") as NodeType;
+              if (t && NODE_SPECS[t]) addNode(t, { x: e.clientX, y: e.clientY });
+            }}
+            fitView
+          >
+            <Background />
+            <Controls />
+          </ReactFlow>
+        </div>
+
+        {/* floating title / toolbar card */}
+        <div style={{ ...CARD, position: "absolute", top: 12, left: 12, display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", padding: "8px 12px", maxWidth: "calc(100% - 24px)", zIndex: 10 }}>
+          <strong>otoji</strong>
           <span style={{ fontSize: 12, color: "#718096" }}>room {room} · {status} · {role} · {devices.length} device(s)</span>
           <button onClick={share} style={{ fontSize: 12 }}>{copied ? "✓ link copied" : "Share link"}</button>
-          <span style={{ display: "flex", gap: 4, marginLeft: 12 }}>
+          <span style={{ display: "flex", gap: 4, marginLeft: 8 }}>
             {(["graph", "network", "timeline"] as const).map((v) => (
               <button
                 key={v}
@@ -599,81 +661,96 @@ function Editor({ initialRoom }: { initialRoom?: string }) {
             ))}
           </span>
           {view === "graph" && (
-            <>
-              <button onClick={addPipeline} style={{ fontSize: 12, fontWeight: 700 }}>+ Pipeline</button>
-              <span style={{ marginLeft: 6, fontSize: 12, color: "#a0aec0" }}>add:</span>
-              {(Object.keys(NODE_SPECS) as NodeType[]).map((t) => (
-                <button key={t} onClick={() => addNode(t)} style={{ fontSize: 12 }}>+ {NODE_SPECS[t].label}</button>
-              ))}
-            </>
+            <button onClick={addPipeline} style={{ fontSize: 12, fontWeight: 700 }}>+ Pipeline</button>
           )}
-          <span style={{ marginLeft: "auto", display: "flex", gap: 8, alignItems: "center" }}>
+          <span style={{ display: "flex", gap: 8, alignItems: "center", marginLeft: 8 }}>
             {runStatus && <span style={{ fontSize: 12, color: "#718096" }}>{runStatus}</span>}
             <span style={{ fontSize: 12, color: running ? "#2f855a" : "#a0aec0" }}>{running ? "● live" : paused ? "paused" : "idle"}</span>
             <button onClick={() => setPaused((v) => !v)} style={{ fontSize: 12 }}>{paused ? "Resume" : "Pause"}</button>
           </span>
         </div>
-        <div style={{ flex: 1, minHeight: 0, display: "flex" }}>
-          {view === "graph" && (
-            <>
-              <div style={{ flex: 1 }}>
-                <ReactFlow
-                  nodes={nodes}
-                  edges={styledEdges}
-                  nodeTypes={nodeTypes}
-                  onNodesChange={onNodesChange}
-                  onEdgesChange={onEdgesChange}
-                  onConnect={onConnect}
-                  isValidConnection={isValidConnection}
-                  onNodeDragStop={() => broadcast(nodesRef.current, edgesRef.current)}
-                  onNodesDelete={afterDelete}
-                  onEdgesDelete={afterDelete}
-                  deleteKeyCode={null}
-                  onDragOver={(e) => { e.preventDefault(); e.dataTransfer.dropEffect = "copy"; }}
-                  onDrop={(e) => {
-                    e.preventDefault();
-                    const f = e.dataTransfer.files?.[0];
-                    if (f) addFileNodeAt(f, e.clientX, e.clientY);
-                  }}
-                  fitView
-                >
-                  <Background />
-                  <Controls />
-                </ReactFlow>
-              </div>
-              <div style={{ width: 340, borderLeft: "1px solid #e2e8f0", overflow: "auto", padding: "8px 12px" }}>
-                {running && (
-                  <div style={{ fontSize: 11, color: "#718096", marginBottom: 6 }}>
-                    <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                      mic
-                      <span style={{ display: "inline-block", width: 80, height: 6, background: "#e2e8f0", borderRadius: 3, overflow: "hidden" }}>
-                        <span style={{ display: "block", height: "100%", width: `${Math.min(100, micLevelRef.current * 600)}%`, background: "#2f855a" }} />
-                      </span>
-                    </div>
-                    <div>segments {activityRef.current.segments} · recognized {activityRef.current.stt}</div>
+
+        {/* floating node palette — drag a folded node onto the canvas (or click) */}
+        {view === "graph" && (
+          <div style={{ ...CARD, position: "absolute", left: 12, bottom: 12, padding: "8px 10px", width: 188, zIndex: 10 }}>
+            <div style={{ fontSize: 11, color: "#a0aec0", marginBottom: 6 }}>drag onto canvas — or click to add</div>
+            <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
+              {(Object.keys(NODE_SPECS) as NodeType[]).map((t) => {
+                const spec = NODE_SPECS[t];
+                const dot = (spec.outputs[0]?.type ?? spec.inputs[0]?.type ?? "transcript") as PortType;
+                return (
+                  <div
+                    key={t}
+                    draggable
+                    onDragStart={(e) => {
+                      e.dataTransfer.setData("application/otoji-node", t);
+                      e.dataTransfer.effectAllowed = "copy";
+                    }}
+                    onClick={() => addNode(t)}
+                    title={`drag onto canvas or click to add — ${spec.label}`}
+                    style={{
+                      cursor: "grab",
+                      border: "1px solid #cbd5e0",
+                      borderRadius: 6,
+                      background: "#fff",
+                      padding: "4px 8px",
+                      fontSize: 11,
+                      display: "flex",
+                      gap: 6,
+                      alignItems: "center",
+                      boxShadow: "0 1px 2px rgba(0,0,0,0.06)",
+                    }}
+                  >
+                    <span style={{ width: 7, height: 7, borderRadius: 4, background: PORT_COLOR[dot], flex: "none" }} />
+                    {spec.label}
                   </div>
-                )}
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                  <strong style={{ fontSize: 13 }}>Sink output ({sinkRecs.length})</strong>
-                  {sinkRecs.length > 0 && (
-                    <button onClick={() => { setSinkRecs([]); recordsByNodeRef.current.clear(); }} style={{ fontSize: 11 }}>Clear</button>
-                  )}
+                );
+              })}
+            </div>
+          </div>
+        )}
+
+        {/* floating sink output card */}
+        {view === "graph" && (
+          <div style={{ ...CARD, position: "absolute", top: 12, right: 12, width: 320, maxHeight: "calc(100% - 24px)", overflow: "auto", padding: "8px 12px", zIndex: 10 }}>
+            {running && (
+              <div style={{ fontSize: 11, color: "#718096", marginBottom: 6 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                  mic
+                  <span style={{ display: "inline-block", width: 80, height: 6, background: "#e2e8f0", borderRadius: 3, overflow: "hidden" }}>
+                    <span style={{ display: "block", height: "100%", width: `${Math.min(100, micLevelRef.current * 600)}%`, background: "#2f855a" }} />
+                  </span>
                 </div>
-                {sinkRecs.length === 0 ? (
-                  <p style={{ color: "#a0aec0", fontSize: 12 }}>
-                    {running ? "Running — speak to produce transcripts." : "Run the graph to produce transcripts."}
-                  </p>
-                ) : (
-                  sinkRecs.map((r, i) => <RecordingPlayer key={r.id} rec={r} index={sinkRecs.length - 1 - i} />)
-                )}
+                <div>segments {activityRef.current.segments} · recognized {activityRef.current.stt}</div>
               </div>
-            </>
-          )}
-          {view === "network" && (
+            )}
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+              <strong style={{ fontSize: 13 }}>Sink output ({sinkRecs.length})</strong>
+              {sinkRecs.length > 0 && (
+                <button onClick={() => { setSinkRecs([]); recordsByNodeRef.current.clear(); }} style={{ fontSize: 11 }}>Clear</button>
+              )}
+            </div>
+            {sinkRecs.length === 0 ? (
+              <p style={{ color: "#a0aec0", fontSize: 12 }}>
+                {running ? "Running — speak to produce transcripts." : "Run the graph to produce transcripts."}
+              </p>
+            ) : (
+              sinkRecs.map((r, i) => <RecordingPlayer key={r.id} rec={r} index={sinkRecs.length - 1 - i} />)
+            )}
+          </div>
+        )}
+
+        {/* network / timeline as floating overlay cards */}
+        {view === "network" && (
+          <div style={{ ...CARD, position: "absolute", left: 12, right: 12, top: 64, bottom: 12, overflow: "auto", padding: "12px", zIndex: 9 }}>
             <NetworkView myId={myDeviceId} devices={devices} peerStates={peerStates} graph={currentGraph} stats={transportRef.current} />
-          )}
-          {view === "timeline" && <TimelineView recordings={sinkRecs} />}
-        </div>
+          </div>
+        )}
+        {view === "timeline" && (
+          <div style={{ ...CARD, position: "absolute", left: 12, right: 12, top: 64, bottom: 12, overflow: "auto", padding: "12px", zIndex: 9 }}>
+            <TimelineView recordings={sinkRecs} />
+          </div>
+        )}
       </div>
     </GraphContext.Provider>
   );

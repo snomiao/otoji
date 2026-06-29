@@ -6,3 +6,7 @@ userscript/dist
 .env.local
 *.log
 .DS_Store
+
+# playwright
+test-results/
+playwright-report/

@@ -43,6 +43,7 @@ export interface RuntimeHooks {
   onRecognized?: (nodeId: string, text: string) => void; // an STT node finished (text may be empty)
   onNodeBusy?: (nodeId: string, busy: boolean) => void; // node started/finished processing
   onSink?: (nodeId: string, tr: TranscriptMsg) => void;
+  onAudio?: (nodeId: string, audio: SegmentMsg) => void; // raw audio collected at audio-out
   onStatus?: (s: string) => void;
   onError?: (e: Error) => void;
 }
@@ -312,7 +313,22 @@ export class GraphRuntime {
       };
     }
 
-    // sink
+    if (type === "audio-out") {
+      // Collect audio from either input: a raw segment, or a transcript's .audio.
+      return {
+        input: (_port, msg) => {
+          const m = msg as Partial<TranscriptMsg> & Partial<SegmentMsg>;
+          const audio: SegmentMsg | null = m.audio
+            ? m.audio
+            : m.samples
+              ? { samples: m.samples, sampleRate: m.sampleRate ?? MIC_VAD_SR, durationMs: m.durationMs ?? 0 }
+              : null;
+          if (audio && audio.samples.length) this.hooks.onAudio?.(id, audio);
+        },
+      };
+    }
+
+    // sink / srt-out
     return {
       input: (_port, msg) => this.hooks.onSink?.(id, msg as TranscriptMsg),
     };

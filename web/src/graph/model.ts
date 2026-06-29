@@ -60,7 +60,11 @@ export const NODE_SPECS: Record<NodeType, NodeSpec> = {
   "audio-out": {
     type: "audio-out",
     label: "Audio file (out)",
-    inputs: [{ id: "in", type: "transcript" }],
+    // Accepts raw audio (tap mic/file directly) OR transcripts (uses their audio).
+    inputs: [
+      { id: "seg", type: "segment" },
+      { id: "in", type: "transcript" },
+    ],
     outputs: [],
   },
   "srt-out": {

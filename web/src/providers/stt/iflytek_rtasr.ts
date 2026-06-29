@@ -74,7 +74,7 @@ export class IflytekRtasrProvider implements SttProvider {
     ws.addEventListener("error", () => onError?.(new Error("rtasr ws error")));
     return {
       sendAudio(frame: Int16Array) {
-        if (ws.readyState === ws.OPEN) ws.send(frame.buffer);
+        if (ws.readyState === ws.OPEN) ws.send(frame.buffer as ArrayBuffer);
       },
       async stop() {
         if (ws.readyState === ws.OPEN) ws.send(JSON.stringify({ end: true }));
