@@ -11,6 +11,7 @@ import {
   type Node,
   type Edge,
   type Connection,
+  type FinalConnectionState,
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 import { SignalingClient, type Peer } from "../net/signaling";
@@ -112,6 +113,17 @@ function Editor({ initialRoom }: { initialRoom?: string }) {
   const [peerStates, setPeerStates] = useState<Record<string, string>>({});
   const [tick, setTick] = useState(0); // periodic refresh for live counters
   const [view, setView] = useState<"graph" | "network" | "timeline">("graph");
+  // Omnibox shown when an output connection is dropped on empty canvas — lists
+  // only downstream node types whose input port type matches the dragged output.
+  const [connectMenu, setConnectMenu] = useState<
+    | null
+    | {
+        x: number;
+        y: number;
+        source: { nodeId: string; handleId: string; portType: PortType };
+        options: { type: NodeType; label: string }[];
+      }
+  >(null);
 
   const sigRef = useRef<SignalingClient | null>(null);
   const meshRef = useRef<PeerMesh | null>(null);
@@ -434,6 +446,49 @@ function Editor({ initialRoom }: { initialRoom?: string }) {
     return canConnect(g, c.source!, c.sourceHandle ?? "out", c.target!, c.targetHandle ?? "in");
   }, []);
 
+  // Dropping a connection on empty canvas opens the omnibox (instead of doing
+  // nothing) listing the node types that can accept this output's port type.
+  const onConnectEnd = useCallback((event: MouseEvent | TouchEvent, conn: FinalConnectionState) => {
+    if (conn.isValid) return; // landed on a real handle → onConnect already wired it
+    // Only treat as empty-canvas: an invalid drop ONTO a handle/node (e.g. a
+    // mismatched port) should just be rejected, not open the omnibox over it.
+    if (conn.toHandle || conn.toNode) return;
+    const from = conn.fromHandle;
+    const fromNode = conn.fromNode;
+    if (!from || from.type !== "source" || !fromNode) return; // only from an output
+    const vt = (fromNode.data as any)?.voiceType as NodeType | undefined;
+    const portType = vt ? NODE_SPECS[vt]?.outputs.find((p) => p.id === (from.id ?? "out"))?.type : undefined;
+    if (!portType) return;
+    const options = (Object.keys(NODE_SPECS) as NodeType[])
+      .filter((t) => NODE_SPECS[t].inputs.some((p) => p.type === portType))
+      .map((t) => ({ type: t, label: NODE_SPECS[t].label }));
+    if (!options.length) return;
+    const pt = "changedTouches" in event ? event.changedTouches[0] : (event as MouseEvent);
+    setConnectMenu({ x: pt.clientX, y: pt.clientY, source: { nodeId: fromNode.id, handleId: from.id ?? "out", portType }, options });
+  }, []);
+
+  // Create the chosen downstream node at the drop point and wire the dragged
+  // output into its matching input, in one synced update.
+  const createConnectedNode = useCallback(
+    (type: NodeType, src: { nodeId: string; handleId: string; portType: PortType }, screen: { x: number; y: number }) => {
+      const targetHandle = NODE_SPECS[type].inputs.find((p) => p.type === src.portType)?.id ?? "in";
+      const id = `${type}-${Math.random().toString(36).slice(2, 8)}`;
+      const position = rf.screenToFlowPosition(screen);
+      const n: Node = { id, type: "voice", position, data: { voiceType: type, device: myDeviceId, config: {} } };
+      const eid = edgeId({ source: src.nodeId, sourceHandle: src.handleId, target: id, targetHandle });
+      const edge: Edge = { id: eid, source: src.nodeId, sourceHandle: src.handleId, target: id, targetHandle };
+      const nextNodes = [...nodesRef.current, n];
+      const nextEdges = [...edgesRef.current, edge];
+      nodesRef.current = nextNodes;
+      edgesRef.current = nextEdges;
+      setNodes(nextNodes);
+      setEdges(nextEdges);
+      broadcast(nextNodes, nextEdges);
+      setConnectMenu(null);
+    },
+    [rf, myDeviceId, setNodes, setEdges, broadcast],
+  );
+
   const afterDelete = useCallback(() => {
     // state settles via onNodesChange/onEdgesChange first
     setTimeout(() => broadcast(nodesRef.current, edgesRef.current), 0);
@@ -624,6 +679,7 @@ function Editor({ initialRoom }: { initialRoom?: string }) {
             onNodesChange={onNodesChange}
             onEdgesChange={onEdgesChange}
             onConnect={onConnect}
+            onConnectEnd={onConnectEnd}
             isValidConnection={isValidConnection}
             onNodeDragStop={() => broadcast(nodesRef.current, edgesRef.current)}
             onNodesDelete={afterDelete}
@@ -751,8 +807,81 @@ function Editor({ initialRoom }: { initialRoom?: string }) {
             <TimelineView recordings={sinkRecs} />
           </div>
         )}
+
+        {connectMenu && (
+          <ConnectMenu
+            x={connectMenu.x}
+            y={connectMenu.y}
+            options={connectMenu.options}
+            onPick={(type) => createConnectedNode(type, connectMenu.source, { x: connectMenu.x, y: connectMenu.y })}
+            onClose={() => setConnectMenu(null)}
+          />
+        )}
       </div>
     </GraphContext.Provider>
+  );
+}
+
+// Cmd-K-style omnibox: filter compatible downstream nodes, arrow-key to choose,
+// Enter to create + connect. Shown at the point an output drag was released.
+function ConnectMenu({
+  x,
+  y,
+  options,
+  onPick,
+  onClose,
+}: {
+  x: number;
+  y: number;
+  options: { type: NodeType; label: string }[];
+  onPick: (t: NodeType) => void;
+  onClose: () => void;
+}) {
+  const [q, setQ] = useState("");
+  const [active, setActive] = useState(0);
+  const filtered = useMemo(
+    () => options.filter((o) => o.label.toLowerCase().includes(q.trim().toLowerCase())),
+    [q, options],
+  );
+  useEffect(() => { setActive(0); }, [q]);
+  const left = Math.min(x, (typeof window !== "undefined" ? window.innerWidth : x + 240) - 244);
+  const top = Math.min(y, (typeof window !== "undefined" ? window.innerHeight : y + 240) - 240);
+  return (
+    <div
+      onMouseDown={(e) => e.stopPropagation()}
+      style={{ ...CARD, position: "fixed", left, top, width: 232, padding: 6, zIndex: 30 }}
+    >
+      <input
+        autoFocus
+        value={q}
+        onChange={(e) => setQ(e.target.value)}
+        onBlur={() => setTimeout(onClose, 120)}
+        onKeyDown={(e) => {
+          if (e.key === "ArrowDown") { e.preventDefault(); setActive((i) => Math.min(filtered.length - 1, i + 1)); }
+          else if (e.key === "ArrowUp") { e.preventDefault(); setActive((i) => Math.max(0, i - 1)); }
+          else if (e.key === "Enter") { e.preventDefault(); const sel = filtered[active]; if (sel) onPick(sel.type); }
+          else if (e.key === "Escape") { e.preventDefault(); onClose(); }
+        }}
+        placeholder="connect to…"
+        style={{ width: "100%", boxSizing: "border-box", fontSize: 13, padding: "5px 7px", border: "1px solid #cbd5e0", borderRadius: 6, outline: "none" }}
+      />
+      <div style={{ marginTop: 4, maxHeight: 200, overflow: "auto" }}>
+        {filtered.length === 0 ? (
+          <div style={{ fontSize: 12, color: "#a0aec0", padding: "6px 7px" }}>no compatible node</div>
+        ) : (
+          filtered.map((o, idx) => (
+            <div
+              key={o.type}
+              onMouseEnter={() => setActive(idx)}
+              onMouseDown={(e) => { e.preventDefault(); onPick(o.type); }}
+              style={{ fontSize: 12, padding: "5px 7px", borderRadius: 5, cursor: "pointer", background: idx === active ? "#ebf4ff" : "transparent" }}
+            >
+              {o.label}
+            </div>
+          ))
+        )}
+      </div>
+    </div>
   );
 }
 
