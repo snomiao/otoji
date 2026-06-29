@@ -14,6 +14,7 @@ export type NodeType =
   | "speaker"
   | "tts"
   | "tts-model"
+  | "model"
   | "srt-out";
 
 export interface NodeSpec {
@@ -94,6 +95,21 @@ export const NODE_SPECS: Record<NodeType, NodeSpec> = {
     // device-targetable speaker / audio-out.
     inputs: [{ id: "in", type: "transcript" }],
     outputs: [{ id: "out", type: "segment" }],
+  },
+  model: {
+    type: "model",
+    label: "Custom model",
+    // A generic transformers.js node: the active task picks which ports it uses
+    // (ASR: seg→txt, translate/text2text: txt→txt, TTS: txt→seg). Unused handles
+    // simply stay unconnected.
+    inputs: [
+      { id: "in_seg", type: "segment" },
+      { id: "in_txt", type: "transcript" },
+    ],
+    outputs: [
+      { id: "out_txt", type: "transcript" },
+      { id: "out_seg", type: "segment" },
+    ],
   },
   "srt-out": {
     type: "srt-out",

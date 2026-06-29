@@ -11,6 +11,7 @@ import { browserTranslate } from "../providers/translate/browser-translator";
 import { DEFAULT_TRANSLATE_LANG, DEFAULT_TRANSLATE_MODEL, langNameToCode } from "../providers/translate/translate-config";
 import { neuralTts } from "../providers/tts/neural";
 import { DEFAULT_NEURAL_TTS_MODEL, AUTO_TTS_MODEL, AUTO_TTS_VOICE, langToTtsModel, voiceMatchesLang } from "../providers/tts/tts-config";
+import { runAsr, runText, runTts, warmPipe, type ModelTask } from "../providers/model/transformers-pipeline";
 import type { SttLevel } from "../providers/types";
 import { buildSegmentFrame, buildTranscriptFrame, frameToMessage, type EdgeFrame } from "./frames";
 
@@ -219,6 +220,26 @@ export class GraphRuntime {
               else if (p.text) this.hooks.onStatus?.(p.text);
             })
             .catch((e) => this.hooks.onError?.(e instanceof Error ? e : new Error(String(e)))),
+        ),
+      );
+    }
+
+    // Generic "Custom model" nodes — preload their transformers.js pipelines.
+    const customModels: { task: ModelTask; model: string; dtype?: string }[] = [];
+    for (const n of Object.values(this.graph.nodes)) {
+      if (n.type === "model" && this.isLocal(n.id)) {
+        const m = (n.config?.model as string | undefined)?.trim();
+        if (m) customModels.push({ task: (n.config?.task as ModelTask | undefined) ?? "asr", model: m, dtype: n.config?.dtype as string | undefined });
+      }
+    }
+    if (customModels.length) {
+      this.hooks.onStatus?.("loading custom model…");
+      await Promise.all(
+        customModels.map((c) =>
+          warmPipe(c.task, c.model, c.dtype, (p) => {
+            if (p.progress !== undefined) this.hooks.onStatus?.(`model ${Math.round(p.progress * 100)}%`);
+            else if (p.text) this.hooks.onStatus?.(p.text);
+          }).catch((e) => this.hooks.onError?.(e instanceof Error ? e : new Error(String(e)))),
         ),
       );
     }
@@ -537,6 +558,49 @@ export class GraphRuntime {
           });
         },
         // Drain in-flight synthesis so a final utterance still reaches the speaker.
+        stop: () => chain,
+      };
+    }
+
+    if (type === "model") {
+      // Generic transformers.js node — the configured task decides the I/O shape.
+      const cfg = this.graph.nodes[id]?.config ?? {};
+      const task = ((cfg.task as ModelTask | undefined) ?? "asr") as ModelTask;
+      const model = (cfg.model as string | undefined)?.trim();
+      const dtype = cfg.dtype as string | undefined;
+      let chain: Promise<void> = Promise.resolve();
+      return {
+        input: (_port, msg) => {
+          if (!model) return;
+          chain = chain.then(async () => {
+            this.hooks.onNodeBusy?.(id, true);
+            try {
+              if (task === "asr") {
+                const seg = msg as SegmentMsg;
+                const text = await runAsr(model, seg.samples, dtype);
+                this.hooks.onRecognized?.(id, text);
+                this.emit(id, "out_txt", { text, audio: seg } as TranscriptMsg);
+              } else if (task === "tts") {
+                const tr = msg as TranscriptMsg;
+                if (!tr.text?.trim()) return;
+                const { samples, sampleRate } = await runTts(model, tr.text, dtype);
+                if (samples.length)
+                  this.emit(id, "out_seg", { samples, sampleRate, durationMs: (samples.length / sampleRate) * 1000 } as SegmentMsg);
+              } else {
+                const tr = msg as TranscriptMsg;
+                if (!tr.text?.trim()) return;
+                const text = await runText(task, model, tr.text, dtype);
+                this.hooks.onRecognized?.(id, text);
+                // Carry audio/timing through so a downstream sink/SRT still works.
+                this.emit(id, "out_txt", { text, audio: tr.audio, lang: tr.lang, tStartMs: tr.tStartMs, tEndMs: tr.tEndMs } as TranscriptMsg);
+              }
+            } catch (e) {
+              this.hooks.onError?.(e instanceof Error ? e : new Error(String(e)));
+            } finally {
+              this.hooks.onNodeBusy?.(id, false);
+            }
+          });
+        },
         stop: () => chain,
       };
     }

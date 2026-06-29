@@ -12,6 +12,7 @@ import {
   DEFAULT_TRANSLATE_PROVIDER,
 } from "../providers/translate/translate-config";
 import { NEURAL_TTS_MODELS, AUTO_TTS_MODEL, AUTO_TTS_VOICE } from "../providers/tts/tts-config";
+import { MODEL_TASKS, MODEL_DTYPES, DEFAULT_MODEL_DTYPE } from "../providers/model/transformers-pipeline";
 import { useNodeLive } from "./useNodeLive";
 import { NodeMicPreview } from "./NodeMicPreview";
 import { isPreviewShown, setPreviewShown } from "../lib/prefs";
@@ -294,6 +295,45 @@ export function VoiceNode({ id, data }: NodeProps) {
               ))}
             </select>
           </label>
+        )}
+        {d.voiceType === "model" && (
+          <>
+            <label style={{ display: "flex", gap: 6, alignItems: "center", color: "#718096", marginTop: 4 }}>
+              task:
+              <select
+                value={(config?.task as string | undefined) ?? "asr"}
+                onChange={(e) => onConfig(id, { task: e.target.value })}
+                style={{ fontSize: 11, flex: 1 }}
+              >
+                {MODEL_TASKS.map((t) => (
+                  <option key={t.id} value={t.id}>{t.name}</option>
+                ))}
+              </select>
+            </label>
+            <label style={{ display: "block", color: "#718096", marginTop: 4 }}>
+              model (HF repo id or URL):
+              <input
+                type="text"
+                defaultValue={(config?.model as string | undefined) ?? ""}
+                placeholder="e.g. Xenova/whisper-tiny.en"
+                onBlur={(e) => onConfig(id, { model: e.target.value.trim() })}
+                onKeyDown={(e) => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); }}
+                style={{ fontSize: 11, width: 150, marginTop: 2 }}
+              />
+            </label>
+            <label style={{ display: "flex", gap: 6, alignItems: "center", color: "#718096", marginTop: 4 }}>
+              dtype:
+              <select
+                value={(config?.dtype as string | undefined) ?? DEFAULT_MODEL_DTYPE}
+                onChange={(e) => onConfig(id, { dtype: e.target.value })}
+                style={{ fontSize: 11, flex: 1 }}
+              >
+                {MODEL_DTYPES.map((dt) => (
+                  <option key={dt} value={dt}>{dt}</option>
+                ))}
+              </select>
+            </label>
+          </>
         )}
         {(d.voiceType === "file-audio" || d.voiceType === "file-text") && (
           <div style={{ marginTop: 4, fontSize: 11, color: "#718096" }}>

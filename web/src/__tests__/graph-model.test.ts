@@ -12,6 +12,7 @@ function graph(): VoiceGraph {
     spk: { id: "spk", type: "speaker", device: null, pos: { x: 0, y: 0 } },
     tts: { id: "tts", type: "tts", device: null, pos: { x: 0, y: 0 } },
     ttsm: { id: "ttsm", type: "tts-model", device: null, pos: { x: 0, y: 0 } },
+    mdl: { id: "mdl", type: "model", device: null, pos: { x: 0, y: 0 } },
   };
   return g;
 }
@@ -73,6 +74,15 @@ describe("canConnect", () => {
     expect(canConnect(g, "mic", "out", "ttsm", "in")).toBe(false); // segment->transcript
     expect(canConnect(g, "ttsm", "out", "spk", "seg")).toBe(true); // segment out -> speaker
     expect(canConnect(g, "ttsm", "out", "sink", "in")).toBe(false); // segment->transcript
+  });
+
+  it("custom model node exposes both port types (task-agnostic wiring)", () => {
+    const g = graph();
+    expect(canConnect(g, "mic", "out", "mdl", "in_seg")).toBe(true); // ASR input
+    expect(canConnect(g, "stt", "out", "mdl", "in_txt")).toBe(true); // text input
+    expect(canConnect(g, "mdl", "out_txt", "sink", "in")).toBe(true); // text output
+    expect(canConnect(g, "mdl", "out_seg", "spk", "seg")).toBe(true); // audio output
+    expect(canConnect(g, "mic", "out", "mdl", "in_txt")).toBe(false); // segment->transcript
   });
 
   it("rejects a second edge into an occupied input", () => {
