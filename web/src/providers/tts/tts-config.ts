@@ -44,3 +44,14 @@ const LANG_TO_MODEL: Record<string, string> = {
 export function langToTtsModel(code: string): string | undefined {
   return LANG_TO_MODEL[code.toLowerCase().split("-")[0]];
 }
+
+/** Sentinel voice value: pick a SpeechSynthesis voice from the transcript's lang. */
+export const AUTO_TTS_VOICE = "auto";
+
+/** True if a SpeechSynthesis voice.lang (e.g. "ja-JP") matches a transcript code
+ *  (e.g. "ja"/"jpn") on its primary subtag. SenseVoice's "yue" maps to zh. */
+export function voiceMatchesLang(voiceLang: string, code: string): boolean {
+  const prim = (s: string) => s.toLowerCase().replace(/_/g, "-").split("-")[0];
+  const want = code === "yue" ? "zh" : prim(code);
+  return prim(voiceLang) === want;
+}

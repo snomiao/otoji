@@ -10,7 +10,7 @@ import { webllmTranslate } from "../providers/translate/webllm";
 import { browserTranslate } from "../providers/translate/browser-translator";
 import { DEFAULT_TRANSLATE_LANG, DEFAULT_TRANSLATE_MODEL, langNameToCode } from "../providers/translate/translate-config";
 import { neuralTts } from "../providers/tts/neural";
-import { DEFAULT_NEURAL_TTS_MODEL, AUTO_TTS_MODEL, langToTtsModel } from "../providers/tts/tts-config";
+import { DEFAULT_NEURAL_TTS_MODEL, AUTO_TTS_MODEL, AUTO_TTS_VOICE, langToTtsModel, voiceMatchesLang } from "../providers/tts/tts-config";
 import type { SttLevel } from "../providers/types";
 import { buildSegmentFrame, buildTranscriptFrame, frameToMessage, type EdgeFrame } from "./frames";
 
@@ -442,7 +442,7 @@ export class GraphRuntime {
       // Speak each transcript via the browser's on-device SpeechSynthesis, on the
       // device that runs this node. Serialize so utterances don't overlap.
       const cfg = this.graph.nodes[id]?.config ?? {};
-      const voiceURI = cfg.voice as string | undefined;
+      const configuredVoice = (cfg.voice as string | undefined) ?? AUTO_TTS_VOICE;
       const rate = typeof cfg.rate === "number" ? (cfg.rate as number) : 1;
       let chain: Promise<void> = Promise.resolve();
       let stopped = false;
@@ -460,7 +460,17 @@ export class GraphRuntime {
                 try {
                   const u = new SpeechSynthesisUtterance(text);
                   u.rate = rate;
-                  const v = voiceURI ? synth.getVoices().find((x) => x.voiceURI === voiceURI) : undefined;
+                  // Resolve the voice: explicit pick, or — in auto mode — an OS
+                  // voice whose language matches the transcript (covers zh/ja/ko,
+                  // which no in-browser neural model does).
+                  const all = synth.getVoices();
+                  let v: SpeechSynthesisVoice | undefined;
+                  if (configuredVoice !== AUTO_TTS_VOICE) {
+                    v = all.find((x) => x.voiceURI === configuredVoice);
+                  } else if (tr.lang) {
+                    v = all.find((x) => voiceMatchesLang(x.lang, tr.lang!));
+                    u.lang = tr.lang; // also hint the engine, even if no voice object matched
+                  }
                   if (v) {
                     u.voice = v;
                     u.lang = v.lang;

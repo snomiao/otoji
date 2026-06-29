@@ -11,7 +11,7 @@ import {
   DEFAULT_TRANSLATE_LANG,
   DEFAULT_TRANSLATE_PROVIDER,
 } from "../providers/translate/translate-config";
-import { NEURAL_TTS_MODELS, AUTO_TTS_MODEL } from "../providers/tts/tts-config";
+import { NEURAL_TTS_MODELS, AUTO_TTS_MODEL, AUTO_TTS_VOICE } from "../providers/tts/tts-config";
 import { useNodeLive } from "./useNodeLive";
 import { NodeMicPreview } from "./NodeMicPreview";
 import { isPreviewShown, setPreviewShown } from "../lib/prefs";
@@ -254,11 +254,11 @@ export function VoiceNode({ id, data }: NodeProps) {
             <label style={{ display: "flex", gap: 6, alignItems: "center", color: "#718096", marginTop: 4 }}>
               voice:
               <select
-                value={(config?.voice as string | undefined) ?? ""}
-                onChange={(e) => onConfig(id, { voice: e.target.value || undefined })}
+                value={(config?.voice as string | undefined) ?? AUTO_TTS_VOICE}
+                onChange={(e) => onConfig(id, { voice: e.target.value })}
                 style={{ fontSize: 11, flex: 1 }}
               >
-                <option value="">(default voice)</option>
+                <option value={AUTO_TTS_VOICE}>Auto (match language)</option>
                 {voices.map((v) => (
                   <option key={v.voiceURI} value={v.voiceURI}>
                     {v.name} · {v.lang}
