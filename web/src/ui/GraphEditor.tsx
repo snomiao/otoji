@@ -284,10 +284,13 @@ function Editor({ initialRoom }: { initialRoom?: string }) {
     [setNodes, broadcast],
   );
 
-  const onDelete = useCallback(
-    (nodeId: string) => {
-      const nextNodes = nodesRef.current.filter((n) => n.id !== nodeId);
-      const nextEdges = edgesRef.current.filter((e) => e.source !== nodeId && e.target !== nodeId);
+  const removeNodes = useCallback(
+    (nodeIds: string[], edgeIds: string[] = []) => {
+      const ns = new Set(nodeIds);
+      const es = new Set(edgeIds);
+      if (!ns.size && !es.size) return;
+      const nextNodes = nodesRef.current.filter((n) => !ns.has(n.id));
+      const nextEdges = edgesRef.current.filter((e) => !es.has(e.id) && !ns.has(e.source) && !ns.has(e.target));
       nodesRef.current = nextNodes;
       edgesRef.current = nextEdges;
       setNodes(nextNodes);
@@ -296,6 +299,33 @@ function Editor({ initialRoom }: { initialRoom?: string }) {
     },
     [setNodes, setEdges, broadcast],
   );
+
+  const onDelete = useCallback((nodeId: string) => removeNodes([nodeId]), [removeNodes]);
+
+  // Keyboard: Ctrl/Cmd+A selects all nodes; Delete/Backspace removes the current
+  // selection (nodes + edges). Ignored while typing in a field.
+  useEffect(() => {
+    if (!joined) return;
+    const onKey = (e: KeyboardEvent) => {
+      const el = document.activeElement as HTMLElement | null;
+      if (el && /^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName)) return;
+      if ((e.ctrlKey || e.metaKey) && (e.key === "a" || e.key === "A")) {
+        e.preventDefault();
+        setNodes(nodesRef.current.map((n) => ({ ...n, selected: true })));
+        return;
+      }
+      if (e.key === "Delete" || e.key === "Backspace") {
+        const selN = nodesRef.current.filter((n) => n.selected).map((n) => n.id);
+        const selE = edgesRef.current.filter((ed) => ed.selected).map((ed) => ed.id);
+        if (selN.length || selE.length) {
+          e.preventDefault();
+          removeNodes(selN, selE);
+        }
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [joined, setNodes, removeNodes]);
 
   // One-click pre-wired Mic+VAD -> STT -> Sink, assigned to me. Removes the
   // manual add+connect friction (the usual reason "no transcript" appears).
@@ -548,6 +578,7 @@ function Editor({ initialRoom }: { initialRoom?: string }) {
                   onNodeDragStop={() => broadcast(nodesRef.current, edgesRef.current)}
                   onNodesDelete={afterDelete}
                   onEdgesDelete={afterDelete}
+                  deleteKeyCode={null}
                   fitView
                 >
                   <Background />
