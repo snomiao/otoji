@@ -7,6 +7,7 @@ import {
   addEdge,
   useNodesState,
   useEdgesState,
+  useReactFlow,
   type Node,
   type Edge,
   type Connection,
@@ -18,6 +19,7 @@ import { VoiceNode, type DeviceOpt } from "./VoiceNode";
 import { GraphContext } from "./graph-context";
 import { GraphRuntime, nodeOwner, type TranscriptMsg } from "../graph/runtime";
 import { LiveStore } from "../graph/live-store";
+import { fileStore, fileKindForName } from "../graph/file-store";
 import { PeerMeshTransport } from "../graph/mesh-transport";
 import { RecordingPlayer, type Recording } from "./RecordingPlayer";
 import { computePeaks } from "../lib/peaks";
@@ -111,6 +113,8 @@ function Editor({ initialRoom }: { initialRoom?: string }) {
   const activityRef = useRef({ segments: 0, stt: 0 });
   const micLevelRef = useRef(0);
   const liveRef = useRef(new LiveStore());
+  const recordsByNodeRef = useRef(new Map<string, Recording[]>()); // uncapped, for file export
+  const fileSeqRef = useRef(0);
   const nameCacheRef = useRef<Record<string, string>>({});
   const nodesRef = useRef(nodes);
   const edgesRef = useRef(edges);
@@ -302,6 +306,41 @@ function Editor({ initialRoom }: { initialRoom?: string }) {
 
   const onDelete = useCallback((nodeId: string) => removeNodes([nodeId]), [removeNodes]);
 
+  const rf = useReactFlow();
+
+  // Records collected at a sink/output node (oldest first) for file export — from
+  // the uncapped per-node buffer (sinkRecs is capped for the live panel only).
+  const getRecords = useCallback((nodeId: string) => recordsByNodeRef.current.get(nodeId) ?? [], []);
+
+  // Associate a local file with a file-source node, then bump config (with a
+  // monotonic seq so re-picking the SAME filename still restarts the runtime).
+  const setFile = useCallback(
+    (nodeId: string, file: File) => {
+      const kind = fileKindForName(file.name) ?? "audio";
+      fileStore.set(nodeId, { kind, name: file.name, file });
+      onConfig(nodeId, { file: file.name, fileSeq: ++fileSeqRef.current });
+    },
+    [onConfig],
+  );
+
+  // Drag-drop a media/text file onto the canvas -> create a file-source node here.
+  const addFileNodeAt = useCallback(
+    (file: File, clientX: number, clientY: number) => {
+      const kind = fileKindForName(file.name);
+      if (!kind) return;
+      const voiceType = kind === "audio" ? "file-audio" : "file-text";
+      const id = `${voiceType}-${Math.random().toString(36).slice(2, 8)}`;
+      const position = rf.screenToFlowPosition({ x: clientX, y: clientY });
+      const n: Node = { id, type: "voice", position, data: { voiceType, device: myDeviceId, config: { file: file.name } } };
+      fileStore.set(id, { kind, name: file.name, file });
+      const next = [...nodesRef.current, n];
+      nodesRef.current = next;
+      setNodes(next);
+      broadcast(next, edgesRef.current);
+    },
+    [rf, myDeviceId, setNodes, broadcast],
+  );
+
   // Keyboard: Ctrl/Cmd+A selects all nodes; Delete/Backspace removes the current
   // selection (nodes + edges). Ignored while typing in a field.
   useEffect(() => {
@@ -410,6 +449,7 @@ function Editor({ initialRoom }: { initialRoom?: string }) {
     }
     activityRef.current = { segments: 0, stt: 0 };
     liveRef.current.reset();
+    recordsByNodeRef.current.clear();
     const live = liveRef.current;
     const rt = new GraphRuntime(graph, {
       self: { myId: myDeviceId, deviceIds: onlineRef.current, transport },
@@ -420,8 +460,8 @@ function Editor({ initialRoom }: { initialRoom?: string }) {
       onRecognized: (id, text) => { activityRef.current.stt++; if (isReadableTranscript(text)) live.pushText(id, text); },
       onNodeBusy: (id, b) => live.setBusy(id, b),
       onSink: (sinkId, tr: TranscriptMsg) => {
-        if (isReadableTranscript(tr.text)) live.pushText(sinkId, tr.text);
         if (!isReadableTranscript(tr.text)) return;
+        live.pushText(sinkId, tr.text);
         const rec: Recording = {
           id: `g-${recCounter.current++}`,
           nodeId: sinkId,
@@ -432,6 +472,9 @@ function Editor({ initialRoom }: { initialRoom?: string }) {
           sampleRate: tr.audio.sampleRate,
           samples: tr.audio.samples,
         };
+        const arr = recordsByNodeRef.current.get(sinkId) ?? [];
+        arr.push(rec);
+        recordsByNodeRef.current.set(sinkId, arr);
         setSinkRecs((prev) => [rec, ...prev].slice(0, 100));
       },
     });
@@ -502,8 +545,8 @@ function Editor({ initialRoom }: { initialRoom?: string }) {
   const currentGraph = useMemo(() => fromRF(nodes, edges, versionRef.current), [nodes, edges]);
 
   const ctx = useMemo(
-    () => ({ devices, onAssign, onConfig, onDelete, counts, live: liveRef.current }),
-    [devices, onAssign, onConfig, onDelete, counts],
+    () => ({ devices, onAssign, onConfig, onDelete, getRecords, setFile, counts, live: liveRef.current }),
+    [devices, onAssign, onConfig, onDelete, getRecords, setFile, counts],
   );
 
   if (!joined) {
@@ -586,6 +629,12 @@ function Editor({ initialRoom }: { initialRoom?: string }) {
                   onNodesDelete={afterDelete}
                   onEdgesDelete={afterDelete}
                   deleteKeyCode={null}
+                  onDragOver={(e) => { e.preventDefault(); e.dataTransfer.dropEffect = "copy"; }}
+                  onDrop={(e) => {
+                    e.preventDefault();
+                    const f = e.dataTransfer.files?.[0];
+                    if (f) addFileNodeAt(f, e.clientX, e.clientY);
+                  }}
                   fitView
                 >
                   <Background />
@@ -606,7 +655,9 @@ function Editor({ initialRoom }: { initialRoom?: string }) {
                 )}
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                   <strong style={{ fontSize: 13 }}>Sink output ({sinkRecs.length})</strong>
-                  {sinkRecs.length > 0 && <button onClick={() => setSinkRecs([])} style={{ fontSize: 11 }}>Clear</button>}
+                  {sinkRecs.length > 0 && (
+                    <button onClick={() => { setSinkRecs([]); recordsByNodeRef.current.clear(); }} style={{ fontSize: 11 }}>Clear</button>
+                  )}
                 </div>
                 {sinkRecs.length === 0 ? (
                   <p style={{ color: "#a0aec0", fontSize: 12 }}>

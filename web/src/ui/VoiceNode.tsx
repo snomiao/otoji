@@ -14,6 +14,17 @@ import {
 import { useNodeLive } from "./useNodeLive";
 import { NodeMicPreview } from "./NodeMicPreview";
 import { isPreviewShown, setPreviewShown } from "../lib/prefs";
+import { samplesToWavBlob, concatSamples } from "../lib/peaks";
+import { buildSrt } from "../lib/srt";
+
+function download(blob: Blob, name: string): void {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = name;
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
 
 export interface DeviceOpt {
   deviceId: string;
@@ -38,7 +49,8 @@ const PORT_COLOR: Record<PortType, string> = {
 
 export function VoiceNode({ id, data }: NodeProps) {
   const d = data as VoiceNodeData;
-  const { devices, onAssign, onConfig, onDelete, counts, live } = useContext(GraphContext);
+  const { devices, onAssign, onConfig, onDelete, getRecords, setFile, counts, live } = useContext(GraphContext);
+  const fileName = (d as any).config?.file as string | undefined;
   const spec = NODE_SPECS[d.voiceType];
   const assigned = devices.find((x) => x.deviceId === d.device);
   const count = counts[id] ?? 0;
@@ -159,6 +171,46 @@ export function VoiceNode({ id, data }: NodeProps) {
               </label>
             )}
           </>
+        )}
+        {(d.voiceType === "file-audio" || d.voiceType === "file-text") && (
+          <div style={{ marginTop: 4, fontSize: 11, color: "#718096" }}>
+            <div style={{ marginBottom: 2, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", maxWidth: 150 }}>
+              {fileName ? `📄 ${fileName}` : "no file"}
+            </div>
+            <input
+              type="file"
+              accept={d.voiceType === "file-audio" ? "audio/*" : ".md,.txt,.srt,.vtt,text/*"}
+              onChange={(e) => { const f = e.target.files?.[0]; if (f) setFile(id, f); }}
+              style={{ fontSize: 10, width: 150 }}
+            />
+          </div>
+        )}
+        {d.voiceType === "audio-out" && (
+          <button
+            className="nodrag"
+            style={{ fontSize: 11, marginTop: 4 }}
+            disabled={getRecords(id).length === 0}
+            onClick={() => {
+              const samples = getRecords(id).map((r) => r.samples).filter((s): s is Float32Array => !!s && s.length > 0);
+              if (!samples.length) return;
+              download(samplesToWavBlob(concatSamples(samples), 16000), "otoji-audio.wav");
+            }}
+          >
+            ⬇ download audio ({getRecords(id).length})
+          </button>
+        )}
+        {d.voiceType === "srt-out" && (
+          <button
+            className="nodrag"
+            style={{ fontSize: 11, marginTop: 4 }}
+            disabled={getRecords(id).length === 0}
+            onClick={() => {
+              const srt = buildSrt(getRecords(id).map((r) => ({ text: r.text, durationMs: r.durationMs })));
+              download(new Blob([srt], { type: "text/plain" }), "otoji.srt");
+            }}
+          >
+            ⬇ download .srt ({getRecords(id).length})
+          </button>
         )}
         {!d.device && <div style={{ color: "#e53e3e", fontSize: 10, marginTop: 2 }}>unassigned</div>}
         {assigned && !assigned.online && (

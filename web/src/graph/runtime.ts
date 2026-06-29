@@ -3,7 +3,8 @@
 // will later be realized over data channels.
 
 import type { VoiceGraph, NodeType, VoiceNode } from "./model";
-import { startMicVad, MIC_VAD_SR, type MicVadHandle } from "../lib/mic-vad";
+import { startMicVad, segmentSamples, MIC_VAD_SR, type MicVadHandle } from "../lib/mic-vad";
+import { fileStore } from "./file-store";
 import { sttRecognize, warmSenseVoice } from "../providers/stt/sensevoice";
 import { webllmTranslate } from "../providers/translate/webllm";
 import { browserTranslate } from "../providers/translate/browser-translator";
@@ -207,6 +208,49 @@ export class GraphRuntime {
         },
         stop: async () => {
           await handle?.stop();
+        },
+      };
+    }
+
+    if (type === "file-audio") {
+      return {
+        start: async () => {
+          const entry = fileStore.get(id);
+          if (!entry?.file) return;
+          try {
+            const buf = await entry.file.arrayBuffer();
+            const OAC = (window as any).OfflineAudioContext || (window as any).webkitOfflineAudioContext;
+            const decoded = await new OAC(1, 1, MIC_VAD_SR).decodeAudioData(buf); // resampled to 16k
+            const len = decoded.length;
+            const mono = new Float32Array(len);
+            for (let c = 0; c < decoded.numberOfChannels; c++) {
+              const d = decoded.getChannelData(c);
+              for (let i = 0; i < len; i++) mono[i] += d[i] / decoded.numberOfChannels;
+            }
+            segmentSamples(mono, (s, durationMs) => {
+              this.hooks.onSegment?.(id);
+              this.emit(id, "out", { samples: s, sampleRate: MIC_VAD_SR, durationMs } as SegmentMsg);
+            });
+          } catch (e) {
+            this.hooks.onError?.(e instanceof Error ? e : new Error(String(e)));
+          }
+        },
+      };
+    }
+
+    if (type === "file-text") {
+      return {
+        start: async () => {
+          const entry = fileStore.get(id);
+          const text = entry?.text ?? (entry?.file ? await entry.file.text() : "");
+          if (!text) return;
+          for (const para of text.split(/\n\s*\n/).map((s) => s.trim()).filter(Boolean)) {
+            this.hooks.onRecognized?.(id, para);
+            this.emit(id, "out", {
+              text: para,
+              audio: { samples: new Float32Array(0), sampleRate: MIC_VAD_SR, durationMs: 0 },
+            } as TranscriptMsg);
+          }
         },
       };
     }

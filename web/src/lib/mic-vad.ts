@@ -42,6 +42,64 @@ function downsample(buffer: Float32Array, srcRate: number): Float32Array {
   return out;
 }
 
+/**
+ * Offline VAD: run the same energy-VAD over a complete 16kHz mono buffer (e.g. a
+ * decoded audio file), emitting one segment per detected utterance. Shares the
+ * thresholds with the live mic path.
+ */
+export function segmentSamples(samples: Float32Array, onSegment: (s: Float32Array, durationMs: number) => void): void {
+  let inSpeech = false;
+  let silence = 0;
+  let voiced = 0;
+  let segment: number[] = [];
+  let preroll: number[] = [];
+
+  const flush = () => {
+    if (segment.length >= VAD_WIN) {
+      const s = Float32Array.from(segment);
+      onSegment(s, (s.length / MIC_VAD_SR) * 1000);
+    }
+    segment = [];
+  };
+
+  for (let off = 0; off + VAD_WIN <= samples.length; off += VAD_WIN) {
+    const win = samples.subarray(off, off + VAD_WIN);
+    let sum = 0;
+    for (let i = 0; i < VAD_WIN; i++) sum += win[i] * win[i];
+    const active = Math.sqrt(sum / VAD_WIN) > RMS_THRESHOLD;
+
+    if (!inSpeech) {
+      for (let i = 0; i < win.length; i++) preroll.push(win[i]);
+      if (preroll.length > PREROLL) preroll.splice(0, preroll.length - PREROLL);
+      if (active) {
+        if (++voiced >= 2) {
+          inSpeech = true;
+          segment = preroll.slice();
+          preroll = [];
+          silence = 0;
+        }
+      } else {
+        voiced = 0;
+      }
+    } else {
+      for (let i = 0; i < win.length; i++) segment.push(win[i]);
+      if (active) silence = 0;
+      else if (++silence >= SILENCE_WINS) {
+        inSpeech = false;
+        voiced = 0;
+        flush();
+      }
+      if (segment.length >= MAX_UTTER) {
+        inSpeech = false;
+        voiced = 0;
+        silence = 0;
+        flush();
+      }
+    }
+  }
+  if (inSpeech) flush();
+}
+
 export async function startMicVad(opts: MicVadOptions): Promise<MicVadHandle> {
   const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
   const AudioCtor: typeof AudioContext = (window as any).AudioContext || (window as any).webkitAudioContext;

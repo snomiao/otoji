@@ -3,7 +3,15 @@
 // authoritative state synced via the Durable Object (see signaling graph-patch).
 
 export type PortType = "segment" | "transcript";
-export type NodeType = "mic-vad" | "stt" | "translate" | "sink";
+export type NodeType =
+  | "mic-vad"
+  | "file-audio"
+  | "file-text"
+  | "stt"
+  | "translate"
+  | "sink"
+  | "audio-out"
+  | "srt-out";
 
 export interface NodeSpec {
   type: NodeType;
@@ -18,6 +26,18 @@ export const NODE_SPECS: Record<NodeType, NodeSpec> = {
     label: "Mic + VAD",
     inputs: [],
     outputs: [{ id: "out", type: "segment" }],
+  },
+  "file-audio": {
+    type: "file-audio",
+    label: "Audio file (in)",
+    inputs: [],
+    outputs: [{ id: "out", type: "segment" }],
+  },
+  "file-text": {
+    type: "file-text",
+    label: "Text file (in)",
+    inputs: [],
+    outputs: [{ id: "out", type: "transcript" }],
   },
   stt: {
     type: "stt",
@@ -34,6 +54,18 @@ export const NODE_SPECS: Record<NodeType, NodeSpec> = {
   sink: {
     type: "sink",
     label: "Transcript + Recordings",
+    inputs: [{ id: "in", type: "transcript" }],
+    outputs: [],
+  },
+  "audio-out": {
+    type: "audio-out",
+    label: "Audio file (out)",
+    inputs: [{ id: "in", type: "transcript" }],
+    outputs: [],
+  },
+  "srt-out": {
+    type: "srt-out",
+    label: "SRT subtitles (out)",
     inputs: [{ id: "in", type: "transcript" }],
     outputs: [],
   },

@@ -48,6 +48,19 @@ export function unpackPeaks(packed: Int16Array): Peak[] {
   return out;
 }
 
+/** Concatenate mono float chunks (e.g. all of a sink's segments) into one buffer. */
+export function concatSamples(chunks: Float32Array[]): Float32Array {
+  let total = 0;
+  for (const c of chunks) total += c.length;
+  const out = new Float32Array(total);
+  let off = 0;
+  for (const c of chunks) {
+    out.set(c, off);
+    off += c.length;
+  }
+  return out;
+}
+
 /** Encode mono float samples in [-1,1] to a 16-bit PCM WAV Blob (for download). */
 export function samplesToWavBlob(samples: Float32Array, sampleRate: number): Blob {
   const buf = new ArrayBuffer(44 + samples.length * 2);
