@@ -3,7 +3,7 @@
 // will later be realized over data channels.
 
 import type { VoiceGraph, NodeType, VoiceNode } from "./model";
-import { startMicVad, segmentSamples, MIC_VAD_SR, type MicVadHandle } from "../lib/mic-vad";
+import { startMicVad, startMicRaw, segmentSamples, MIC_VAD_SR, type MicVadHandle } from "../lib/mic-vad";
 import { fileStore } from "./file-store";
 import { sttRecognize, warmSenseVoice } from "../providers/stt/sensevoice";
 import { webllmTranslate } from "../providers/translate/webllm";
@@ -266,6 +266,58 @@ export class GraphRuntime {
         stop: async () => {
           await handle?.stop();
         },
+      };
+    }
+
+    if (type === "web-speech") {
+      // Browser-native streaming ASR (Web Speech API). Opens its own mic on this
+      // device, emits interim results to the live preview and final ones downstream.
+      const SR = typeof window !== "undefined" ? ((window as any).SpeechRecognition || (window as any).webkitSpeechRecognition) : null;
+      const lang = (this.graph.nodes[id]?.config?.lang as string | undefined) || (typeof navigator !== "undefined" ? navigator.language : "en-US");
+      let rec: any = null;
+      let stopped = false;
+      return {
+        start: async () => {
+          if (!SR) {
+            this.hooks.onError?.(new Error("Web Speech API not available in this browser."));
+            return;
+          }
+          rec = new SR();
+          rec.continuous = true;
+          rec.interimResults = true;
+          rec.lang = lang;
+          rec.onresult = (e: any) => {
+            for (let i = e.resultIndex; i < e.results.length; i++) {
+              const r = e.results[i];
+              const text = (r[0]?.transcript ?? "").trim();
+              if (!text) continue;
+              this.hooks.onRecognized?.(id, text); // live (interim + final) in preview
+              if (r.isFinal)
+                // Carry the recognition language so downstream auto-TTS / tts-model match it.
+                this.emit(id, "out", { text, lang, audio: { samples: new Float32Array(0), sampleRate: MIC_VAD_SR, durationMs: 0 } } as TranscriptMsg);
+            }
+          };
+          rec.onend = () => { if (!stopped) { try { rec.start(); } catch { /* already started */ } } }; // keep alive
+          try { rec.start(); } catch (e) { this.hooks.onError?.(e instanceof Error ? e : new Error(String(e))); }
+        },
+        stop: () => { stopped = true; try { rec?.stop(); } catch { /* ignore */ } },
+      };
+    }
+
+    if (type === "mic-raw") {
+      let handle: MicVadHandle | null = null;
+      const inputDeviceId = this.graph.nodes[id]?.config?.inputDeviceId as string | undefined;
+      return {
+        start: async () => {
+          handle = await startMicRaw({
+            deviceId: inputDeviceId,
+            onLevel: (l) => this.hooks.onLevel?.(id, l),
+            onFrame: (samples, offsetMs) => {
+              this.emit(id, "out", { samples, sampleRate: MIC_VAD_SR, durationMs: (samples.length / MIC_VAD_SR) * 1000, offsetMs } as SegmentMsg);
+            },
+          });
+        },
+        stop: async () => { await handle?.stop(); },
       };
     }
 
@@ -613,10 +665,11 @@ export class GraphRuntime {
 
   async stop(): Promise<void> {
     this.running = false;
-    // Stop sources first so their final segments flush into the pipeline,
-    // then drain processing nodes (STT chains emit to sinks) before clearing.
-    for (const [id, node] of this.nodes) if (this.graph.nodes[id]?.type === "mic-vad") await node.stop?.();
-    for (const [id, node] of this.nodes) if (this.graph.nodes[id]?.type !== "mic-vad") await node.stop?.();
+    // Stop continuous sources first so their final emissions flush into the
+    // pipeline, then drain processing nodes (STT/translate/tts chains) before clearing.
+    const SOURCES = new Set<NodeType>(["mic-vad", "mic-raw", "web-speech"]);
+    for (const [id, node] of this.nodes) if (SOURCES.has(this.graph.nodes[id]?.type)) await node.stop?.();
+    for (const [id, node] of this.nodes) if (!SOURCES.has(this.graph.nodes[id]?.type)) await node.stop?.();
     this.nodes.clear();
     this.adj.clear();
   }

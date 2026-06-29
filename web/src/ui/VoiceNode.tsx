@@ -216,7 +216,7 @@ export function VoiceNode({ id, data }: NodeProps) {
             )}
           </>
         )}
-        {d.voiceType === "mic-vad" && (
+        {(d.voiceType === "mic-vad" || d.voiceType === "mic-raw") && (
           <label style={{ display: "flex", gap: 6, alignItems: "center", color: "#718096", marginTop: 4 }}>
             mic:
             <select
@@ -294,6 +294,19 @@ export function VoiceNode({ id, data }: NodeProps) {
                 <option key={m.id} value={m.id}>{m.name}</option>
               ))}
             </select>
+          </label>
+        )}
+        {d.voiceType === "web-speech" && (
+          <label style={{ display: "flex", gap: 6, alignItems: "center", color: "#718096", marginTop: 4 }}>
+            lang:
+            <input
+              type="text"
+              defaultValue={(config?.lang as string | undefined) ?? ""}
+              placeholder="e.g. en-US, ja-JP"
+              onBlur={(e) => onConfig(id, { lang: e.target.value.trim() || undefined })}
+              onKeyDown={(e) => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); }}
+              style={{ fontSize: 11, flex: 1, minWidth: 0 }}
+            />
           </label>
         )}
         {d.voiceType === "model" && (
@@ -383,10 +396,10 @@ export function VoiceNode({ id, data }: NodeProps) {
         )}
       </div>
 
-      {shown && (d.voiceType === "mic-vad" || texts.length > 0) && (
+      {shown && (d.voiceType === "mic-vad" || d.voiceType === "mic-raw" || texts.length > 0) && (
         <div style={{ padding: "0 10px 8px" }}>
-          {d.voiceType === "mic-vad" && <NodeMicPreview live={live} nodeId={id} width={150} height={28} />}
-          {(d.voiceType === "stt" || d.voiceType === "translate" || d.voiceType === "sink") && (
+          {(d.voiceType === "mic-vad" || d.voiceType === "mic-raw") && <NodeMicPreview live={live} nodeId={id} width={150} height={28} />}
+          {(d.voiceType === "stt" || d.voiceType === "translate" || d.voiceType === "sink" || d.voiceType === "web-speech" || d.voiceType === "model") && (
             <div style={{ fontSize: 11, color: "#4a5568", lineHeight: 1.35 }}>
               {texts.map((t, i) => (
                 <div key={i} style={{ opacity: 1 - i * 0.3, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", maxWidth: 150 }}>

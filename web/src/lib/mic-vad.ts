@@ -107,6 +107,59 @@ export function segmentSamples(
   if (inSpeech) flush();
 }
 
+export interface MicRawOptions {
+  onFrame: (samples: Float32Array, offsetMs: number) => void;
+  onLevel?: (level: SttLevel) => void;
+  deviceId?: string;
+  frameMs?: number; // emitted chunk size (default 250ms)
+}
+
+/**
+ * Raw mic capture WITHOUT VAD: emit fixed-size 16 kHz mono frames continuously
+ * (for streaming consumers that do their own endpointing). No segmentation.
+ */
+export async function startMicRaw(opts: MicRawOptions): Promise<MicVadHandle> {
+  const stream = await navigator.mediaDevices.getUserMedia({
+    audio: opts.deviceId ? { deviceId: { exact: opts.deviceId } } : true,
+  });
+  const AudioCtor: typeof AudioContext = (window as any).AudioContext || (window as any).webkitAudioContext;
+  const audioCtx = new AudioCtor({ sampleRate: MIC_VAD_SR });
+  const srcRate = audioCtx.sampleRate;
+  const source = audioCtx.createMediaStreamSource(stream);
+  const proc = audioCtx.createScriptProcessor(4096, 1, 1);
+  const FRAME = Math.max(VAD_WIN, Math.round((MIC_VAD_SR * (opts.frameMs ?? 250)) / 1000));
+  let carry: number[] = [];
+  let cursor = 0; // absolute samples emitted since start
+
+  proc.onaudioprocess = (e) => {
+    const ds = downsample(new Float32Array(e.inputBuffer.getChannelData(0)), srcRate);
+    let sum = 0;
+    for (let i = 0; i < ds.length; i++) { carry.push(ds[i]); sum += ds[i] * ds[i]; }
+    opts.onLevel?.({ rms: Math.sqrt(sum / Math.max(1, ds.length)), active: true });
+    while (carry.length >= FRAME) {
+      const chunk = Float32Array.from(carry.splice(0, FRAME));
+      opts.onFrame(chunk, (cursor / MIC_VAD_SR) * 1000);
+      cursor += FRAME;
+    }
+  };
+
+  source.connect(proc);
+  proc.connect(audioCtx.destination);
+  if (audioCtx.state === "suspended") audioCtx.resume().catch(() => {});
+
+  let stopped = false;
+  return {
+    stop: async () => {
+      if (stopped) return;
+      stopped = true;
+      proc.disconnect();
+      source.disconnect();
+      stream.getTracks().forEach((t) => t.stop());
+      await audioCtx.close().catch(() => {});
+    },
+  };
+}
+
 export async function startMicVad(opts: MicVadOptions): Promise<MicVadHandle> {
   const stream = await navigator.mediaDevices.getUserMedia({
     audio: opts.deviceId ? { deviceId: { exact: opts.deviceId } } : true,

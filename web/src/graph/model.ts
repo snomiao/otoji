@@ -5,9 +5,11 @@
 export type PortType = "segment" | "transcript";
 export type NodeType =
   | "mic-vad"
+  | "mic-raw"
   | "file-audio"
   | "file-text"
   | "stt"
+  | "web-speech"
   | "translate"
   | "sink"
   | "audio-out"
@@ -31,6 +33,13 @@ export const NODE_SPECS: Record<NodeType, NodeSpec> = {
     inputs: [],
     outputs: [{ id: "out", type: "segment" }],
   },
+  "mic-raw": {
+    type: "mic-raw",
+    label: "Mic (raw, no VAD)",
+    // Continuous fixed-size frames for streaming consumers (no segmentation).
+    inputs: [],
+    outputs: [{ id: "out", type: "segment" }],
+  },
   "file-audio": {
     type: "file-audio",
     label: "Audio file (in)",
@@ -47,6 +56,14 @@ export const NODE_SPECS: Record<NodeType, NodeSpec> = {
     type: "stt",
     label: "SenseVoice STT",
     inputs: [{ id: "in", type: "segment" }],
+    outputs: [{ id: "out", type: "transcript" }],
+  },
+  "web-speech": {
+    type: "web-speech",
+    label: "Streaming STT (Web Speech)",
+    // Browser-native streaming ASR with live interim results; opens its own mic on
+    // the device it runs on (no audio input port).
+    inputs: [],
     outputs: [{ id: "out", type: "transcript" }],
   },
   translate: {
