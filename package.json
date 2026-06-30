@@ -27,12 +27,16 @@
   ],
   "main": "main.js",
   "types": "main.d.ts",
+  "bin": {
+    "otoji-node": "cli/otoji-node.mjs"
+  },
   "files": [
     "main.js",
     "main.d.ts",
     "index.js",
     "index.d.ts",
     "*.node",
+    "cli/otoji-node.mjs",
     "README.md",
     "LICENSE"
   ],

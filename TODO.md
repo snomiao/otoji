@@ -160,6 +160,9 @@
 - [ ] Reconnection resilience, graph conflict strategy (LWW → maybe CRDT).
 - [ ] Optional auth / private rooms; per-room model selection.
 - [ ] Mobile/iOS mic + background constraints.
+- [ ] **Per-edge throughput**: show bytes/sec on each connection (edge label),
+  measured from cross-device frame traffic on that edge (mesh transport counters
+  per source→target), updated ~1 Hz. Local (in-process) edges can show "local".
 
 ## Open questions / risks
 - ~~**Pages + Worker on same host**: confirm `otoji.org/signal/*` route overrides

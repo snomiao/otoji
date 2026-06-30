@@ -17,6 +17,7 @@ export type NodeType =
   | "tts"
   | "tts-model"
   | "model"
+  | "pipe"
   | "srt-out";
 
 export interface NodeSpec {
@@ -128,6 +129,14 @@ export const NODE_SPECS: Record<NodeType, NodeSpec> = {
       { id: "out_seg", type: "segment" },
     ],
   },
+  pipe: {
+    type: "pipe",
+    label: "CLI pipe (stdio)",
+    // Bridges text to/from an external `otoji node` process over the signaling
+    // relay: input text → the CLI's stdout; the CLI's stdin → output text.
+    inputs: [{ id: "in", type: "transcript" }],
+    outputs: [{ id: "out", type: "transcript" }],
+  },
   "srt-out": {
     type: "srt-out",
     label: "SRT subtitles (out)",
@@ -135,6 +144,17 @@ export const NODE_SPECS: Record<NodeType, NodeSpec> = {
     outputs: [],
   },
 };
+
+/** Palette grouping for the node types. */
+export const NODE_CATEGORIES: { id: string; label: string; types: NodeType[] }[] = [
+  { id: "input", label: "Input", types: ["mic-vad", "mic-raw", "file-audio", "file-text"] },
+  { id: "stt", label: "Speech → Text", types: ["stt", "web-speech"] },
+  { id: "translate", label: "Text → Text", types: ["translate"] },
+  { id: "tts", label: "Text → Speech", types: ["tts", "tts-model"] },
+  { id: "output", label: "Output", types: ["sink", "audio-out", "srt-out", "speaker"] },
+  { id: "model", label: "Custom model", types: ["model"] },
+  { id: "pipe", label: "Pipe (CLI)", types: ["pipe"] },
+];
 
 export interface VoiceNode {
   id: string;

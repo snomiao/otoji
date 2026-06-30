@@ -115,6 +115,11 @@ export class RoomDurableObject {
         ws.send(JSON.stringify({ type: "pong" }));
         break;
       }
+      case "pipe": {
+        // Relay raw text between graph pipe nodes and external `otoji node` CLIs.
+        this.broadcast({ type: "pipe", node: msg.node, text: msg.text, src: msg.src }, self.peerId);
+        break;
+      }
     }
   }
 

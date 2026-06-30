@@ -97,6 +97,10 @@ export class SignalingClient {
   getGraph(): void {
     this.send({ type: "graph-get" });
   }
+  /** Relay raw text to/from external `otoji node` CLIs (src: "node" | "cli"). */
+  pipe(node: string, text: string, src: "node" | "cli"): void {
+    this.send({ type: "pipe", node, text, src });
+  }
 
   close(): void {
     this.closedByUser = true;

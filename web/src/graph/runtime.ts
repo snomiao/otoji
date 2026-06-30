@@ -54,6 +54,7 @@ export interface RuntimeHooks {
   onQueue?: (nodeId: string, processing: string | null, queued: string[]) => void; // work queue state
   onSink?: (nodeId: string, tr: TranscriptMsg) => void;
   onAudio?: (nodeId: string, audio: SegmentMsg) => void; // raw audio collected at audio-out
+  onPipeOut?: (nodeId: string, text: string) => void; // pipe node input -> external CLI stdout
   onStatus?: (s: string) => void;
   onError?: (e: Error) => void;
 }
@@ -685,10 +686,30 @@ export class GraphRuntime {
       };
     }
 
+    if (type === "pipe") {
+      // Bridge to an external `otoji node` CLI over the signaling relay: input text
+      // is sent out to the CLI's stdout; CLI stdin is injected via pipeIn() below.
+      return {
+        input: (_port, msg) => {
+          const t = (msg as TranscriptMsg).text?.trim();
+          if (t) this.hooks.onPipeOut?.(id, t);
+        },
+      };
+    }
+
     // sink / srt-out
     return {
       input: (_port, msg) => this.hooks.onSink?.(id, msg as TranscriptMsg),
     };
+  }
+
+  /** Inject text from an external CLI into a local pipe node's output. */
+  pipeIn(nodeId: string, text: string): void {
+    if (this.graph.nodes[nodeId]?.type !== "pipe" || !this.isLocal(nodeId)) return;
+    this.emit(nodeId, "out", {
+      text,
+      audio: { samples: new Float32Array(0), sampleRate: MIC_VAD_SR, durationMs: 0 },
+    } as TranscriptMsg);
   }
 
   async stop(): Promise<void> {

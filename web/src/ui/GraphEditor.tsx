@@ -35,6 +35,7 @@ import { TimelineView } from "./TimelineView";
 import type { PortType } from "../graph/model";
 import {
   NODE_SPECS,
+  NODE_CATEGORIES,
   canConnect,
   edgeId,
   emptyGraph,
@@ -288,6 +289,15 @@ function Editor({ initialRoom, local }: { initialRoom?: string; local?: boolean 
       });
     });
     sig.on("graph", (m) => applyRemote(m.graph));
+    // Text from an external `otoji node` CLI → inject into local pipe node(s). The
+    // CLI may target a specific node id or "*" (all pipe nodes in the room).
+    sig.on("pipe", (m) => {
+      if (m.src !== "cli") return;
+      const rt = runtimeRef.current;
+      if (!rt) return;
+      if (m.node && m.node !== "*") rt.pipeIn(m.node, m.text);
+      else for (const n of nodesRef.current) if ((n.data as any).voiceType === "pipe") rt.pipeIn(n.id, m.text);
+    });
     sig.connect();
     setJoined(true);
     // Reflect the room in the address bar so it's a shareable join URL.
@@ -618,6 +628,7 @@ function Editor({ initialRoom, local }: { initialRoom?: string; local?: boolean 
       onRecognized: (id, text) => { activityRef.current.stt++; if (isReadableTranscript(text)) live.pushText(id, text); },
       onNodeBusy: (id, b) => live.setBusy(id, b),
       onQueue: (id, processing, queued) => live.setQueue(id, processing, queued),
+      onPipeOut: (id, text) => sigRef.current?.pipe(id, text, "node"), // pipe node input → CLI stdout
       onSink: (sinkId, tr: TranscriptMsg) => {
         if (!isReadableTranscript(tr.text)) return;
         live.pushText(sinkId, tr.text);
@@ -800,8 +811,9 @@ function Editor({ initialRoom, local }: { initialRoom?: string; local?: boolean 
           </ReactFlow>
         </div>
 
-        {/* floating title / toolbar card */}
-        <div style={{ ...CARD, position: "absolute", top: 12, left: 12, display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", padding: "8px 12px", maxWidth: "calc(100% - 24px)", zIndex: 10 }}>
+        {/* floating title / toolbar card (draggable) */}
+        <DraggableCard pkey="toolbar" defaultPos={{ x: 12, y: 12 }} zIndex={11}>
+        <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", padding: "2px 12px 8px", maxWidth: "calc(100vw - 48px)" }}>
           <strong>otoji</strong>
           <span style={{ fontSize: 12, color: "#718096" }}>
             {local ? "local · this device only" : `room ${room} · ${status} · ${role} · ${devices.length} device(s)`}
@@ -831,6 +843,7 @@ function Editor({ initialRoom, local }: { initialRoom?: string; local?: boolean 
             <button onClick={() => setPaused((v) => !v)} style={{ fontSize: 12 }}>{paused ? "Resume" : "Pause"}</button>
           </span>
         </div>
+        </DraggableCard>
 
         {/* floating node palette — drag a folded node onto the canvas (or click). The
             panel itself is draggable by its grip. */}
@@ -838,38 +851,34 @@ function Editor({ initialRoom, local }: { initialRoom?: string; local?: boolean 
           <DraggableCard pkey="palette" width={188} maxHeight="calc(100vh - 120px)" defaultPos={{ x: 12, y: Math.max(64, (typeof window !== "undefined" ? window.innerHeight : 800) - 420) }}>
             <div style={{ padding: "0 10px 8px" }}>
             <div style={{ fontSize: 11, color: "#a0aec0", marginBottom: 6 }}>drag onto canvas — or click to add</div>
-            <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
-              {(Object.keys(NODE_SPECS) as NodeType[]).map((t) => {
-                const spec = NODE_SPECS[t];
-                const dot = (spec.outputs[0]?.type ?? spec.inputs[0]?.type ?? "transcript") as PortType;
-                return (
-                  <div
-                    key={t}
-                    draggable
-                    onDragStart={(e) => {
-                      e.dataTransfer.setData("application/otoji-node", t);
-                      e.dataTransfer.effectAllowed = "copy";
-                    }}
-                    onClick={() => addNode(t)}
-                    title={`drag onto canvas or click to add — ${spec.label}`}
-                    style={{
-                      cursor: "grab",
-                      border: "1px solid #cbd5e0",
-                      borderRadius: 6,
-                      background: "#fff",
-                      padding: "4px 8px",
-                      fontSize: 11,
-                      display: "flex",
-                      gap: 6,
-                      alignItems: "center",
-                      boxShadow: "0 1px 2px rgba(0,0,0,0.06)",
-                    }}
-                  >
-                    <span style={{ width: 7, height: 7, borderRadius: 4, background: PORT_COLOR[dot], flex: "none" }} />
-                    {spec.label}
+            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+              {NODE_CATEGORIES.map((cat) => (
+                <div key={cat.id}>
+                  <div style={{ fontSize: 9, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.05em", color: "#a0aec0", margin: "0 0 3px 1px" }}>{cat.label}</div>
+                  <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                    {cat.types.map((t) => {
+                      const spec = NODE_SPECS[t];
+                      const dot = (spec.outputs[0]?.type ?? spec.inputs[0]?.type ?? "transcript") as PortType;
+                      return (
+                        <div
+                          key={t}
+                          draggable
+                          onDragStart={(e) => {
+                            e.dataTransfer.setData("application/otoji-node", t);
+                            e.dataTransfer.effectAllowed = "copy";
+                          }}
+                          onClick={() => addNode(t)}
+                          title={`drag onto canvas or click to add — ${spec.label}`}
+                          style={{ cursor: "grab", border: "1px solid #cbd5e0", borderRadius: 6, background: "#fff", padding: "4px 8px", fontSize: 11, display: "flex", gap: 6, alignItems: "center", boxShadow: "0 1px 2px rgba(0,0,0,0.06)" }}
+                        >
+                          <span style={{ width: 7, height: 7, borderRadius: 4, background: PORT_COLOR[dot], flex: "none" }} />
+                          {spec.label}
+                        </div>
+                      );
+                    })}
                   </div>
-                );
-              })}
+                </div>
+              ))}
             </div>
             </div>
           </DraggableCard>
@@ -1019,7 +1028,7 @@ function DraggableCard({
 }: {
   pkey: string;
   defaultPos: { x: number; y: number };
-  width: number;
+  width?: number;
   maxHeight?: string;
   zIndex?: number;
   children: React.ReactNode;
