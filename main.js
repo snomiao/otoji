@@ -29,6 +29,7 @@ const SUPPORTED = [
   "darwin-arm64",
   "darwin-x64",
   "linux-x64-gnu",
+  "linux-arm64-gnu",
   "win32-x64-msvc",
 ];
 
