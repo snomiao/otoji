@@ -21,6 +21,7 @@ import { NodeMicPreview } from "./NodeMicPreview";
 import { NodeImagePreview } from "./NodeImagePreview";
 import { DIFF_STYLES, DEFAULT_DIFF_STYLE } from "../lib/textdiff";
 import { DEFAULT_CAMERA_FPS } from "../providers/vision/camera";
+import { DETECT_MODELS, DEFAULT_DETECT_MODEL } from "../providers/vision/detect";
 import { isPreviewShown, setPreviewShown, subscribePrefs } from "../lib/prefs";
 import { samplesToWavBlob, concatSamples } from "../lib/peaks";
 import { buildSrt } from "../lib/srt";
@@ -449,6 +450,35 @@ export function VoiceNode({ id, data }: NodeProps) {
             </label>
           </>
         )}
+        {d.voiceType === "vision-model" && (
+          <>
+            <label style={{ display: "flex", gap: 6, alignItems: "center", color: "#718096", marginTop: 4 }}>
+              model:
+              <select
+                value={(config?.model as string | undefined) ?? DEFAULT_DETECT_MODEL}
+                onChange={(e) => onConfig(id, { model: e.target.value })}
+                style={{ fontSize: 11, flex: 1 }}
+              >
+                {DETECT_MODELS.map((m) => (
+                  <option key={m.id} value={m.id}>{m.name}</option>
+                ))}
+              </select>
+            </label>
+            <label style={{ display: "flex", gap: 6, alignItems: "center", color: "#718096", marginTop: 4 }}>
+              min score:
+              <input
+                type="number"
+                min={0.05}
+                max={0.95}
+                step={0.05}
+                defaultValue={(config?.threshold as number | undefined) ?? 0.5}
+                onBlur={(e) => onConfig(id, { threshold: Math.min(0.95, Math.max(0.05, Number(e.target.value) || 0.5)) })}
+                onKeyDown={(e) => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); }}
+                style={{ fontSize: 11, width: 56 }}
+              />
+            </label>
+          </>
+        )}
         {d.voiceType === "text-diff" && (
           <label style={{ display: "flex", gap: 6, alignItems: "center", color: "#718096", marginTop: 4 }}>
             style:
@@ -623,11 +653,11 @@ export function VoiceNode({ id, data }: NodeProps) {
         )}
       </div>
 
-      {shown && (d.voiceType === "mic-vad" || d.voiceType === "mic-raw" || d.voiceType === "camera" || d.voiceType === "paddle-ocr" || texts.length > 0) && (
+      {shown && (d.voiceType === "mic-vad" || d.voiceType === "mic-raw" || d.voiceType === "camera" || d.voiceType === "paddle-ocr" || d.voiceType === "vision-model" || texts.length > 0) && (
         <div style={{ padding: "0 10px 8px" }}>
           {(d.voiceType === "mic-vad" || d.voiceType === "mic-raw") && <NodeMicPreview live={live} nodeId={id} width={150} height={28} />}
-          {(d.voiceType === "camera" || d.voiceType === "paddle-ocr") && <NodeImagePreview live={live} nodeId={id} width={150} height={84} />}
-          {(d.voiceType === "stt" || d.voiceType === "translate" || d.voiceType === "sink" || d.voiceType === "web-speech" || d.voiceType === "vosk" || d.voiceType === "model" || d.voiceType === "paddle-ocr" || d.voiceType === "text-diff") && (
+          {(d.voiceType === "camera" || d.voiceType === "paddle-ocr" || d.voiceType === "vision-model") && <NodeImagePreview live={live} nodeId={id} width={150} height={84} />}
+          {(d.voiceType === "stt" || d.voiceType === "translate" || d.voiceType === "sink" || d.voiceType === "web-speech" || d.voiceType === "vosk" || d.voiceType === "model" || d.voiceType === "paddle-ocr" || d.voiceType === "text-diff" || d.voiceType === "vision-model") && (
             <div style={{ fontSize: 11, color: "#4a5568", lineHeight: 1.35, whiteSpace: "pre-wrap" }}>
               {texts.map((t, i) => (
                 <div key={i} style={{ opacity: 1 - i * 0.3, overflow: "hidden", textOverflow: "ellipsis", maxWidth: 150, maxHeight: 48 }}>

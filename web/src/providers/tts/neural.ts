@@ -19,7 +19,7 @@ export interface NeuralTtsAudio {
 
 // Hide the URL from Vite's bundler so it stays a runtime dynamic import (same
 // trick the WebLLM + transformers.js STT paths use).
-const TFJS_URL = "https://esm.run/@huggingface/transformers";
+const TFJS_URL = "https://esm.sh/@huggingface/transformers";
 const importTfjs = () => new Function("u", "return import(u)")(TFJS_URL) as Promise<any>;
 
 /** One synthesis pipeline per model id; creation is heavy, so cache + dedupe. */

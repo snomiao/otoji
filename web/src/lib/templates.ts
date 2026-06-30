@@ -1,0 +1,187 @@
+// Graph templates: small, reusable subgraphs that drop onto the canvas. A
+// template is device-neutral data (node types + relative positions + edges by
+// local key); the editor remaps keys to fresh ids and offsets to the drop point.
+// Built-in demos ship in code; users can save the current selection as one
+// (persisted in localStorage).
+
+import type { NodeType } from "../graph/model";
+
+export interface TemplateNode {
+  key: string; // local id used to wire edges within the template
+  type: NodeType;
+  dx: number; // position relative to the template origin
+  dy: number;
+  config?: Record<string, unknown>;
+}
+export interface TemplateEdge {
+  from: string;
+  fromHandle: string;
+  to: string;
+  toHandle: string;
+}
+export interface GraphTemplate {
+  id: string;
+  name: string;
+  desc?: string;
+  nodes: TemplateNode[];
+  edges: TemplateEdge[];
+  builtin?: boolean;
+}
+
+const COL = 240;
+const ROW = 160;
+
+export const BUILTIN_TEMPLATES: GraphTemplate[] = [
+  {
+    id: "yolo-webcam",
+    name: "YOLO webcam",
+    desc: "Camera → object detection → labels",
+    builtin: true,
+    nodes: [
+      { key: "cam", type: "camera", dx: 0, dy: 0 },
+      { key: "yolo", type: "vision-model", dx: COL, dy: 0 },
+      { key: "sink", type: "sink", dx: COL * 2, dy: 0 },
+    ],
+    edges: [
+      { from: "cam", fromHandle: "out", to: "yolo", toHandle: "in" },
+      { from: "yolo", fromHandle: "rate", to: "cam", toHandle: "rate" }, // backpressure
+      { from: "yolo", fromHandle: "labels", to: "sink", toHandle: "in" },
+    ],
+  },
+  {
+    id: "narrated-yolo",
+    name: "Narrated YOLO",
+    desc: "Camera → detection → spoken labels (TTS)",
+    builtin: true,
+    nodes: [
+      { key: "cam", type: "camera", dx: 0, dy: 0 },
+      { key: "yolo", type: "vision-model", dx: COL, dy: 0 },
+      { key: "tts", type: "tts", dx: COL * 2, dy: 0 },
+    ],
+    edges: [
+      { from: "cam", fromHandle: "out", to: "yolo", toHandle: "in" },
+      { from: "yolo", fromHandle: "rate", to: "cam", toHandle: "rate" },
+      { from: "yolo", fromHandle: "labels", to: "tts", toHandle: "in" },
+    ],
+  },
+  {
+    id: "live-captions",
+    name: "Live captions",
+    desc: "Mic → STT → transcript",
+    builtin: true,
+    nodes: [
+      { key: "mic", type: "mic-vad", dx: 0, dy: 0 },
+      { key: "stt", type: "stt", dx: COL, dy: 0 },
+      { key: "sink", type: "sink", dx: COL * 2, dy: 0 },
+    ],
+    edges: [
+      { from: "mic", fromHandle: "out", to: "stt", toHandle: "in" },
+      { from: "stt", fromHandle: "out", to: "sink", toHandle: "in" },
+    ],
+  },
+  {
+    id: "live-translate",
+    name: "Live translate",
+    desc: "Mic → STT → translate → transcript",
+    builtin: true,
+    nodes: [
+      { key: "mic", type: "mic-vad", dx: 0, dy: 0 },
+      { key: "stt", type: "stt", dx: COL, dy: 0 },
+      { key: "tr", type: "translate", dx: COL * 2, dy: 0 },
+      { key: "sink", type: "sink", dx: COL * 3, dy: 0 },
+    ],
+    edges: [
+      { from: "mic", fromHandle: "out", to: "stt", toHandle: "in" },
+      { from: "stt", fromHandle: "out", to: "tr", toHandle: "in" },
+      { from: "tr", fromHandle: "out", to: "sink", toHandle: "in" },
+    ],
+  },
+  {
+    id: "caption-objects",
+    name: "Caption + objects",
+    desc: "Voice captions and webcam object labels side by side",
+    builtin: true,
+    nodes: [
+      { key: "mic", type: "mic-vad", dx: 0, dy: 0 },
+      { key: "stt", type: "stt", dx: COL, dy: 0 },
+      { key: "vsink", type: "sink", dx: COL * 2, dy: 0 },
+      { key: "cam", type: "camera", dx: 0, dy: ROW },
+      { key: "yolo", type: "vision-model", dx: COL, dy: ROW },
+      { key: "osink", type: "sink", dx: COL * 2, dy: ROW },
+    ],
+    edges: [
+      { from: "mic", fromHandle: "out", to: "stt", toHandle: "in" },
+      { from: "stt", fromHandle: "out", to: "vsink", toHandle: "in" },
+      { from: "cam", fromHandle: "out", to: "yolo", toHandle: "in" },
+      { from: "yolo", fromHandle: "rate", to: "cam", toHandle: "rate" },
+      { from: "yolo", fromHandle: "labels", to: "osink", toHandle: "in" },
+    ],
+  },
+];
+
+// ---- User templates (localStorage) ----------------------------------------
+
+const KEY = "otoji.templates";
+
+export function loadUserTemplates(): GraphTemplate[] {
+  try {
+    const raw = localStorage.getItem(KEY);
+    return raw ? (JSON.parse(raw) as GraphTemplate[]) : [];
+  } catch {
+    return [];
+  }
+}
+
+function persist(list: GraphTemplate[]): void {
+  try {
+    localStorage.setItem(KEY, JSON.stringify(list));
+  } catch {
+    /* private mode / quota */
+  }
+}
+
+export function saveUserTemplate(t: GraphTemplate): GraphTemplate[] {
+  const list = loadUserTemplates().filter((x) => x.id !== t.id);
+  list.push(t);
+  persist(list);
+  return list;
+}
+
+export function deleteUserTemplate(id: string): GraphTemplate[] {
+  const list = loadUserTemplates().filter((x) => x.id !== id);
+  persist(list);
+  return list;
+}
+
+/** Build a template from a selection of nodes (+ the edges fully inside it).
+ *  Positions are normalized so the top-left node sits at the origin. */
+export function templateFromSelection(
+  name: string,
+  sel: { id: string; type: NodeType; x: number; y: number; config?: Record<string, unknown> }[],
+  edges: { source: string; sourceHandle?: string | null; target: string; targetHandle?: string | null }[],
+  idSuffix: string,
+): GraphTemplate {
+  const minX = Math.min(...sel.map((n) => n.x));
+  const minY = Math.min(...sel.map((n) => n.y));
+  const keyOf = new Map(sel.map((n, i) => [n.id, `n${i}`]));
+  const ids = new Set(sel.map((n) => n.id));
+  return {
+    id: `user-${idSuffix}`,
+    name,
+    nodes: sel.map((n) => ({
+      key: keyOf.get(n.id)!,
+      type: n.type,
+      dx: n.x - minX,
+      dy: n.y - minY,
+      config: n.config && Object.keys(n.config).length ? n.config : undefined,
+    })),
+    edges: edges
+      .filter((e) => ids.has(e.source) && ids.has(e.target))
+      .map((e) => ({
+        from: keyOf.get(e.source)!,
+        fromHandle: e.sourceHandle ?? "out",
+        to: keyOf.get(e.target)!,
+        toHandle: e.targetHandle ?? "in",
+      })),
+  };
+}

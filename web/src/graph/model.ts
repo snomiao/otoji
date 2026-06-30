@@ -25,7 +25,8 @@ export type NodeType =
   | "tracker"
   | "camera"
   | "paddle-ocr"
-  | "text-diff";
+  | "text-diff"
+  | "vision-model";
 
 export interface NodeSpec {
   type: NodeType;
@@ -196,6 +197,21 @@ export const NODE_SPECS: Record<NodeType, NodeSpec> = {
     inputs: [{ id: "in", type: "transcript" }],
     outputs: [{ id: "out", type: "transcript" }],
   },
+  "vision-model": {
+    type: "vision-model",
+    label: "Vision model",
+    // image → results via transformers.js (object-detection now; depth/segment
+    // later). Latest-only + a `rate` credit pulse pace the camera. Outputs are
+    // LAZY: each is produced only when connected. `out` = annotated overlay,
+    // `labels` = readable summary (for TTS/diff), `json` = structured detections.
+    inputs: [{ id: "in", type: "image" }],
+    outputs: [
+      { id: "out", type: "image" },
+      { id: "labels", type: "transcript" },
+      { id: "json", type: "transcript" },
+      { id: "rate", type: "control" },
+    ],
+  },
 };
 
 /** Palette grouping for the node types. */
@@ -207,7 +223,7 @@ export const NODE_CATEGORIES: { id: string; label: string; types: NodeType[] }[]
   { id: "output", label: "Output", types: ["sink", "audio-out", "srt-out", "speaker"] },
   { id: "model", label: "Custom model", types: ["model"] },
   { id: "pipe", label: "Pipe (CLI)", types: ["pipe"] },
-  { id: "vision", label: "Vision", types: ["camera", "paddle-ocr"] },
+  { id: "vision", label: "Vision", types: ["camera", "paddle-ocr", "vision-model"] },
   { id: "text", label: "Text", types: ["text-diff"] },
   { id: "net", label: "Network", types: ["tracker"] },
 ];

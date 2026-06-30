@@ -12,6 +12,7 @@ import { disposeNeuralTts } from "../providers/tts/neural";
 import { disposeWebllm } from "../providers/translate/webllm";
 import { disposeBrowserTranslate } from "../providers/translate/browser-translator";
 import { disposeOcr } from "../providers/vision/paddleocr";
+import { disposeDetect } from "../providers/vision/detect";
 
 // Each heavy node type → the model(s) it loads. A translate node may use either
 // the WebLLM or the browser Translator backend, so it disposes both.
@@ -22,6 +23,7 @@ const DISPOSERS: Partial<Record<NodeType, Array<() => Promise<void>>>> = {
   "tts-model": [disposeNeuralTts],
   model: [disposePipes],
   "paddle-ocr": [disposeOcr],
+  "vision-model": [disposeDetect],
 };
 
 /** Node types that hold an offloadable model. */

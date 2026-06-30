@@ -15,6 +15,8 @@ import { runAsr, runText, runTts, warmPipe, type ModelTask } from "../providers/
 import { createVoskStream, warmVosk, DEFAULT_VOSK_MODEL, type VoskStream } from "../providers/stt/vosk";
 import { startCamera, clampFps, DEFAULT_CAMERA_FPS, type CameraHandle } from "../providers/vision/camera";
 import { ocrRecognize, warmOcr } from "../providers/vision/paddleocr";
+import { detect, drawDetections, warmDetect, DEFAULT_DETECT_MODEL } from "../providers/vision/detect";
+import { formatLabels, formatJsonl, type Detection } from "../lib/detect-format";
 import { diffText, type DiffStyle, DEFAULT_DIFF_STYLE } from "../lib/textdiff";
 import type { SttLevel } from "../providers/types";
 import { buildSegmentFrame, buildTranscriptFrame, frameToMessage, type EdgeFrame } from "./frames";
@@ -260,6 +262,24 @@ export class GraphRuntime {
       );
     }
 
+    // Vision (object-detection) models — preload weights now. Non-fatal.
+    const detectModels = new Set<string>();
+    for (const n of Object.values(this.graph.nodes)) {
+      if (n.type === "vision-model" && this.isLocal(n.id))
+        detectModels.add((n.config?.model as string | undefined) ?? DEFAULT_DETECT_MODEL);
+    }
+    if (detectModels.size) {
+      this.hooks.onStatus?.("loading vision model…");
+      await Promise.all(
+        [...detectModels].map((m) =>
+          warmDetect(m, (p) => {
+            if (p.progress !== undefined) this.hooks.onStatus?.(`vision model ${Math.round(p.progress * 100)}%`);
+            else if (p.text) this.hooks.onStatus?.(p.text);
+          }).catch((e) => this.hooks.onError?.(e instanceof Error ? e : new Error(String(e)))),
+        ),
+      );
+    }
+
     // Neural TTS (on-device ONNX) models — preload weights now. Non-fatal: a
     // failure only disables that node, never aborts the rest of the graph.
     const ttsModels = new Set<string>();
@@ -378,6 +398,11 @@ export class GraphRuntime {
   /** Does any edge feed a control signal into this node's `handle` input port? */
   private hasIncoming(nodeId: string, handle: string): boolean {
     return this.graph.edges.some((e) => e.target === nodeId && e.targetHandle === handle);
+  }
+
+  /** Does this node's `handle` output port have any downstream edge? */
+  private hasOutgoing(nodeId: string, handle: string): boolean {
+    return (this.adj.get(`${nodeId}:${handle}`)?.length ?? 0) > 0;
   }
 
   private build(id: string, type: NodeType): RuntimeNode {
@@ -881,6 +906,61 @@ export class GraphRuntime {
             } as TranscriptMsg);
             // Feedback: a "next" credit pulse + the measured throughput, so a
             // connected Camera can pace itself to exactly our OCR rate.
+            const now = Date.now();
+            if (lastDone) emaMs = emaMs ? emaMs * 0.7 + (now - lastDone) * 0.3 : now - lastDone;
+            lastDone = now;
+            const rate = emaMs > 0 ? Math.round((1000 / emaMs) * 10) / 10 : undefined;
+            this.emit(id, "rate", { pulse: true, rate, ts: now } as ControlMsg);
+          });
+        },
+      };
+    }
+
+    if (type === "vision-model") {
+      const w = this.makeLatest(id);
+      const cfg = this.graph.nodes[id]?.config ?? {};
+      const model = (cfg.model as string | undefined) ?? DEFAULT_DETECT_MODEL;
+      const threshold = typeof cfg.threshold === "number" ? (cfg.threshold as number) : 0.5;
+      const emptyAudio = () => ({ samples: new Float32Array(0), sampleRate: MIC_VAD_SR, durationMs: 0 });
+      let lastDone = 0;
+      let emaMs = 0;
+      return {
+        input: (_port, msg) => {
+          const img = msg as ImageMsg;
+          const wantImg = this.hasOutgoing(id, "out");
+          const wantLabels = this.hasOutgoing(id, "labels");
+          const wantJson = this.hasOutgoing(id, "json");
+          // LAZY: skip the expensive inference entirely if nothing downstream
+          // consumes a result — just show the raw frame in the node preview.
+          if (!wantImg && !wantLabels && !wantJson) {
+            this.hooks.onImage?.(id, img.bitmap);
+            return;
+          }
+          w.submit("🔍 detect", async () => {
+            let dets: Detection[] = [];
+            try {
+              dets = await detect(img.bitmap, model, threshold);
+            } catch (e) {
+              this.hooks.onError?.(e instanceof Error ? e : new Error(String(e)));
+            }
+            // Boxes are cheap to draw; show the overlay in the preview, but only
+            // EMIT it downstream when the image out is wired.
+            let overlay: ImageBitmap | null = null;
+            try {
+              overlay = await drawDetections(img.bitmap, dets);
+            } catch {
+              /* draw failed — fall back to the raw frame */
+            }
+            this.hooks.onImage?.(id, overlay ?? img.bitmap);
+            if (wantImg && overlay)
+              this.emit(id, "out", { bitmap: overlay, width: img.width, height: img.height, ts: Date.now() } as ImageMsg);
+            if (wantLabels) {
+              const t = formatLabels(dets);
+              this.hooks.onRecognized?.(id, t);
+              this.emit(id, "labels", { text: t, audio: emptyAudio() } as TranscriptMsg);
+            }
+            if (wantJson) this.emit(id, "json", { text: formatJsonl(dets), audio: emptyAudio() } as TranscriptMsg);
+            // Credit pulse + measured FPS so a connected Camera can self-pace.
             const now = Date.now();
             if (lastDone) emaMs = emaMs ? emaMs * 0.7 + (now - lastDone) * 0.3 : now - lastDone;
             lastDone = now;
