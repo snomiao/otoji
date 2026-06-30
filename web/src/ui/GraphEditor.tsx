@@ -149,6 +149,7 @@ function Editor({ initialRoom, local }: { initialRoom?: string; local?: boolean 
   const recordsByNodeRef = useRef(new Map<string, Recording[]>()); // uncapped, for file export
   const edgeBytesRef = useRef(new Map<string, number>()); // per-edge bytes accumulated this second
   const [edgeRates, setEdgeRates] = useState<Record<string, number>>({}); // per-edge bytes/sec
+  const [lastError, setLastError] = useState<string>(""); // most recent runtime error, for bug reports
   const fileSeqRef = useRef(0);
   const nameCacheRef = useRef<Record<string, string>>({});
   const nodesRef = useRef(nodes);
@@ -323,6 +324,38 @@ function Editor({ initialRoom, local }: { initialRoom?: string; local?: boolean 
     setJoined(true);
     // Reflect the room in the address bar so it's a shareable join URL.
     if (isRoomCode(room.trim())) history.replaceState(null, "", `/${room.trim()}`);
+  }
+
+  // Open GitHub's new-issue page prefilled with the current error + graph context.
+  function reportIssue() {
+    const ns = nodesRef.current;
+    const nodeList = ns.map((n) => (n.data as any).voiceType).join(", ") || "(none)";
+    const edgeList = edgesRef.current
+      .map((e) => `${e.source}.${e.sourceHandle ?? "out"}→${e.target}.${e.targetHandle ?? "in"}`)
+      .join("\n") || "(none)";
+    const body = [
+      "**What happened?**",
+      "",
+      "<!-- describe what you were doing -->",
+      "",
+      "**Error**",
+      "```",
+      (lastError || runStatus || "(none captured)").slice(0, 1500),
+      "```",
+      "**Graph** (" + ns.length + " nodes)",
+      "```",
+      "nodes: " + nodeList,
+      edgeList,
+      "```",
+      "**Environment**",
+      `- url: ${location.href}`,
+      `- mode: ${local ? "local (single device)" : `room ${room || "(none)"} · ${devices.length} device(s)`}`,
+      `- WebGPU: ${typeof navigator !== "undefined" && "gpu" in navigator ? "yes" : "no"}`,
+      `- userAgent: ${typeof navigator !== "undefined" ? navigator.userAgent : "?"}`,
+    ].join("\n");
+    const title = "[bug] " + (lastError ? lastError.slice(0, 90) : "");
+    const url = `https://github.com/snomiao/otoji/issues/new?labels=bug&title=${encodeURIComponent(title)}&body=${encodeURIComponent(body)}`;
+    window.open(url, "_blank", "noopener");
   }
 
   function share() {
@@ -660,7 +693,7 @@ function Editor({ initialRoom, local }: { initialRoom?: string; local?: boolean 
       // Local mode: no transport -> single-device (every node runs here).
       self: transport ? { myId: myDeviceId, deviceIds: onlineRef.current, transport } : undefined,
       onStatus: (s) => setRunStatus(s),
-      onError: (e) => setRunStatus(`error: ${e.message}`),
+      onError: (e) => { setRunStatus(`error: ${e.message}`); setLastError(e.message); },
       onLevel: (id, l) => { micLevelRef.current = l.rms; live.pushLevel(id, l); },
       onSegment: () => { activityRef.current.segments++; },
       onRecognized: (id, text) => { activityRef.current.stt++; if (isReadableTranscript(text)) live.pushText(id, text); },
@@ -882,9 +915,16 @@ function Editor({ initialRoom, local }: { initialRoom?: string; local?: boolean 
             <button onClick={addPipeline} style={{ fontSize: 12, fontWeight: 700 }}>+ Pipeline</button>
           )}
           <span style={{ display: "flex", gap: 8, alignItems: "center", marginLeft: 8 }}>
-            {runStatus && <span style={{ fontSize: 12, color: "#718096" }}>{runStatus}</span>}
+            {runStatus && <span style={{ fontSize: 12, color: runStatus.startsWith("error") ? "#e53e3e" : "#718096" }}>{runStatus}</span>}
             <span style={{ fontSize: 12, color: running ? "#2f855a" : "#a0aec0" }}>{running ? "● live" : paused ? "paused" : "idle"}</span>
             <button onClick={() => setPaused((v) => !v)} style={{ fontSize: 12 }}>{paused ? "Resume" : "Pause"}</button>
+            <button
+              onClick={reportIssue}
+              title="Open a pre-filled GitHub issue with the current error + graph context"
+              style={{ fontSize: 12, color: lastError ? "#e53e3e" : undefined, fontWeight: lastError ? 700 : 400 }}
+            >
+              🐞 {lastError ? "Report error" : "Report bug"}
+            </button>
           </span>
         </div>
         </DraggableCard>
