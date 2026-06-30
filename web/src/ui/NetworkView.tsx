@@ -11,8 +11,8 @@ interface NetworkViewProps {
   stats: { sent: number; recv: number; dropped: number } | null;
 }
 
-const PORT_COLOR: Record<PortType, string> = { segment: "#dd6b20", transcript: "#2b6cb0" };
-const KIND_LABEL: Record<PortType, string> = { segment: "voice", transcript: "transcript" };
+const PORT_COLOR: Record<PortType, string> = { segment: "#dd6b20", transcript: "#2b6cb0", image: "#319795", control: "#d69e2e" };
+const KIND_LABEL: Record<PortType, string> = { segment: "voice", transcript: "transcript", image: "frames", control: "feedback" };
 
 function outPortType(graph: VoiceGraph, source: string, handle: string): PortType | null {
   const n = graph.nodes[source];

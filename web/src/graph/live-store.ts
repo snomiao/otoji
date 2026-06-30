@@ -18,6 +18,7 @@ export class LiveStore {
   private texts = new Map<string, string[]>();
   private busy = new Map<string, boolean>();
   private queues = new Map<string, QueueState>();
+  private images = new Map<string, ImageBitmap>();
   private listeners = new Map<string, Set<() => void>>();
 
   subscribe(nodeId: string, fn: () => void): () => void {
@@ -46,6 +47,16 @@ export class LiveStore {
   }
   getLevels(nodeId: string): SttLevel[] {
     return this.levels.get(nodeId) ?? [];
+  }
+
+  // Latest camera/OCR frame: high-rate, no emit (canvas reads via rAF). We don't
+  // close the old bitmap here — the same frame is shared with the OCR node's
+  // in-flight job, so closing would risk use-after-close; GC reclaims it.
+  setImage(nodeId: string, bitmap: ImageBitmap): void {
+    this.images.set(nodeId, bitmap);
+  }
+  getImage(nodeId: string): ImageBitmap | undefined {
+    return this.images.get(nodeId);
   }
 
   // Low-rate: replace array (new ref) so useSyncExternalStore detects the change.
@@ -80,6 +91,8 @@ export class LiveStore {
     this.texts.clear();
     this.busy.clear();
     this.queues.clear();
+    for (const b of this.images.values()) b.close?.();
+    this.images.clear();
     for (const set of this.listeners.values()) set.forEach((f) => f());
   }
 }

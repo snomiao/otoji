@@ -763,6 +763,7 @@ function Editor({ initialRoom, local }: { initialRoom?: string; local?: boolean 
       onError: (e) => { setRunStatus(`error: ${e.message}`); setLastError(e.message); },
       onLevel: (id, l) => { micLevelRef.current = l.rms; live.pushLevel(id, l); },
       onSegment: () => { activityRef.current.segments++; },
+      onImage: (id, bitmap) => live.setImage(id, bitmap),
       onRecognized: (id, text) => { activityRef.current.stt++; if (isReadableTranscript(text)) live.pushText(id, text); },
       onNodeBusy: (id, b) => live.setBusy(id, b),
       onQueue: (id, processing, queued) => live.setQueue(id, processing, queued),
@@ -845,7 +846,7 @@ function Editor({ initialRoom, local }: { initialRoom?: string; local?: boolean 
 
   useEffect(() => () => { runtimeRef.current?.stop(); }, []);
 
-  const PORT_COLOR: Record<PortType, string> = { segment: "#dd6b20", transcript: "#2b6cb0" };
+  const PORT_COLOR: Record<PortType, string> = { segment: "#dd6b20", transcript: "#2b6cb0", image: "#319795", control: "#d69e2e" };
   // Color edges by their source port type; animate while running (data in motion).
   const styledEdges = useMemo(
     () =>

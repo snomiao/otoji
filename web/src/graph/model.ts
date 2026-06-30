@@ -2,7 +2,9 @@
 // the source output type matches the target input type. The whole graph is the
 // authoritative state synced via the Durable Object (see signaling graph-patch).
 
-export type PortType = "segment" | "transcript";
+// segment = audio PCM, transcript = text, image = a captured frame,
+// control = a feedback signal (a "next"/credit pulse or a target rate number).
+export type PortType = "segment" | "transcript" | "image" | "control";
 export type NodeType =
   | "mic-vad"
   | "mic-raw"
@@ -20,7 +22,10 @@ export type NodeType =
   | "model"
   | "pipe"
   | "srt-out"
-  | "tracker";
+  | "tracker"
+  | "camera"
+  | "paddle-ocr"
+  | "text-diff";
 
 export interface NodeSpec {
   type: NodeType;
@@ -162,6 +167,35 @@ export const NODE_SPECS: Record<NodeType, NodeSpec> = {
     inputs: [],
     outputs: [],
   },
+  camera: {
+    type: "camera",
+    label: "Camera",
+    // Captures frames from a webcam at a configurable FPS. The optional `rate`
+    // control input enables backpressure: a "next" pulse makes it grab exactly
+    // one frame (credit), a number sets the target FPS. Unwired = free-run.
+    inputs: [{ id: "rate", type: "control" }],
+    outputs: [{ id: "out", type: "image" }],
+  },
+  "paddle-ocr": {
+    type: "paddle-ocr",
+    label: "OCR (PaddleOCR)",
+    // image → recognized text. Latest-only: while busy it keeps just the newest
+    // frame and drops the rest (never queues). `rate` emits a credit pulse +
+    // achieved FPS after each frame, to feed back into a Camera's rate input.
+    inputs: [{ id: "in", type: "image" }],
+    outputs: [
+      { id: "out", type: "transcript" },
+      { id: "rate", type: "control" },
+    ],
+  },
+  "text-diff": {
+    type: "text-diff",
+    label: "Text diff",
+    // Emits only what changed vs the previous input. First input emits as all
+    // additions; subsequent inputs emit the delta in the chosen style (gitdiff).
+    inputs: [{ id: "in", type: "transcript" }],
+    outputs: [{ id: "out", type: "transcript" }],
+  },
 };
 
 /** Palette grouping for the node types. */
@@ -173,6 +207,8 @@ export const NODE_CATEGORIES: { id: string; label: string; types: NodeType[] }[]
   { id: "output", label: "Output", types: ["sink", "audio-out", "srt-out", "speaker"] },
   { id: "model", label: "Custom model", types: ["model"] },
   { id: "pipe", label: "Pipe (CLI)", types: ["pipe"] },
+  { id: "vision", label: "Vision", types: ["camera", "paddle-ocr"] },
+  { id: "text", label: "Text", types: ["text-diff"] },
   { id: "net", label: "Network", types: ["tracker"] },
 ];
 
