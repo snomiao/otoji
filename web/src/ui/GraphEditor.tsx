@@ -179,7 +179,7 @@ function Editor({ initialRoom, local }: { initialRoom?: string; local?: boolean 
   nodesRef.current = nodes;
   edgesRef.current = edges;
   const roomRef = useRef(room);
-  roomRef.current = room;
+  roomRef.current = room.trim(); // canonical room key (join/load/save must agree)
 
   // --- Federation trust: which signaling servers (trackers) THIS browser will
   // connect to. active = trusted env defaults + locally-approved. Proposals from

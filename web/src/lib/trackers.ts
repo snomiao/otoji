@@ -49,9 +49,10 @@ export function parseTracker(input: string): ParsedTracker {
     return { url: "", error: `unsupported scheme "${u.protocol}" — use https:// (wss:// also works)` };
   }
   if (!u.hostname) return { url: "", error: "missing host" };
+  if (u.search || u.hash) return { url: "", error: "tracker URL must not contain a query or fragment" };
   u.protocol = proto;
-  u.hash = "";
-  u.search = "";
+  u.username = ""; // never carry embedded credentials in a shared tracker
+  u.password = "";
   return { url: u.toString().replace(/\/+$/, "") };
 }
 
@@ -77,11 +78,23 @@ export function isPrivateHost(httpUrl: string): boolean {
   } catch {
     return false;
   }
+  h = h.replace(/\.$/, ""); // trailing dot (localhost. == localhost)
+  if (h.startsWith("[") && h.endsWith("]")) h = h.slice(1, -1); // unwrap IPv6 brackets
+  const v4 = (s: string) =>
+    /^127\./.test(s) ||
+    /^10\./.test(s) ||
+    /^192\.168\./.test(s) ||
+    /^172\.(1[6-9]|2\d|3[01])\./.test(s) ||
+    /^169\.254\./.test(s) ||
+    s === "0.0.0.0";
   if (h === "localhost" || h.endsWith(".localhost") || h.endsWith(".local")) return true;
-  if (h === "::1" || h === "0.0.0.0") return true;
-  if (/^127\./.test(h) || /^10\./.test(h) || /^192\.168\./.test(h)) return true;
-  if (/^172\.(1[6-9]|2\d|3[01])\./.test(h)) return true;
-  if (/^169\.254\./.test(h)) return true; // link-local
+  if (v4(h)) return true;
+  // IPv6 loopback / unspecified / link-local / unique-local / IPv4-mapped.
+  if (h === "::1" || h === "::") return true;
+  if (/^fe80:/.test(h) || /^f[cd][0-9a-f]{2}:/.test(h)) return true;
+  // IPv4-mapped (::ffff:a.b.c.d, normalized by URL to hex ::ffff:7f00:1) — block
+  // all such literals; real servers don't use mapped-IPv6 URL hosts.
+  if (h.startsWith("::ffff:")) return true;
   return false;
 }
 

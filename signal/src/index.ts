@@ -118,7 +118,10 @@ export class RoomDurableObject {
     const self = ws.deserializeAttachment() as PeerMeta | null;
     if (!self || typeof message !== "string") return;
 
-    if (message.length > MAX_MSG_BYTES) {
+    // Byte length, not UTF-16 code-unit count (.length): a non-ASCII payload can
+    // be several times larger in bytes, so cap on the real wire size.
+    const byteLen = new TextEncoder().encode(message).byteLength;
+    if (byteLen > MAX_MSG_BYTES) {
       try {
         ws.close(1009, "message too large");
       } catch {
@@ -164,8 +167,9 @@ export class RoomDurableObject {
         // Bound stored/broadcast graph: drop oversized payloads or node floods
         // so one peer can't exhaust DO storage or amplify to the whole room.
         const g = msg.graph;
+        if (byteLen > MAX_GRAPH_BYTES) break; // reject oversized before any work
         const nodeCount = g && typeof g === "object" && g.nodes ? Object.keys(g.nodes).length : 0;
-        if (message.length > MAX_GRAPH_BYTES || nodeCount > MAX_GRAPH_NODES) break;
+        if (nodeCount > MAX_GRAPH_NODES) break;
         await this.state.storage.put("graph", g);
         this.broadcast({ type: "graph", graph: g, by: self.peerId }, self.peerId);
         break;
@@ -195,7 +199,12 @@ export class RoomDurableObject {
 
   private dropped(ws: WebSocket): void {
     const self = ws.deserializeAttachment() as PeerMeta | null;
-    if (self) this.broadcast({ type: "peer-left", peerId: self.peerId, deviceId: self.deviceId }, self.peerId);
+    if (!self) return;
+    // If a reconnect already replaced us, another live socket holds this peerId;
+    // announcing a leave would wrongly mark the new connection offline.
+    const stillLive = this.state.getWebSockets(self.peerId).some((s) => s !== ws);
+    if (stillLive) return;
+    this.broadcast({ type: "peer-left", peerId: self.peerId, deviceId: self.deviceId }, self.peerId);
   }
 
   private peers(exceptId?: string): PeerMeta[] {
