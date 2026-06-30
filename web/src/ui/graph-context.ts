@@ -18,6 +18,8 @@ export interface GraphCtx {
   counts: Record<string, number>;
   /** Per-device ephemeral live preview state (not synced). */
   live: LiveStore;
+  /** Open the node context menu at a screen position (right-click / long-press). */
+  openNodeMenu?: (nodeId: string, x: number, y: number) => void;
 }
 
 export const GraphContext = createContext<GraphCtx>({

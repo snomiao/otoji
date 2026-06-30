@@ -23,6 +23,7 @@ import { LiveStore } from "../graph/live-store";
 import { fileStore, fileKindForName } from "../graph/file-store";
 import { PeerMeshTransport } from "../graph/mesh-transport";
 import { p2pModelCache } from "../providers/model/p2p-cache";
+import { togglePreviewShown } from "../lib/prefs";
 import { RecordingPlayer, type Recording } from "./RecordingPlayer";
 import { computePeaks } from "../lib/peaks";
 import { isReadableTranscript } from "../lib/text";
@@ -125,6 +126,8 @@ function Editor({ initialRoom }: { initialRoom?: string }) {
         options: { type: NodeType; label: string }[];
       }
   >(null);
+  // Per-node context menu (right-click / long-press): duplicate/replace/remove/visibility.
+  const [nodeMenu, setNodeMenu] = useState<null | { x: number; y: number; nodeId: string }>(null);
 
   const sigRef = useRef<SignalingClient | null>(null);
   const meshRef = useRef<PeerMesh | null>(null);
@@ -343,6 +346,59 @@ function Editor({ initialRoom }: { initialRoom?: string }) {
 
   const onDelete = useCallback((nodeId: string) => removeNodes([nodeId]), [removeNodes]);
 
+  // Clone a node (same type/device/config) slightly offset.
+  const duplicateNode = useCallback(
+    (nodeId: string) => {
+      const n = nodesRef.current.find((x) => x.id === nodeId);
+      if (!n) return;
+      const vt = (n.data as any).voiceType as NodeType;
+      const copyId = `${vt}-${Math.random().toString(36).slice(2, 8)}`;
+      const copy: Node = {
+        ...n,
+        id: copyId,
+        position: { x: n.position.x + 40, y: n.position.y + 40 },
+        selected: false,
+        data: { ...n.data, config: { ...((n.data as any).config ?? {}) } },
+      };
+      // File nodes keep their bytes in the per-device fileStore (keyed by node id) —
+      // copy it so the duplicate actually has its file, not just the filename.
+      const fe = fileStore.get(nodeId);
+      if (fe) fileStore.set(copyId, { ...fe });
+      const next = [...nodesRef.current, copy];
+      nodesRef.current = next;
+      setNodes(next);
+      broadcast(next, edgesRef.current);
+    },
+    [setNodes, broadcast],
+  );
+
+  // Change a node's type in place; drop edges that no longer type-check against it.
+  const replaceNode = useCallback(
+    (nodeId: string, newType: NodeType) => {
+      const nextNodes = nodesRef.current.map((x) =>
+        x.id === nodeId ? { ...x, data: { ...x.data, voiceType: newType, config: {} } } : x,
+      );
+      const typeOf = (nid: string) => (nextNodes.find((n) => n.id === nid)?.data as any)?.voiceType as NodeType | undefined;
+      const portType = (t: NodeType | undefined, handle: string, dir: "in" | "out") => {
+        if (!t) return undefined;
+        const list = dir === "in" ? NODE_SPECS[t].inputs : NODE_SPECS[t].outputs;
+        return list.find((p) => p.id === handle)?.type;
+      };
+      const nextEdges = edgesRef.current.filter((e) => {
+        if (e.source !== nodeId && e.target !== nodeId) return true;
+        const out = portType(typeOf(e.source), e.sourceHandle ?? "out", "out");
+        const inp = portType(typeOf(e.target), e.targetHandle ?? "in", "in");
+        return !!out && out === inp; // keep only if the port types still match
+      });
+      nodesRef.current = nextNodes;
+      edgesRef.current = nextEdges;
+      setNodes(nextNodes);
+      setEdges(nextEdges);
+      broadcast(nextNodes, nextEdges);
+    },
+    [setNodes, setEdges, broadcast],
+  );
+
   // Records collected at a sink/output node (oldest first) for file export — from
   // the uncapped per-node buffer (sinkRecs is capped for the live panel only).
   const getRecords = useCallback((nodeId: string) => recordsByNodeRef.current.get(nodeId) ?? [], []);
@@ -537,6 +593,7 @@ function Editor({ initialRoom }: { initialRoom?: string }) {
       onSegment: () => { activityRef.current.segments++; },
       onRecognized: (id, text) => { activityRef.current.stt++; if (isReadableTranscript(text)) live.pushText(id, text); },
       onNodeBusy: (id, b) => live.setBusy(id, b),
+      onQueue: (id, processing, queued) => live.setQueue(id, processing, queued),
       onSink: (sinkId, tr: TranscriptMsg) => {
         if (!isReadableTranscript(tr.text)) return;
         live.pushText(sinkId, tr.text);
@@ -647,9 +704,11 @@ function Editor({ initialRoom }: { initialRoom?: string }) {
 
   const currentGraph = useMemo(() => fromRF(nodes, edges, versionRef.current), [nodes, edges]);
 
+  const openNodeMenu = useCallback((nodeId: string, x: number, y: number) => setNodeMenu({ nodeId, x, y }), []);
+
   const ctx = useMemo(
-    () => ({ devices, onAssign, onConfig, onDelete, getRecords, setFile, counts, live: liveRef.current }),
-    [devices, onAssign, onConfig, onDelete, getRecords, setFile, counts],
+    () => ({ devices, onAssign, onConfig, onDelete, getRecords, setFile, counts, live: liveRef.current, openNodeMenu }),
+    [devices, onAssign, onConfig, onDelete, getRecords, setFile, counts, openNodeMenu],
   );
 
   if (!joined) {
@@ -697,6 +756,7 @@ function Editor({ initialRoom }: { initialRoom?: string }) {
             onConnect={onConnect}
             onConnectEnd={onConnectEnd}
             isValidConnection={isValidConnection}
+            onNodeContextMenu={(e, n) => { e.preventDefault(); setNodeMenu({ nodeId: n.id, x: e.clientX, y: e.clientY }); }}
             onNodeDragStop={() => broadcast(nodesRef.current, edgesRef.current)}
             onNodesDelete={afterDelete}
             onEdgesDelete={afterDelete}
@@ -833,6 +893,18 @@ function Editor({ initialRoom }: { initialRoom?: string }) {
             onClose={() => setConnectMenu(null)}
           />
         )}
+
+        {nodeMenu && (
+          <NodeMenu
+            x={nodeMenu.x}
+            y={nodeMenu.y}
+            onDuplicate={() => { duplicateNode(nodeMenu.nodeId); setNodeMenu(null); }}
+            onReplace={(type) => { replaceNode(nodeMenu.nodeId, type); setNodeMenu(null); }}
+            onToggleVis={() => { togglePreviewShown(nodeMenu.nodeId); setNodeMenu(null); }}
+            onRemove={() => { onDelete(nodeMenu.nodeId); setNodeMenu(null); }}
+            onClose={() => setNodeMenu(null)}
+          />
+        )}
       </div>
     </GraphContext.Provider>
   );
@@ -898,6 +970,62 @@ function ConnectMenu({
         )}
       </div>
     </div>
+  );
+}
+
+// Right-click / long-press node menu: duplicate, replace (→ type list), toggle the
+// preview, or remove. A transparent backdrop closes it on an outside click.
+function NodeMenu({
+  x,
+  y,
+  onDuplicate,
+  onReplace,
+  onToggleVis,
+  onRemove,
+  onClose,
+}: {
+  x: number;
+  y: number;
+  onDuplicate: () => void;
+  onReplace: (t: NodeType) => void;
+  onToggleVis: () => void;
+  onRemove: () => void;
+  onClose: () => void;
+}) {
+  const [mode, setMode] = useState<"actions" | "replace">("actions");
+  const [hover, setHover] = useState<string>("");
+  const left = Math.min(x, (typeof window !== "undefined" ? window.innerWidth : x + 200) - 200);
+  const top = Math.min(y, (typeof window !== "undefined" ? window.innerHeight : y + 280) - 280);
+  const Item = ({ k, label, onClick, color }: { k: string; label: string; onClick: () => void; color?: string }) => (
+    <div
+      onMouseDown={(e) => { e.preventDefault(); onClick(); }}
+      onMouseEnter={() => setHover(k)}
+      style={{ padding: "6px 10px", borderRadius: 5, cursor: "pointer", fontSize: 13, color, background: hover === k ? "#ebf4ff" : "transparent" }}
+    >
+      {label}
+    </div>
+  );
+  return (
+    <>
+      <div onMouseDown={onClose} style={{ position: "fixed", inset: 0, zIndex: 29 }} />
+      <div onMouseDown={(e) => e.stopPropagation()} style={{ ...CARD, position: "fixed", left, top, width: 190, padding: 4, zIndex: 30 }}>
+        {mode === "actions" ? (
+          <>
+            <Item k="dup" label="⧉ Duplicate" onClick={onDuplicate} />
+            <Item k="rep" label="⇄ Replace…" onClick={() => setMode("replace")} />
+            <Item k="vis" label="👁 Toggle preview" onClick={onToggleVis} />
+            <Item k="rm" label="✕ Remove" onClick={onRemove} color="#e53e3e" />
+          </>
+        ) : (
+          <div style={{ maxHeight: 260, overflow: "auto" }}>
+            <div style={{ padding: "4px 10px", fontSize: 11, color: "#a0aec0" }}>replace with…</div>
+            {(Object.keys(NODE_SPECS) as NodeType[]).map((t) => (
+              <Item key={t} k={t} label={NODE_SPECS[t].label} onClick={() => onReplace(t)} />
+            ))}
+          </div>
+        )}
+      </div>
+    </>
   );
 }
 

@@ -6,5 +6,6 @@ export function useNodeLive(live: LiveStore, nodeId: string) {
   const subscribe = useCallback((cb: () => void) => live.subscribe(nodeId, cb), [live, nodeId]);
   const texts = useSyncExternalStore(subscribe, () => live.getTexts(nodeId));
   const busy = useSyncExternalStore(subscribe, () => live.getBusy(nodeId));
-  return { texts, busy };
+  const queue = useSyncExternalStore(subscribe, () => live.getQueue(nodeId));
+  return { texts, busy, queue };
 }

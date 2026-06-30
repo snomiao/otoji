@@ -1,4 +1,4 @@
-import React, { useContext, useEffect, useState } from "react";
+import React, { useContext, useEffect, useState, useSyncExternalStore } from "react";
 import { Handle, Position, type NodeProps } from "@xyflow/react";
 import { NODE_SPECS, type NodeType, type PortType } from "../graph/model";
 import { GraphContext } from "./graph-context";
@@ -15,7 +15,7 @@ import { NEURAL_TTS_MODELS, AUTO_TTS_MODEL, AUTO_TTS_VOICE } from "../providers/
 import { MODEL_TASKS, MODEL_DTYPES, DEFAULT_MODEL_DTYPE } from "../providers/model/transformers-pipeline";
 import { useNodeLive } from "./useNodeLive";
 import { NodeMicPreview } from "./NodeMicPreview";
-import { isPreviewShown, setPreviewShown } from "../lib/prefs";
+import { isPreviewShown, setPreviewShown, subscribePrefs } from "../lib/prefs";
 import { samplesToWavBlob, concatSamples } from "../lib/peaks";
 import { buildSrt } from "../lib/srt";
 
@@ -89,22 +89,33 @@ function useVoices(): SpeechSynthesisVoice[] {
 
 export function VoiceNode({ id, data }: NodeProps) {
   const d = data as VoiceNodeData;
-  const { devices, onAssign, onConfig, onDelete, getRecords, setFile, counts, live } = useContext(GraphContext);
+  const { devices, onAssign, onConfig, onDelete, getRecords, setFile, counts, live, openNodeMenu } = useContext(GraphContext);
+  const lpTimer = React.useRef<ReturnType<typeof setTimeout> | null>(null);
   const fileName = (d as any).config?.file as string | undefined;
   const spec = NODE_SPECS[d.voiceType];
   const assigned = devices.find((x) => x.deviceId === d.device);
   const count = counts[id] ?? 0;
   const model = ((d as any).config?.model as string | undefined) ?? DEFAULT_SENSEVOICE_MODEL;
-  const { texts, busy } = useNodeLive(live, id);
+  const { texts, busy, queue } = useNodeLive(live, id);
   const config = (d as any).config as Record<string, unknown> | undefined;
   const inputDevices = useAudioDevices("audioinput");
   const outputDevices = useAudioDevices("audiooutput");
   const voices = useVoices();
-  const [shown, setShown] = useState(() => isPreviewShown(id));
-  const toggleShown = () => { const v = !shown; setShown(v); setPreviewShown(id, v); };
+  const shown = useSyncExternalStore(subscribePrefs, () => isPreviewShown(id));
+  const toggleShown = () => setPreviewShown(id, !shown);
+
+  const onTouchStart = (e: React.TouchEvent) => {
+    const t = e.touches[0];
+    lpTimer.current = setTimeout(() => openNodeMenu?.(id, t.clientX, t.clientY), 500); // long-press
+  };
+  const clearLP = () => { if (lpTimer.current) clearTimeout(lpTimer.current); };
 
   return (
     <div
+      onContextMenu={(e) => { e.preventDefault(); openNodeMenu?.(id, e.clientX, e.clientY); }}
+      onTouchStart={onTouchStart}
+      onTouchEnd={clearLP}
+      onTouchMove={clearLP}
       style={{
         border: "1px solid #cbd5e0",
         borderRadius: 8,
@@ -389,6 +400,20 @@ export function VoiceNode({ id, data }: NodeProps) {
           >
             ⬇ download .srt ({getRecords(id).length})
           </button>
+        )}
+        {(queue.processing || queue.queued.length > 0) && (
+          <div style={{ marginTop: 4, fontSize: 10, lineHeight: 1.4 }}>
+            {queue.processing && (
+              <div style={{ color: "#dd6b20", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", maxWidth: 150 }}>
+                ▶ {queue.processing}
+              </div>
+            )}
+            {queue.queued.length > 0 && (
+              <div style={{ color: "#a0aec0", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", maxWidth: 150 }}>
+                ⋯ {queue.queued.length} queued{queue.queued.length <= 2 ? `: ${queue.queued.join(", ")}` : ""}
+              </div>
+            )}
+          </div>
         )}
         {!d.device && <div style={{ color: "#e53e3e", fontSize: 10, marginTop: 2 }}>unassigned</div>}
         {assigned && !assigned.online && (

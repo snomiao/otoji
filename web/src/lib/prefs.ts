@@ -23,9 +23,21 @@ export function isPreviewShown(nodeId: string): boolean {
   return !load().has(nodeId); // shown by default
 }
 
+const listeners = new Set<() => void>();
+/** Subscribe to preview-visibility changes (for useSyncExternalStore). */
+export function subscribePrefs(fn: () => void): () => void {
+  listeners.add(fn);
+  return () => listeners.delete(fn);
+}
+
 export function setPreviewShown(nodeId: string, shown: boolean): void {
   const s = load();
   if (shown) s.delete(nodeId);
   else s.add(nodeId);
   save(s);
+  listeners.forEach((f) => f());
+}
+
+export function togglePreviewShown(nodeId: string): void {
+  setPreviewShown(nodeId, !isPreviewShown(nodeId));
 }

@@ -51,6 +51,7 @@ export interface RuntimeHooks {
   onSegment?: (nodeId: string) => void; // a mic node produced a VAD segment
   onRecognized?: (nodeId: string, text: string) => void; // an STT node finished (text may be empty)
   onNodeBusy?: (nodeId: string, busy: boolean) => void; // node started/finished processing
+  onQueue?: (nodeId: string, processing: string | null, queued: string[]) => void; // work queue state
   onSink?: (nodeId: string, tr: TranscriptMsg) => void;
   onAudio?: (nodeId: string, audio: SegmentMsg) => void; // raw audio collected at audio-out
   onStatus?: (s: string) => void;
@@ -76,6 +77,12 @@ interface RuntimeNode {
   start?(): Promise<void> | void;
   stop?(): Promise<void> | void;
   input?(port: string, msg: unknown): void;
+}
+
+/** Short label for a queue item (a text snippet). */
+function snippet(t: string): string {
+  const s = t.trim().replace(/\s+/g, " ");
+  return s.length > 22 ? s.slice(0, 22) + "…" : s || "…";
 }
 
 /** Map "sourceNode:sourceHandle" -> list of {node, port} targets. */
@@ -248,6 +255,38 @@ export class GraphRuntime {
     this.hooks.onStatus?.("running");
   }
 
+  /**
+   * Serialized work queue for an async node: tracks the item being processed and
+   * those waiting, reporting both to the UI (onQueue) and the busy dot (onNodeBusy).
+   */
+  private makeQueue(id: string) {
+    let chain: Promise<void> = Promise.resolve();
+    const queued: string[] = [];
+    let processing: string | null = null;
+    const emit = () => {
+      this.hooks.onQueue?.(id, processing, [...queued]);
+      this.hooks.onNodeBusy?.(id, processing !== null);
+    };
+    return {
+      run: (label: string, fn: () => Promise<void>) => {
+        queued.push(label);
+        emit();
+        chain = chain.then(async () => {
+          processing = queued.shift() ?? label;
+          emit();
+          try {
+            await fn();
+          } finally {
+            processing = null;
+            emit();
+          }
+        });
+        return chain;
+      },
+      drain: () => chain,
+    };
+  }
+
   private build(id: string, type: NodeType): RuntimeNode {
     if (type === "mic-vad") {
       let handle: MicVadHandle | null = null;
@@ -365,13 +404,12 @@ export class GraphRuntime {
     }
 
     if (type === "stt") {
-      let chain: Promise<void> = Promise.resolve();
+      const q = this.makeQueue(id);
       const modelId = (this.graph.nodes[id]?.config?.model as string | undefined) ?? this.hooks.modelId;
       return {
         input: (_port, msg) => {
           const seg = msg as SegmentMsg;
-          chain = chain.then(async () => {
-            this.hooks.onNodeBusy?.(id, true);
+          q.run(`🔊 ${Math.round(seg.durationMs / 100) / 10}s`, async () => {
             try {
               const res = await sttRecognize(seg.samples, modelId);
               this.hooks.onRecognized?.(id, res.text);
@@ -392,19 +430,17 @@ export class GraphRuntime {
               } as TranscriptMsg);
             } catch (e) {
               this.hooks.onError?.(e instanceof Error ? e : new Error(String(e)));
-            } finally {
-              this.hooks.onNodeBusy?.(id, false);
             }
           });
         },
         // Wait for in-flight recognition so a just-spoken / stop-time segment
         // isn't dropped before its result reaches the sink.
-        stop: () => chain,
+        stop: () => q.drain(),
       };
     }
 
     if (type === "translate") {
-      let chain: Promise<void> = Promise.resolve();
+      const q = this.makeQueue(id);
       const cfg = this.graph.nodes[id]?.config ?? {};
       const modelId = (cfg.model as string | undefined) ?? DEFAULT_TRANSLATE_MODEL;
       const targetLang = (cfg.lang as string | undefined) ?? DEFAULT_TRANSLATE_LANG;
@@ -412,9 +448,8 @@ export class GraphRuntime {
       return {
         input: (_port, msg) => {
           const tr = msg as TranscriptMsg;
-          chain = chain.then(async () => {
-            if (!tr.text.trim()) return; // nothing recognized — don't echo empties
-            this.hooks.onNodeBusy?.(id, true);
+          if (!tr.text.trim()) return; // nothing recognized — don't echo empties
+          q.run(snippet(tr.text), async () => {
             // Pass through the original text on any failure (no WebGPU, download
             // error, inference error) so downstream sink/recordings keep working.
             let text = tr.text;
@@ -424,8 +459,6 @@ export class GraphRuntime {
               if (provider.isAvailable()) text = await provider.translate(tr.text, targetLang, modelId, tr.lang);
             } catch (e) {
               this.hooks.onError?.(e instanceof Error ? e : new Error(String(e)));
-            } finally {
-              this.hooks.onNodeBusy?.(id, false);
             }
             this.hooks.onRecognized?.(id, text);
             // The text is now in the target language, so `lang` becomes the target
@@ -443,7 +476,7 @@ export class GraphRuntime {
           });
         },
         // Drain in-flight translations so a final utterance reaches the sink.
-        stop: () => chain,
+        stop: () => q.drain(),
       };
     }
 
@@ -517,7 +550,7 @@ export class GraphRuntime {
       const cfg = this.graph.nodes[id]?.config ?? {};
       const configuredVoice = (cfg.voice as string | undefined) ?? AUTO_TTS_VOICE;
       const rate = typeof cfg.rate === "number" ? (cfg.rate as number) : 1;
-      let chain: Promise<void> = Promise.resolve();
+      const q = this.makeQueue(id);
       let stopped = false;
       return {
         input: (_port, msg) => {
@@ -526,8 +559,7 @@ export class GraphRuntime {
           if (!text) return;
           const synth = typeof window !== "undefined" ? window.speechSynthesis : undefined;
           if (!synth) return;
-          chain = chain.then(
-            () =>
+          q.run(snippet(text), () =>
               new Promise<void>((resolve) => {
                 if (stopped) return resolve(); // runtime stopped while queued — don't speak
                 try {
@@ -565,6 +597,7 @@ export class GraphRuntime {
           } catch {
             /* ignore */
           }
+          return q.drain();
         },
       };
     }
@@ -573,7 +606,7 @@ export class GraphRuntime {
       // Synthesize each transcript to PCM with an on-device ONNX model and emit it
       // as a segment, so it can feed a (device-targetable) speaker / audio-out.
       const configured = (this.graph.nodes[id]?.config?.model as string | undefined) ?? AUTO_TTS_MODEL;
-      let chain: Promise<void> = Promise.resolve();
+      const q = this.makeQueue(id);
       return {
         input: (_port, msg) => {
           const tr = msg as TranscriptMsg;
@@ -594,8 +627,7 @@ export class GraphRuntime {
           } else {
             modelId = DEFAULT_NEURAL_TTS_MODEL;
           }
-          chain = chain.then(async () => {
-            this.hooks.onNodeBusy?.(id, true);
+          q.run(snippet(text), async () => {
             try {
               const { samples, sampleRate } = await neuralTts.synthesize(text, modelId);
               if (samples.length) {
@@ -604,13 +636,11 @@ export class GraphRuntime {
               }
             } catch (e) {
               this.hooks.onError?.(e instanceof Error ? e : new Error(String(e)));
-            } finally {
-              this.hooks.onNodeBusy?.(id, false);
             }
           });
         },
         // Drain in-flight synthesis so a final utterance still reaches the speaker.
-        stop: () => chain,
+        stop: () => q.drain(),
       };
     }
 
@@ -620,12 +650,12 @@ export class GraphRuntime {
       const task = ((cfg.task as ModelTask | undefined) ?? "asr") as ModelTask;
       const model = (cfg.model as string | undefined)?.trim();
       const dtype = cfg.dtype as string | undefined;
-      let chain: Promise<void> = Promise.resolve();
+      const q = this.makeQueue(id);
       return {
         input: (_port, msg) => {
           if (!model) return;
-          chain = chain.then(async () => {
-            this.hooks.onNodeBusy?.(id, true);
+          const label = task === "asr" ? "🔊 audio" : snippet((msg as TranscriptMsg).text ?? "");
+          q.run(label, async () => {
             try {
               if (task === "asr") {
                 const seg = msg as SegmentMsg;
@@ -648,12 +678,10 @@ export class GraphRuntime {
               }
             } catch (e) {
               this.hooks.onError?.(e instanceof Error ? e : new Error(String(e)));
-            } finally {
-              this.hooks.onNodeBusy?.(id, false);
             }
           });
         },
-        stop: () => chain,
+        stop: () => q.drain(),
       };
     }
 

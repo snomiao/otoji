@@ -8,10 +8,16 @@ import type { SttLevel } from "../providers/types";
 const MAX_LEVELS = 200; // ~6s of 30ms VAD windows
 const MAX_TEXTS = 3;
 
+export interface QueueState {
+  processing: string | null; // label of the item currently being processed
+  queued: string[]; // labels waiting
+}
+
 export class LiveStore {
   private levels = new Map<string, SttLevel[]>();
   private texts = new Map<string, string[]>();
   private busy = new Map<string, boolean>();
+  private queues = new Map<string, QueueState>();
   private listeners = new Map<string, Set<() => void>>();
 
   subscribe(nodeId: string, fn: () => void): () => void {
@@ -61,12 +67,22 @@ export class LiveStore {
     return this.busy.get(nodeId) ?? false;
   }
 
+  setQueue(nodeId: string, processing: string | null, queued: string[]): void {
+    this.queues.set(nodeId, { processing, queued });
+    this.emit(nodeId);
+  }
+  getQueue(nodeId: string): QueueState {
+    return this.queues.get(nodeId) ?? EMPTY_QUEUE;
+  }
+
   reset(): void {
     this.levels.clear();
     this.texts.clear();
     this.busy.clear();
+    this.queues.clear();
     for (const set of this.listeners.values()) set.forEach((f) => f());
   }
 }
 
 const EMPTY: string[] = [];
+const EMPTY_QUEUE: QueueState = { processing: null, queued: [] };
