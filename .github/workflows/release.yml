@@ -157,6 +157,14 @@ jobs:
               pkg.optionalDependencies[k] = v;
             }
             fs.writeFileSync("package.json", JSON.stringify(pkg, null, 2) + "\n");
+            // Standalone `otoji` CLI launcher (zero-dep stdio bridge) rides the
+            // same version line.
+            const cliPath = "cli/package.json";
+            if (fs.existsSync(cliPath)) {
+              const cli = JSON.parse(fs.readFileSync(cliPath, "utf8"));
+              cli.version = v;
+              fs.writeFileSync(cliPath, JSON.stringify(cli, null, 2) + "\n");
+            }
           '
 
       - name: Lay out per-platform npm/<triple>/ dirs
@@ -166,12 +174,33 @@ jobs:
           npx --no-install napi artifacts -d artifacts
           ls -R npm
 
-      - name: Publish per-platform packages with provenance
+      # Resilient publish: a single missing or already-published subpackage must
+      # not abort the rest (otherwise one un-bootstrapped platform freezes the
+      # whole `@otoji/core` line — which is exactly what happened pre-0.1.41).
+      # Re-publishing an existing version (403 "cannot publish over") is treated
+      # as success; a 404 means the package name was never bootstrapped (OIDC
+      # trusted-publishing cannot CREATE a package — do that once with a classic
+      # automation token), and is surfaced as a warning without blocking peers.
+      - name: Publish to npm with provenance
         run: |
-          set -euxo pipefail
-          for dir in npm/*/; do
-            (cd "$dir" && npm publish --access public --tag latest --provenance)
-          done
-
-      - name: Publish umbrella package with provenance
-        run: npm publish --access public --tag latest --provenance
+          set -uo pipefail
+          fail=0
+          publish() { # $1 = dir to publish from
+            local dir="$1" out rc
+            out=$(cd "$dir" && npm publish --access public --tag latest --provenance 2>&1); rc=$?
+            echo "$out"
+            [ $rc -eq 0 ] && return 0
+            if echo "$out" | grep -qiE "cannot publish over|previously published|EPUBLISHCONFLICT"; then
+              echo "::notice::$dir already published at this version — skipping"; return 0
+            fi
+            if echo "$out" | grep -qiE "E?404"; then
+              echo "::warning::$dir is not on npm yet — bootstrap it once with a classic automation token (OIDC cannot create new packages)"
+            else
+              echo "::error::publish failed for $dir"
+            fi
+            return 1
+          }
+          for dir in npm/*/; do publish "$dir" || fail=1; done
+          publish .   || fail=1   # umbrella @otoji/core
+          publish cli || fail=1   # standalone `otoji` CLI launcher
+          exit $fail

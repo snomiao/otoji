@@ -1,0 +1,37 @@
+{
+  "name": "otoji",
+  "version": "0.1.43",
+  "description": "otoji CLI — bridge a terminal's stdio into an otoji voice graph at otoji.org. Zero-dep launcher: `npx otoji node <room>`.",
+  "license": "MIT",
+  "author": "snomiao <snomiao@gmail.com>",
+  "homepage": "https://otoji.org",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/snomiao/otoji.git",
+    "directory": "cli"
+  },
+  "bugs": {
+    "url": "https://github.com/snomiao/otoji/issues"
+  },
+  "keywords": [
+    "otoji",
+    "cli",
+    "stdio",
+    "pipe",
+    "voice",
+    "transcript",
+    "speech-to-text",
+    "webrtc"
+  ],
+  "type": "module",
+  "bin": {
+    "otoji": "otoji-node.mjs"
+  },
+  "files": [
+    "otoji-node.mjs",
+    "README.md"
+  ],
+  "engines": {
+    "node": ">=22"
+  }
+}
