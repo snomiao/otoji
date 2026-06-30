@@ -132,6 +132,89 @@ function fromRF(nodes: Node[], edges: Edge[], version: number): VoiceGraph {
   return g;
 }
 
+// --- Auto-layout: box-collision + spring (force-directed) ------------------
+// Relaxes node positions so boxes stop overlapping (separation uses each node's
+// MEASURED size — the "box model") while edges act as springs that pull
+// connected nodes to a rest gap and bias the flow left→right (source left of
+// its target). Pure + deterministic (no RNG), so it's safe to broadcast.
+function autoLayout(
+  nodes: Node[],
+  edges: Edge[],
+  sizeOf: (id: string) => { w: number; h: number },
+): Record<string, { x: number; y: number }> {
+  // Work in box CENTERS (node.position is the top-left corner).
+  const P = nodes.map((n) => {
+    const { w, h } = sizeOf(n.id);
+    return { id: n.id, cx: n.position.x + w / 2, cy: n.position.y + h / 2, w, h, vx: 0, vy: 0 };
+  });
+  if (P.length === 0) return {};
+  const idx = new Map(P.map((p, i) => [p.id, i] as const));
+  const links = edges
+    .map((e) => [idx.get(e.source), idx.get(e.target)] as [number | undefined, number | undefined])
+    .filter((l): l is [number, number] => l[0] != null && l[1] != null);
+
+  const GAP = 44; // min empty space kept between two boxes
+  const SPRING_GAP = 80; // desired edge-to-edge gap along a connection
+  const SPRING_K = 0.09; // spring stiffness
+  const REPULSE = 0.05; // weak global spread so disjoint clusters drift apart
+  const DAMP = 0.8;
+  const STEP = 34; // clamp per-iteration displacement (avoids blow-ups)
+  const ITERS = 600;
+
+  for (let it = 0; it < ITERS; it++) {
+    // pairwise: box-overlap separation + mild global repulsion
+    for (let i = 0; i < P.length; i++) {
+      for (let j = i + 1; j < P.length; j++) {
+        const a = P[i], b = P[j];
+        const dx = b.cx - a.cx, dy = b.cy - a.cy;
+        const minX = (a.w + b.w) / 2 + GAP;
+        const minY = (a.h + b.h) / 2 + GAP;
+        const ox = minX - Math.abs(dx);
+        const oy = minY - Math.abs(dy);
+        if (ox > 0 && oy > 0) {
+          // boxes overlap → push apart along the axis of least penetration
+          if (ox <= oy) {
+            const push = (ox / 2) * (dx < 0 ? -1 : 1);
+            a.vx -= push; b.vx += push;
+          } else {
+            const push = (oy / 2) * (dy < 0 ? -1 : 1);
+            a.vy -= push; b.vy += push;
+          }
+        }
+        const d2 = dx * dx + dy * dy + 0.01;
+        const f = (REPULSE * minX * minX) / d2; // ~1/dist falloff
+        const d = Math.sqrt(d2);
+        a.vx -= (dx / d) * f; a.vy -= (dy / d) * f;
+        b.vx += (dx / d) * f; b.vy += (dy / d) * f;
+      }
+    }
+    // springs along edges: settle at a rest gap to the right + align vertically
+    for (const [s, t] of links) {
+      const a = P[s], b = P[t];
+      const wantX = (a.w + b.w) / 2 + SPRING_GAP;
+      const ex = (b.cx - a.cx) - wantX; // x error (>0 too far / <0 too close)
+      const ey = b.cy - a.cy; // y error → pull into the same row
+      a.vx += ex * SPRING_K; a.vy += ey * SPRING_K;
+      b.vx -= ex * SPRING_K; b.vy -= ey * SPRING_K;
+    }
+    // integrate with damping + step clamp
+    for (const p of P) {
+      p.cx += Math.max(-STEP, Math.min(STEP, p.vx));
+      p.cy += Math.max(-STEP, Math.min(STEP, p.vy));
+      p.vx *= DAMP; p.vy *= DAMP;
+    }
+  }
+
+  // Snap the whole layout so its top-left starts near a tidy origin.
+  let minX = Infinity, minY = Infinity;
+  for (const p of P) { minX = Math.min(minX, p.cx - p.w / 2); minY = Math.min(minY, p.cy - p.h / 2); }
+  const out: Record<string, { x: number; y: number }> = {};
+  for (const p of P) {
+    out[p.id] = { x: Math.round(p.cx - p.w / 2 - minX + 40), y: Math.round(p.cy - p.h / 2 - minY + 40) };
+  }
+  return out;
+}
+
 function Editor({ initialRoom, local }: { initialRoom?: string; local?: boolean }) {
   const [room, setRoom] = useState(initialRoom ?? "");
   const [name, setName] = useState(getDeviceName());
@@ -154,14 +237,17 @@ function Editor({ initialRoom, local }: { initialRoom?: string; local?: boolean 
   const [peerStates, setPeerStates] = useState<Record<string, string>>({});
   const [tick, setTick] = useState(0); // periodic refresh for live counters
   const [view, setView] = useState<"graph" | "network" | "timeline">("graph");
-  // Omnibox shown when an output connection is dropped on empty canvas — lists
-  // only downstream node types whose input port type matches the dragged output.
+  // Omnibox shown when a connection is dropped on empty canvas. Works in both
+  // directions: drag from an OUTPUT → lists downstream nodes that accept its
+  // type (new node is the target); drag from an INPUT → lists upstream nodes
+  // that produce its type (new node is the source). `anchor.dir` is the type of
+  // the EXISTING handle the drag started from.
   const [connectMenu, setConnectMenu] = useState<
     | null
     | {
         x: number;
         y: number;
-        source: { nodeId: string; handleId: string; portType: PortType };
+        anchor: { nodeId: string; handleId: string; portType: PortType; dir: "source" | "target" };
         options: { type: NodeType; label: string }[];
       }
   >(null);
@@ -736,6 +822,22 @@ function Editor({ initialRoom, local }: { initialRoom?: string; local?: boolean 
     broadcast(nextNodes, nextEdges);
   }, [myDeviceId, devices, caps.hasMic, setNodes, setEdges, broadcast]);
 
+  // Auto-arrange: relax all node positions with a box-collision spring layout so
+  // boxes stop overlapping and connected nodes flow left→right. Uses each node's
+  // MEASURED size from React Flow, then fits the view to the result.
+  const autoArrange = useCallback(() => {
+    const measured = new Map(
+      rf.getNodes().map((n) => [n.id, { w: n.measured?.width ?? n.width ?? 200, h: n.measured?.height ?? n.height ?? 96 }] as const),
+    );
+    const sizeOf = (id: string) => measured.get(id) ?? { w: 200, h: 96 };
+    const pos = autoLayout(nodesRef.current, edgesRef.current, sizeOf);
+    const next = nodesRef.current.map((n) => (pos[n.id] ? { ...n, position: pos[n.id] } : n));
+    nodesRef.current = next;
+    setNodes(next);
+    broadcast(next, edgesRef.current);
+    setTimeout(() => rf.fitView({ duration: 400, padding: 0.2 }), 60);
+  }, [rf, setNodes, broadcast]);
+
   const onConnect = useCallback(
     (params: Connection) => {
       const g = fromRF(nodesRef.current, edgesRef.current, versionRef.current);
@@ -763,7 +865,8 @@ function Editor({ initialRoom, local }: { initialRoom?: string; local?: boolean 
   }, []);
 
   // Dropping a connection on empty canvas opens the omnibox (instead of doing
-  // nothing) listing the node types that can accept this output's port type.
+  // nothing). From an OUTPUT it lists downstream node types that accept the
+  // port type; from an INPUT it lists upstream node types that produce it.
   const onConnectEnd = useCallback((event: MouseEvent | TouchEvent, conn: FinalConnectionState) => {
     if (conn.isValid) return; // landed on a real handle → onConnect already wired it
     // Only treat as empty-canvas: an invalid drop ONTO a handle/node (e.g. a
@@ -771,28 +874,51 @@ function Editor({ initialRoom, local }: { initialRoom?: string; local?: boolean 
     if (conn.toHandle || conn.toNode) return;
     const from = conn.fromHandle;
     const fromNode = conn.fromNode;
-    if (!from || from.type !== "source" || !fromNode) return; // only from an output
+    if (!from || !fromNode) return;
     const vt = (fromNode.data as any)?.voiceType as NodeType | undefined;
-    const portType = vt ? NODE_SPECS[vt]?.outputs.find((p) => p.id === (from.id ?? "out"))?.type : undefined;
+    if (!vt) return;
+    const dir = from.type; // "source" (output) or "target" (input)
+    const handleId = from.id ?? (dir === "source" ? "out" : "in");
+    // An input takes a single incoming edge (see canConnect): don't offer to
+    // create+wire an upstream node when this input is already connected.
+    if (dir === "target" && edgesRef.current.some((e) => e.target === fromNode.id && (e.targetHandle ?? "in") === handleId)) return;
+    // From an output we match downstream INPUTS; from an input we match
+    // upstream OUTPUTS. The port type to match comes from the dragged handle.
+    const portType =
+      dir === "source"
+        ? NODE_SPECS[vt]?.outputs.find((p) => p.id === handleId)?.type
+        : NODE_SPECS[vt]?.inputs.find((p) => p.id === handleId)?.type;
     if (!portType) return;
     const options = (Object.keys(NODE_SPECS) as NodeType[])
-      .filter((t) => NODE_SPECS[t].inputs.some((p) => p.type === portType))
+      .filter((t) =>
+        dir === "source"
+          ? NODE_SPECS[t].inputs.some((p) => p.type === portType)
+          : NODE_SPECS[t].outputs.some((p) => p.type === portType),
+      )
       .map((t) => ({ type: t, label: NODE_SPECS[t].label }));
     if (!options.length) return;
     const pt = "changedTouches" in event ? event.changedTouches[0] : (event as MouseEvent);
-    setConnectMenu({ x: pt.clientX, y: pt.clientY, source: { nodeId: fromNode.id, handleId: from.id ?? "out", portType }, options });
+    setConnectMenu({ x: pt.clientX, y: pt.clientY, anchor: { nodeId: fromNode.id, handleId, portType, dir }, options });
   }, []);
 
-  // Create the chosen downstream node at the drop point and wire the dragged
-  // output into its matching input, in one synced update.
+  // Create the chosen node at the drop point and wire it to the dragged handle,
+  // in one synced update. If the drag started from an output the new node is the
+  // target (downstream); if from an input the new node is the source (upstream).
   const createConnectedNode = useCallback(
-    (type: NodeType, src: { nodeId: string; handleId: string; portType: PortType }, screen: { x: number; y: number }) => {
-      const targetHandle = NODE_SPECS[type].inputs.find((p) => p.type === src.portType)?.id ?? "in";
+    (type: NodeType, anchor: { nodeId: string; handleId: string; portType: PortType; dir: "source" | "target" }, screen: { x: number; y: number }) => {
       const id = `${type}-${Math.random().toString(36).slice(2, 8)}`;
       const position = rf.screenToFlowPosition(screen);
       const n: Node = { id, type: "voice", position, data: { voiceType: type, device: myDeviceId, config: {} } };
-      const eid = edgeId({ source: src.nodeId, sourceHandle: src.handleId, target: id, targetHandle });
-      const edge: Edge = { id: eid, source: src.nodeId, sourceHandle: src.handleId, target: id, targetHandle };
+      let edge: Edge;
+      if (anchor.dir === "source") {
+        const targetHandle = NODE_SPECS[type].inputs.find((p) => p.type === anchor.portType)?.id ?? "in";
+        const eid = edgeId({ source: anchor.nodeId, sourceHandle: anchor.handleId, target: id, targetHandle });
+        edge = { id: eid, source: anchor.nodeId, sourceHandle: anchor.handleId, target: id, targetHandle };
+      } else {
+        const sourceHandle = NODE_SPECS[type].outputs.find((p) => p.type === anchor.portType)?.id ?? "out";
+        const eid = edgeId({ source: id, sourceHandle, target: anchor.nodeId, targetHandle: anchor.handleId });
+        edge = { id: eid, source: id, sourceHandle, target: anchor.nodeId, targetHandle: anchor.handleId };
+      }
       const nextNodes = [...nodesRef.current, n];
       const nextEdges = [...edgesRef.current, edge];
       nodesRef.current = nextNodes;
@@ -1077,6 +1203,9 @@ function Editor({ initialRoom, local }: { initialRoom?: string; local?: boolean 
           {view === "graph" && (
             <button onClick={addPipeline} style={{ fontSize: 12, fontWeight: 700 }}>+ Pipeline</button>
           )}
+          {view === "graph" && (
+            <button onClick={autoArrange} style={{ fontSize: 12 }} title="Auto-arrange nodes (spring layout, no overlapping boxes)">⤢ Arrange</button>
+          )}
           <span style={{ display: "flex", gap: 8, alignItems: "center", marginLeft: 8 }}>
             {runStatus && <span style={{ fontSize: 12, color: runStatus.startsWith("error") ? "#e53e3e" : "#718096" }}>{runStatus}</span>}
             <span style={{ fontSize: 12, color: running ? "#2f855a" : "#a0aec0" }}>{running ? "● live" : paused ? "paused" : "idle"}</span>
@@ -1223,7 +1352,8 @@ function Editor({ initialRoom, local }: { initialRoom?: string; local?: boolean 
             x={connectMenu.x}
             y={connectMenu.y}
             options={connectMenu.options}
-            onPick={(type) => createConnectedNode(type, connectMenu.source, { x: connectMenu.x, y: connectMenu.y })}
+            placeholder={connectMenu.anchor.dir === "source" ? "connect to…" : "connect from…"}
+            onPick={(type) => createConnectedNode(type, connectMenu.anchor, { x: connectMenu.x, y: connectMenu.y })}
             onClose={() => setConnectMenu(null)}
           />
         )}
@@ -1250,12 +1380,14 @@ function ConnectMenu({
   x,
   y,
   options,
+  placeholder = "connect to…",
   onPick,
   onClose,
 }: {
   x: number;
   y: number;
   options: { type: NodeType; label: string }[];
+  placeholder?: string;
   onPick: (t: NodeType) => void;
   onClose: () => void;
 }) {
@@ -1284,7 +1416,7 @@ function ConnectMenu({
           else if (e.key === "Enter") { e.preventDefault(); const sel = filtered[active]; if (sel) onPick(sel.type); }
           else if (e.key === "Escape") { e.preventDefault(); onClose(); }
         }}
-        placeholder="connect to…"
+        placeholder={placeholder}
         style={{ width: "100%", boxSizing: "border-box", fontSize: 13, padding: "5px 7px", border: "1px solid #cbd5e0", borderRadius: 6, outline: "none" }}
       />
       <div style={{ marginTop: 4, maxHeight: 200, overflow: "auto" }}>
