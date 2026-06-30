@@ -132,14 +132,18 @@ function fromRF(nodes: Node[], edges: Edge[], version: number): VoiceGraph {
   return g;
 }
 
-// --- Auto-layout: box-collision + spring (force-directed) ------------------
-// Relaxes node positions so boxes stop overlapping (separation uses each node's
-// MEASURED size — the "box model") while edges act as springs that pull
-// connected nodes to a rest gap and bias the flow left→right (source left of
-// its target). The ONLY repulsion is box-collision, which is exactly zero once
-// boxes no longer overlap — so "no overlaps + springs at rest" is a genuine
-// fixpoint: re-running on the result leaves it put (no endless drift / sparsen).
-// Pure + deterministic (no RNG), so it's safe to broadcast.
+// --- Auto-layout: depth columns + hard non-overlap + connection spring -----
+// Constraint-projection layout (position-based, no momentum):
+//   0. seed each node into a COLUMN by its longest-path depth (cheap coarse
+//      layout that pre-solves the slow chain-stretch mode → fast convergence);
+//   1. a SOFT spring nudges connected nodes toward a rest gap and biases the
+//      flow left→right (source left of its target, aligned in y);
+//   2. then non-overlap is enforced as a STRONG/HARD constraint — overlapping
+//      boxes (sized by each node's MEASURED box) are projected fully apart,
+//      repeated until the layout is clean.
+// The result is a deterministic function of (nodes, edges, sizes) — it does NOT
+// read prior positions — so re-running yields the SAME tidy layout: a genuine
+// fixpoint (no drift / no sparsening). Pure + deterministic, safe to broadcast.
 function autoLayout(
   nodes: Node[],
   edges: Edge[],
@@ -148,7 +152,7 @@ function autoLayout(
   // Work in box CENTERS (node.position is the top-left corner).
   const P = nodes.map((n) => {
     const { w, h } = sizeOf(n.id);
-    return { id: n.id, cx: n.position.x + w / 2, cy: n.position.y + h / 2, w, h, vx: 0, vy: 0 };
+    return { id: n.id, cx: n.position.x + w / 2, cy: n.position.y + h / 2, w, h };
   });
   if (P.length === 0) return {};
   const idx = new Map(P.map((p, i) => [p.id, i] as const));
@@ -156,16 +160,54 @@ function autoLayout(
     .map((e) => [idx.get(e.source), idx.get(e.target)] as [number | undefined, number | undefined])
     .filter((l): l is [number, number] => l[0] != null && l[1] != null);
 
-  const GAP = 44; // min empty space kept between two boxes
-  const SPRING_GAP = 80; // desired edge-to-edge gap along a connection
-  const SPRING_K = 0.09; // spring stiffness
-  const DAMP = 0.8;
-  const STEP = 34; // clamp per-iteration displacement (avoids blow-ups)
-  const ITERS = 600;
+  const GAP = 40; // hard min empty space between any two boxes
+  const SPRING_GAP = 64; // desired edge-to-edge gap along a connection (≥ GAP)
+  const SPRING_K = 0.2; // soft spring step fraction (per endpoint)
+  const SEP_LOOP = 4; // cheap approximate separation passes inside the spring loop
+  // Iteration cap scaled DOWN as the graph grows so a non-converging dense graph
+  // can't lock the UI: cost is ~ITERS·N², so ITERS·N² is held ≈ constant (with a
+  // floor for quality on small graphs and a ceiling for big ones). Still breaks
+  // early on convergence, so small/typical graphs run far fewer iterations.
+  const ITERS = Math.max(80, Math.min(600, Math.round(2_000_000 / (P.length * P.length))));
+  // Global budget on separation passes (each is an O(N²) pairwise scan), so the
+  // total auto-arrange cost is hard-capped (~20M comparisons, tens of ms) and a
+  // pathological dense/cyclic graph can never freeze the UI. The budget is sized
+  // so the per-node pass allowance exceeds any realistic column height: at N=200
+  // it's ~500 passes (a 200-tall column needs ~200), and this editor's graphs are
+  // far smaller — so real graphs always fully de-overlap. Only an extreme graph
+  // (many hundreds of dense nodes) would hit the cap, degrading gracefully (a few
+  // residual overlaps) rather than hanging. settle()/the loop stop when clean OR
+  // when this is exhausted; for real inputs that's always "clean".
+  let sepBudget = Math.ceil(20_000_000 / (P.length * P.length));
 
-  for (let it = 0; it < ITERS; it++) {
-    // pairwise: box-overlap separation ONLY (no force once boxes are apart, so
-    // the system can actually come to rest instead of spreading every re-run).
+  // Coarse initial layout: place each node in a COLUMN by its longest-path depth
+  // (source→target distance), rows stacked within a column. This solves the
+  // slow "stretch the whole chain" relaxation mode up front — the spring then
+  // only fine-tunes — so even long pipelines converge in a few dozen iterations
+  // instead of thousands. It also makes the result a deterministic function of
+  // (nodes, edges, sizes): re-running gives the same layout (a true fixpoint).
+  const depth = new Array(P.length).fill(0);
+  for (let pass = 0; pass < P.length; pass++) {
+    let changed = false;
+    for (const [s, t] of links) if (depth[t] < depth[s] + 1) { depth[t] = depth[s] + 1; changed = true; }
+    if (!changed) break; // (caps naturally on cycles after P.length passes)
+  }
+  const COL = 230, ROW = 140; // approx column/row pitch (≥ box+GAP); spring + separation refine it
+  const rowOf: Record<number, number> = {};
+  for (let k = 0; k < P.length; k++) {
+    const d = depth[k];
+    const r = (rowOf[d] = (rowOf[d] ?? 0) + 1) - 1;
+    P[k].cx = d * COL;
+    P[k].cy = r * ROW;
+  }
+
+  // One relaxation pass of the non-overlap constraint: project every overlapping
+  // box pair apart along the axis of least penetration (half each). Returns
+  // whether anything moved, so callers can stop once the layout is clean.
+  const separatePass = (): boolean => {
+    if (sepBudget <= 0) return false; // out of budget — stop separating (no freeze)
+    sepBudget--;
+    let moved = false;
     for (let i = 0; i < P.length; i++) {
       for (let j = i + 1; j < P.length; j++) {
         const a = P[i], b = P[j];
@@ -175,34 +217,52 @@ function autoLayout(
         const ox = minX - Math.abs(dx);
         const oy = minY - Math.abs(dy);
         if (ox > 0 && oy > 0) {
-          // boxes overlap → push apart along the axis of least penetration.
-          // `|| ox/2` breaks the exact dx===0 tie so coincident boxes separate.
+          moved = true;
+          // `|| s/2` breaks the exact dx/dy===0 tie so coincident boxes split.
           if (ox <= oy) {
-            const push = (ox / 2) * (dx < 0 ? -1 : 1) || ox / 2;
-            a.vx -= push; b.vx += push;
+            const s = (ox / 2) * (dx < 0 ? -1 : 1) || ox / 2;
+            a.cx -= s; b.cx += s;
           } else {
-            const push = (oy / 2) * (dy < 0 ? -1 : 1) || oy / 2;
-            a.vy -= push; b.vy += push;
+            const s = (oy / 2) * (dy < 0 ? -1 : 1) || oy / 2;
+            a.cy -= s; b.cy += s;
           }
         }
       }
     }
-    // springs along edges: settle at a rest gap to the right + align vertically
+    return moved;
+  };
+  // "Separate to completion": pass until nothing overlaps or the global budget
+  // runs out. Used for the initial seed and the FINAL guarantee, so the returned
+  // layout has zero overlaps whenever the budget allows (always, for real graphs).
+  const settle = () => { while (separatePass()) { /* until clean or out of budget */ } };
+
+  settle(); // start from a guaranteed non-overlapping state
+  for (let it = 0; it < ITERS; it++) {
+    // snapshot to measure net movement this iteration (for convergence break)
+    const px = P.map((p) => p.cx), py = P.map((p) => p.cy);
+    // 1) soft springs: nudge connected nodes toward a rest gap to the right and
+    //    into the same row. Small steps so the hard pass can always restore order.
     for (const [s, t] of links) {
       const a = P[s], b = P[t];
       const wantX = (a.w + b.w) / 2 + SPRING_GAP;
       const ex = (b.cx - a.cx) - wantX; // x error (>0 too far / <0 too close)
       const ey = b.cy - a.cy; // y error → pull into the same row
-      a.vx += ex * SPRING_K; a.vy += ey * SPRING_K;
-      b.vx -= ex * SPRING_K; b.vy -= ey * SPRING_K;
+      a.cx += ex * SPRING_K; a.cy += ey * SPRING_K;
+      b.cx -= ex * SPRING_K; b.cy -= ey * SPRING_K;
     }
-    // integrate with damping + step clamp
-    for (const p of P) {
-      p.cx += Math.max(-STEP, Math.min(STEP, p.vx));
-      p.cy += Math.max(-STEP, Math.min(STEP, p.vy));
-      p.vx *= DAMP; p.vy *= DAMP;
+    // 2) hard constraint: a few cheap separation passes — approximate is fine
+    //    mid-relaxation (the final settle() guarantees a clean result), and it
+    //    keeps per-iteration cost at O(SEP_LOOP·N²) instead of O(N³).
+    for (let s = 0; s < SEP_LOOP; s++) if (!separatePass()) break;
+    // Stop once the layout has settled (net per-node move below ~0.1px) so small
+    // graphs don't burn the whole ITERS budget.
+    let maxMove = 0;
+    for (let k = 0; k < P.length; k++) {
+      maxMove = Math.max(maxMove, Math.abs(P[k].cx - px[k]), Math.abs(P[k].cy - py[k]));
     }
+    if (maxMove < 0.1) break;
   }
+  settle(); // final guarantee: spread until truly clean (no overlaps remain)
 
   // Snap the whole layout so its top-left starts near a tidy origin.
   let minX = Infinity, minY = Infinity;
