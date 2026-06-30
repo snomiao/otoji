@@ -245,6 +245,22 @@ class SenseVoiceEngine {
     return inst;
   }
 
+  /** Release the ONNX session so its wasm memory can be reclaimed. */
+  private async release(): Promise<void> {
+    try {
+      await this.session?.release?.();
+    } catch {
+      /* already released / in use — GC reclaims */
+    }
+  }
+
+  /** Free every loaded engine (called when the last STT node leaves the graph). */
+  static async disposeAll(): Promise<void> {
+    const loaded = [...this.instances.values()];
+    this.instances.clear();
+    await Promise.all(loaded.map((p) => p.then((e) => e.release()).catch(() => {})));
+  }
+
   private static async build(spec: SenseVoiceModelSpec, onProgress?: (p: LoadProgress) => void): Promise<SenseVoiceEngine> {
     const ort: any = await import("onnxruntime-web");
     ort.env.wasm.numThreads = 1; // single-thread: no COOP/COEP requirement
@@ -332,6 +348,11 @@ class SenseVoiceEngine {
 /** Kick off (or reuse) a model download+init without starting the mic. */
 export function warmSenseVoice(modelId?: string, onProgress?: (p: LoadProgress) => void): Promise<unknown> {
   return SenseVoiceEngine.load(getSenseVoiceModel(modelId), onProgress);
+}
+
+/** Free all SenseVoice engines (the last STT node was removed from the graph). */
+export function disposeSenseVoice(): Promise<void> {
+  return SenseVoiceEngine.disposeAll();
 }
 
 // ---------------------------------------------------------------------------

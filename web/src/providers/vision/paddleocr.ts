@@ -3,6 +3,8 @@
 // from the jsdelivr CDN — no model weights are bundled (same policy as the STT/
 // TTS providers; the vite config drops emitted .wasm). One memoized engine.
 
+import { disposeMemo } from "../dispose-util";
+
 // @gutenye/ocr-models version on the CDN (det/rec/dict assets live here). We use
 // unpkg as the default host — jsdelivr intermittently 503s on the larger model
 // file ("No healthy backends"); override via the node's `modelsBase` config if a
@@ -82,3 +84,6 @@ export async function ocrRecognize(bitmap: ImageBitmap, modelsBase?: string): Pr
     .filter((t) => t && t.trim())
     .join("\n");
 }
+
+/** Free all OCR engines (the last OCR node left the graph). */
+export const disposeOcr = () => disposeMemo(engines, ["destroy", "dispose", "release"]);

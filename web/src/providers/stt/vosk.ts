@@ -4,6 +4,8 @@
 // final result at each endpoint (silence). Best driven by the mic-raw node.
 // The library + a per-language model are fetched lazily from the CDN.
 
+import { disposeMemo } from "../dispose-util";
+
 export interface VoskModel {
   id: string;
   name: string;
@@ -85,3 +87,6 @@ export async function createVoskStream(
     },
   };
 }
+
+/** Free all loaded Vosk models (the last Vosk node left the graph). */
+export const disposeVosk = () => disposeMemo(models, ["terminate", "free", "remove"]);

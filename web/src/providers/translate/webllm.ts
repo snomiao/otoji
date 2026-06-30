@@ -1,5 +1,6 @@
 import type { TranslateLoadProgress, TranslateProvider } from "../types";
 import { DEFAULT_TRANSLATE_MODEL, codeToLangName } from "./translate-config";
+import { disposeMemo } from "../dispose-util";
 
 // In-browser LLM translation via WebLLM (https://github.com/mlc-ai/web-llm).
 // Runs a quantized instruct model entirely on-device over WebGPU — no audio or
@@ -80,3 +81,6 @@ export class WebLLMTranslateProvider implements TranslateProvider {
 }
 
 export const webllmTranslate = new WebLLMTranslateProvider();
+
+/** Free all WebLLM engines (the last LLM-translate node left the graph). */
+export const disposeWebllm = () => disposeMemo(engines, ["unload"]);

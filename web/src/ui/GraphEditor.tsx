@@ -22,6 +22,7 @@ import { PeerMesh } from "../net/peers";
 import { VoiceNode, type DeviceOpt } from "./VoiceNode";
 import { GraphContext } from "./graph-context";
 import { GraphRuntime, nodeOwner, type TranscriptMsg } from "../graph/runtime";
+import { HEAVY_NODE_TYPES, offloadType } from "../graph/model-lifecycle";
 import { LiveStore } from "../graph/live-store";
 import { fileStore, fileKindForName } from "../graph/file-store";
 import { PeerMeshTransport } from "../graph/mesh-transport";
@@ -310,6 +311,15 @@ function Editor({ initialRoom, local }: { initialRoom?: string; local?: boolean 
   useEffect(() => {
     if (joined) sigRef.current?.setBases(active);
   }, [active, joined]);
+
+  // Offload a heavy model when its last node leaves the graph (frees GPU/wasm).
+  // Re-adding the node lazy-loads it again. Tracks heavy types graph-wide.
+  const loadedTypesRef = useRef<Set<NodeType>>(new Set());
+  useEffect(() => {
+    const present = new Set<NodeType>(nodes.map((n) => (n.data as any).voiceType as NodeType));
+    for (const t of loadedTypesRef.current) if (!present.has(t)) offloadType(t);
+    loadedTypesRef.current = new Set(HEAVY_NODE_TYPES.filter((t) => present.has(t)));
+  }, [nodes]);
 
   function join() {
     if (joined || !room.trim()) return;
