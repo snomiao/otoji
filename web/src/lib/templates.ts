@@ -116,6 +116,21 @@ export const BUILTIN_TEMPLATES: GraphTemplate[] = [
     ],
   },
   {
+    id: "screen-audio-stt",
+    name: "Screen audio → STT",
+    desc: "Capture tab/system audio → transcript (share a tab with audio)",
+    builtin: true,
+    nodes: [
+      { key: "screen", type: "screen-share", dx: 0, dy: 0 },
+      { key: "stt", type: "stt", dx: COL, dy: 0 },
+      { key: "sink", type: "sink", dx: COL * 2, dy: 0 },
+    ],
+    edges: [
+      { from: "screen", fromHandle: "audio", to: "stt", toHandle: "in" },
+      { from: "stt", fromHandle: "out", to: "sink", toHandle: "in" },
+    ],
+  },
+  {
     id: "depth-cam",
     name: "Depth camera",
     desc: "Camera → live depth map (preview)",
