@@ -3,6 +3,7 @@ import { createRoot } from "react-dom/client";
 import { App } from "./ui/App";
 import { MeshPanel } from "./ui/MeshPanel";
 import { GraphEditor } from "./ui/GraphEditor";
+import { Lobby } from "./ui/Lobby";
 import { isRoomCode } from "./lib/roomcode";
 
 const el = document.getElementById("root");
@@ -17,8 +18,12 @@ if (params.has("mesh")) {
 } else if (isRoomCode(path)) {
   // Shareable join URL: otoji.org/kru-dfmq-atg
   view = <GraphEditor initialRoom={path} />;
-} else {
+} else if (params.has("simple") || params.has("classic")) {
+  // Classic single-page transcription app.
   view = <App />;
+} else {
+  // Landing: the hello-graph lobby (create/join a room).
+  view = <Lobby />;
 }
 
 if (el) createRoot(el).render(<React.StrictMode>{view}</React.StrictMode>);
