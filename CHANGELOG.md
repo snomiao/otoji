@@ -4,6 +4,14 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+## [0.1.44] - 2026-06-30
+
+### Bug Fixes
+- Skip empty/too-short audio before ONNX runs (avoids ORT shape crash) *(graph)*
+
+### Features
+- Standalone zero-dep `otoji` CLI launcher + resilient npm publish *(cli)*
+
 ## [0.1.43] - 2026-06-30
 
 ### Features
