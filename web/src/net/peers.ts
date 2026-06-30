@@ -3,7 +3,7 @@
 // Each cross-peer edge is a labeled RTCDataChannel; M1 uses a single "mesh"
 // channel for the echo demo.
 
-import type { SignalingClient } from "./signaling";
+import type { Signaling } from "./signaling";
 
 const ICE_SERVERS: RTCIceServer[] = [
   { urls: ["stun:stun.cloudflare.com:3478", "stun:stun.l.google.com:19302"] },
@@ -38,7 +38,7 @@ export class PeerMesh {
   private unsubs: Array<() => void> = [];
 
   constructor(
-    private signaling: SignalingClient,
+    private signaling: Signaling,
     private myId: string,
     private cb: MeshCallbacks = {},
   ) {

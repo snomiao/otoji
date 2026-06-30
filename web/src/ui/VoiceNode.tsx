@@ -1,6 +1,7 @@
 import React, { useContext, useEffect, useState, useSyncExternalStore } from "react";
 import { Handle, Position, type NodeProps } from "@xyflow/react";
 import { NODE_SPECS, type NodeType, type PortType } from "../graph/model";
+import { normalizeTracker, dedupeTrackers } from "../lib/trackers";
 import { GraphContext } from "./graph-context";
 import { fileStore } from "../graph/file-store";
 import { SENSEVOICE_MODELS, DEFAULT_SENSEVOICE_MODEL } from "../providers/stt/sensevoice-models";
@@ -96,7 +97,7 @@ function useVoices(): SpeechSynthesisVoice[] {
 
 export function VoiceNode({ id, data }: NodeProps) {
   const d = data as VoiceNodeData;
-  const { devices, onAssign, onConfig, onDelete, getRecords, setFile, counts, live, openNodeMenu } = useContext(GraphContext);
+  const { devices, onAssign, onConfig, onDelete, getRecords, setFile, counts, live, openNodeMenu, trackerState } = useContext(GraphContext);
   const lpTimer = React.useRef<ReturnType<typeof setTimeout> | null>(null);
   const fileName = (d as any).config?.file as string | undefined;
   const spec = NODE_SPECS[d.voiceType];
@@ -111,12 +112,93 @@ export function VoiceNode({ id, data }: NodeProps) {
   const shown = useSyncExternalStore(subscribePrefs, () => isPreviewShown(id));
   const toggleShown = () => setPreviewShown(id, !shown);
   const [cmdCopied, setCmdCopied] = useState(false);
+  const [trackerErr, setTrackerErr] = useState<string | null>(null); // Signaling node input error
 
   const onTouchStart = (e: React.TouchEvent) => {
     const t = e.touches[0];
     lpTimer.current = setTimeout(() => openNodeMenu?.(id, t.clientX, t.clientY), 500); // long-press
   };
   const clearLP = () => { if (lpTimer.current) clearTimeout(lpTimer.current); };
+
+  // Config-only "Signaling (trackers)" node. SECURITY: trackers are NOT applied
+  // straight from the synced graph. `active` = servers this browser is actually
+  // connected to (trusted env + locally-approved); `pending` = servers proposed
+  // by a peer's node or a share link, which connect only after the local user
+  // approves. Adding here advertises the server in the graph (config.trackers,
+  // a proposal others see) AND approves it locally.
+  if (d.voiceType === "tracker") {
+    const active = trackerState?.active ?? [];
+    const pending = trackerState?.pending ?? [];
+    const advertised = (Array.isArray(config?.trackers) ? (config!.trackers as string[]) : []) ?? [];
+    const display = (t: string) => t.replace(/^https?:\/\//, "");
+    const addTracker = (raw: string) => {
+      if (!raw.trim()) return;
+      const err = trackerState?.approve(raw); // vets (scheme/private/cap) + locally approves
+      if (err) { setTrackerErr(err); return; }
+      setTrackerErr(null);
+      // Advertise the canonical url in the graph so other peers see the proposal.
+      const canon = normalizeTracker(raw);
+      if (canon && !advertised.includes(canon))
+        onConfig(id, { trackers: dedupeTrackers([...advertised, canon]) });
+    };
+    return (
+      <div
+        onContextMenu={(e) => { e.preventDefault(); openNodeMenu?.(id, e.clientX, e.clientY); }}
+        onTouchStart={onTouchStart}
+        onTouchEnd={clearLP}
+        onTouchMove={clearLP}
+        style={{ border: "1px solid #b794f4", borderRadius: 8, background: "#faf5ff", minWidth: 210, fontSize: 12, boxShadow: "0 1px 3px rgba(0,0,0,0.08)" }}
+      >
+        <div style={{ padding: "6px 10px", borderBottom: "1px solid #e9d8fd", fontWeight: 600, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+          <span>📡 {spec.label}</span>
+          <button
+            className="nodrag"
+            onClick={(e) => { e.stopPropagation(); onDelete(id); }}
+            title="remove node"
+            style={{ fontSize: 12, lineHeight: 1, border: "none", background: "transparent", cursor: "pointer", color: "#e53e3e" }}
+          >
+            ✕
+          </button>
+        </div>
+        <div style={{ padding: "6px 10px" }}>
+          <div style={{ color: "#718096", marginBottom: 3 }}>Connected ({active.length}):</div>
+          {active.map((t) => (
+            <div key={t} style={{ display: "flex", gap: 4, alignItems: "center", marginBottom: 2 }}>
+              <span title="connected" style={{ width: 6, height: 6, borderRadius: 3, background: "#38a169", flex: "0 0 auto" }} />
+              <code style={{ flex: 1, fontSize: 10, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", maxWidth: 160 }} title={t}>{display(t)}</code>
+              <button className="nodrag" onClick={() => trackerState?.revoke(t)} title="disconnect / unapprove"
+                style={{ fontSize: 11, border: "none", background: "transparent", cursor: "pointer", color: "#a0aec0" }}>✕</button>
+            </div>
+          ))}
+          {pending.length > 0 && (
+            <>
+              <div style={{ color: "#c05621", margin: "6px 0 3px" }}>Proposed — approve to join:</div>
+              {pending.map((t) => (
+                <div key={t} style={{ display: "flex", gap: 4, alignItems: "center", marginBottom: 2 }}>
+                  <code style={{ flex: 1, fontSize: 10, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", maxWidth: 150 }} title={t}>{display(t)}</code>
+                  <button className="nodrag" onClick={() => { const e2 = trackerState?.approve(t); setTrackerErr(e2 ?? null); }}
+                    title="approve and connect"
+                    style={{ fontSize: 10, cursor: "pointer", color: "#2f855a", border: "1px solid #9ae6b4", borderRadius: 4, background: "#f0fff4" }}>approve</button>
+                </div>
+              ))}
+            </>
+          )}
+          <input
+            className="nodrag"
+            type="text"
+            placeholder="https://… add server"
+            onBlur={(e) => { addTracker(e.target.value); e.target.value = ""; }}
+            onKeyDown={(e) => { if (e.key === "Enter") { addTracker((e.target as HTMLInputElement).value); (e.target as HTMLInputElement).value = ""; } }}
+            style={{ fontSize: 11, width: "100%", marginTop: 6, boxSizing: "border-box" }}
+          />
+          {trackerErr && <div style={{ color: "#e53e3e", fontSize: 9, marginTop: 2 }}>{trackerErr}</div>}
+          <div style={{ color: "#a0aec0", fontSize: 9, marginTop: 4, lineHeight: 1.3 }}>
+            Peers connect when their server lists overlap. Approve before joining a proposed server.
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div

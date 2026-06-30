@@ -19,7 +19,8 @@ export type NodeType =
   | "tts-model"
   | "model"
   | "pipe"
-  | "srt-out";
+  | "srt-out"
+  | "tracker";
 
 export interface NodeSpec {
   type: NodeType;
@@ -152,6 +153,15 @@ export const NODE_SPECS: Record<NodeType, NodeSpec> = {
     inputs: [{ id: "in", type: "transcript" }],
     outputs: [],
   },
+  tracker: {
+    type: "tracker",
+    label: "Signaling (trackers)",
+    // Config-only node (no data ports): declares which signaling servers this
+    // room is discoverable on. Synced via the graph, so adding a tracker
+    // federates the room to everyone. See lib/trackers + MultiSignalingClient.
+    inputs: [],
+    outputs: [],
+  },
 };
 
 /** Palette grouping for the node types. */
@@ -163,6 +173,7 @@ export const NODE_CATEGORIES: { id: string; label: string; types: NodeType[] }[]
   { id: "output", label: "Output", types: ["sink", "audio-out", "srt-out", "speaker"] },
   { id: "model", label: "Custom model", types: ["model"] },
   { id: "pipe", label: "Pipe (CLI)", types: ["pipe"] },
+  { id: "net", label: "Network", types: ["tracker"] },
 ];
 
 export interface VoiceNode {

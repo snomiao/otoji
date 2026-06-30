@@ -36,6 +36,7 @@ fn main() {
 #[link(name = "Foundation", kind = "framework")]
 #[link(name = "CoreFoundation", kind = "framework")]
 #[link(name = "WebKit", kind = "framework")]
+#[link(name = "ApplicationServices", kind = "framework")]
 #[link(name = "objc")]
 extern "C" {}
 
@@ -76,6 +77,26 @@ mod tray_macos {
         ) -> *mut c_void;
         fn CFAbsoluteTimeGetCurrent() -> f64;
         static kCFRunLoopCommonModes: *mut c_void;
+
+        // CoreGraphics event tap (global PTT hotkey).
+        fn CGEventTapCreate(
+            tap: u32,
+            place: u32,
+            options: u32,
+            events_of_interest: u64,
+            callback: extern "C" fn(*mut c_void, u32, *mut c_void, *mut c_void) -> *mut c_void,
+            user_info: *mut c_void,
+        ) -> *mut c_void;
+        fn CGEventTapEnable(tap: *mut c_void, enable: bool);
+        fn CGEventGetFlags(event: *mut c_void) -> u64;
+        fn CGEventGetIntegerValueField(event: *mut c_void, field: u32) -> i64;
+        fn CFMachPortCreateRunLoopSource(
+            allocator: *mut c_void,
+            port: *mut c_void,
+            order: i64,
+        ) -> *mut c_void;
+        fn CFRunLoopAddSource(rl: *mut c_void, source: *mut c_void, mode: *mut c_void);
+        fn AXIsProcessTrusted() -> bool;
     }
 
     // ── NSRect ───────────────────────────────────────────────────────────────
@@ -1156,6 +1177,121 @@ mod tray_macos {
         }
     }
 
+    // ── Global PTT hotkey (hold-to-talk) ─────────────────────────────────────
+    //
+    // A listen-only CGEventTap on flagsChanged watches a single modifier key
+    // (default: Fn/Globe — left-hand reachable and unused by CLX's space+V
+    // binding). Press → SIGUSR1 to every `otoji listen` process (PTT start),
+    // release → SIGUSR2 (PTT end). Requires Accessibility permission.
+
+    /// Whether the hotkey modifier is currently held.
+    static PTT_HELD: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+    /// Selected hotkey: flag mask to test in the flagsChanged event.
+    static PTT_FLAG_MASK: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+    /// Selected hotkey: virtual keycode the flagsChanged event must carry
+    /// (distinguishes left-Ctrl from right-Ctrl, etc.). u64::MAX = any.
+    static PTT_KEYCODE: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(u64::MAX);
+
+    fn signal_listen_processes(sig: libc::c_int) {
+        let out = std::process::Command::new("pgrep")
+            .args(["-f", "otoji listen"])
+            .output();
+        if let Ok(out) = out {
+            for line in String::from_utf8_lossy(&out.stdout).lines() {
+                if let Ok(pid) = line.trim().parse::<i32>() {
+                    unsafe { libc::kill(pid, sig) };
+                }
+            }
+        }
+    }
+
+    extern "C" fn ptt_tap_callback(
+        _proxy: *mut c_void,
+        etype: u32,
+        event: *mut c_void,
+        _user: *mut c_void,
+    ) -> *mut c_void {
+        const K_CG_EVENT_FLAGS_CHANGED: u32 = 12;
+        const K_CG_EVENT_TAP_DISABLED_BY_TIMEOUT: u32 = 0xFFFFFFFE;
+        const K_CG_KEYBOARD_EVENT_KEYCODE: u32 = 9;
+        if etype == K_CG_EVENT_TAP_DISABLED_BY_TIMEOUT {
+            // Re-enabled lazily by the next install attempt; nothing to do here
+            // (listen-only taps are rarely disabled, but don't crash if so).
+            return event;
+        }
+        if etype != K_CG_EVENT_FLAGS_CHANGED {
+            return event;
+        }
+        let want_key = PTT_KEYCODE.load(std::sync::atomic::Ordering::Relaxed);
+        if want_key != u64::MAX {
+            let keycode =
+                unsafe { CGEventGetIntegerValueField(event, K_CG_KEYBOARD_EVENT_KEYCODE) } as u64;
+            if keycode != want_key {
+                return event;
+            }
+        }
+        let mask = PTT_FLAG_MASK.load(std::sync::atomic::Ordering::Relaxed);
+        let held = unsafe { CGEventGetFlags(event) } & mask != 0;
+        if held != PTT_HELD.swap(held, std::sync::atomic::Ordering::SeqCst) {
+            signal_listen_processes(if held { libc::SIGUSR1 } else { libc::SIGUSR2 });
+        }
+        event
+    }
+
+    /// Install the global hotkey tap on the main run loop. No-op when
+    /// `ptt_hotkey` is "off" or unknown, or when Accessibility is not granted.
+    unsafe fn install_ptt_hotkey() {
+        const FLAG_MASK_SECONDARY_FN: u64 = 0x800000; // kCGEventFlagMaskSecondaryFn
+        const FLAG_MASK_CONTROL: u64 = 0x40000; // kCGEventFlagMaskControl
+        const KEYCODE_FN: u64 = 63;
+        const KEYCODE_LEFT_CTRL: u64 = 59;
+
+        let choice = otoji::config::load().ptt_hotkey;
+        let (mask, keycode, label) = match choice.as_str() {
+            "fn" => (FLAG_MASK_SECONDARY_FN, KEYCODE_FN, "Fn/Globe"),
+            "left-ctrl" => (FLAG_MASK_CONTROL, KEYCODE_LEFT_CTRL, "left-Ctrl"),
+            "off" => return,
+            other => {
+                eprintln!("otoji-tray: unknown ptt_hotkey {other:?} — hotkey disabled");
+                return;
+            }
+        };
+        if !AXIsProcessTrusted() {
+            eprintln!(
+                "otoji-tray: Accessibility permission not granted — global PTT hotkey ({label}) \
+                 disabled. Enable it in System Settings → Privacy & Security → Accessibility."
+            );
+            return;
+        }
+        PTT_FLAG_MASK.store(mask, std::sync::atomic::Ordering::Relaxed);
+        PTT_KEYCODE.store(keycode, std::sync::atomic::Ordering::Relaxed);
+
+        const K_CG_HID_EVENT_TAP: u32 = 0;
+        const K_CG_HEAD_INSERT_EVENT_TAP: u32 = 0;
+        const K_CG_EVENT_TAP_OPTION_LISTEN_ONLY: u32 = 1;
+        let mask_flags_changed: u64 = 1 << 12; // CGEventMaskBit(kCGEventFlagsChanged)
+        let tap = CGEventTapCreate(
+            K_CG_HID_EVENT_TAP,
+            K_CG_HEAD_INSERT_EVENT_TAP,
+            K_CG_EVENT_TAP_OPTION_LISTEN_ONLY,
+            mask_flags_changed,
+            ptt_tap_callback,
+            std::ptr::null_mut(),
+        );
+        if tap.is_null() {
+            eprintln!("otoji-tray: CGEventTapCreate failed — global PTT hotkey disabled");
+            return;
+        }
+        let source = CFMachPortCreateRunLoopSource(std::ptr::null_mut(), tap, 0);
+        if source.is_null() {
+            eprintln!("otoji-tray: run loop source for PTT hotkey failed");
+            return;
+        }
+        CFRunLoopAddSource(CFRunLoopGetMain(), source, kCFRunLoopCommonModes);
+        CGEventTapEnable(tap, true);
+        eprintln!("otoji-tray: global PTT hotkey active — hold {label} to talk");
+    }
+
     pub fn run() {
         // CLX 設定が存在する場合、音声設定を otoji config に移行する (初回起動時のみ)。
         maybe_migrate_from_clx();
@@ -1223,6 +1359,9 @@ mod tray_macos {
             if !timer.is_null() {
                 CFRunLoopAddTimer(CFRunLoopGetMain(), timer, kCFRunLoopCommonModes);
             }
+
+            // Global hold-to-talk hotkey (config `ptt_hotkey`, default Fn/Globe).
+            install_ptt_hotkey();
 
             eprintln!(
                 "otoji-tray: installed (pid {}, data {})",

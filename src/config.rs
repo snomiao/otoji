@@ -38,6 +38,11 @@ pub struct OtojiConfig {
     #[serde(default)]
     pub ptt_polish_model: String,
 
+    /// グローバル PTT ホットキー (otoji-tray が監視): "fn" | "left-ctrl" | "off"。
+    /// 押下中だけ録音する hold-to-talk。CLX 等の外部トリガーと併用する場合は "off"。
+    #[serde(default = "default_ptt_hotkey")]
+    pub ptt_hotkey: String,
+
     /// whisper.cpp GGML モデルファイルパス。空 = 自動検出。
     #[serde(default)]
     pub whisper_model_path: String,
@@ -153,6 +158,9 @@ fn default_kokoro_model_variant() -> String {
 fn default_ptt_polish_provider() -> String {
     "openai".to_string()
 }
+fn default_ptt_hotkey() -> String {
+    "fn".to_string()
+}
 fn default_whisper_language() -> String {
     "ja".to_string()
 }
@@ -223,6 +231,7 @@ impl Default for OtojiConfig {
             ptt_vad_auto_release_ms: 0,
             ptt_polish_provider: default_ptt_polish_provider(),
             ptt_polish_model: String::new(),
+            ptt_hotkey: default_ptt_hotkey(),
             whisper_model_path: String::new(),
             whisper_language: default_whisper_language(),
             stt_correction: false,
