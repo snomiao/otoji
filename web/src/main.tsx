@@ -13,6 +13,9 @@ const path = location.pathname.replace(/^\/+/, "");
 let view: React.ReactNode;
 if (params.has("mesh")) {
   view = <MeshPanel />;
+} else if (params.has("local")) {
+  // Single-device "try it" editor (no room/signaling), preloaded with a demo.
+  view = <GraphEditor local />;
 } else if (params.has("graph")) {
   view = <GraphEditor initialRoom={params.get("room") ?? undefined} />;
 } else if (isRoomCode(path)) {

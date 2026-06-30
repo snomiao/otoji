@@ -93,16 +93,16 @@ function fromRF(nodes: Node[], edges: Edge[], version: number): VoiceGraph {
   return g;
 }
 
-function Editor({ initialRoom }: { initialRoom?: string }) {
+function Editor({ initialRoom, local }: { initialRoom?: string; local?: boolean }) {
   const [room, setRoom] = useState(initialRoom ?? "");
   const [name, setName] = useState(getDeviceName());
   const [copied, setCopied] = useState(false);
-  const [joined, setJoined] = useState(false);
+  const [joined, setJoined] = useState(!!local); // local mode: no room, runs single-device
   const myDeviceId = useMemo(() => getDeviceId(), []);
   const [myPeerId, setMyPeerId] = useState<string | null>(null);
   const [present, setPresent] = useState<Record<string, { peerId: string; name: string; role: string; hasMic: boolean }>>({});
   const [status, setStatus] = useState("not connected");
-  const [paused, setPaused] = useState(false);
+  const [paused, setPaused] = useState(!!local); // local demo starts paused (don't grab the mic until asked)
   const [role, setRoleState] = useState<DeviceRole>(() => getRole());
   const caps = useMemo(() => detectCaps(), []);
 
@@ -190,6 +190,29 @@ function Editor({ initialRoom }: { initialRoom?: string }) {
     const t = setInterval(() => setTick((x) => x + 1), 1000);
     return () => clearInterval(t);
   }, [joined]);
+
+  // Local "try it" mode: seed a runnable demo pipeline (mic → STT → translate →
+  // sink = live captions + translation). Safe: no audio output, no feedback loop.
+  useEffect(() => {
+    if (!local) return;
+    // No signaling in local mode — register this device as present so its nodes
+    // aren't shown offline / treated as unassigned.
+    setPresent({ [myDeviceId]: { peerId: myDeviceId, name, role, hasMic: caps.hasMic } });
+    const mk = (id: string, vt: NodeType, x: number): Node => ({
+      id,
+      type: "voice",
+      position: { x, y: 150 },
+      data: { voiceType: vt, device: myDeviceId, config: {} },
+    });
+    const ns = [mk("d-mic", "mic-vad", 40), mk("d-stt", "stt", 280), mk("d-tr", "translate", 520), mk("d-sink", "sink", 760)];
+    const mkE = (s: string, sh: string, t: string, th: string): Edge => ({ id: `${s}->${t}`, source: s, sourceHandle: sh, target: t, targetHandle: th });
+    const es = [mkE("d-mic", "out", "d-stt", "in"), mkE("d-stt", "out", "d-tr", "in"), mkE("d-tr", "out", "d-sink", "in")];
+    nodesRef.current = ns;
+    edgesRef.current = es;
+    setNodes(ns);
+    setEdges(es);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [local]);
 
   const broadcast = useCallback((ns: Node[], es: Edge[]) => {
     versionRef.current += 1;
@@ -575,8 +598,8 @@ function Editor({ initialRoom }: { initialRoom?: string }) {
     // Require the mesh transport: we're always in a room, so never fall back to
     // single-device mode (which would treat every node as local). Re-fires after hello.
     const transport = transportRef.current;
-    if (!transport) return;
-    const mine = Object.values(graph.nodes).some((n) => nodeOwner(n, onlineRef.current) === myDeviceId);
+    if (!local && !transport) return; // room mode needs the mesh; local runs single-device
+    const mine = local || Object.values(graph.nodes).some((n) => nodeOwner(n, onlineRef.current) === myDeviceId);
     if (!mine) {
       setRunStatus(Object.keys(graph.nodes).length ? "no nodes assigned here" : "");
       return;
@@ -586,7 +609,8 @@ function Editor({ initialRoom }: { initialRoom?: string }) {
     recordsByNodeRef.current.clear();
     const live = liveRef.current;
     const rt = new GraphRuntime(graph, {
-      self: { myId: myDeviceId, deviceIds: onlineRef.current, transport },
+      // Local mode: no transport -> single-device (every node runs here).
+      self: transport ? { myId: myDeviceId, deviceIds: onlineRef.current, transport } : undefined,
       onStatus: (s) => setRunStatus(s),
       onError: (e) => setRunStatus(`error: ${e.message}`),
       onLevel: (id, l) => { micLevelRef.current = l.rms; live.pushLevel(id, l); },
@@ -772,15 +796,21 @@ function Editor({ initialRoom }: { initialRoom?: string }) {
             fitView
           >
             <Background />
-            <Controls />
+            <Controls position="bottom-right" />
           </ReactFlow>
         </div>
 
         {/* floating title / toolbar card */}
         <div style={{ ...CARD, position: "absolute", top: 12, left: 12, display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", padding: "8px 12px", maxWidth: "calc(100% - 24px)", zIndex: 10 }}>
           <strong>otoji</strong>
-          <span style={{ fontSize: 12, color: "#718096" }}>room {room} · {status} · {role} · {devices.length} device(s)</span>
-          <button onClick={share} style={{ fontSize: 12 }}>{copied ? "✓ link copied" : "Share link"}</button>
+          <span style={{ fontSize: 12, color: "#718096" }}>
+            {local ? "local · this device only" : `room ${room} · ${status} · ${role} · ${devices.length} device(s)`}
+          </span>
+          {local ? (
+            <a href="/" style={{ fontSize: 12 }}>＋ create / join a room</a>
+          ) : (
+            <button onClick={share} style={{ fontSize: 12 }}>{copied ? "✓ link copied" : "Share link"}</button>
+          )}
           <span style={{ display: "flex", gap: 4, marginLeft: 8 }}>
             {(["graph", "network", "timeline"] as const).map((v) => (
               <button
@@ -802,9 +832,11 @@ function Editor({ initialRoom }: { initialRoom?: string }) {
           </span>
         </div>
 
-        {/* floating node palette — drag a folded node onto the canvas (or click) */}
+        {/* floating node palette — drag a folded node onto the canvas (or click). The
+            panel itself is draggable by its grip. */}
         {view === "graph" && (
-          <div style={{ ...CARD, position: "absolute", left: 12, bottom: 12, padding: "8px 10px", width: 188, zIndex: 10 }}>
+          <DraggableCard pkey="palette" width={188} maxHeight="calc(100vh - 120px)" defaultPos={{ x: 12, y: Math.max(64, (typeof window !== "undefined" ? window.innerHeight : 800) - 420) }}>
+            <div style={{ padding: "0 10px 8px" }}>
             <div style={{ fontSize: 11, color: "#a0aec0", marginBottom: 6 }}>drag onto canvas — or click to add</div>
             <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
               {(Object.keys(NODE_SPECS) as NodeType[]).map((t) => {
@@ -839,12 +871,14 @@ function Editor({ initialRoom }: { initialRoom?: string }) {
                 );
               })}
             </div>
-          </div>
+            </div>
+          </DraggableCard>
         )}
 
-        {/* floating sink output card */}
+        {/* floating sink output card (draggable) */}
         {view === "graph" && (
-          <div style={{ ...CARD, position: "absolute", top: 12, right: 12, width: 320, maxHeight: "calc(100% - 24px)", overflow: "auto", padding: "8px 12px", zIndex: 10 }}>
+          <DraggableCard pkey="sink" width={320} maxHeight="calc(100vh - 24px)" defaultPos={{ x: Math.max(12, (typeof window !== "undefined" ? window.innerWidth : 1200) - 332), y: 12 }}>
+            <div style={{ padding: "0 12px 10px" }}>
             {running && (
               <div style={{ fontSize: 11, color: "#718096", marginBottom: 6 }}>
                 <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
@@ -869,7 +903,8 @@ function Editor({ initialRoom }: { initialRoom?: string }) {
             ) : (
               sinkRecs.map((r, i) => <RecordingPlayer key={r.id} rec={r} index={sinkRecs.length - 1 - i} />)
             )}
-          </div>
+            </div>
+          </DraggableCard>
         )}
 
         {/* network / timeline as floating overlay cards */}
@@ -973,6 +1008,62 @@ function ConnectMenu({
   );
 }
 
+// A floating card the user can reposition by its grip. Position persists per key.
+function DraggableCard({
+  pkey,
+  defaultPos,
+  width,
+  maxHeight,
+  zIndex = 10,
+  children,
+}: {
+  pkey: string;
+  defaultPos: { x: number; y: number };
+  width: number;
+  maxHeight?: string;
+  zIndex?: number;
+  children: React.ReactNode;
+}) {
+  const [pos, setPos] = useState<{ x: number; y: number }>(() => {
+    try {
+      const s = localStorage.getItem("otoji.panel." + pkey);
+      if (s) return JSON.parse(s);
+    } catch {
+      /* ignore */
+    }
+    return defaultPos;
+  });
+  const drag = useRef<{ dx: number; dy: number } | null>(null);
+  const onDown = (e: React.PointerEvent) => {
+    drag.current = { dx: e.clientX - pos.x, dy: e.clientY - pos.y };
+    (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+  };
+  const onMove = (e: React.PointerEvent) => {
+    const d = drag.current;
+    if (!d) return;
+    setPos({ x: Math.max(0, e.clientX - d.dx), y: Math.max(0, e.clientY - d.dy) });
+  };
+  const onUp = () => {
+    if (!drag.current) return;
+    drag.current = null;
+    try { localStorage.setItem("otoji.panel." + pkey, JSON.stringify(pos)); } catch { /* ignore */ }
+  };
+  return (
+    <div style={{ ...CARD, position: "fixed", left: pos.x, top: pos.y, width, maxHeight, overflow: maxHeight ? "auto" : undefined, zIndex }}>
+      <div
+        onPointerDown={onDown}
+        onPointerMove={onMove}
+        onPointerUp={onUp}
+        title="drag to move this panel"
+        style={{ cursor: "grab", textAlign: "center", color: "#cbd5e0", fontSize: 11, lineHeight: "11px", padding: "3px 0 5px", userSelect: "none", touchAction: "none" }}
+      >
+        ⠿⠿⠿
+      </div>
+      {children}
+    </div>
+  );
+}
+
 // Right-click / long-press node menu: duplicate, replace (→ type list), toggle the
 // preview, or remove. A transparent backdrop closes it on an outside click.
 function NodeMenu({
@@ -1029,10 +1120,10 @@ function NodeMenu({
   );
 }
 
-export function GraphEditor({ initialRoom }: { initialRoom?: string }) {
+export function GraphEditor({ initialRoom, local }: { initialRoom?: string; local?: boolean }) {
   return (
     <ReactFlowProvider>
-      <Editor initialRoom={initialRoom} />
+      <Editor initialRoom={initialRoom} local={local} />
     </ReactFlowProvider>
   );
 }

@@ -151,6 +151,13 @@ export function Lobby() {
         </button>
         {!valid && <div style={{ fontSize: 11, color: "#c05621", marginTop: 6 }}>room needs 3+ words/parts, e.g. blue-otter-7x2k</div>}
 
+        <button
+          onClick={() => { location.href = "/?local"; }}
+          style={{ width: "100%", marginTop: 8, fontSize: 13, padding: "8px", border: "1px solid #cbd5e0", borderRadius: 8, background: "#fff", color: "#2d3748", cursor: "pointer" }}
+        >
+          ▶ Try it here (no room)
+        </button>
+
         <div style={{ marginTop: 14, fontSize: 12, color: "#a0aec0", textAlign: "center" }}>
           <a href="/?simple" style={{ color: "#718096" }}>or simple transcription →</a>
         </div>

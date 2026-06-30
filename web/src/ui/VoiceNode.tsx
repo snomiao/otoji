@@ -437,25 +437,44 @@ export function VoiceNode({ id, data }: NodeProps) {
       )}
 
       {spec.inputs.map((p, i) => (
-        <Handle
-          key={p.id}
-          id={p.id}
-          type="target"
-          position={Position.Left}
-          style={{ top: 40 + i * 18, width: 10, height: 10, background: PORT_COLOR[p.type] }}
-          title={`in: ${p.type}`}
-        />
+        <React.Fragment key={p.id}>
+          <Handle
+            id={p.id}
+            type="target"
+            position={Position.Left}
+            style={{ top: 40 + i * 18, width: 10, height: 10, background: PORT_COLOR[p.type] }}
+            title={`in: ${p.id} (${p.type})`}
+          />
+          <span style={{ ...PORT_LABEL, left: 9, top: 40 + i * 18 - 6, color: PORT_COLOR[p.type] }}>{portLabel(p.id, p.type)}</span>
+        </React.Fragment>
       ))}
       {spec.outputs.map((p, i) => (
-        <Handle
-          key={p.id}
-          id={p.id}
-          type="source"
-          position={Position.Right}
-          style={{ top: 40 + i * 18, width: 10, height: 10, background: PORT_COLOR[p.type] }}
-          title={`out: ${p.type}`}
-        />
+        <React.Fragment key={p.id}>
+          <Handle
+            id={p.id}
+            type="source"
+            position={Position.Right}
+            style={{ top: 40 + i * 18, width: 10, height: 10, background: PORT_COLOR[p.type] }}
+            title={`out: ${p.id} (${p.type})`}
+          />
+          <span style={{ ...PORT_LABEL, right: 9, top: 40 + i * 18 - 6, color: PORT_COLOR[p.type] }}>{portLabel(p.id, p.type)}</span>
+        </React.Fragment>
       ))}
     </div>
   );
+}
+
+// Small label shown beside a port handle so its name/type is visible.
+const PORT_LABEL: React.CSSProperties = {
+  position: "absolute",
+  fontSize: 8,
+  lineHeight: "12px",
+  fontWeight: 600,
+  pointerEvents: "none",
+  opacity: 0.85,
+  letterSpacing: "0.02em",
+};
+function portLabel(id: string, type: PortType): string {
+  // Show the port id unless it's the generic in/out, then show the type.
+  return id === "in" || id === "out" ? type : `${id}·${type === "segment" ? "aud" : "txt"}`;
 }
