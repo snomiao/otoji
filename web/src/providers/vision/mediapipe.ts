@@ -41,21 +41,34 @@ function getEngine(task: MpTask, onProgress?: (p: { text?: string }) => void): P
       onProgress?.({ text: "loading MediaPipe…" });
       const mp = await importMp();
       const fileset = await mp.FilesetResolver.forVisionTasks(WASM);
-      if (task === "pose") {
-        const eng = await mp.PoseLandmarker.createFromOptions(fileset, {
-          baseOptions: { modelAssetPath: POSE_MODEL },
+      const isPose = task === "pose";
+      const Landmarker = isPose ? mp.PoseLandmarker : mp.HandLandmarker;
+      const modelAssetPath = isPose ? POSE_MODEL : HAND_MODEL;
+      const extra = isPose ? { numPoses: 2 } : { numHands: 4 };
+      // Prefer the GPU (WebGL) delegate — ~4.6× faster than CPU for these lite
+      // models (pose detect 26.5ms → 5.7ms), so the per-frame main-thread block
+      // shrinks. Fall back to CPU where the GPU delegate can't initialize.
+      const create = (delegate: "GPU" | "CPU") =>
+        Landmarker.createFromOptions(fileset, {
+          baseOptions: { modelAssetPath, delegate },
           runningMode: "IMAGE",
-          numPoses: 2,
+          ...extra,
         });
-        eng.__connections = mp.PoseLandmarker.POSE_CONNECTIONS;
-        return eng;
+      const eng = await create("GPU").catch(() => create("CPU"));
+      eng.__connections = isPose ? mp.PoseLandmarker.POSE_CONNECTIONS : mp.HandLandmarker.HAND_CONNECTIONS;
+      // Precompile the GPU shaders during warm (one dummy detect ~1s) so the
+      // first real camera frame isn't a one-off stall. The WebGL delegate
+      // compiles per input resolution, so warm at the common 640×480 webcam size.
+      try {
+        const c = document.createElement("canvas");
+        c.width = 640;
+        c.height = 480;
+        const warmBmp = await createImageBitmap(c);
+        eng.detect(warmBmp);
+        warmBmp.close();
+      } catch {
+        /* non-fatal: shaders just compile on the first real frame instead */
       }
-      const eng = await mp.HandLandmarker.createFromOptions(fileset, {
-        baseOptions: { modelAssetPath: HAND_MODEL },
-        runningMode: "IMAGE",
-        numHands: 4,
-      });
-      eng.__connections = mp.HandLandmarker.HAND_CONNECTIONS;
       return eng;
     })().catch((e) => {
       engines.delete(task);
