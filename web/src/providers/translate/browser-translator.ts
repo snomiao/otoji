@@ -1,5 +1,6 @@
 import type { TranslateProvider } from "../types";
 import { langNameToCode } from "./translate-config";
+import { disposeMemo } from "../dispose-util";
 
 // Chrome's built-in on-device Translator API (Chrome 138+). Lighter than the LLM
 // (small language packs, fast), but needs an explicit source language — so we use
@@ -95,3 +96,6 @@ export class BrowserTranslateProvider implements TranslateProvider {
 }
 
 export const browserTranslate = new BrowserTranslateProvider();
+
+/** Drop cached browser Translator instances (the last translate node left). */
+export const disposeBrowserTranslate = () => disposeMemo(translators, ["destroy"]);

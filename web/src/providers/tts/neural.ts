@@ -1,4 +1,5 @@
 import { DEFAULT_NEURAL_TTS_MODEL } from "./tts-config";
+import { disposeMemo } from "../dispose-util";
 
 // On-device neural TTS via transformers.js (https://github.com/huggingface/transformers.js).
 // Runs an MMS-TTS (VITS) model entirely in WASM — no WebGPU, no network at synth
@@ -66,3 +67,6 @@ export class NeuralTtsProvider {
 }
 
 export const neuralTts = new NeuralTtsProvider();
+
+/** Free all neural-TTS synthesis pipelines (the last Neural-TTS node left). */
+export const disposeNeuralTts = () => disposeMemo(synths, ["dispose"]);

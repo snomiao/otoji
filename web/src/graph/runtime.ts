@@ -13,6 +13,9 @@ import { neuralTts } from "../providers/tts/neural";
 import { DEFAULT_NEURAL_TTS_MODEL, AUTO_TTS_MODEL, AUTO_TTS_VOICE, langToTtsModel, voiceMatchesLang } from "../providers/tts/tts-config";
 import { runAsr, runText, runTts, warmPipe, type ModelTask } from "../providers/model/transformers-pipeline";
 import { createVoskStream, warmVosk, DEFAULT_VOSK_MODEL, type VoskStream } from "../providers/stt/vosk";
+import { startCamera, clampFps, DEFAULT_CAMERA_FPS, type CameraHandle } from "../providers/vision/camera";
+import { ocrRecognize, warmOcr } from "../providers/vision/paddleocr";
+import { diffText, type DiffStyle, DEFAULT_DIFF_STYLE } from "../lib/textdiff";
 import type { SttLevel } from "../providers/types";
 import { buildSegmentFrame, buildTranscriptFrame, frameToMessage, type EdgeFrame } from "./frames";
 
@@ -30,6 +33,19 @@ export interface TranscriptMsg {
   event?: string; // SenseVoice AED tag (e.g. "Applause"/"BGM")
   tStartMs?: number; // absolute speech start in the source timeline (CTC-derived)
   tEndMs?: number; // absolute speech end
+}
+/** A captured video/image frame flowing on an "image" edge (single-device). */
+export interface ImageMsg {
+  bitmap: ImageBitmap;
+  width: number;
+  height: number;
+  ts: number; // capture time (ms epoch)
+}
+/** A feedback signal on a "control" edge: a credit pulse and/or a target rate. */
+export interface ControlMsg {
+  pulse?: boolean; // "next": produce one frame (credit-based backpressure)
+  rate?: number; // set/report a target or achieved FPS
+  ts: number;
 }
 
 /** Cross-device transport (implemented over the WebRTC PeerMesh). */
@@ -51,6 +67,7 @@ export interface RuntimeHooks {
   self?: RuntimeSelf;
   onLevel?: (nodeId: string, level: SttLevel) => void;
   onSegment?: (nodeId: string) => void; // a mic node produced a VAD segment
+  onImage?: (nodeId: string, bitmap: ImageBitmap) => void; // a camera/ocr node produced a frame (preview)
   onRecognized?: (nodeId: string, text: string) => void; // an STT node finished (text may be empty)
   onNodeBusy?: (nodeId: string, busy: boolean) => void; // node started/finished processing
   onQueue?: (nodeId: string, processing: string | null, queued: string[]) => void; // work queue state
@@ -126,6 +143,9 @@ export class GraphRuntime {
         const owner = nodeOwner(this.graph.nodes[t.node], this.hooks.self.deviceIds);
         if (!owner) continue;
         const m = msg as Partial<TranscriptMsg> & Partial<SegmentMsg>;
+        // Only audio/text frames have a cross-device wire format. Image/control
+        // edges (camera/OCR feedback) are single-device — skip remote delivery.
+        if (m.text === undefined && !(m.samples instanceof Float32Array)) continue;
         const frame =
           m.text !== undefined
             ? buildTranscriptFrame(t.node, t.port, m as TranscriptMsg)
@@ -225,6 +245,21 @@ export class GraphRuntime {
       );
     }
 
+    // PaddleOCR (on-device ONNX) — preload det/rec models now if any OCR node is
+    // local. Non-fatal: a failure only disables OCR, never aborts the rest.
+    const ocrBases = new Set<string | undefined>();
+    for (const n of Object.values(this.graph.nodes)) {
+      if (n.type === "paddle-ocr" && this.isLocal(n.id)) ocrBases.add(n.config?.modelsBase as string | undefined);
+    }
+    if (ocrBases.size) {
+      this.hooks.onStatus?.("loading OCR model…");
+      await Promise.all(
+        [...ocrBases].map((b) =>
+          warmOcr(b).catch((e) => this.hooks.onError?.(e instanceof Error ? e : new Error(String(e)))),
+        ),
+      );
+    }
+
     // Neural TTS (on-device ONNX) models — preload weights now. Non-fatal: a
     // failure only disables that node, never aborts the rest of the graph.
     const ttsModels = new Set<string>();
@@ -304,6 +339,45 @@ export class GraphRuntime {
       },
       drain: () => chain,
     };
+  }
+
+  /**
+   * Latest-only worker: never queues. While a job runs, a newer submission just
+   * replaces the single pending slot — intermediate frames are dropped. Used by
+   * heavy real-time nodes (OCR) so they always work on the freshest input.
+   */
+  private makeLatest(id: string) {
+    let busy = false;
+    let pending: { label: string; fn: () => Promise<void> } | null = null;
+    const pump = () => {
+      if (busy || !pending) return;
+      const job = pending;
+      pending = null;
+      busy = true;
+      this.hooks.onNodeBusy?.(id, true);
+      this.hooks.onQueue?.(id, job.label, []);
+      job
+        .fn()
+        .catch(() => {})
+        .finally(() => {
+          busy = false;
+          this.hooks.onNodeBusy?.(id, false);
+          this.hooks.onQueue?.(id, null, []);
+          pump(); // run the latest frame that arrived while we were busy
+        });
+    };
+    return {
+      submit: (label: string, fn: () => Promise<void>) => {
+        pending = { label, fn };
+        pump();
+      },
+      idle: () => !busy && !pending,
+    };
+  }
+
+  /** Does any edge feed a control signal into this node's `handle` input port? */
+  private hasIncoming(nodeId: string, handle: string): boolean {
+    return this.graph.edges.some((e) => e.target === nodeId && e.targetHandle === handle);
   }
 
   private build(id: string, type: NodeType): RuntimeNode {
@@ -749,6 +823,89 @@ export class GraphRuntime {
       };
     }
 
+    if (type === "camera") {
+      const cfg = this.graph.nodes[id]?.config ?? {};
+      const deviceId = cfg.cameraId as string | undefined;
+      const fps = clampFps((cfg.fps as number) ?? DEFAULT_CAMERA_FPS);
+      // Credit mode iff something feeds our `rate` input: wait for "next" pulses
+      // instead of free-running, so a downstream OCR can pace us (backpressure).
+      const demand = this.hasIncoming(id, "rate");
+      let handle: CameraHandle | null = null;
+      return {
+        start: async () => {
+          try {
+            handle = await startCamera({
+              deviceId,
+              fps,
+              demand,
+              onFrame: (bitmap, width, height) => {
+                this.hooks.onImage?.(id, bitmap);
+                this.emit(id, "out", { bitmap, width, height, ts: Date.now() } as ImageMsg);
+              },
+              onError: (e) => this.hooks.onError?.(e),
+            });
+          } catch (e) {
+            this.hooks.onError?.(e instanceof Error ? e : new Error(String(e)));
+          }
+        },
+        input: (_port, msg) => {
+          const c = msg as ControlMsg;
+          if (c.pulse) handle?.grabNow(); // credit: one frame per "next"
+          else if (typeof c.rate === "number") handle?.setRate(c.rate); // rate: free-run at fps
+        },
+        stop: () => handle?.stop(),
+      };
+    }
+
+    if (type === "paddle-ocr") {
+      const w = this.makeLatest(id);
+      const cfg = this.graph.nodes[id]?.config ?? {};
+      const modelsBase = (cfg.modelsBase as string | undefined) ?? undefined;
+      // Achieved-FPS estimate (EMA of inter-completion interval) reported on `rate`.
+      let lastDone = 0;
+      let emaMs = 0;
+      return {
+        input: (_port, msg) => {
+          const img = msg as ImageMsg;
+          w.submit("🖼️ OCR", async () => {
+            let text = "";
+            try {
+              text = await ocrRecognize(img.bitmap, modelsBase);
+            } catch (e) {
+              this.hooks.onError?.(e instanceof Error ? e : new Error(String(e)));
+            }
+            this.hooks.onRecognized?.(id, text);
+            this.emit(id, "out", {
+              text,
+              audio: { samples: new Float32Array(0), sampleRate: MIC_VAD_SR, durationMs: 0 },
+            } as TranscriptMsg);
+            // Feedback: a "next" credit pulse + the measured throughput, so a
+            // connected Camera can pace itself to exactly our OCR rate.
+            const now = Date.now();
+            if (lastDone) emaMs = emaMs ? emaMs * 0.7 + (now - lastDone) * 0.3 : now - lastDone;
+            lastDone = now;
+            const rate = emaMs > 0 ? Math.round((1000 / emaMs) * 10) / 10 : undefined;
+            this.emit(id, "rate", { pulse: true, rate, ts: now } as ControlMsg);
+          });
+        },
+      };
+    }
+
+    if (type === "text-diff") {
+      const style = ((this.graph.nodes[id]?.config?.style as string) ?? DEFAULT_DIFF_STYLE) as DiffStyle;
+      let prev: string | null = null; // null until the first input (→ all additions)
+      return {
+        input: (_port, msg) => {
+          const tr = msg as TranscriptMsg;
+          const out = diffText(prev, tr.text, style);
+          prev = tr.text;
+          if (!out) return; // no change → emit nothing
+          this.hooks.onRecognized?.(id, out);
+          this.emit(id, "out", { text: out, audio: tr.audio } as TranscriptMsg);
+        },
+      };
+    }
+
     // sink / srt-out
     return {
       input: (_port, msg) => this.hooks.onSink?.(id, msg as TranscriptMsg),
@@ -768,7 +925,7 @@ export class GraphRuntime {
     this.running = false;
     // Stop continuous sources first so their final emissions flush into the
     // pipeline, then drain processing nodes (STT/translate/tts chains) before clearing.
-    const SOURCES = new Set<NodeType>(["mic-vad", "mic-raw", "web-speech"]);
+    const SOURCES = new Set<NodeType>(["mic-vad", "mic-raw", "web-speech", "camera"]);
     for (const [id, node] of this.nodes) if (SOURCES.has(this.graph.nodes[id]?.type)) await node.stop?.();
     for (const [id, node] of this.nodes) if (!SOURCES.has(this.graph.nodes[id]?.type)) await node.stop?.();
     this.nodes.clear();

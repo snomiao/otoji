@@ -18,6 +18,9 @@ import { MODEL_TASKS, MODEL_DTYPES, DEFAULT_MODEL_DTYPE } from "../providers/mod
 import { VOSK_MODELS, DEFAULT_VOSK_MODEL } from "../providers/stt/vosk";
 import { useNodeLive } from "./useNodeLive";
 import { NodeMicPreview } from "./NodeMicPreview";
+import { NodeImagePreview } from "./NodeImagePreview";
+import { DIFF_STYLES, DEFAULT_DIFF_STYLE } from "../lib/textdiff";
+import { DEFAULT_CAMERA_FPS } from "../providers/vision/camera";
 import { isPreviewShown, setPreviewShown, subscribePrefs } from "../lib/prefs";
 import { samplesToWavBlob, concatSamples } from "../lib/peaks";
 import { buildSrt } from "../lib/srt";
@@ -50,6 +53,8 @@ export interface VoiceNodeData {
 const PORT_COLOR: Record<PortType, string> = {
   segment: "#dd6b20", // audio segment (orange)
   transcript: "#2b6cb0", // text (blue)
+  image: "#319795", // captured frame (teal)
+  control: "#d69e2e", // feedback signal (amber)
 };
 
 // One-click demo clips for the Audio-file node (served same-origin from /samples).
@@ -62,7 +67,7 @@ const FILE_SAMPLES: { name: string; url: string }[] = [
  * Labels are empty until mic permission is granted — callers fall back to a
  * shortened deviceId. Re-reads on devicechange (plug/unplug).
  */
-function useAudioDevices(kind: "audioinput" | "audiooutput"): MediaDeviceInfo[] {
+function useAudioDevices(kind: "audioinput" | "audiooutput" | "videoinput"): MediaDeviceInfo[] {
   const [devices, setDevices] = useState<MediaDeviceInfo[]>([]);
   useEffect(() => {
     if (!navigator.mediaDevices?.enumerateDevices) return;
@@ -108,6 +113,7 @@ export function VoiceNode({ id, data }: NodeProps) {
   const config = (d as any).config as Record<string, unknown> | undefined;
   const inputDevices = useAudioDevices("audioinput");
   const outputDevices = useAudioDevices("audiooutput");
+  const cameraDevices = useAudioDevices("videoinput");
   const voices = useVoices();
   const shown = useSyncExternalStore(subscribePrefs, () => isPreviewShown(id));
   const toggleShown = () => setPreviewShown(id, !shown);
@@ -410,6 +416,53 @@ export function VoiceNode({ id, data }: NodeProps) {
             />
           </label>
         )}
+        {d.voiceType === "camera" && (
+          <>
+            <label style={{ display: "flex", gap: 6, alignItems: "center", color: "#718096", marginTop: 4 }}>
+              cam:
+              <select
+                value={(config?.cameraId as string | undefined) ?? ""}
+                onChange={(e) => onConfig(id, { cameraId: e.target.value || undefined })}
+                style={{ fontSize: 11, flex: 1 }}
+              >
+                <option value="">(default camera)</option>
+                {cameraDevices.map((dev) => (
+                  <option key={dev.deviceId} value={dev.deviceId}>
+                    {dev.label || `camera ${dev.deviceId.slice(0, 8)}`}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label style={{ display: "flex", gap: 6, alignItems: "center", color: "#718096", marginTop: 4 }}>
+              fps:
+              <input
+                type="number"
+                min={0.2}
+                max={30}
+                step={0.5}
+                defaultValue={(config?.fps as number | undefined) ?? DEFAULT_CAMERA_FPS}
+                onBlur={(e) => onConfig(id, { fps: Number(e.target.value) || DEFAULT_CAMERA_FPS })}
+                onKeyDown={(e) => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); }}
+                style={{ fontSize: 11, width: 56 }}
+              />
+              <span style={{ fontSize: 9, color: "#a0aec0" }}>(or wire rate)</span>
+            </label>
+          </>
+        )}
+        {d.voiceType === "text-diff" && (
+          <label style={{ display: "flex", gap: 6, alignItems: "center", color: "#718096", marginTop: 4 }}>
+            style:
+            <select
+              value={(config?.style as string | undefined) ?? DEFAULT_DIFF_STYLE}
+              onChange={(e) => onConfig(id, { style: e.target.value })}
+              style={{ fontSize: 11, flex: 1 }}
+            >
+              {DIFF_STYLES.map((s) => (
+                <option key={s.id} value={s.id}>{s.name}</option>
+              ))}
+            </select>
+          </label>
+        )}
         {d.voiceType === "vosk" && (
           <label style={{ display: "flex", gap: 6, alignItems: "center", color: "#718096", marginTop: 4 }}>
             model:
@@ -570,13 +623,14 @@ export function VoiceNode({ id, data }: NodeProps) {
         )}
       </div>
 
-      {shown && (d.voiceType === "mic-vad" || d.voiceType === "mic-raw" || texts.length > 0) && (
+      {shown && (d.voiceType === "mic-vad" || d.voiceType === "mic-raw" || d.voiceType === "camera" || d.voiceType === "paddle-ocr" || texts.length > 0) && (
         <div style={{ padding: "0 10px 8px" }}>
           {(d.voiceType === "mic-vad" || d.voiceType === "mic-raw") && <NodeMicPreview live={live} nodeId={id} width={150} height={28} />}
-          {(d.voiceType === "stt" || d.voiceType === "translate" || d.voiceType === "sink" || d.voiceType === "web-speech" || d.voiceType === "vosk" || d.voiceType === "model") && (
-            <div style={{ fontSize: 11, color: "#4a5568", lineHeight: 1.35 }}>
+          {(d.voiceType === "camera" || d.voiceType === "paddle-ocr") && <NodeImagePreview live={live} nodeId={id} width={150} height={84} />}
+          {(d.voiceType === "stt" || d.voiceType === "translate" || d.voiceType === "sink" || d.voiceType === "web-speech" || d.voiceType === "vosk" || d.voiceType === "model" || d.voiceType === "paddle-ocr" || d.voiceType === "text-diff") && (
+            <div style={{ fontSize: 11, color: "#4a5568", lineHeight: 1.35, whiteSpace: "pre-wrap" }}>
               {texts.map((t, i) => (
-                <div key={i} style={{ opacity: 1 - i * 0.3, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", maxWidth: 150 }}>
+                <div key={i} style={{ opacity: 1 - i * 0.3, overflow: "hidden", textOverflow: "ellipsis", maxWidth: 150, maxHeight: 48 }}>
                   {t}
                 </div>
               ))}
@@ -623,7 +677,8 @@ const PORT_LABEL: React.CSSProperties = {
   opacity: 0.85,
   letterSpacing: "0.02em",
 };
+const PORT_ABBR: Record<PortType, string> = { segment: "aud", transcript: "txt", image: "img", control: "ctl" };
 function portLabel(id: string, type: PortType): string {
   // Show the port id unless it's the generic in/out, then show the type.
-  return id === "in" || id === "out" ? type : `${id}·${type === "segment" ? "aud" : "txt"}`;
+  return id === "in" || id === "out" ? type : `${id}·${PORT_ABBR[type]}`;
 }

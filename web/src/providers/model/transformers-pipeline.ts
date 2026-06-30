@@ -4,6 +4,7 @@
 // fetched lazily from the CDN (esm.run) and weights are cached in the browser.
 
 import { p2pModelCache } from "./p2p-cache";
+import { disposeMemo } from "../dispose-util";
 
 export interface PipeProgress {
   progress?: number; // 0..1
@@ -93,3 +94,6 @@ export async function runTts(model: string, text: string, dtype?: string): Promi
   const out = await pipe(text);
   return { samples: out.audio as Float32Array, sampleRate: out.sampling_rate as number };
 }
+
+/** Free all transformers.js pipelines (the last Custom-model node left). */
+export const disposePipes = () => disposeMemo(pipes, ["dispose"]);

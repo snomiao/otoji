@@ -22,6 +22,7 @@ import { PeerMesh } from "../net/peers";
 import { VoiceNode, type DeviceOpt } from "./VoiceNode";
 import { GraphContext } from "./graph-context";
 import { GraphRuntime, nodeOwner, type TranscriptMsg } from "../graph/runtime";
+import { HEAVY_NODE_TYPES, offloadType } from "../graph/model-lifecycle";
 import { LiveStore } from "../graph/live-store";
 import { fileStore, fileKindForName } from "../graph/file-store";
 import { PeerMeshTransport } from "../graph/mesh-transport";
@@ -310,6 +311,15 @@ function Editor({ initialRoom, local }: { initialRoom?: string; local?: boolean 
   useEffect(() => {
     if (joined) sigRef.current?.setBases(active);
   }, [active, joined]);
+
+  // Offload a heavy model when its last node leaves the graph (frees GPU/wasm).
+  // Re-adding the node lazy-loads it again. Tracks heavy types graph-wide.
+  const loadedTypesRef = useRef<Set<NodeType>>(new Set());
+  useEffect(() => {
+    const present = new Set<NodeType>(nodes.map((n) => (n.data as any).voiceType as NodeType));
+    for (const t of loadedTypesRef.current) if (!present.has(t)) offloadType(t);
+    loadedTypesRef.current = new Set(HEAVY_NODE_TYPES.filter((t) => present.has(t)));
+  }, [nodes]);
 
   function join() {
     if (joined || !room.trim()) return;
@@ -763,6 +773,7 @@ function Editor({ initialRoom, local }: { initialRoom?: string; local?: boolean 
       onError: (e) => { setRunStatus(`error: ${e.message}`); setLastError(e.message); },
       onLevel: (id, l) => { micLevelRef.current = l.rms; live.pushLevel(id, l); },
       onSegment: () => { activityRef.current.segments++; },
+      onImage: (id, bitmap) => live.setImage(id, bitmap),
       onRecognized: (id, text) => { activityRef.current.stt++; if (isReadableTranscript(text)) live.pushText(id, text); },
       onNodeBusy: (id, b) => live.setBusy(id, b),
       onQueue: (id, processing, queued) => live.setQueue(id, processing, queued),
@@ -845,7 +856,7 @@ function Editor({ initialRoom, local }: { initialRoom?: string; local?: boolean 
 
   useEffect(() => () => { runtimeRef.current?.stop(); }, []);
 
-  const PORT_COLOR: Record<PortType, string> = { segment: "#dd6b20", transcript: "#2b6cb0" };
+  const PORT_COLOR: Record<PortType, string> = { segment: "#dd6b20", transcript: "#2b6cb0", image: "#319795", control: "#d69e2e" };
   // Color edges by their source port type; animate while running (data in motion).
   const styledEdges = useMemo(
     () =>
