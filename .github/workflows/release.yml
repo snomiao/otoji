@@ -123,6 +123,8 @@ jobs:
       id-token: write
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0   # need tags for the version fallback below
       - uses: oven-sh/setup-bun@v2
       - uses: actions/setup-node@v4
         with:
@@ -144,8 +146,15 @@ jobs:
           VERSION: ${{ needs.release-plz.outputs.released_version }}
         run: |
           set -euxo pipefail
+          # On a normal release VERSION is the release-plz output. On a manual
+          # workflow_dispatch (force_npm) it is empty — fall back to the latest
+          # git tag (vX.Y.Z), NOT package.json (which release-plz never syncs and
+          # is frozen at an ancient version → would regress the `latest` tag).
           if [ -z "${VERSION:-}" ]; then
-            VERSION=$(node -p "require('./package.json').version")
+            VERSION=$(git describe --tags --abbrev=0 2>/dev/null | sed 's/^v//')
+          fi
+          if [ -z "${VERSION:-}" ]; then
+            echo "::error::could not determine a version to publish"; exit 1
           fi
           echo "Publishing version: $VERSION"
           node -e '
