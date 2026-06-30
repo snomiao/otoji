@@ -3,9 +3,7 @@
 // memoized per model; disposable when the last vision node leaves the graph.
 
 import { disposeMemo } from "../dispose-util";
-
-const TFJS_URL = "https://esm.sh/@huggingface/transformers";
-const importTfjs = () => new Function("u", "return import(u)")(TFJS_URL) as Promise<any>;
+import { buildPipeline } from "./tfjs-pipe";
 
 export const DEPTH_MODELS = [{ id: "onnx-community/depth-anything-v2-small", name: "Depth-Anything v2 (small)" }];
 export const DEFAULT_DEPTH_MODEL = DEPTH_MODELS[0].id;
@@ -15,15 +13,9 @@ const pipes = new Map<string, Promise<any>>();
 function getPipe(model: string, onProgress?: (p: { progress?: number; text?: string }) => void): Promise<any> {
   let p = pipes.get(model);
   if (!p) {
-    p = (async () => {
-      const tf = await importTfjs();
-      tf.env.allowLocalModels = false;
-      tf.env.useBrowserCache = true;
-      return tf.pipeline("depth-estimation", model, {
-        progress_callback: (r: { status?: string; progress?: number }) =>
-          onProgress?.({ progress: r.progress != null ? r.progress / 100 : undefined, text: r.status }),
-      });
-    })().catch((e) => {
+    // Depth-Anything builds on WebGPU but throws at inference, so keep it on the
+    // wasm worker (off the main thread; the camera rate feedback throttles fps).
+    p = buildPipeline("depth-estimation", model, onProgress, { webgpu: false }).catch((e) => {
       pipes.delete(model);
       throw e;
     });
