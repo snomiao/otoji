@@ -41,6 +41,7 @@ export async function startCamera(opts: CameraOpts): Promise<CameraHandle> {
   let stopped = false;
   let grabbing = false;
   let timer: ReturnType<typeof setInterval> | null = null;
+  let rafPending = false;
 
   const grab = async () => {
     if (stopped || grabbing || !video.videoWidth) return; // skip if busy or not ready
@@ -62,6 +63,20 @@ export async function startCamera(opts: CameraOpts): Promise<CameraHandle> {
   const startTimer = (fps: number) => {
     if (timer) clearInterval(timer);
     timer = setInterval(grab, 1000 / clampFps(fps));
+  };
+
+  // Credit grab, aligned to a paint. A downstream consumer that runs *synchronously*
+  // on the main thread (e.g. MediaPipe pose/hand) completes a frame and immediately
+  // pulses for the next; grabbing right then would chain inferences with no gap and
+  // starve the compositor (the tab appears frozen). Deferring to requestAnimationFrame
+  // guarantees one paint + input turn per frame and coalesces bursts of credits.
+  const grabOnFrame = () => {
+    if (rafPending || stopped) return;
+    rafPending = true;
+    requestAnimationFrame(() => {
+      rafPending = false;
+      void grab();
+    });
   };
 
   // Prime one frame once the stream has dimensions, so a credit-based downstream
@@ -93,6 +108,6 @@ export async function startCamera(opts: CameraOpts): Promise<CameraHandle> {
         timer = null;
       }
     },
-    grabNow: () => void grab(),
+    grabNow: () => grabOnFrame(),
   };
 }
