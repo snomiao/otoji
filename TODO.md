@@ -155,6 +155,12 @@
       preview sync (deferred).
 
 ### M5 — Future / hardening
+- [ ] **Verify Mix-audio live with two real mic devices** (rech): drop the "Mix
+  two mics" template, assign a *different* input device to each Mic + VAD, then
+  confirm on the shared wall-clock timeline that overlapping speech is summed +
+  soft-clipped (no harsh clipping) and STT transcribes the combined stream.
+  Deferred — no second mic on hand. (Unit-tested in `__tests__/audio-mix.test.ts`;
+  only the live two-device path is unverified.)
 - [ ] Cloudflare TURN for symmetric-NAT / cross-network reliability.
 - [ ] Polish (LLM) + TTS nodes; Recorder/persist node; audio-monitor node.
 - [ ] Reconnection resilience, graph conflict strategy (LWW → maybe CRDT).
