@@ -450,6 +450,23 @@ export function VoiceNode({ id, data }: NodeProps) {
             </label>
           </>
         )}
+
+        {d.voiceType === "screen-share" && (
+          <label style={{ display: "flex", gap: 6, alignItems: "center", color: "#718096", marginTop: 4 }}>
+            fps:
+            <input
+              type="number"
+              min={0.2}
+              max={30}
+              step={0.5}
+              defaultValue={(config?.fps as number | undefined) ?? DEFAULT_CAMERA_FPS}
+              onBlur={(e) => onConfig(id, { fps: Number(e.target.value) || DEFAULT_CAMERA_FPS })}
+              onKeyDown={(e) => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); }}
+              style={{ fontSize: 11, width: 56 }}
+            />
+            <span style={{ fontSize: 9, color: "#a0aec0" }}>(or wire rate) · audio→STT</span>
+          </label>
+        )}
         {d.voiceType === "vision-model" && (
           <>
             <label style={{ display: "flex", gap: 6, alignItems: "center", color: "#718096", marginTop: 4 }}>
@@ -670,10 +687,10 @@ export function VoiceNode({ id, data }: NodeProps) {
         )}
       </div>
 
-      {shown && (d.voiceType === "mic-vad" || d.voiceType === "mic-raw" || d.voiceType === "camera" || d.voiceType === "paddle-ocr" || d.voiceType === "vision-model" || texts.length > 0) && (
+      {shown && (d.voiceType === "mic-vad" || d.voiceType === "mic-raw" || d.voiceType === "camera" || d.voiceType === "screen-share" || d.voiceType === "paddle-ocr" || d.voiceType === "vision-model" || texts.length > 0) && (
         <div style={{ padding: "0 10px 8px" }}>
           {(d.voiceType === "mic-vad" || d.voiceType === "mic-raw") && <NodeMicPreview live={live} nodeId={id} width={150} height={28} />}
-          {(d.voiceType === "camera" || d.voiceType === "paddle-ocr" || d.voiceType === "vision-model") && <NodeImagePreview live={live} nodeId={id} width={150} height={84} />}
+          {(d.voiceType === "camera" || d.voiceType === "screen-share" || d.voiceType === "paddle-ocr" || d.voiceType === "vision-model") && <NodeImagePreview live={live} nodeId={id} width={150} height={84} />}
           {(d.voiceType === "stt" || d.voiceType === "translate" || d.voiceType === "sink" || d.voiceType === "web-speech" || d.voiceType === "vosk" || d.voiceType === "model" || d.voiceType === "paddle-ocr" || d.voiceType === "text-diff" || d.voiceType === "vision-model") && (
             <div style={{ fontSize: 11, color: "#4a5568", lineHeight: 1.35, whiteSpace: "pre-wrap" }}>
               {texts.map((t, i) => (

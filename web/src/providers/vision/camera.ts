@@ -33,6 +33,18 @@ export async function startCamera(opts: CameraOpts): Promise<CameraHandle> {
     video: opts.deviceId ? { deviceId: { exact: opts.deviceId } } : true,
     audio: false,
   });
+  return createFrameSource(stream, opts);
+}
+
+/**
+ * Build a frame source over an existing video MediaStream (webcam *or* a screen
+ * share from getDisplayMedia). Owns the `<video>` element and the stream's video
+ * tracks; stop() releases them. Frames emit free-running at `fps` or per credit.
+ */
+export async function createFrameSource(
+  stream: MediaStream,
+  opts: Omit<CameraOpts, "deviceId">,
+): Promise<CameraHandle> {
   const video = document.createElement("video");
   video.muted = true;
   video.playsInline = true;
@@ -98,7 +110,7 @@ export async function startCamera(opts: CameraOpts): Promise<CameraHandle> {
     stop: () => {
       stopped = true;
       if (timer) clearInterval(timer);
-      stream.getTracks().forEach((t) => t.stop());
+      stream.getVideoTracks().forEach((t) => t.stop()); // audio (if any) is owned elsewhere
       video.srcObject = null;
     },
     setRate: (fps: number) => {

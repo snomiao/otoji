@@ -164,6 +164,15 @@ export async function startMicVad(opts: MicVadOptions): Promise<MicVadHandle> {
   const stream = await navigator.mediaDevices.getUserMedia({
     audio: opts.deviceId ? { deviceId: { exact: opts.deviceId } } : true,
   });
+  return vadFromStream(stream, opts);
+}
+
+/**
+ * Run VAD segmentation over an existing audio MediaStream (e.g. the audio track
+ * of a screen share). Same endpointing as startMicVad; owns its AudioContext and
+ * stops the stream's tracks on stop().
+ */
+export function vadFromStream(stream: MediaStream, opts: MicVadOptions): MicVadHandle {
   const AudioCtor: typeof AudioContext = (window as any).AudioContext || (window as any).webkitAudioContext;
   const audioCtx = new AudioCtor({ sampleRate: MIC_VAD_SR });
   const srcRate = audioCtx.sampleRate;
