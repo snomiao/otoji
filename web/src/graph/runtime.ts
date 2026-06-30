@@ -464,11 +464,13 @@ export class GraphRuntime {
     if (type === "mic-vad") {
       let handle: MicVadHandle | null = null;
       const inputDeviceId = this.graph.nodes[id]?.config?.inputDeviceId as string | undefined;
+      const aec = (this.graph.nodes[id]?.config?.aec as boolean | undefined) ?? true;
       return {
         start: async () => {
           const startEpoch = Date.now(); // wall clock of sample 0, for mix alignment
           handle = await startMicVad({
             deviceId: inputDeviceId,
+            aec,
             onLevel: (l) => this.hooks.onLevel?.(id, l),
             onSegment: (samples, durationMs, offsetMs) => {
               this.hooks.onSegment?.(id);
@@ -546,11 +548,13 @@ export class GraphRuntime {
     if (type === "mic-raw") {
       let handle: MicVadHandle | null = null;
       const inputDeviceId = this.graph.nodes[id]?.config?.inputDeviceId as string | undefined;
+      const aec = (this.graph.nodes[id]?.config?.aec as boolean | undefined) ?? true;
       return {
         start: async () => {
           const startEpoch = Date.now(); // wall clock of sample 0, for mix alignment
           handle = await startMicRaw({
             deviceId: inputDeviceId,
+            aec,
             onLevel: (l) => this.hooks.onLevel?.(id, l),
             onFrame: (samples, offsetMs) => {
               this.emit(id, "out", { samples, sampleRate: MIC_VAD_SR, durationMs: (samples.length / MIC_VAD_SR) * 1000, offsetMs, ts: startEpoch + (offsetMs ?? 0) } as SegmentMsg);
