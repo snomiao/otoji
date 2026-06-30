@@ -35,7 +35,7 @@ const TFJS_TASK: Record<ModelTask, string> = {
 export const MODEL_DTYPES = ["fp32", "fp16", "q8", "q4", "auto"] as const;
 export const DEFAULT_MODEL_DTYPE = "fp32";
 
-const TFJS_URL = "https://esm.run/@huggingface/transformers";
+const TFJS_URL = "https://esm.sh/@huggingface/transformers";
 const importTfjs = () => new Function("u", "return import(u)")(TFJS_URL) as Promise<any>;
 
 /** One pipeline per (task, model, dtype); creation is heavy, so cache + dedupe. */

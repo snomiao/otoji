@@ -23,6 +23,14 @@ import { VoiceNode, type DeviceOpt } from "./VoiceNode";
 import { GraphContext } from "./graph-context";
 import { GraphRuntime, nodeOwner, type TranscriptMsg } from "../graph/runtime";
 import { HEAVY_NODE_TYPES, offloadType } from "../graph/model-lifecycle";
+import {
+  BUILTIN_TEMPLATES,
+  loadUserTemplates,
+  saveUserTemplate,
+  deleteUserTemplate,
+  templateFromSelection,
+  type GraphTemplate,
+} from "../lib/templates";
 import { LiveStore } from "../graph/live-store";
 import { fileStore, fileKindForName } from "../graph/file-store";
 import { PeerMeshTransport } from "../graph/mesh-transport";
@@ -497,6 +505,66 @@ function Editor({ initialRoom, local }: { initialRoom?: string; local?: boolean 
     [myDeviceId, setNodes, setEdges, broadcast, rf],
   );
 
+  // --- Templates: drop a subgraph onto the canvas (fresh ids, auto-selected). ---
+  const [userTemplates, setUserTemplates] = useState<GraphTemplate[]>(() => loadUserTemplates());
+  const allTemplates = useMemo(() => [...BUILTIN_TEMPLATES, ...userTemplates], [userTemplates]);
+
+  const addTemplate = useCallback(
+    (tpl: GraphTemplate, screen?: { x: number; y: number }) => {
+      const base = screen ? rf.screenToFlowPosition(screen) : { x: 80 + Math.random() * 80, y: 80 + Math.random() * 80 };
+      const idOf = new Map<string, string>();
+      const newNodes: Node[] = tpl.nodes.map((tn) => {
+        const id = `${tn.type}-${Math.random().toString(36).slice(2, 8)}`;
+        idOf.set(tn.key, id);
+        return {
+          id,
+          type: "voice",
+          position: { x: base.x + tn.dx, y: base.y + tn.dy },
+          selected: true,
+          data: { voiceType: tn.type, device: myDeviceId, config: tn.config ? { ...tn.config } : {} },
+        };
+      });
+      const newEdges: Edge[] = tpl.edges.map((te) => {
+        const source = idOf.get(te.from)!;
+        const target = idOf.get(te.to)!;
+        return {
+          id: edgeId({ source, sourceHandle: te.fromHandle, target, targetHandle: te.toHandle }),
+          source,
+          sourceHandle: te.fromHandle,
+          target,
+          targetHandle: te.toHandle,
+          selected: true,
+        };
+      });
+      // Deselect everything else so the dropped subgraph is the live selection.
+      const nextNodes = [...nodesRef.current.map((n) => ({ ...n, selected: false })), ...newNodes];
+      const nextEdges = [...edgesRef.current.map((e) => ({ ...e, selected: false })), ...newEdges];
+      nodesRef.current = nextNodes;
+      edgesRef.current = nextEdges;
+      setNodes(nextNodes);
+      setEdges(nextEdges);
+      broadcast(nextNodes, nextEdges);
+    },
+    [myDeviceId, setNodes, setEdges, broadcast, rf],
+  );
+
+  const saveSelectionAsTemplate = useCallback(() => {
+    const sel = nodesRef.current.filter((n) => n.selected);
+    if (sel.length === 0) {
+      alert("Select one or more nodes first (Shift-drag a box, or Shift-click).");
+      return;
+    }
+    const name = prompt(`Save ${sel.length} node(s) as a template named:`, "my template");
+    if (!name) return;
+    const tpl = templateFromSelection(
+      name,
+      sel.map((n) => ({ id: n.id, type: (n.data as any).voiceType, x: n.position.x, y: n.position.y, config: (n.data as any).config })),
+      edgesRef.current.map((e) => ({ source: e.source, sourceHandle: e.sourceHandle, target: e.target, targetHandle: e.targetHandle })),
+      Math.random().toString(36).slice(2, 8),
+    );
+    setUserTemplates(saveUserTemplate(tpl));
+  }, []);
+
   const onConfig = useCallback(
     (nodeId: string, patch: Record<string, unknown>) => {
       const next = nodesRef.current.map((n) =>
@@ -959,12 +1027,20 @@ function Editor({ initialRoom, local }: { initialRoom?: string; local?: boolean 
             onNodeDragStop={() => broadcast(nodesRef.current, edgesRef.current)}
             onNodesDelete={afterDelete}
             onEdgesDelete={afterDelete}
-            deleteKeyCode={null}
+            deleteKeyCode={["Delete"]}
+            selectionOnDrag
+            panOnDrag={[1, 2]}
             onDragOver={(e) => { e.preventDefault(); e.dataTransfer.dropEffect = "copy"; }}
             onDrop={(e) => {
               e.preventDefault();
               const f = e.dataTransfer.files?.[0];
               if (f) { addFileNodeAt(f, e.clientX, e.clientY); return; }
+              const tplId = e.dataTransfer.getData("application/otoji-template");
+              if (tplId) {
+                const tpl = allTemplates.find((x) => x.id === tplId);
+                if (tpl) addTemplate(tpl, { x: e.clientX, y: e.clientY });
+                return;
+              }
               const t = e.dataTransfer.getData("application/otoji-node") as NodeType;
               if (t && NODE_SPECS[t]) addNode(t, { x: e.clientX, y: e.clientY });
             }}
@@ -1051,6 +1127,49 @@ function Editor({ initialRoom, local }: { initialRoom?: string; local?: boolean 
                 </div>
               ))}
             </div>
+            </div>
+          </DraggableCard>
+        )}
+
+        {/* floating templates card — drag a template onto the canvas to drop a
+            ready-made subgraph (auto-selected). */}
+        {view === "graph" && (
+          <DraggableCard pkey="templates" width={196} maxHeight="calc(100vh - 120px)" defaultPos={{ x: 220, y: Math.max(64, (typeof window !== "undefined" ? window.innerHeight : 800) - 360) }}>
+            <div style={{ padding: "0 10px 8px" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
+                <span style={{ fontSize: 11, color: "#a0aec0" }}>drag a template onto canvas</span>
+                <button className="nodrag" onClick={saveSelectionAsTemplate} title="Save the selected nodes as a template" style={{ fontSize: 10 }}>+ save sel</button>
+              </div>
+              <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                {allTemplates.map((tpl) => (
+                  <div
+                    key={tpl.id}
+                    className="nodrag"
+                    draggable
+                    onDragStart={(e) => {
+                      e.dataTransfer.setData("application/otoji-template", tpl.id);
+                      e.dataTransfer.effectAllowed = "copy";
+                    }}
+                    onClick={() => addTemplate(tpl)}
+                    title={tpl.desc || tpl.name}
+                    style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 6, border: "1px solid #e2e8f0", borderRadius: 6, padding: "4px 7px", cursor: "grab", background: "#fff" }}
+                  >
+                    <span style={{ fontSize: 11, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                      {tpl.builtin ? "◫" : "★"} {tpl.name}
+                    </span>
+                    {!tpl.builtin && (
+                      <button
+                        className="nodrag"
+                        onClick={(e) => { e.stopPropagation(); setUserTemplates(deleteUserTemplate(tpl.id)); }}
+                        title="delete template"
+                        style={{ fontSize: 10, border: "none", background: "transparent", cursor: "pointer", color: "#a0aec0" }}
+                      >
+                        ✕
+                      </button>
+                    )}
+                  </div>
+                ))}
+              </div>
             </div>
           </DraggableCard>
         )}
