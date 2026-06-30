@@ -45,6 +45,13 @@ import {
 
 const nodeTypes = { voice: VoiceNode };
 
+/** Human-readable throughput, e.g. 1536 -> "1.5 KB/s". */
+function formatRate(bytesPerSec: number): string {
+  if (bytesPerSec >= 1024 * 1024) return `${(bytesPerSec / 1024 / 1024).toFixed(1)} MB/s`;
+  if (bytesPerSec >= 1024) return `${(bytesPerSec / 1024).toFixed(1)} KB/s`;
+  return `${Math.round(bytesPerSec)} B/s`;
+}
+
 // Floating overlay card shared by the toolbar, palette, sink and view panels.
 const CARD: React.CSSProperties = {
   background: "rgba(255,255,255,0.95)",
@@ -140,6 +147,8 @@ function Editor({ initialRoom, local }: { initialRoom?: string; local?: boolean 
   const micLevelRef = useRef(0);
   const liveRef = useRef(new LiveStore());
   const recordsByNodeRef = useRef(new Map<string, Recording[]>()); // uncapped, for file export
+  const edgeBytesRef = useRef(new Map<string, number>()); // per-edge bytes accumulated this second
+  const [edgeRates, setEdgeRates] = useState<Record<string, number>>({}); // per-edge bytes/sec
   const fileSeqRef = useRef(0);
   const nameCacheRef = useRef<Record<string, string>>({});
   const nodesRef = useRef(nodes);
@@ -188,7 +197,19 @@ function Editor({ initialRoom, local }: { initialRoom?: string; local?: boolean 
 
   useEffect(() => {
     if (!joined) return;
-    const t = setInterval(() => setTick((x) => x + 1), 1000);
+    const t = setInterval(() => {
+      setTick((x) => x + 1);
+      // Snapshot per-edge bytes/sec over the last second, then reset the window.
+      const acc = edgeBytesRef.current;
+      if (acc.size) {
+        const rates: Record<string, number> = {};
+        for (const [k, v] of acc) rates[k] = v;
+        acc.clear();
+        setEdgeRates(rates);
+      } else {
+        setEdgeRates((prev) => (Object.keys(prev).length ? {} : prev));
+      }
+    }, 1000);
     return () => clearInterval(t);
   }, [joined]);
 
@@ -629,6 +650,7 @@ function Editor({ initialRoom, local }: { initialRoom?: string; local?: boolean 
       onNodeBusy: (id, b) => live.setBusy(id, b),
       onQueue: (id, processing, queued) => live.setQueue(id, processing, queued),
       onPipeOut: (id, text) => sigRef.current?.pipe(id, text, "node"), // pipe node input → CLI stdout
+      onEdgeBytes: (eid, bytes) => edgeBytesRef.current.set(eid, (edgeBytesRef.current.get(eid) ?? 0) + bytes),
       onSink: (sinkId, tr: TranscriptMsg) => {
         if (!isReadableTranscript(tr.text)) return;
         live.pushText(sinkId, tr.text);
@@ -716,6 +738,7 @@ function Editor({ initialRoom, local }: { initialRoom?: string; local?: boolean 
           ? NODE_SPECS[(src.data as any).voiceType as NodeType].outputs.find((o) => o.id === (e.sourceHandle ?? "out"))?.type
           : undefined;
         const stroke = t ? PORT_COLOR[t] : "#b0b6c0";
+        const rate = edgeRates[e.id]; // cross-device bytes/sec on this edge
         return {
           ...e,
           animated: running,
@@ -723,9 +746,13 @@ function Editor({ initialRoom, local }: { initialRoom?: string; local?: boolean 
           style: e.selected
             ? { stroke: "#1a202c", strokeWidth: 4 }
             : { stroke, strokeWidth: 2 },
+          label: rate ? formatRate(rate) : undefined,
+          labelStyle: { fontSize: 10, fill: "#2d3748" },
+          labelBgStyle: { fill: "#fff", fillOpacity: 0.85 },
+          labelBgPadding: [3, 1] as [number, number],
         };
       }),
-    [edges, nodes, running],
+    [edges, nodes, running, edgeRates],
   );
 
   // Per-node record counts from the uncapped export buffer (sink transcripts AND

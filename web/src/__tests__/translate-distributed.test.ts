@@ -38,7 +38,7 @@ import { emptyGraph, type VoiceGraph } from "../graph/model";
 function meshPair() {
   const recv: Record<string, ((f: EdgeFrame) => void) | null> = { A: null, B: null };
   const make = (other: "A" | "B"): Transport => ({
-    send: (_to, frame) => recv[other]?.(frame),
+    send: (_to, frame) => { recv[other]?.(frame); return true; },
     setReceiver: (cb) => {
       recv[other === "A" ? "B" : "A"] = cb;
     },

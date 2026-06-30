@@ -70,16 +70,17 @@ export class PeerMeshTransport implements Transport {
     }
   }
 
-  send(toDevice: string, frame: EdgeFrame): void {
+  send(toDevice: string, frame: EdgeFrame): boolean {
     const peerId = this.routing[toDevice];
     if (!peerId) {
       this.dropped++;
-      return;
+      return false;
     }
     const json = JSON.stringify(frame);
     if (json.length <= CHUNK) {
-      this.raw(peerId, json) ? this.sent++ : this.dropped++;
-      return;
+      const ok = this.raw(peerId, json);
+      ok ? this.sent++ : this.dropped++;
+      return ok;
     }
     // Split oversized frames into ordered chunks (data channel is reliable+ordered).
     const id = `${this.seq++}-${Math.random().toString(36).slice(2, 8)}`;
@@ -90,6 +91,7 @@ export class PeerMeshTransport implements Transport {
       if (!this.raw(peerId, JSON.stringify(piece))) ok = false;
     }
     ok ? this.sent++ : this.dropped++;
+    return ok;
   }
 
   setReceiver(cb: (f: EdgeFrame) => void): void {

@@ -33,7 +33,8 @@ export interface TranscriptMsg {
 
 /** Cross-device transport (implemented over the WebRTC PeerMesh). */
 export interface Transport {
-  send(toDevice: string, frame: EdgeFrame): void;
+  /** Returns true if the frame was actually sent (false = dropped: no route/closed). */
+  send(toDevice: string, frame: EdgeFrame): boolean;
   setReceiver(cb: (frame: EdgeFrame) => void): void;
 }
 
@@ -55,6 +56,7 @@ export interface RuntimeHooks {
   onSink?: (nodeId: string, tr: TranscriptMsg) => void;
   onAudio?: (nodeId: string, audio: SegmentMsg) => void; // raw audio collected at audio-out
   onPipeOut?: (nodeId: string, text: string) => void; // pipe node input -> external CLI stdout
+  onEdgeBytes?: (edgeId: string, bytes: number) => void; // payload bytes sent over a cross-device edge
   onStatus?: (s: string) => void;
   onError?: (e: Error) => void;
 }
@@ -127,7 +129,12 @@ export class GraphRuntime {
           m.text !== undefined
             ? buildTranscriptFrame(t.node, t.port, m as TranscriptMsg)
             : buildSegmentFrame(t.node, t.port, m as SegmentMsg);
-        this.hooks.self.transport.send(owner, frame);
+        const ok = this.hooks.self.transport.send(owner, frame);
+        // Per-edge throughput: count payload bytes only for frames actually sent.
+        if (ok) {
+          const bytes = (frame.samplesB64?.length ?? 0) + (frame.text?.length ?? 0) + 80;
+          this.hooks.onEdgeBytes?.(`${nodeId}:${port}->${t.node}:${t.port}`, bytes);
+        }
       }
     }
   }
