@@ -22,6 +22,7 @@ import { GraphRuntime, nodeOwner, type TranscriptMsg } from "../graph/runtime";
 import { LiveStore } from "../graph/live-store";
 import { fileStore, fileKindForName } from "../graph/file-store";
 import { PeerMeshTransport } from "../graph/mesh-transport";
+import { p2pModelCache } from "../providers/model/p2p-cache";
 import { RecordingPlayer, type Recording } from "./RecordingPlayer";
 import { computePeaks } from "../lib/peaks";
 import { isReadableTranscript } from "../lib/text";
@@ -227,12 +228,22 @@ function Editor({ initialRoom }: { initialRoom?: string }) {
       // running runtime's captured transport keeps delivering frames.
       meshRef.current?.destroy();
       const mesh = new PeerMesh(sig, m.peerId, {
-        onData: (_peer, _label, data) => transportRef.current?.handleData(data),
+        onData: (peer, _label, data) => transportRef.current?.handleData(data, peer),
         onPeerState: (id, st) => setPeerStates((s) => ({ ...s, [id]: st })),
       });
       meshRef.current = mesh;
       if (!transportRef.current) transportRef.current = new PeerMeshTransport(mesh);
       else transportRef.current.setMesh(mesh);
+      // P2P model sharing: serve cached model files to roommates, and pull missing
+      // ones from the room before transformers.js falls back to the network.
+      transportRef.current.onBlobRequest = (url) => p2pModelCache.getServable(url);
+      p2pModelCache.fetchFromRoom = (url) => transportRef.current?.requestBlob(url) ?? Promise.resolve(null);
+      // Minimal hook for e2e verification of room P2P model transfer.
+      (window as any).__otojiP2P = {
+        keys: () => p2pModelCache.keys(),
+        requestBlob: (u: string) => transportRef.current?.requestBlob(u),
+        provide: (u: string, bytes: ArrayBuffer) => p2pModelCache.provide(u, bytes),
+      };
       (m.peers as Peer[]).forEach((peer) => mesh.consider(peer.peerId));
     });
     sig.on("peer-joined", (m) => {

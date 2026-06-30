@@ -1,0 +1,102 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>otoji vs. the rest — on-device voice, in your browser</title>
+<meta name="description" content="How otoji compares to cloud transcription services and local desktop tools: on-device, private, offline, multi-device, and composable as a graph." />
+<style>
+  :root { --ink:#1a202c; --mut:#718096; --line:#e2e8f0; --accent:#2b6cb0; --ok:#2f855a; --no:#cbd5e0; --bg:#f7fafc; }
+  * { box-sizing: border-box; }
+  body { margin:0; font:16px/1.65 system-ui,-apple-system,"Segoe UI",sans-serif; color:var(--ink); background:#fff; }
+  .wrap { max-width: 880px; margin: 0 auto; padding: 32px 20px 80px; }
+  header { border-bottom:1px solid var(--line); padding-bottom:18px; margin-bottom:28px; }
+  h1 { font-size: 2rem; margin: 0 0 6px; letter-spacing:-0.01em; }
+  .sub { color:var(--mut); margin:0; }
+  .date { color:var(--mut); font-size:13px; }
+  h2 { margin-top:38px; font-size:1.35rem; letter-spacing:-0.01em; }
+  a { color:var(--accent); }
+  table { width:100%; border-collapse:collapse; margin:18px 0; font-size:14.5px; }
+  th, td { text-align:left; padding:9px 10px; border-bottom:1px solid var(--line); vertical-align:top; }
+  thead th { background:var(--bg); border-bottom:2px solid var(--line); }
+  th:first-child { width:32%; }
+  .y { color:var(--ok); font-weight:600; }
+  .n { color:var(--no); }
+  .p { color:#b7791f; }
+  .otoji { background:#ebf4ff; }
+  blockquote { margin:18px 0; padding:10px 16px; border-left:3px solid var(--accent); background:var(--bg); color:#2d3748; }
+  code { background:var(--bg); padding:1px 5px; border-radius:4px; font-size:0.9em; }
+  footer { margin-top:54px; padding-top:18px; border-top:1px solid var(--line); color:var(--mut); font-size:14px; }
+  ul { padding-left:22px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+<header>
+  <div class="date">2026-06-29</div>
+  <h1>otoji vs. the rest</h1>
+  <p class="sub">On-device voice — speech-to-text, translation, and speech — that runs entirely in your browser, and chains across your devices as a live graph.</p>
+</header>
+
+<p><a href="https://otoji.org">otoji</a> (音字, “sound → text”) is a browser-native voice workbench. Drop in a mic, an audio file, or any model; wire <strong>STT → translate → TTS</strong> as nodes; and run the whole pipeline <strong>on-device</strong>. No account, no upload, and — once a model is cached — no network. Devices in the same room form a real-time WebRTC graph and even <strong>share model files peer-to-peer</strong>, so a node you assign to another machine just works.</p>
+
+<p>Here’s how that stacks up against the usual options.</p>
+
+<h2>At a glance</h2>
+<table>
+  <thead>
+    <tr>
+      <th>Capability</th>
+      <th class="otoji">otoji</th>
+      <th>Cloud (Otter, Deepgram, Google captions, OpenAI API)</th>
+      <th>Local desktop (whisper.cpp, MacWhisper)</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr><td>Runs in the browser, nothing to install</td><td class="otoji y">Yes</td><td class="p">Web UI (work happens on their servers)</td><td class="n">No — native install</td></tr>
+    <tr><td>On-device / private (audio never leaves)</td><td class="otoji y">Yes</td><td class="n">No — uploaded</td><td class="y">Yes</td></tr>
+    <tr><td>Works offline after the model is cached</td><td class="otoji y">Yes</td><td class="n">No</td><td class="y">Yes</td></tr>
+    <tr><td>Speech-to-text</td><td class="otoji y">SenseVoice + any Whisper/HF model</td><td class="y">Yes</td><td class="y">Whisper</td></tr>
+    <tr><td>Automatic language detection</td><td class="otoji y">Yes (SenseVoice LID)</td><td class="p">Varies</td><td class="p">Varies</td></tr>
+    <tr><td>On-device translation</td><td class="otoji y">In-browser LLM (WebLLM) + MMS / browser API</td><td class="p">Cloud</td><td class="n">Rarely</td></tr>
+    <tr><td>On-device text-to-speech</td><td class="otoji y">Browser voices + neural MMS (routable to a device)</td><td class="p">Cloud</td><td class="n">No</td></tr>
+    <tr><td>Emotion + audio-event tags</td><td class="otoji y">Yes (SenseVoice SER/AED)</td><td class="n">Rare</td><td class="n">No</td></tr>
+    <tr><td>Word-level timestamps &amp; .srt export</td><td class="otoji y">Yes (CTC-derived)</td><td class="y">Yes</td><td class="y">Yes</td></tr>
+    <tr><td>Real-time multi-device pipeline</td><td class="otoji y">Yes — WebRTC graph</td><td class="n">No</td><td class="n">No</td></tr>
+    <tr><td>Peer-to-peer model sharing in a room</td><td class="otoji y">Yes</td><td class="n">No</td><td class="n">No</td></tr>
+    <tr><td>Import any model (HF repo id / URL)</td><td class="otoji y">Yes (transformers.js)</td><td class="n">No</td><td class="p">Limited</td></tr>
+    <tr><td>Composable node graph (split/route/fan-out)</td><td class="otoji y">Yes</td><td class="n">No</td><td class="n">No</td></tr>
+    <tr><td>Cost</td><td class="otoji y">Free / open</td><td class="n">Subscription / per-minute</td><td class="y">Free</td></tr>
+  </tbody>
+</table>
+
+<h2>vs. cloud transcription (Otter, Deepgram, Google, OpenAI Whisper API)</h2>
+<p>Cloud services are accurate and zero-setup, but every second of audio is uploaded, billed, and dependent on the network. otoji keeps the audio on your machine, costs nothing, and keeps working on a plane. The trade-off is honest: a first-time model download, and accuracy that depends on the model you pick — but you can pick <em>any</em> compatible model, and even run a bigger one on a beefier device in the room.</p>
+
+<h2>vs. local desktop tools (whisper.cpp, MacWhisper, etc.)</h2>
+<p>Desktop Whisper tools are private and fast, but they’re single-purpose apps you install per machine. otoji needs no install (it’s a URL), and it isn’t just transcription: translate and speak the result, tag emotion/events, export timed subtitles, and — the part desktop tools can’t do — <strong>chain it across devices</strong>. Capture on your phone, run STT on your laptop’s GPU, speak the translation out a specific speaker, all in one graph.</p>
+
+<h2>The two things only otoji does</h2>
+<blockquote>
+  <strong>It’s a graph, across devices.</strong> Nodes (mic, STT, translate, TTS, file in/out) are wired into one shared pipeline synced over WebRTC. Assign any node to any device in the room — mic here, model there, speaker somewhere else.
+</blockquote>
+<blockquote>
+  <strong>Models travel peer-to-peer.</strong> Assign a model node to a device that doesn’t have the weights and otoji streams them from a roommate that does — over the data channel, no re-download, no server. The model follows the work.
+</blockquote>
+
+<h2>When <em>not</em> to use otoji</h2>
+<ul>
+  <li>You need the absolute highest accuracy and don’t care about privacy or cost → a top cloud model still edges ahead.</li>
+  <li>You want batch-transcribe 100 hours unattended on a server → a native pipeline is a better fit.</li>
+  <li>True low-latency streaming captions today → otoji is utterance-segmented; streaming engines (sherpa-onnx / Vosk) are on the roadmap as nodes.</li>
+</ul>
+
+<p>Otherwise: open <a href="https://otoji.org">otoji.org</a>, allow the mic, and start wiring.</p>
+
+<footer>
+  Built with on-device models (SenseVoice, transformers.js/ONNX, WebLLM, MMS), WebRTC, and React Flow. ·
+  <a href="https://otoji.org">otoji.org</a> · <a href="https://github.com/snomiao/otoji">source</a>
+</footer>
+</div>
+</body>
+</html>

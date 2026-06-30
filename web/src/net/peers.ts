@@ -131,6 +131,12 @@ export class PeerMesh {
     return false;
   }
 
+  /** Bytes queued in a peer's send buffer (for backpressure), or -1 if no open channel. */
+  bufferedAmount(remoteId: string, label = DEFAULT_LABEL): number {
+    const ch = this.peers.get(remoteId)?.channels.get(label);
+    return ch?.readyState === "open" ? ch.bufferedAmount : -1;
+  }
+
   broadcast(data: string, label = DEFAULT_LABEL): number {
     let n = 0;
     for (const id of this.peers.keys()) if (this.send(id, data, label)) n++;

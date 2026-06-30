@@ -3,6 +3,8 @@
 // remote host URL) and run it for one of the graph-relevant tasks. The library is
 // fetched lazily from the CDN (esm.run) and weights are cached in the browser.
 
+import { p2pModelCache } from "./p2p-cache";
+
 export interface PipeProgress {
   progress?: number; // 0..1
   text?: string;
@@ -45,7 +47,11 @@ function getPipe(task: ModelTask, model: string, dtype = DEFAULT_MODEL_DTYPE, on
     p = (async () => {
       const tf = await importTfjs();
       tf.env.allowLocalModels = false;
-      tf.env.useBrowserCache = true;
+      // Route model files through the P2P cache (env is a transformers.js global,
+      // so this also covers the neural-TTS path): serve from a roommate before HF.
+      tf.env.useBrowserCache = false;
+      tf.env.useCustomCache = true;
+      tf.env.customCache = p2pModelCache;
       const opts: Record<string, unknown> = {
         progress_callback: (r: { status?: string; progress?: number }) =>
           onProgress?.({ progress: r.progress !== undefined ? r.progress / 100 : undefined, text: r.status }),
