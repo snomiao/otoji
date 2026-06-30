@@ -97,6 +97,48 @@ export const BUILTIN_TEMPLATES: GraphTemplate[] = [
     ],
   },
   {
+    id: "depth-cam",
+    name: "Depth camera",
+    desc: "Camera → live depth map (preview)",
+    builtin: true,
+    nodes: [
+      { key: "cam", type: "camera", dx: 0, dy: 0 },
+      { key: "depth", type: "vision-model", dx: COL, dy: 0, config: { task: "depth" } },
+    ],
+    edges: [
+      { from: "cam", fromHandle: "out", to: "depth", toHandle: "in" },
+      { from: "depth", fromHandle: "rate", to: "cam", toHandle: "rate" },
+    ],
+  },
+  {
+    id: "pose-mirror",
+    name: "Pose mirror",
+    desc: "Camera → body pose skeleton (MediaPipe)",
+    builtin: true,
+    nodes: [
+      { key: "cam", type: "camera", dx: 0, dy: 0 },
+      { key: "pose", type: "vision-model", dx: COL, dy: 0, config: { task: "pose" } },
+    ],
+    edges: [
+      { from: "cam", fromHandle: "out", to: "pose", toHandle: "in" },
+      { from: "pose", fromHandle: "rate", to: "cam", toHandle: "rate" },
+    ],
+  },
+  {
+    id: "hand-tracking",
+    name: "Hand tracking",
+    desc: "Camera → hand landmarks (MediaPipe)",
+    builtin: true,
+    nodes: [
+      { key: "cam", type: "camera", dx: 0, dy: 0 },
+      { key: "hand", type: "vision-model", dx: COL, dy: 0, config: { task: "hand" } },
+    ],
+    edges: [
+      { from: "cam", fromHandle: "out", to: "hand", toHandle: "in" },
+      { from: "hand", fromHandle: "rate", to: "cam", toHandle: "rate" },
+    ],
+  },
+  {
     id: "caption-objects",
     name: "Caption + objects",
     desc: "Voice captions and webcam object labels side by side",
