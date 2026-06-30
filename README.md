@@ -2,67 +2,117 @@
 
 > realtime speech ⇄ text — *音を字に*
 
-`otoji` is a Rust workspace that wires up streaming ASR, LLM-polished transcripts, and TTS behind a single `react-ink`-style terminal UI built on [`ratatui`](https://ratatui.rs).
+**[otoji.org](https://otoji.org)** — wire `mic → STT → translate → speech` as a
+**voice graph** that runs **on your devices**. No accounts, no API keys, nothing
+leaves the browser by default: ASR, translation, and TTS all run on-device
+(transformers.js / onnxruntime-web / WebGPU / WASM).
+
+Join a **room** and the graph spans your devices: a phone captures the mic, a
+laptop runs SenseVoice, any device speaks the result — chained over a WebRTC
+P2P mesh, Google-Meet-style shareable URLs (`otoji.org/keen-gibbon-4a0d`).
 
 ```text
-mic / file ──► AudioChunk ──► AsrProvider ──► AsrEvent ──► Polisher ──► TUI
-                                                                    └─► transcript.md
+   phone                         laptop                        any device
+ ┌─────────┐   opus/segment    ┌──────────────┐   transcript  ┌──────────┐
+ │ Mic+VAD ├══════════════════>│ SenseVoice    ├═════════════>│ Translate │──► 🔊 / 📝 / .srt
+ └─────────┘   WebRTC (P2P)    │ STT           │   WebRTC      └──────────┘
+                               └──────────────┘
 ```
 
-## Workspace layout
+## Try it
 
-| Crate | Purpose |
+- **[otoji.org](https://otoji.org)** — create/join a room, or hit **"Try it here"**
+  to run the whole graph locally on one device (no room needed).
+- **[otoji.org/?simple](https://otoji.org/?simple)** — minimal one-box live
+  transcription, no graph editor.
+
+## How it works
+
+Each **node** has typed ports — `segment` (audio) or `transcript` (text) — and an
+edge is valid only when the source output type matches the target input type.
+Same-device edges run in-process; **cross-device edges become a WebRTC data
+channel** carrying audio segments + transcript frames. The graph itself is
+authoritative state, synced live to every device in the room through a
+Cloudflare **Durable Object** (the only server; it relays signaling + graph
+patches, never your audio).
+
+### Node catalog
+
+| Category | Nodes |
 |---|---|
-| `otoji-core` | Shared types: `AudioChunk`, `AsrEvent`, `Word`, `OtojiError` |
-| `otoji-audio` | Audio sources — `cpal` mic capture (with resampling) and PCM file replay |
-| `otoji-asr` | `AsrProvider` trait + `iflytek_rtasr` (HMAC-SHA1 signa, WebSocket) |
-| `otoji-tts` | `TtsProvider` trait + `iflytek_tts` (HMAC-SHA256 auth, MP3/PCM streaming) |
-| `otoji-polish` | `Polisher` trait + `NoopPolisher` and `AnthropicPolisher` (Claude Haiku 4.5 default) |
-| `otoji-cli` | `otoji` binary — clap subcommands + ratatui TUI |
+| **Input** | Mic + VAD · Mic (raw, no VAD) · Audio file in (drop or URL) · Text file in |
+| **Speech → Text** | SenseVoice STT (ONNX, multilingual + emotion/event tags) · Web Speech (browser streaming) · Vosk (Kaldi/WASM streaming) |
+| **Text → Text** | Translate — in-browser LLM (WebLLM) or the browser Translator API |
+| **Text → Speech** | Text-to-Speech (browser SpeechSynthesis) · Neural TTS (on-device ONNX MMS-TTS) |
+| **Output** | Transcript + Recordings · Audio file (out) · SRT subtitles (out) · Speaker (play) |
+| **Custom** | Any transformers.js model by repo/URL (ASR / text2text / TTS) |
+| **Pipe** | CLI stdio bridge — wire a terminal into the graph via `otoji node` |
 
-See [`./docs/`](./docs/README.md) for the architecture rationale and the comparison of RT ASR providers (iFlytek RTASR / CoLi / SenseVoice / Whisper / Deepgram).
+Models download once per device and can be **shared P2P within a room**, so only
+one device pays the download cost.
 
-## Build
+## Local-first
+
+Everything runs locally by default — no API keys, no cloud, no internet. Cloud
+providers (Anthropic / OpenAI / iFlytek / ElevenLabs / Gemini) are **opt-in
+fallbacks** you can configure with your own keys, stored only in your browser.
+Resolution order for every component: **local in-process > local server >
+cloud API > disabled**. See [`docs/ROADMAP.md`](./docs/ROADMAP.md).
+
+## CLI: bridge a terminal into a graph
+
+The **CLI pipe** node bridges any terminal's stdio to the graph over the
+signaling relay (no WebRTC needed) — copy the command shown on the node:
 
 ```bash
+npx otoji node otoji.org/keen-gibbon-4a0d/pipe-ab12   # text in graph → stdout; stdin → graph
+otoji node my-room | grep foo                          # consume transcripts
+some-producer | otoji node my-room                     # feed text in
+```
+
+## `@otoji/core` — Node/Bun bindings
+
+The Rust core also ships as an npm package with napi-rs bindings for one-shot
+and streaming on-device SenseVoice:
+
+```ts
+import { transcribe, listen } from "@otoji/core";
+
+const { text } = await transcribe("meeting.wav");      // one-shot
+
+const session = listen({                               // streaming
+  onPartial: (t) => process.stdout.write(`\r${t}`),
+  onFinal:   (t) => console.log(`\n✓ ${t}`),
+});
+session.push(pcmFloat32);                               // 16kHz mono f32
+await session.end();
+```
+
+## Repository layout
+
+| Path | What |
+|---|---|
+| `web/` | The otoji.org app — React Flow voice-graph editor, WebRTC mesh, on-device providers, plus a browser extension + userscript |
+| `signal/` | Cloudflare Worker + `RoomDurableObject` — presence, SDP/ICE relay, authoritative graph state |
+| `src/` | Rust core — SenseVoice ASR, VAD, TTS, LLM polish; `cpal`/`ratatui` desktop CLI; napi bindings |
+| `cli/otoji-node.mjs` | `otoji node` — the stdio↔graph bridge |
+| `docs/` | Architecture rationale, RT-ASR/model benchmarks, roadmap |
+
+See [`TODO.md`](./TODO.md) for the distributed voice-graph design and milestone
+status, and [`docs/`](./docs/README.md) for the deeper architecture/benchmark notes.
+
+## Develop
+
+```bash
+# Web app
+cd web && pnpm install && pnpm dev          # http://localhost:5173
+pnpm test                                   # vitest
+pnpm test:e2e                               # playwright
+
+# Rust core / desktop CLI
 cargo build --release
+cargo run -- listen                         # live mic → on-device STT in the TUI
 ```
-
-## Usage
-
-```bash
-# 1) Live mic → RTASR → polished TUI
-export IFLYTEK_APP_ID=...
-export IFLYTEK_API_KEY=...
-export ANTHROPIC_API_KEY=...   # optional, enables LLM polish layer
-cargo run -p otoji-cli -- listen
-
-# 2) Replay a 16kHz mono PCM file in real time
-cargo run -p otoji-cli -- file 16k_10.pcm
-
-# 3) Synthesize speech via iFlytek TTS
-export IFLYTEK_TTS_API_KEY=...
-export IFLYTEK_TTS_API_SECRET=...
-cargo run -p otoji-cli -- speak "你好，世界" --out hello.mp3
-```
-
-## TUI
-
-The transcript view shows:
-
-- `[seg_id]` confirmed segments in **white bold** (polished) or **gray** (raw, awaiting polish)
-- The current partial hypothesis as `░ ...` in dark gray italic
-- A header with provider state and counts
-
-Press `q` / `Esc` / `Ctrl-C` to quit.
-
-## Roadmap
-
-- [ ] `otoji-asr/coli.rs` — CoLi ASR via ListenHub
-- [ ] `otoji-asr/sensevoice.rs` — FunASR self-host bridge
-- [ ] `otoji-tts/edge_tts.rs` — Microsoft Edge TTS as a free fallback
-- [ ] `otoji-cli record` — write transcripts to `*.md` next to the source audio
-- [ ] Bench harness (CER / latency / cost) under `crates/otoji-bench`
 
 ## License
 
