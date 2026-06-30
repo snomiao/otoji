@@ -17,7 +17,7 @@ import { startCamera, clampFps, DEFAULT_CAMERA_FPS, type CameraHandle } from "..
 import { ocrRecognize, warmOcr } from "../providers/vision/paddleocr";
 import { detect, drawDetections, warmDetect, DEFAULT_DETECT_MODEL } from "../providers/vision/detect";
 import { estimateDepth, warmDepth } from "../providers/vision/depth";
-import { landmarks, drawLandmarks, formatLandmarksLabels, formatLandmarksJson, warmMediapipe, type MpTask } from "../providers/vision/mediapipe";
+import { landmarks, drawLandmarks, formatLandmarksLabels, formatLandmarksJson, warmMediapipe, prewarmMediapipe, type MpTask } from "../providers/vision/mediapipe";
 import { formatLabels, formatJsonl, type Detection } from "../lib/detect-format";
 import { diffText, type DiffStyle, DEFAULT_DIFF_STYLE } from "../lib/textdiff";
 import { isPreviewShown } from "../lib/prefs";
@@ -103,6 +103,7 @@ interface RuntimeNode {
   start?(): Promise<void> | void;
   stop?(): Promise<void> | void;
   input?(port: string, msg: unknown): void;
+  dims?(): { width: number; height: number } | null; // camera: live stream size
 }
 
 // Below this an audio segment is too short to recognize; feeding 0/near-0 samples
@@ -334,7 +335,49 @@ export class GraphRuntime {
     }
 
     for (const node of this.nodes.values()) await node.start?.();
+
+    // Now that cameras are live, precompile the MediaPipe GPU shaders at each
+    // pose/hand node's *actual* camera resolution (the WebGL delegate compiles
+    // per input size). Doing it here — during the loading window — hides the
+    // one-off first-frame stall. Non-fatal and best-effort.
+    const mpPrewarms: Array<Promise<void>> = [];
+    for (const n of Object.values(this.graph.nodes)) {
+      if (n.type !== "vision-model" || !this.isLocal(n.id)) continue;
+      const task = (n.config?.task as string | undefined) ?? "detect";
+      if (task !== "pose" && task !== "hand") continue;
+      const cam = this.upstreamCamera(n.id);
+      if (!cam) continue;
+      mpPrewarms.push(
+        this.waitForDims(cam).then((d) => (d ? prewarmMediapipe(task, d.width, d.height) : undefined)),
+      );
+    }
+    if (mpPrewarms.length) {
+      this.hooks.onStatus?.("preparing…");
+      await Promise.all(mpPrewarms);
+    }
+
     this.hooks.onStatus?.("running");
+  }
+
+  /** The camera node feeding this node's `in` image port, if any. */
+  private upstreamCamera(nodeId: string): RuntimeNode | null {
+    for (const e of this.graph.edges) {
+      if (e.target !== nodeId || e.targetHandle !== "in") continue;
+      if (this.graph.nodes[e.source]?.type !== "camera") continue;
+      const node = this.nodes.get(e.source);
+      if (node?.dims) return node;
+    }
+    return null;
+  }
+
+  /** Poll a camera node's dims until the stream reports a size (≤1s). */
+  private async waitForDims(node: RuntimeNode): Promise<{ width: number; height: number } | null> {
+    for (let i = 0; i < 20; i++) {
+      const d = node.dims?.();
+      if (d && d.width > 0 && d.height > 0) return d;
+      await new Promise((r) => setTimeout(r, 50));
+    }
+    return null;
   }
 
   /**
@@ -892,6 +935,7 @@ export class GraphRuntime {
           else if (typeof c.rate === "number") handle?.setRate(c.rate); // rate: free-run at fps
         },
         stop: () => handle?.stop(),
+        dims: () => handle?.dims() ?? null,
       };
     }
 

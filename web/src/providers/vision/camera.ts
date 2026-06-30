@@ -17,6 +17,7 @@ export interface CameraHandle {
   stop(): void;
   setRate(fps: number): void; // free-run at fps (<=0 → pause, credit-only)
   grabNow(): void; // capture exactly one frame now (credit)
+  dims(): { width: number; height: number }; // live stream size (0 until ready)
 }
 
 export interface CameraOpts {
@@ -109,5 +110,6 @@ export async function startCamera(opts: CameraOpts): Promise<CameraHandle> {
       }
     },
     grabNow: () => grabOnFrame(),
+    dims: () => ({ width: video.videoWidth, height: video.videoHeight }),
   };
 }
