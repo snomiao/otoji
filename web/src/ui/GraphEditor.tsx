@@ -362,12 +362,29 @@ function Editor({ initialRoom, local }: { initialRoom?: string; local?: boolean 
         position,
         data: { voiceType: type, device: myDeviceId, config: {} },
       };
-      const next = [...nodesRef.current, n];
-      nodesRef.current = next; // keep ref synchronous across batched calls
-      setNodes(next);
-      broadcast(next, edgesRef.current);
+      let nextNodes = [...nodesRef.current, n];
+      let nextEdges = edgesRef.current;
+      // Default-pair: a Vosk streaming node is useless without continuous audio, so
+      // drop in a mic-raw source wired to it — one click for live captions.
+      if (type === "vosk") {
+        const micId = `mic-raw-${Math.random().toString(36).slice(2, 8)}`;
+        const mic: Node = {
+          id: micId,
+          type: "voice",
+          position: { x: position.x - 220, y: position.y },
+          data: { voiceType: "mic-raw", device: myDeviceId, config: {} },
+        };
+        const eid = edgeId({ source: micId, sourceHandle: "out", target: id, targetHandle: "in" });
+        nextNodes = [...nextNodes, mic];
+        nextEdges = [...nextEdges, { id: eid, source: micId, sourceHandle: "out", target: id, targetHandle: "in" }];
+      }
+      nodesRef.current = nextNodes; // keep refs synchronous across batched calls
+      edgesRef.current = nextEdges;
+      setNodes(nextNodes);
+      setEdges(nextEdges);
+      broadcast(nextNodes, nextEdges);
     },
-    [myDeviceId, setNodes, broadcast, rf],
+    [myDeviceId, setNodes, setEdges, broadcast, rf],
   );
 
   const onConfig = useCallback(
