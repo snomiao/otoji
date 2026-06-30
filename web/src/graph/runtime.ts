@@ -4,6 +4,7 @@
 
 import type { VoiceGraph, NodeType, VoiceNode } from "./model";
 import { startMicVad, startMicRaw, segmentSamples, MIC_VAD_SR, type MicVadHandle } from "../lib/mic-vad";
+import { clusterSegments, mixCluster, type TimedSegment } from "../lib/audio-mix";
 import { fileStore } from "./file-store";
 import { sttRecognize, warmSenseVoice } from "../providers/stt/sensevoice";
 import { webllmTranslate } from "../providers/translate/webllm";
@@ -30,6 +31,7 @@ export interface SegmentMsg {
   sampleRate: number;
   durationMs: number;
   offsetMs?: number; // start of this segment in the source timeline (file/mic)
+  ts?: number; // wall-clock epoch (ms) of the FIRST sample — used to time-align mixing
 }
 export interface TranscriptMsg {
   text: string;
@@ -464,12 +466,13 @@ export class GraphRuntime {
       const inputDeviceId = this.graph.nodes[id]?.config?.inputDeviceId as string | undefined;
       return {
         start: async () => {
+          const startEpoch = Date.now(); // wall clock of sample 0, for mix alignment
           handle = await startMicVad({
             deviceId: inputDeviceId,
             onLevel: (l) => this.hooks.onLevel?.(id, l),
             onSegment: (samples, durationMs, offsetMs) => {
               this.hooks.onSegment?.(id);
-              this.emit(id, "out", { samples, sampleRate: MIC_VAD_SR, durationMs, offsetMs } as SegmentMsg);
+              this.emit(id, "out", { samples, sampleRate: MIC_VAD_SR, durationMs, offsetMs, ts: startEpoch + (offsetMs ?? 0) } as SegmentMsg);
             },
           });
         },
@@ -545,15 +548,54 @@ export class GraphRuntime {
       const inputDeviceId = this.graph.nodes[id]?.config?.inputDeviceId as string | undefined;
       return {
         start: async () => {
+          const startEpoch = Date.now(); // wall clock of sample 0, for mix alignment
           handle = await startMicRaw({
             deviceId: inputDeviceId,
             onLevel: (l) => this.hooks.onLevel?.(id, l),
             onFrame: (samples, offsetMs) => {
-              this.emit(id, "out", { samples, sampleRate: MIC_VAD_SR, durationMs: (samples.length / MIC_VAD_SR) * 1000, offsetMs } as SegmentMsg);
+              this.emit(id, "out", { samples, sampleRate: MIC_VAD_SR, durationMs: (samples.length / MIC_VAD_SR) * 1000, offsetMs, ts: startEpoch + (offsetMs ?? 0) } as SegmentMsg);
             },
           });
         },
         stop: async () => { await handle?.stop(); },
+      };
+    }
+
+    if (type === "audio-mix") {
+      // Time-aligned additive mixer with a jitter buffer. Buffer incoming
+      // segments, periodically cluster by wall-clock overlap, and flush a cluster
+      // once it's settled (its end is older than `jitterMs`) so late-arriving
+      // overlapping audio still lands in the same mix.
+      const cfg = this.graph.nodes[id]?.config ?? {};
+      const jitterMs = typeof cfg.jitterMs === "number" ? (cfg.jitterMs as number) : 300;
+      const MAX_CLUSTER_MS = 20000; // force-flush a never-ending overlap
+      let pending: TimedSegment[] = [];
+      let timer: ReturnType<typeof setInterval> | null = null;
+      const endOf = (s: TimedSegment) => s.ts + (s.samples.length / s.sampleRate) * 1000;
+      const flush = (force: boolean) => {
+        if (!pending.length) return;
+        const now = Date.now();
+        const keep: TimedSegment[] = [];
+        for (const cl of clusterSegments(pending, 0)) {
+          const start = Math.min(...cl.map((s) => s.ts));
+          const end = Math.max(...cl.map(endOf));
+          if (force || end + jitterMs < now || end - start >= MAX_CLUSTER_MS) {
+            const { samples, ts } = mixCluster(cl, MIC_VAD_SR);
+            this.hooks.onSegment?.(id);
+            this.emit(id, "out", { samples, sampleRate: MIC_VAD_SR, durationMs: (samples.length / MIC_VAD_SR) * 1000, ts } as SegmentMsg);
+          } else {
+            keep.push(...cl);
+          }
+        }
+        pending = keep;
+      };
+      return {
+        start: () => { timer = setInterval(() => flush(false), 150); },
+        input: (_port, msg) => {
+          const s = msg as SegmentMsg;
+          if (s.samples?.length) pending.push({ samples: s.samples, sampleRate: s.sampleRate || MIC_VAD_SR, ts: s.ts ?? Date.now() });
+        },
+        stop: () => { if (timer) clearInterval(timer); timer = null; flush(true); },
       };
     }
 
@@ -950,6 +992,7 @@ export class GraphRuntime {
         start: async () => {
           // Emit system audio only when the `audio` port is wired (lazy).
           const wantAudio = this.hasOutgoing(id, "audio");
+          const startEpoch = Date.now(); // wall clock of audio sample 0, for mix alignment
           try {
             handle = await startScreenShare({
               fps,
@@ -961,7 +1004,7 @@ export class GraphRuntime {
               onSegment: wantAudio
                 ? (samples, durationMs, offsetMs) => {
                     this.hooks.onSegment?.(id);
-                    this.emit(id, "audio", { samples, sampleRate: MIC_VAD_SR, durationMs, offsetMs } as SegmentMsg);
+                    this.emit(id, "audio", { samples, sampleRate: MIC_VAD_SR, durationMs, offsetMs, ts: startEpoch + (offsetMs ?? 0) } as SegmentMsg);
                   }
                 : undefined,
               onEnded: () => this.hooks.onStatus?.("screen share ended"),
