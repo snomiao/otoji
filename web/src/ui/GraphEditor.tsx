@@ -136,7 +136,10 @@ function fromRF(nodes: Node[], edges: Edge[], version: number): VoiceGraph {
 // Relaxes node positions so boxes stop overlapping (separation uses each node's
 // MEASURED size — the "box model") while edges act as springs that pull
 // connected nodes to a rest gap and bias the flow left→right (source left of
-// its target). Pure + deterministic (no RNG), so it's safe to broadcast.
+// its target). The ONLY repulsion is box-collision, which is exactly zero once
+// boxes no longer overlap — so "no overlaps + springs at rest" is a genuine
+// fixpoint: re-running on the result leaves it put (no endless drift / sparsen).
+// Pure + deterministic (no RNG), so it's safe to broadcast.
 function autoLayout(
   nodes: Node[],
   edges: Edge[],
@@ -156,13 +159,13 @@ function autoLayout(
   const GAP = 44; // min empty space kept between two boxes
   const SPRING_GAP = 80; // desired edge-to-edge gap along a connection
   const SPRING_K = 0.09; // spring stiffness
-  const REPULSE = 0.05; // weak global spread so disjoint clusters drift apart
   const DAMP = 0.8;
   const STEP = 34; // clamp per-iteration displacement (avoids blow-ups)
   const ITERS = 600;
 
   for (let it = 0; it < ITERS; it++) {
-    // pairwise: box-overlap separation + mild global repulsion
+    // pairwise: box-overlap separation ONLY (no force once boxes are apart, so
+    // the system can actually come to rest instead of spreading every re-run).
     for (let i = 0; i < P.length; i++) {
       for (let j = i + 1; j < P.length; j++) {
         const a = P[i], b = P[j];
@@ -172,20 +175,16 @@ function autoLayout(
         const ox = minX - Math.abs(dx);
         const oy = minY - Math.abs(dy);
         if (ox > 0 && oy > 0) {
-          // boxes overlap → push apart along the axis of least penetration
+          // boxes overlap → push apart along the axis of least penetration.
+          // `|| ox/2` breaks the exact dx===0 tie so coincident boxes separate.
           if (ox <= oy) {
-            const push = (ox / 2) * (dx < 0 ? -1 : 1);
+            const push = (ox / 2) * (dx < 0 ? -1 : 1) || ox / 2;
             a.vx -= push; b.vx += push;
           } else {
-            const push = (oy / 2) * (dy < 0 ? -1 : 1);
+            const push = (oy / 2) * (dy < 0 ? -1 : 1) || oy / 2;
             a.vy -= push; b.vy += push;
           }
         }
-        const d2 = dx * dx + dy * dy + 0.01;
-        const f = (REPULSE * minX * minX) / d2; // ~1/dist falloff
-        const d = Math.sqrt(d2);
-        a.vx -= (dx / d) * f; a.vy -= (dy / d) * f;
-        b.vx += (dx / d) * f; b.vy += (dy / d) * f;
       }
     }
     // springs along edges: settle at a rest gap to the right + align vertically
