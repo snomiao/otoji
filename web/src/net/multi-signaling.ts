@@ -14,7 +14,7 @@
 // Signaling node re-homes the room without a reconnect.
 
 import { SignalingClient, type Peer, type Handler, type Signaling } from "./signaling";
-import { dedupeTrackers, bootstrapTrackers } from "../lib/trackers";
+import { dedupeTrackers, capTrackers, envTrackers } from "../lib/trackers";
 
 interface Conn {
   base: string;
@@ -30,6 +30,8 @@ export class MultiSignalingClient implements Signaling {
   private openBases = new Set<string>(); // bases with a currently-open socket
   // remote peerId -> set of bases currently reporting it (presence + routing).
   private seenOn = new Map<string, Set<string>>();
+  // remote peerId -> last-known metadata, so peer-left can always carry deviceId.
+  private peerInfo = new Map<string, Peer>();
 
   constructor(
     private room: string,
@@ -37,11 +39,11 @@ export class MultiSignalingClient implements Signaling {
     private deviceId: string = "",
     private role: string = "general",
     private hasMic: boolean = true,
-    private bases: string[] = bootstrapTrackers(),
+    private bases: string[] = envTrackers(),
   ) {
     // One stable identity reused on every tracker.
     this.peerId = crypto.randomUUID();
-    this.bases = dedupeTrackers(bases);
+    this.bases = capTrackers(bases);
   }
 
   on(type: string, fn: Handler): () => void {
@@ -66,7 +68,7 @@ export class MultiSignalingClient implements Signaling {
 
   /** Re-home the room to a new tracker set, adding/removing live connections. */
   setBases(next: string[]): void {
-    const want = dedupeTrackers(next);
+    const want = capTrackers(next); // hard cap: defend against amplification
     this.bases = want;
     const wantSet = new Set(want);
     for (const base of [...this.conns.keys()]) if (!wantSet.has(base)) this.removeConn(base);
@@ -86,7 +88,15 @@ export class MultiSignalingClient implements Signaling {
     offs.push(client.on("graph", (m) => this.emit("graph", m)));
     offs.push(client.on("pipe", (m) => this.emit("pipe", m)));
     this.conns.set(base, { base, client, offs });
-    client.connect();
+    // A malformed/unsupported base makes `new WebSocket` throw synchronously
+    // inside connect(); isolate it so one bad tracker can't break the others.
+    try {
+      client.connect();
+    } catch (err) {
+      offs.forEach((off) => off());
+      this.conns.delete(base);
+      this.emit("tracker-error", { base, error: String(err) });
+    }
   }
 
   private removeConn(base: string): void {
@@ -102,8 +112,10 @@ export class MultiSignalingClient implements Signaling {
     // that is now gone from every remaining tracker.
     for (const [peerId, bases] of [...this.seenOn]) {
       if (bases.delete(base) && bases.size === 0) {
+        const deviceId = this.peerInfo.get(peerId)?.deviceId;
         this.seenOn.delete(peerId);
-        this.emit("peer-left", { peerId });
+        this.peerInfo.delete(peerId);
+        this.emit("peer-left", { peerId, deviceId });
       }
     }
   }
@@ -127,7 +139,7 @@ export class MultiSignalingClient implements Signaling {
       // First server to greet us defines the canonical hello (id + graph);
       // its peers seed presence.
       this.helloSent = true;
-      peers.forEach((p) => this.track(base, p.peerId));
+      peers.forEach((p) => { this.track(base, p.peerId); this.peerInfo.set(p.peerId, p); });
       this.emit("hello", { peerId: this.peerId, peers, graph: m.graph });
     } else {
       // Later servers just fold their peers in as joins (de-duped by peerId).
@@ -148,6 +160,7 @@ export class MultiSignalingClient implements Signaling {
     if (peer.peerId === this.peerId) return;
     const isNew = !this.seenOn.has(peer.peerId);
     this.track(base, peer.peerId);
+    this.peerInfo.set(peer.peerId, peer);
     if (isNew) this.emit("peer-joined", { peer });
   }
 
@@ -157,7 +170,8 @@ export class MultiSignalingClient implements Signaling {
     bases.delete(base);
     if (bases.size === 0) {
       this.seenOn.delete(peerId);
-      this.emit("peer-left", { peerId, deviceId });
+      this.emit("peer-left", { peerId, deviceId: deviceId ?? this.peerInfo.get(peerId)?.deviceId });
+      this.peerInfo.delete(peerId);
     }
   }
 

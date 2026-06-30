@@ -16,7 +16,8 @@ import {
 import "@xyflow/react/dist/style.css";
 import { type Peer } from "../net/signaling";
 import { MultiSignalingClient } from "../net/multi-signaling";
-import { bootstrapTrackers, appendTrackers, dedupeTrackers } from "../lib/trackers";
+import { envTrackers, capTrackers, urlTrackers, appendTrackers, dedupeTrackers } from "../lib/trackers";
+import { loadApproved, saveApproved, vetTracker } from "../lib/tracker-trust";
 import { PeerMesh } from "../net/peers";
 import { VoiceNode, type DeviceOpt } from "./VoiceNode";
 import { GraphContext } from "./graph-context";
@@ -47,7 +48,8 @@ import {
 
 const nodeTypes = { voice: VoiceNode };
 
-/** Trackers declared by Signaling nodes in the graph (synced to every peer). */
+/** Trackers ADVERTISED by Signaling nodes in the synced graph. These are
+ *  proposals from the room — untrusted until the local user approves them. */
 function trackersFromNodes(ns: Node[]): string[] {
   const out: string[] = [];
   for (const n of ns) {
@@ -55,12 +57,14 @@ function trackersFromNodes(ns: Node[]): string[] {
     const t = (n.data as any).config?.trackers;
     if (Array.isArray(t)) out.push(...(t as string[]));
   }
-  return out;
+  return dedupeTrackers(out);
 }
 
-/** The live tracker set = local bootstrap defaults ∪ in-graph Signaling nodes. */
-function effectiveTrackers(ns: Node[]): string[] {
-  return dedupeTrackers([...bootstrapTrackers(), ...trackersFromNodes(ns)]);
+/** Live tracker set this browser actually connects to: trusted env defaults plus
+ *  locally-approved trackers. NEVER auto-includes remote/link proposals — those
+ *  go through explicit approval (see trust model). */
+function activeTrackers(approved: string[]): string[] {
+  return capTrackers([...envTrackers(), ...approved]);
 }
 
 /** Human-readable throughput, e.g. 1536 -> "1.5 KB/s". */
@@ -174,6 +178,35 @@ function Editor({ initialRoom, local }: { initialRoom?: string; local?: boolean 
   const edgesRef = useRef(edges);
   nodesRef.current = nodes;
   edgesRef.current = edges;
+  const roomRef = useRef(room);
+  roomRef.current = room;
+
+  // --- Federation trust: which signaling servers (trackers) THIS browser will
+  // connect to. active = trusted env defaults + locally-approved. Proposals from
+  // a share link (?tr=) or a peer's Signaling node are PENDING until the local
+  // user approves them here, so one participant can't move anyone else's trust. ---
+  const [approved, setApproved] = useState<string[]>(() => loadApproved(initialRoom ?? ""));
+  const active = useMemo(() => activeTrackers(approved), [approved]);
+  const pending = useMemo(() => {
+    const have = new Set(active);
+    return dedupeTrackers([...urlTrackers(), ...trackersFromNodes(nodes)]).filter((t) => !have.has(t));
+  }, [active, nodes]);
+  const approveTracker = useCallback((url: string): string | void => {
+    const { url: ok, error } = vetTracker(url, approved.length);
+    if (error) return error;
+    setApproved((prev) => {
+      const next = dedupeTrackers([...prev, ok!]);
+      saveApproved(roomRef.current, next);
+      return next;
+    });
+  }, [approved.length]);
+  const revokeTracker = useCallback((url: string) => {
+    setApproved((prev) => {
+      const next = prev.filter((t) => t !== url);
+      saveApproved(roomRef.current, next);
+      return next;
+    });
+  }, []);
 
   // Derived device list: online (present) ∪ devices referenced by node
   // assignments (shown offline). Names are cached so offline devices keep a label.
@@ -271,18 +304,20 @@ function Editor({ initialRoom, local }: { initialRoom?: string; local?: boolean 
     [setNodes, setEdges],
   );
 
-  // Re-home live signaling whenever the graph's Signaling (tracker) nodes change
-  // — locally edited or synced from a peer. setBases() diffs, so this is a no-op
-  // unless the effective tracker set actually changed.
+  // Re-home live signaling when the APPROVED tracker set changes. Keyed on
+  // `active` (env + approved), NOT the synced graph — a peer adding a tracker
+  // node can't make us connect anywhere until we approve it. setBases() diffs.
   useEffect(() => {
-    sigRef.current?.setBases(effectiveTrackers(nodes));
-  }, [nodes]);
+    if (joined) sigRef.current?.setBases(active);
+  }, [active, joined]);
 
   function join() {
     if (joined || !room.trim()) return;
     const dn = name.trim() || "device";
     setDeviceName(dn);
-    const sig = new MultiSignalingClient(room.trim(), dn, myDeviceId, role, caps.hasMic, effectiveTrackers(nodesRef.current));
+    const appr = loadApproved(room.trim());
+    setApproved(appr);
+    const sig = new MultiSignalingClient(room.trim(), dn, myDeviceId, role, caps.hasMic, activeTrackers(appr));
     sigRef.current = sig;
     sig.on("open", () => setStatus("connected"));
     sig.on("close", () => setStatus("reconnecting…"));
@@ -383,10 +418,11 @@ function Editor({ initialRoom, local }: { initialRoom?: string; local?: boolean 
     window.open(url, "_blank", "noopener");
   }
 
-  // Share link carries the room's extra trackers as `?tr=` params (magnet-style)
-  // so a friend bootstraps onto the same signaling network and is discoverable.
+  // Share link carries this browser's active extra trackers as `?tr=` params
+  // (magnet-style). They arrive as PENDING proposals for the friend, who must
+  // approve them before connecting — the link can't silently re-home them.
   function shareUrl(): string {
-    return appendTrackers(joinUrl(room.trim(), location.origin), effectiveTrackers(nodesRef.current));
+    return appendTrackers(joinUrl(room.trim(), location.origin), active);
   }
 
   function share() {
@@ -849,9 +885,13 @@ function Editor({ initialRoom, local }: { initialRoom?: string; local?: boolean 
 
   const openNodeMenu = useCallback((nodeId: string, x: number, y: number) => setNodeMenu({ nodeId, x, y }), []);
 
+  const trackerState = useMemo(
+    () => ({ active, pending, approve: approveTracker, revoke: revokeTracker }),
+    [active, pending, approveTracker, revokeTracker],
+  );
   const ctx = useMemo(
-    () => ({ devices, onAssign, onConfig, onDelete, getRecords, setFile, counts, live: liveRef.current, openNodeMenu }),
-    [devices, onAssign, onConfig, onDelete, getRecords, setFile, counts, openNodeMenu],
+    () => ({ devices, onAssign, onConfig, onDelete, getRecords, setFile, counts, live: liveRef.current, openNodeMenu, trackerState }),
+    [devices, onAssign, onConfig, onDelete, getRecords, setFile, counts, openNodeMenu, trackerState],
   );
 
   if (!joined) {
@@ -881,9 +921,8 @@ function Editor({ initialRoom, local }: { initialRoom?: string; local?: boolean 
             Shareable link: <code>{shareUrl()}</code>
             <br />
             <span style={{ fontSize: 11, color: "#a0aec0" }}>
-              Discoverable on {effectiveTrackers(nodesRef.current).length} signaling server
-              {effectiveTrackers(nodesRef.current).length === 1 ? "" : "s"}:{" "}
-              {effectiveTrackers(nodesRef.current).map((t) => t.replace(/^wss?:\/\//, "")).join(", ")}
+              Discoverable on {active.length} signaling server{active.length === 1 ? "" : "s"}:{" "}
+              {active.map((t) => t.replace(/^https?:\/\//, "")).join(", ")}
             </span>
           </p>
         )}

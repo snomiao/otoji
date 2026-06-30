@@ -1,26 +1,91 @@
-// Signaling "trackers" — the list of signaling servers a room is announced on.
+// Signaling "trackers" — the signaling servers a room is announced on.
 //
 // Like a BitTorrent magnet link's `&tr=` trackers: a room id is discoverable on
-// EVERY tracker in the list, and two peers can find each other as long as their
+// EVERY tracker in the list, and two peers find each other as long as their
 // tracker lists OVERLAP on at least one server. This is what lets independent
-// otoji deployments federate into one network — each runs its own signaling
-// server and simply includes the others in its tracker list.
+// otoji deployments federate into one network.
 //
-// Bootstrap order (how a client FIRST connects, before it has loaded the graph):
-//   1. `?tr=` query params on the share/magnet URL (repeatable)
-//   2. VITE_SIGNAL_BASES (comma-separated) / VITE_SIGNAL_BASE env at build time
-//   3. the production default (wss://otoji.org/signal)
-// Once joined, the in-graph Signaling node can declare more trackers, which sync
-// to every peer and extend the live connection set (see MultiSignalingClient).
+// Canonical form is the HTTP(S) origin+path of the server (e.g.
+// https://otoji.org/signal). A wss endpoint lives at the same https origin, so
+// we display/store/share the http(s) form and convert to ws(s) only when
+// opening the socket (see toSocketUrl). Pasting ws://, wss://, http:// or
+// https:// all work and fold to the same canonical url; anything else errors.
+//
+// SECURITY: trackers introduced by an untrusted source (a share link's ?tr= or
+// a peer's edit to the synced graph) are NOT auto-applied — they are surfaced
+// as pending and require explicit approval before this browser connects. Only
+// build-time env defaults and locally-approved trackers drive live connections.
+// See tracker-trust.ts + MultiSignalingClient.
 
-import { DEFAULT_SIGNAL_BASE } from "../net/signaling";
+/** Hard cap on how many trackers one client will ever connect to. */
+export const MAX_TRACKERS = 6;
 
-/** Trim whitespace and any trailing slashes so equal URLs compare equal. */
-export function normalizeTracker(s: string): string {
-  return s.trim().replace(/\/+$/, "");
+/** Default signaling server (production). Canonical http(s) form. */
+export const DEFAULT_SIGNAL_BASE = "https://otoji.org/signal";
+
+const WS_TO_HTTP: Record<string, string> = { "ws:": "http:", "wss:": "https:" };
+
+export interface ParsedTracker {
+  url: string; // canonical http(s) form, "" on error
+  error?: string;
 }
 
-/** Order-preserving de-dupe of normalized tracker URLs (drops blanks). */
+/**
+ * Normalize any ws/wss/http/https input to the canonical http(s) form, or
+ * return an error for anything that isn't a usable signaling URL.
+ */
+export function parseTracker(input: string): ParsedTracker {
+  const raw = (input ?? "").trim();
+  if (!raw) return { url: "", error: "empty" };
+  let u: URL;
+  try {
+    u = new URL(raw);
+  } catch {
+    return { url: "", error: "not a valid URL" };
+  }
+  const proto =
+    WS_TO_HTTP[u.protocol] ?? (u.protocol === "http:" || u.protocol === "https:" ? u.protocol : null);
+  if (!proto) {
+    return { url: "", error: `unsupported scheme "${u.protocol}" — use https:// (wss:// also works)` };
+  }
+  if (!u.hostname) return { url: "", error: "missing host" };
+  u.protocol = proto;
+  u.hash = "";
+  u.search = "";
+  return { url: u.toString().replace(/\/+$/, "") };
+}
+
+/** Canonical http(s) form (empty string if invalid). */
+export function normalizeTracker(s: string): string {
+  return parseTracker(s).url;
+}
+
+/** Convert a canonical http(s) tracker to the ws(s) URL for `new WebSocket()`. */
+export function toSocketUrl(httpUrl: string): string {
+  return httpUrl.replace(/^https:\/\//, "wss://").replace(/^http:\/\//, "ws://");
+}
+
+/**
+ * Loopback / private / link-local / .local host? Such hosts are allowed for
+ * TRUSTED trackers (your own env/local dev) but rejected when an untrusted
+ * source (link/graph) tries to point your browser at them (SSRF-ish).
+ */
+export function isPrivateHost(httpUrl: string): boolean {
+  let h: string;
+  try {
+    h = new URL(httpUrl).hostname.toLowerCase();
+  } catch {
+    return false;
+  }
+  if (h === "localhost" || h.endsWith(".localhost") || h.endsWith(".local")) return true;
+  if (h === "::1" || h === "0.0.0.0") return true;
+  if (/^127\./.test(h) || /^10\./.test(h) || /^192\.168\./.test(h)) return true;
+  if (/^172\.(1[6-9]|2\d|3[01])\./.test(h)) return true;
+  if (/^169\.254\./.test(h)) return true; // link-local
+  return false;
+}
+
+/** Order-preserving de-dupe of canonicalized tracker URLs (drops invalid/blank). */
 export function dedupeTrackers(list: string[]): string[] {
   const seen = new Set<string>();
   const out: string[] = [];
@@ -34,28 +99,30 @@ export function dedupeTrackers(list: string[]): string[] {
   return out;
 }
 
-/** Trackers configured at build time via env (VITE_SIGNAL_BASES / VITE_SIGNAL_BASE). */
+/** De-dupe and clamp to MAX_TRACKERS (defends against amplification). */
+export function capTrackers(list: string[]): string[] {
+  return dedupeTrackers(list).slice(0, MAX_TRACKERS);
+}
+
+/** Trackers configured at build time (VITE_SIGNAL_BASES / VITE_SIGNAL_BASE). Trusted. */
 export function envTrackers(): string[] {
-  const multi = import.meta.env.VITE_SIGNAL_BASES as string | undefined;
-  if (multi) return dedupeTrackers(multi.split(","));
+  const multi = (import.meta.env.VITE_SIGNAL_BASES ?? import.meta.env.VITE_SIGNAL_BASE) as
+    | string
+    | undefined;
+  if (multi) {
+    const parsed = dedupeTrackers(multi.split(","));
+    if (parsed.length) return parsed;
+  }
   return [DEFAULT_SIGNAL_BASE];
 }
 
-/** Trackers carried on the current page URL as `?tr=` params (magnet-style). */
+/** Trackers carried on the current page URL as `?tr=` params (magnet-style). UNTRUSTED. */
 export function urlTrackers(search: string = location.search): string[] {
   return dedupeTrackers(new URLSearchParams(search).getAll("tr"));
 }
 
-/**
- * The list a client uses to FIRST connect: URL trackers take precedence (a
- * shared magnet link decides the network), env defaults fill in the rest.
- */
-export function bootstrapTrackers(): string[] {
-  return dedupeTrackers([...urlTrackers(), ...envTrackers()]);
-}
-
-/** Trackers that aren't already implied by the local env defaults — i.e. the
- *  ones a share link must carry so a friend joins the same network. */
+/** Trackers that aren't already implied by the local env defaults — the ones a
+ *  share link must carry so a friend can be offered the same network. */
 export function extraTrackers(trackers: string[]): string[] {
   const baseline = new Set(envTrackers());
   return dedupeTrackers(trackers).filter((t) => !baseline.has(t));

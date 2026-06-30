@@ -2,12 +2,11 @@
 // Reconnects with golden-ratio (φ) backoff. Emits typed server messages.
 
 import { backoffDelay } from "../lib/backoff";
+import { DEFAULT_SIGNAL_BASE, toSocketUrl } from "../lib/trackers";
 
-// Signaling Worker base URL. Override for local dev by setting VITE_SIGNAL_BASE
-// (e.g. ws://localhost:8787/signal) in web/.env.local; defaults to production.
-export const DEFAULT_SIGNAL_BASE =
-  (import.meta.env.VITE_SIGNAL_BASE as string | undefined)?.replace(/\/+$/, "") ||
-  "wss://otoji.org/signal";
+// Re-exported for callers/tests that import it from here. The canonical tracker
+// form is http(s) (see lib/trackers); connect() converts to ws(s) per-socket.
+export { DEFAULT_SIGNAL_BASE };
 
 export interface Peer {
   peerId: string;
@@ -72,8 +71,9 @@ export class SignalingClient implements Signaling {
 
   connect(): void {
     this.closedByUser = false;
+    // base is canonical http(s); a wss endpoint lives at the same origin.
     const url =
-      `${this.base}/${encodeURIComponent(this.room)}?name=${encodeURIComponent(this.name)}&deviceId=${encodeURIComponent(this.deviceId)}&role=${encodeURIComponent(this.role)}&hasMic=${this.hasMic ? "1" : "0"}` +
+      `${toSocketUrl(this.base)}/${encodeURIComponent(this.room)}?name=${encodeURIComponent(this.name)}&deviceId=${encodeURIComponent(this.deviceId)}&role=${encodeURIComponent(this.role)}&hasMic=${this.hasMic ? "1" : "0"}` +
       (this.peerId ? `&peerId=${encodeURIComponent(this.peerId)}` : "");
     const ws = new WebSocket(url);
     this.ws = ws;

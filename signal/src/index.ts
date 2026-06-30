@@ -47,10 +47,23 @@ interface PeerMeta {
   role: string;
   hasMic: boolean;
   lastSeen: number;
+  winStart: number; // rate-limit window start (ms)
+  winCount: number; // messages seen in the current window
 }
 
 const STALE_MS = 30000; // prune sockets silent for >30s (client pings every ~10s)
 const ALARM_MS = 15000;
+
+// Abuse limits. The relay is unauthenticated, so bound what one room/socket can
+// do: connection count (DO memory), message size + rate (flood), and graph size
+// + node count (storage + broadcast amplification).
+const MAX_PEERS = 32;
+const MAX_MSG_BYTES = 256 * 1024;
+const MAX_GRAPH_BYTES = 128 * 1024;
+const MAX_GRAPH_NODES = 200;
+const RATE_WINDOW_MS = 10000;
+const RATE_MAX = 300; // messages per window per socket (pings + negotiation bursts)
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 export class RoomDurableObject {
   constructor(
@@ -65,18 +78,34 @@ export class RoomDurableObject {
       return Response.json({ ok: true, peers: this.peers().length }, { headers: CORS });
     }
 
+    if (this.state.getWebSockets().length >= MAX_PEERS) {
+      return new Response("room full", { status: 503, headers: CORS });
+    }
+
     const name = (url.searchParams.get("name") || "device").slice(0, 64);
     const deviceId = (url.searchParams.get("deviceId") || crypto.randomUUID()).slice(0, 100);
     const role = (url.searchParams.get("role") || "general").slice(0, 16);
     const hasMic = url.searchParams.get("hasMic") !== "0";
-    // Client may supply a stable peerId (same across every signaling server it
-    // connects to) so a device has one identity across a federated server set;
-    // fall back to a server-minted UUID for legacy single-server clients.
-    const peerId = (url.searchParams.get("peerId") || crypto.randomUUID()).slice(0, 100);
+    // A client may supply a stable peerId (one identity across a federated server
+    // set). Only accept a well-formed UUID — a crafted/short id is replaced with
+    // a server-minted one so callers can't spoof structured identities.
+    const reqPeerId = url.searchParams.get("peerId") || "";
+    const peerId = UUID_RE.test(reqPeerId) ? reqPeerId : crypto.randomUUID();
+
+    // Never let two live sockets share a peerId: that would let signal{to:id}
+    // be misrouted to whichever socket enumerates first (impersonation). Close
+    // any prior socket with this id — this is also the clean reconnect path.
+    for (const old of this.state.getWebSockets(peerId)) {
+      try {
+        old.close(1000, "replaced");
+      } catch {
+        /* already gone */
+      }
+    }
 
     const { 0: client, 1: server } = new WebSocketPair();
     this.state.acceptWebSocket(server, [peerId]);
-    server.serializeAttachment({ peerId, deviceId, name, role, hasMic, lastSeen: Date.now() } satisfies PeerMeta);
+    server.serializeAttachment({ peerId, deviceId, name, role, hasMic, lastSeen: Date.now(), winStart: Date.now(), winCount: 0 } satisfies PeerMeta);
 
     server.send(JSON.stringify({ type: "hello", peerId, peers: this.peers(peerId), graph: await this.getGraph() }));
     this.broadcast({ type: "peer-joined", peer: { peerId, deviceId, name, role, hasMic } }, peerId);
@@ -89,8 +118,34 @@ export class RoomDurableObject {
     const self = ws.deserializeAttachment() as PeerMeta | null;
     if (!self || typeof message !== "string") return;
 
-    // Liveness: refresh lastSeen on any inbound message (incl. heartbeat pings).
-    ws.serializeAttachment({ ...self, lastSeen: Date.now() } satisfies PeerMeta);
+    if (message.length > MAX_MSG_BYTES) {
+      try {
+        ws.close(1009, "message too large");
+      } catch {
+        /* gone */
+      }
+      return;
+    }
+
+    // Per-socket token bucket + liveness: refresh lastSeen, count messages in a
+    // sliding window, and close floods. Pings (~1/10s) stay far under the cap.
+    const now = Date.now();
+    let winStart = self.winStart;
+    let winCount = self.winCount;
+    if (!winStart || now - winStart > RATE_WINDOW_MS) {
+      winStart = now;
+      winCount = 0;
+    }
+    winCount += 1;
+    ws.serializeAttachment({ ...self, lastSeen: now, winStart, winCount } satisfies PeerMeta);
+    if (winCount > RATE_MAX) {
+      try {
+        ws.close(1008, "rate limit");
+      } catch {
+        /* gone */
+      }
+      return;
+    }
 
     let msg: any;
     try {
@@ -106,8 +161,13 @@ export class RoomDurableObject {
         break;
       }
       case "graph-patch": {
-        await this.state.storage.put("graph", msg.graph);
-        this.broadcast({ type: "graph", graph: msg.graph, by: self.peerId }, self.peerId);
+        // Bound stored/broadcast graph: drop oversized payloads or node floods
+        // so one peer can't exhaust DO storage or amplify to the whole room.
+        const g = msg.graph;
+        const nodeCount = g && typeof g === "object" && g.nodes ? Object.keys(g.nodes).length : 0;
+        if (message.length > MAX_GRAPH_BYTES || nodeCount > MAX_GRAPH_NODES) break;
+        await this.state.storage.put("graph", g);
+        this.broadcast({ type: "graph", graph: g, by: self.peerId }, self.peerId);
         break;
       }
       case "graph-get": {

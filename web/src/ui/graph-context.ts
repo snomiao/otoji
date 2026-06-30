@@ -20,6 +20,14 @@ export interface GraphCtx {
   live: LiveStore;
   /** Open the node context menu at a screen position (right-click / long-press). */
   openNodeMenu?: (nodeId: string, x: number, y: number) => void;
+  /** Federation tracker trust: active (connected) + pending (proposed) servers,
+   *  with approve/revoke. Drives the Signaling (trackers) node UI. */
+  trackerState?: {
+    active: string[];
+    pending: string[];
+    approve: (url: string) => string | void;
+    revoke: (url: string) => void;
+  };
 }
 
 export const GraphContext = createContext<GraphCtx>({
