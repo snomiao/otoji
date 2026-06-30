@@ -69,7 +69,10 @@ export class RoomDurableObject {
     const deviceId = (url.searchParams.get("deviceId") || crypto.randomUUID()).slice(0, 100);
     const role = (url.searchParams.get("role") || "general").slice(0, 16);
     const hasMic = url.searchParams.get("hasMic") !== "0";
-    const peerId = crypto.randomUUID();
+    // Client may supply a stable peerId (same across every signaling server it
+    // connects to) so a device has one identity across a federated server set;
+    // fall back to a server-minted UUID for legacy single-server clients.
+    const peerId = (url.searchParams.get("peerId") || crypto.randomUUID()).slice(0, 100);
 
     const { 0: client, 1: server } = new WebSocketPair();
     this.state.acceptWebSocket(server, [peerId]);

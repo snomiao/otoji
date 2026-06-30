@@ -118,6 +118,66 @@ export function VoiceNode({ id, data }: NodeProps) {
   };
   const clearLP = () => { if (lpTimer.current) clearTimeout(lpTimer.current); };
 
+  // Config-only "Signaling (trackers)" node: edits the room's tracker list,
+  // which syncs via the graph and re-homes everyone's live connections.
+  if (d.voiceType === "tracker") {
+    const trackers = (Array.isArray(config?.trackers) ? (config!.trackers as string[]) : []) ?? [];
+    const setTrackers = (next: string[]) => onConfig(id, { trackers: next });
+    const addTracker = (raw: string) => {
+      const t = raw.trim().replace(/\/+$/, "");
+      if (t && !trackers.includes(t)) setTrackers([...trackers, t]);
+    };
+    return (
+      <div
+        onContextMenu={(e) => { e.preventDefault(); openNodeMenu?.(id, e.clientX, e.clientY); }}
+        onTouchStart={onTouchStart}
+        onTouchEnd={clearLP}
+        onTouchMove={clearLP}
+        style={{ border: "1px solid #b794f4", borderRadius: 8, background: "#faf5ff", minWidth: 200, fontSize: 12, boxShadow: "0 1px 3px rgba(0,0,0,0.08)" }}
+      >
+        <div style={{ padding: "6px 10px", borderBottom: "1px solid #e9d8fd", fontWeight: 600, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+          <span>📡 {spec.label}</span>
+          <button
+            className="nodrag"
+            onClick={(e) => { e.stopPropagation(); onDelete(id); }}
+            title="remove node"
+            style={{ fontSize: 12, lineHeight: 1, border: "none", background: "transparent", cursor: "pointer", color: "#e53e3e" }}
+          >
+            ✕
+          </button>
+        </div>
+        <div style={{ padding: "6px 10px" }}>
+          <div style={{ color: "#718096", marginBottom: 4 }}>Room discoverable on:</div>
+          {trackers.length === 0 && <div style={{ color: "#a0aec0", fontStyle: "italic" }}>(bootstrap defaults only)</div>}
+          {trackers.map((t) => (
+            <div key={t} style={{ display: "flex", gap: 4, alignItems: "center", marginBottom: 2 }}>
+              <code style={{ flex: 1, fontSize: 10, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", maxWidth: 170 }} title={t}>{t}</code>
+              <button
+                className="nodrag"
+                onClick={() => setTrackers(trackers.filter((x) => x !== t))}
+                title="remove tracker"
+                style={{ fontSize: 11, border: "none", background: "transparent", cursor: "pointer", color: "#a0aec0" }}
+              >
+                ✕
+              </button>
+            </div>
+          ))}
+          <input
+            className="nodrag"
+            type="text"
+            placeholder="wss://… add tracker"
+            onBlur={(e) => { addTracker(e.target.value); e.target.value = ""; }}
+            onKeyDown={(e) => { if (e.key === "Enter") { addTracker((e.target as HTMLInputElement).value); (e.target as HTMLInputElement).value = ""; } }}
+            style={{ fontSize: 11, width: "100%", marginTop: 4, boxSizing: "border-box" }}
+          />
+          <div style={{ color: "#a0aec0", fontSize: 9, marginTop: 4, lineHeight: 1.3 }}>
+            Peers connect when their tracker lists overlap. Shared via the room link.
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div
       onContextMenu={(e) => { e.preventDefault(); openNodeMenu?.(id, e.clientX, e.clientY); }}

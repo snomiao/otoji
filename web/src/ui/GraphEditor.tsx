@@ -14,7 +14,9 @@ import {
   type FinalConnectionState,
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
-import { SignalingClient, type Peer } from "../net/signaling";
+import { type Peer } from "../net/signaling";
+import { MultiSignalingClient } from "../net/multi-signaling";
+import { bootstrapTrackers, appendTrackers, dedupeTrackers } from "../lib/trackers";
 import { PeerMesh } from "../net/peers";
 import { VoiceNode, type DeviceOpt } from "./VoiceNode";
 import { GraphContext } from "./graph-context";
@@ -44,6 +46,22 @@ import {
 } from "../graph/model";
 
 const nodeTypes = { voice: VoiceNode };
+
+/** Trackers declared by Signaling nodes in the graph (synced to every peer). */
+function trackersFromNodes(ns: Node[]): string[] {
+  const out: string[] = [];
+  for (const n of ns) {
+    if ((n.data as any).voiceType !== "tracker") continue;
+    const t = (n.data as any).config?.trackers;
+    if (Array.isArray(t)) out.push(...(t as string[]));
+  }
+  return out;
+}
+
+/** The live tracker set = local bootstrap defaults ∪ in-graph Signaling nodes. */
+function effectiveTrackers(ns: Node[]): string[] {
+  return dedupeTrackers([...bootstrapTrackers(), ...trackersFromNodes(ns)]);
+}
 
 /** Human-readable throughput, e.g. 1536 -> "1.5 KB/s". */
 function formatRate(bytesPerSec: number): string {
@@ -137,7 +155,7 @@ function Editor({ initialRoom, local }: { initialRoom?: string; local?: boolean 
   // Per-node context menu (right-click / long-press): duplicate/replace/remove/visibility.
   const [nodeMenu, setNodeMenu] = useState<null | { x: number; y: number; nodeId: string }>(null);
 
-  const sigRef = useRef<SignalingClient | null>(null);
+  const sigRef = useRef<MultiSignalingClient | null>(null);
   const meshRef = useRef<PeerMesh | null>(null);
   const transportRef = useRef<PeerMeshTransport | null>(null);
   const runtimeRef = useRef<GraphRuntime | null>(null);
@@ -253,11 +271,18 @@ function Editor({ initialRoom, local }: { initialRoom?: string; local?: boolean 
     [setNodes, setEdges],
   );
 
+  // Re-home live signaling whenever the graph's Signaling (tracker) nodes change
+  // — locally edited or synced from a peer. setBases() diffs, so this is a no-op
+  // unless the effective tracker set actually changed.
+  useEffect(() => {
+    sigRef.current?.setBases(effectiveTrackers(nodes));
+  }, [nodes]);
+
   function join() {
     if (joined || !room.trim()) return;
     const dn = name.trim() || "device";
     setDeviceName(dn);
-    const sig = new SignalingClient(room.trim(), dn, myDeviceId, role, caps.hasMic);
+    const sig = new MultiSignalingClient(room.trim(), dn, myDeviceId, role, caps.hasMic, effectiveTrackers(nodesRef.current));
     sigRef.current = sig;
     sig.on("open", () => setStatus("connected"));
     sig.on("close", () => setStatus("reconnecting…"));
@@ -358,8 +383,14 @@ function Editor({ initialRoom, local }: { initialRoom?: string; local?: boolean 
     window.open(url, "_blank", "noopener");
   }
 
+  // Share link carries the room's extra trackers as `?tr=` params (magnet-style)
+  // so a friend bootstraps onto the same signaling network and is discoverable.
+  function shareUrl(): string {
+    return appendTrackers(joinUrl(room.trim(), location.origin), effectiveTrackers(nodesRef.current));
+  }
+
   function share() {
-    const url = joinUrl(room.trim(), location.origin);
+    const url = shareUrl();
     navigator.clipboard
       ?.writeText(url)
       .then(() => {
@@ -847,7 +878,13 @@ function Editor({ initialRoom, local }: { initialRoom?: string; local?: boolean 
         </div>
         {isRoomCode(room.trim()) && (
           <p style={{ fontSize: 12, color: "#718096", marginTop: 10 }}>
-            Shareable link: <code>{joinUrl(room.trim(), location.origin)}</code>
+            Shareable link: <code>{shareUrl()}</code>
+            <br />
+            <span style={{ fontSize: 11, color: "#a0aec0" }}>
+              Discoverable on {effectiveTrackers(nodesRef.current).length} signaling server
+              {effectiveTrackers(nodesRef.current).length === 1 ? "" : "s"}:{" "}
+              {effectiveTrackers(nodesRef.current).map((t) => t.replace(/^wss?:\/\//, "")).join(", ")}
+            </span>
           </p>
         )}
       </div>
