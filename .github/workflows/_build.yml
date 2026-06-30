@@ -7,6 +7,9 @@ name: _build
 
 on:
   workflow_call:
+  # Allow building the napi matrix on demand (e.g. to produce a fresh artifact
+  # for bootstrapping a brand-new platform package on npm) without a release.
+  workflow_dispatch:
 
 env:
   CARGO_TERM_COLOR: always
@@ -27,6 +30,10 @@ jobs:
             target: x86_64-apple-darwin
           - host: ubuntu-latest
             target: x86_64-unknown-linux-gnu
+          # Native arm64 Linux runner (free for public repos) — no cross-compile,
+          # so sherpa-onnx-sys's C++ build works the same as x64.
+          - host: ubuntu-24.04-arm
+            target: aarch64-unknown-linux-gnu
           - host: windows-latest
             target: x86_64-pc-windows-msvc
     steps:
