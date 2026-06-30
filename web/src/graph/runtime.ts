@@ -14,6 +14,7 @@ import { DEFAULT_NEURAL_TTS_MODEL, AUTO_TTS_MODEL, AUTO_TTS_VOICE, langToTtsMode
 import { runAsr, runText, runTts, warmPipe, type ModelTask } from "../providers/model/transformers-pipeline";
 import { createVoskStream, warmVosk, DEFAULT_VOSK_MODEL, type VoskStream } from "../providers/stt/vosk";
 import { startCamera, clampFps, DEFAULT_CAMERA_FPS, type CameraHandle } from "../providers/vision/camera";
+import { startScreenShare, type ScreenHandle } from "../providers/vision/screen";
 import { ocrRecognize, warmOcr } from "../providers/vision/paddleocr";
 import { detect, drawDetections, warmDetect, DEFAULT_DETECT_MODEL } from "../providers/vision/detect";
 import { estimateDepth, warmDepth } from "../providers/vision/depth";
@@ -359,11 +360,12 @@ export class GraphRuntime {
     this.hooks.onStatus?.("running");
   }
 
-  /** The camera node feeding this node's `in` image port, if any. */
+  /** The frame source (camera or screen share) feeding this node's `in` port. */
   private upstreamCamera(nodeId: string): RuntimeNode | null {
     for (const e of this.graph.edges) {
       if (e.target !== nodeId || e.targetHandle !== "in") continue;
-      if (this.graph.nodes[e.source]?.type !== "camera") continue;
+      const srcType = this.graph.nodes[e.source]?.type;
+      if (srcType !== "camera" && srcType !== "screen-share") continue;
       const node = this.nodes.get(e.source);
       if (node?.dims) return node;
     }
@@ -933,6 +935,46 @@ export class GraphRuntime {
           const c = msg as ControlMsg;
           if (c.pulse) handle?.grabNow(); // credit: one frame per "next"
           else if (typeof c.rate === "number") handle?.setRate(c.rate); // rate: free-run at fps
+        },
+        stop: () => handle?.stop(),
+        dims: () => handle?.dims() ?? null,
+      };
+    }
+
+    if (type === "screen-share") {
+      const cfg = this.graph.nodes[id]?.config ?? {};
+      const fps = clampFps((cfg.fps as number) ?? DEFAULT_CAMERA_FPS);
+      const demand = this.hasIncoming(id, "rate"); // backpressure when a rate edge feeds us
+      let handle: ScreenHandle | null = null;
+      return {
+        start: async () => {
+          // Emit system audio only when the `audio` port is wired (lazy).
+          const wantAudio = this.hasOutgoing(id, "audio");
+          try {
+            handle = await startScreenShare({
+              fps,
+              demand,
+              onFrame: (bitmap, width, height) => {
+                this.hooks.onImage?.(id, bitmap);
+                this.emit(id, "out", { bitmap, width, height, ts: Date.now() } as ImageMsg);
+              },
+              onSegment: wantAudio
+                ? (samples, durationMs, offsetMs) => {
+                    this.hooks.onSegment?.(id);
+                    this.emit(id, "audio", { samples, sampleRate: MIC_VAD_SR, durationMs, offsetMs } as SegmentMsg);
+                  }
+                : undefined,
+              onEnded: () => this.hooks.onStatus?.("screen share ended"),
+              onError: (e) => this.hooks.onError?.(e),
+            });
+          } catch (e) {
+            this.hooks.onError?.(e instanceof Error ? e : new Error(String(e)));
+          }
+        },
+        input: (_port, msg) => {
+          const c = msg as ControlMsg;
+          if (c.pulse) handle?.grabNow();
+          else if (typeof c.rate === "number") handle?.setRate(c.rate);
         },
         stop: () => handle?.stop(),
         dims: () => handle?.dims() ?? null,

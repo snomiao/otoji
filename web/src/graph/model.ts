@@ -24,6 +24,7 @@ export type NodeType =
   | "srt-out"
   | "tracker"
   | "camera"
+  | "screen-share"
   | "paddle-ocr"
   | "text-diff"
   | "vision-model";
@@ -177,6 +178,19 @@ export const NODE_SPECS: Record<NodeType, NodeSpec> = {
     inputs: [{ id: "rate", type: "control" }],
     outputs: [{ id: "out", type: "image" }],
   },
+  "screen-share": {
+    type: "screen-share",
+    label: "Screen share",
+    // getDisplayMedia: screen/window/tab frames + (where granted) system audio.
+    // `out` mirrors the Camera node (image frames; the `rate` input enables
+    // backpressure). `audio` carries VAD-segmented system audio for STT — only
+    // when the browser provides an audio track (often tab-share only).
+    inputs: [{ id: "rate", type: "control" }],
+    outputs: [
+      { id: "out", type: "image" },
+      { id: "audio", type: "segment" },
+    ],
+  },
   "paddle-ocr": {
     type: "paddle-ocr",
     label: "OCR (PaddleOCR)",
@@ -223,7 +237,7 @@ export const NODE_CATEGORIES: { id: string; label: string; types: NodeType[] }[]
   { id: "output", label: "Output", types: ["sink", "audio-out", "srt-out", "speaker"] },
   { id: "model", label: "Custom model", types: ["model"] },
   { id: "pipe", label: "Pipe (CLI)", types: ["pipe"] },
-  { id: "vision", label: "Vision", types: ["camera", "paddle-ocr", "vision-model"] },
+  { id: "vision", label: "Vision", types: ["camera", "screen-share", "paddle-ocr", "vision-model"] },
   { id: "text", label: "Text", types: ["text-diff"] },
   { id: "net", label: "Network", types: ["tracker"] },
 ];
