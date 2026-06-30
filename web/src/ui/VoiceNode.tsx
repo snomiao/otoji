@@ -453,30 +453,47 @@ export function VoiceNode({ id, data }: NodeProps) {
         {d.voiceType === "vision-model" && (
           <>
             <label style={{ display: "flex", gap: 6, alignItems: "center", color: "#718096", marginTop: 4 }}>
-              model:
+              task:
               <select
-                value={(config?.model as string | undefined) ?? DEFAULT_DETECT_MODEL}
-                onChange={(e) => onConfig(id, { model: e.target.value })}
+                value={(config?.task as string | undefined) ?? "detect"}
+                onChange={(e) => onConfig(id, { task: e.target.value })}
                 style={{ fontSize: 11, flex: 1 }}
               >
-                {DETECT_MODELS.map((m) => (
-                  <option key={m.id} value={m.id}>{m.name}</option>
-                ))}
+                <option value="detect">Object detection</option>
+                <option value="depth">Depth map</option>
+                <option value="pose">Pose (MediaPipe)</option>
+                <option value="hand">Hand (MediaPipe)</option>
               </select>
             </label>
-            <label style={{ display: "flex", gap: 6, alignItems: "center", color: "#718096", marginTop: 4 }}>
-              min score:
-              <input
-                type="number"
-                min={0.05}
-                max={0.95}
-                step={0.05}
-                defaultValue={(config?.threshold as number | undefined) ?? 0.5}
-                onBlur={(e) => onConfig(id, { threshold: Math.min(0.95, Math.max(0.05, Number(e.target.value) || 0.5)) })}
-                onKeyDown={(e) => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); }}
-                style={{ fontSize: 11, width: 56 }}
-              />
-            </label>
+            {(((config?.task as string | undefined) ?? "detect") === "detect") && (
+              <>
+                <label style={{ display: "flex", gap: 6, alignItems: "center", color: "#718096", marginTop: 4 }}>
+                  model:
+                  <select
+                    value={(config?.model as string | undefined) ?? DEFAULT_DETECT_MODEL}
+                    onChange={(e) => onConfig(id, { model: e.target.value })}
+                    style={{ fontSize: 11, flex: 1 }}
+                  >
+                    {DETECT_MODELS.map((m) => (
+                      <option key={m.id} value={m.id}>{m.name}</option>
+                    ))}
+                  </select>
+                </label>
+                <label style={{ display: "flex", gap: 6, alignItems: "center", color: "#718096", marginTop: 4 }}>
+                  min score:
+                  <input
+                    type="number"
+                    min={0.05}
+                    max={0.95}
+                    step={0.05}
+                    defaultValue={(config?.threshold as number | undefined) ?? 0.5}
+                    onBlur={(e) => onConfig(id, { threshold: Math.min(0.95, Math.max(0.05, Number(e.target.value) || 0.5)) })}
+                    onKeyDown={(e) => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); }}
+                    style={{ fontSize: 11, width: 56 }}
+                  />
+                </label>
+              </>
+            )}
           </>
         )}
         {d.voiceType === "text-diff" && (
