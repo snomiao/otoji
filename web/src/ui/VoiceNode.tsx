@@ -341,6 +341,16 @@ export function VoiceNode({ id, data }: NodeProps) {
             </select>
           </label>
         )}
+        {(d.voiceType === "mic-vad" || d.voiceType === "mic-raw") && (
+          <label style={{ display: "flex", gap: 5, alignItems: "center", color: "#718096", marginTop: 4, fontSize: 11 }} title="Browser echo cancellation, noise suppression & auto-gain. Turn off for raw capture.">
+            <input
+              type="checkbox"
+              checked={(config?.aec as boolean | undefined) ?? true}
+              onChange={(e) => onConfig(id, { aec: e.target.checked })}
+            />
+            echo cancel / denoise
+          </label>
+        )}
         {d.voiceType === "audio-mix" && (
           <label style={{ display: "flex", gap: 6, alignItems: "center", color: "#718096", marginTop: 4 }}>
             jitter:
