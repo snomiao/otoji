@@ -2,6 +2,7 @@ import React, { useContext, useEffect, useState, useSyncExternalStore } from "re
 import { Handle, Position, type NodeProps } from "@xyflow/react";
 import { NODE_SPECS, type NodeType, type PortType } from "../graph/model";
 import { GraphContext } from "./graph-context";
+import { fileStore } from "../graph/file-store";
 import { SENSEVOICE_MODELS, DEFAULT_SENSEVOICE_MODEL } from "../providers/stt/sensevoice-models";
 import {
   TRANSLATE_MODELS,
@@ -49,6 +50,11 @@ const PORT_COLOR: Record<PortType, string> = {
   segment: "#dd6b20", // audio segment (orange)
   transcript: "#2b6cb0", // text (blue)
 };
+
+// One-click demo clips for the Audio-file node (served same-origin from /samples).
+const FILE_SAMPLES: { name: string; url: string }[] = [
+  { name: "English speech (8s)", url: "/samples/en.wav" },
+];
 
 /**
  * Enumerate hardware audio devices of one kind ("audioinput"/"audiooutput").
@@ -395,19 +401,44 @@ export function VoiceNode({ id, data }: NodeProps) {
             </label>
           </>
         )}
-        {(d.voiceType === "file-audio" || d.voiceType === "file-text") && (
-          <div style={{ marginTop: 4, fontSize: 11, color: "#718096" }}>
-            <div style={{ marginBottom: 2, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", maxWidth: 150 }}>
-              {fileName ? `📄 ${fileName}` : "no file"}
+        {(d.voiceType === "file-audio" || d.voiceType === "file-text") && (() => {
+          const url = config?.url as string | undefined;
+          const useUrl = (u: string | undefined) => { fileStore.delete(id); onConfig(id, { url: u || undefined, file: undefined }); };
+          const samples = d.voiceType === "file-audio" ? FILE_SAMPLES : [];
+          return (
+            <div style={{ marginTop: 4, fontSize: 11, color: "#718096" }}>
+              <div style={{ marginBottom: 2, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", maxWidth: 150 }}>
+                {fileName ? `📄 ${fileName}` : url ? `🔗 ${url}` : "no file"}
+              </div>
+              <input
+                type="file"
+                accept={d.voiceType === "file-audio" ? "audio/*" : ".md,.txt,.srt,.vtt,text/*"}
+                onChange={(e) => { const f = e.target.files?.[0]; if (f) setFile(id, f); }}
+                style={{ fontSize: 10, width: 150 }}
+              />
+              <input
+                type="text"
+                defaultValue={url ?? ""}
+                placeholder="…or paste a URL"
+                onBlur={(e) => useUrl(e.target.value.trim())}
+                onKeyDown={(e) => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); }}
+                style={{ fontSize: 10, width: 150, marginTop: 3, display: "block" }}
+              />
+              {samples.length > 0 && (
+                <select
+                  value=""
+                  onChange={(e) => { if (e.target.value) useUrl(e.target.value); }}
+                  style={{ fontSize: 10, width: 156, marginTop: 3 }}
+                >
+                  <option value="">load a sample…</option>
+                  {samples.map((s) => (
+                    <option key={s.url} value={s.url}>{s.name}</option>
+                  ))}
+                </select>
+              )}
             </div>
-            <input
-              type="file"
-              accept={d.voiceType === "file-audio" ? "audio/*" : ".md,.txt,.srt,.vtt,text/*"}
-              onChange={(e) => { const f = e.target.files?.[0]; if (f) setFile(id, f); }}
-              style={{ fontSize: 10, width: 150 }}
-            />
-          </div>
-        )}
+          );
+        })()}
         {d.voiceType === "audio-out" && (
           <button
             className="nodrag"

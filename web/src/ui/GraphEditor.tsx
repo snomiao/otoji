@@ -463,7 +463,7 @@ function Editor({ initialRoom, local }: { initialRoom?: string; local?: boolean 
     (nodeId: string, file: File) => {
       const kind = fileKindForName(file.name) ?? "audio";
       fileStore.set(nodeId, { kind, name: file.name, file });
-      onConfig(nodeId, { file: file.name, fileSeq: ++fileSeqRef.current });
+      onConfig(nodeId, { file: file.name, fileSeq: ++fileSeqRef.current, url: undefined }); // local file wins; clear any URL
     },
     [onConfig],
   );

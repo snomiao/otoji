@@ -406,12 +406,14 @@ export class GraphRuntime {
     }
 
     if (type === "file-audio") {
+      const url = (this.graph.nodes[id]?.config?.url as string | undefined)?.trim();
       return {
         start: async () => {
           const entry = fileStore.get(id);
-          if (!entry?.file) return;
+          if (!entry?.file && !url) return;
           try {
-            const buf = await entry.file.arrayBuffer();
+            // Local dropped file, or fetch a URL (synced in config — works on any device).
+            const buf = entry?.file ? await entry.file.arrayBuffer() : await (await fetch(url!)).arrayBuffer();
             const OAC = (window as any).OfflineAudioContext || (window as any).webkitOfflineAudioContext;
             const decoded = await new OAC(1, 1, MIC_VAD_SR).decodeAudioData(buf); // resampled to 16k
             const len = decoded.length;
@@ -432,17 +434,23 @@ export class GraphRuntime {
     }
 
     if (type === "file-text") {
+      const url = (this.graph.nodes[id]?.config?.url as string | undefined)?.trim();
       return {
         start: async () => {
-          const entry = fileStore.get(id);
-          const text = entry?.text ?? (entry?.file ? await entry.file.text() : "");
-          if (!text) return;
-          for (const para of text.split(/\n\s*\n/).map((s) => s.trim()).filter(Boolean)) {
-            this.hooks.onRecognized?.(id, para);
-            this.emit(id, "out", {
-              text: para,
-              audio: { samples: new Float32Array(0), sampleRate: MIC_VAD_SR, durationMs: 0 },
-            } as TranscriptMsg);
+          try {
+            const entry = fileStore.get(id);
+            const text = entry?.text ?? (entry?.file ? await entry.file.text() : url ? await (await fetch(url)).text() : "");
+            if (!text) return;
+            for (const para of text.split(/\n\s*\n/).map((s) => s.trim()).filter(Boolean)) {
+              this.hooks.onRecognized?.(id, para);
+              this.emit(id, "out", {
+                text: para,
+                audio: { samples: new Float32Array(0), sampleRate: MIC_VAD_SR, durationMs: 0 },
+              } as TranscriptMsg);
+            }
+          } catch (e) {
+            // Non-fatal: a failed URL fetch only disables this node, not the graph.
+            this.hooks.onError?.(e instanceof Error ? e : new Error(String(e)));
           }
         },
       };
