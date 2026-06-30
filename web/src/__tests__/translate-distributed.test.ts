@@ -95,7 +95,7 @@ describe("cross-device translate routing", () => {
     // "speak" on device A: fires mic → stt(@A) → transcript hops to translate(@B)
     // → translated text hops back to sink(@A).
     expect(h.mic).not.toBeNull();
-    h.mic!.onSegment(new Float32Array([0.1, -0.1, 0.2]), 200);
+    h.mic!.onSegment(new Float32Array(3200).fill(0.1), 200); // ≥ MIN_STT_SAMPLES (a real ~0.2s utterance)
     await flush();
 
     expect(sunk).toEqual(["[Japanese] hello world"]);

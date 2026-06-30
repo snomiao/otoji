@@ -105,6 +105,10 @@ interface RuntimeNode {
   input?(port: string, msg: unknown): void;
 }
 
+// Below this an audio segment is too short to recognize; feeding 0/near-0 samples
+// to an ONNX model triggers "Tensor shape.Size() must be >= 0" in onnxruntime-web.
+const MIN_STT_SAMPLES = 256; // ~16ms @ 16kHz
+
 /** Short label for a queue item (a text snippet). */
 function snippet(t: string): string {
   const s = t.trim().replace(/\s+/g, " ");
@@ -565,6 +569,7 @@ export class GraphRuntime {
       return {
         input: (_port, msg) => {
           const seg = msg as SegmentMsg;
+          if (!seg.samples || seg.samples.length < MIN_STT_SAMPLES) return; // skip empty/too-short audio
           q.run(`🔊 ${Math.round(seg.durationMs / 100) / 10}s`, async () => {
             try {
               const res = await sttRecognize(seg.samples, modelId);
@@ -810,6 +815,10 @@ export class GraphRuntime {
       return {
         input: (_port, msg) => {
           if (!model) return;
+          // Skip empty inputs (empty audio / blank text) — avoids ORT shape errors.
+          if (task === "asr") {
+            if (!(msg as SegmentMsg).samples || (msg as SegmentMsg).samples.length < MIN_STT_SAMPLES) return;
+          } else if (!(msg as TranscriptMsg).text?.trim()) return;
           const label = task === "asr" ? "🔊 audio" : snippet((msg as TranscriptMsg).text ?? "");
           q.run(label, async () => {
             try {
