@@ -341,6 +341,22 @@ export function VoiceNode({ id, data }: NodeProps) {
             </select>
           </label>
         )}
+        {d.voiceType === "audio-mix" && (
+          <label style={{ display: "flex", gap: 6, alignItems: "center", color: "#718096", marginTop: 4 }}>
+            jitter:
+            <input
+              type="number"
+              min={0}
+              max={2000}
+              step={50}
+              defaultValue={(config?.jitterMs as number | undefined) ?? 300}
+              onBlur={(e) => onConfig(id, { jitterMs: Math.max(0, Number(e.target.value) || 0) })}
+              onKeyDown={(e) => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); }}
+              style={{ fontSize: 11, width: 56 }}
+            />
+            <span style={{ fontSize: 9, color: "#a0aec0" }}>ms · wire several inputs</span>
+          </label>
+        )}
         {d.voiceType === "speaker" && (
           <label style={{ display: "flex", gap: 6, alignItems: "center", color: "#718096", marginTop: 4 }}>
             out:

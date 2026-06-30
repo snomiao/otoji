@@ -27,7 +27,8 @@ export type NodeType =
   | "screen-share"
   | "paddle-ocr"
   | "text-diff"
-  | "vision-model";
+  | "vision-model"
+  | "audio-mix";
 
 export interface NodeSpec {
   type: NodeType;
@@ -48,6 +49,16 @@ export const NODE_SPECS: Record<NodeType, NodeSpec> = {
     label: "Mic (raw, no VAD)",
     // Continuous fixed-size frames for streaming consumers (no segmentation).
     inputs: [],
+    outputs: [{ id: "out", type: "segment" }],
+  },
+  "audio-mix": {
+    type: "audio-mix",
+    label: "Mix audio",
+    // Combine multiple audio sources (wire several segment edges into `in`).
+    // Segments are time-aligned by wall-clock ts, overlaps summed and soft-
+    // clipped, then emitted as one mixed segment per overlap cluster. A small
+    // jitter buffer absorbs arrival skew before a cluster is flushed.
+    inputs: [{ id: "in", type: "segment" }],
     outputs: [{ id: "out", type: "segment" }],
   },
   "file-audio": {
@@ -230,7 +241,7 @@ export const NODE_SPECS: Record<NodeType, NodeSpec> = {
 
 /** Palette grouping for the node types. */
 export const NODE_CATEGORIES: { id: string; label: string; types: NodeType[] }[] = [
-  { id: "input", label: "Input", types: ["mic-vad", "mic-raw", "file-audio", "file-text"] },
+  { id: "input", label: "Input", types: ["mic-vad", "mic-raw", "audio-mix", "file-audio", "file-text"] },
   { id: "stt", label: "Speech → Text", types: ["stt", "web-speech", "vosk"] },
   { id: "translate", label: "Text → Text", types: ["translate"] },
   { id: "tts", label: "Text → Speech", types: ["tts", "tts-model"] },
