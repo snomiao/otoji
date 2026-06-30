@@ -14,6 +14,7 @@ function graph(): VoiceGraph {
     ttsm: { id: "ttsm", type: "tts-model", device: null, pos: { x: 0, y: 0 } },
     mdl: { id: "mdl", type: "model", device: null, pos: { x: 0, y: 0 } },
     pipe: { id: "pipe", type: "pipe", device: null, pos: { x: 0, y: 0 } },
+    vosk: { id: "vosk", type: "vosk", device: null, pos: { x: 0, y: 0 } },
   };
   return g;
 }
@@ -91,6 +92,13 @@ describe("canConnect", () => {
     expect(canConnect(g, "stt", "out", "pipe", "in")).toBe(true); // transcript -> in
     expect(canConnect(g, "pipe", "out", "sink", "in")).toBe(true); // transcript out -> sink
     expect(canConnect(g, "mic", "out", "pipe", "in")).toBe(false); // segment -> transcript
+  });
+
+  it("vosk streaming STT: audio in → transcript out", () => {
+    const g = graph();
+    expect(canConnect(g, "mic", "out", "vosk", "in")).toBe(true); // segment → in
+    expect(canConnect(g, "vosk", "out", "sink", "in")).toBe(true); // transcript out → sink
+    expect(canConnect(g, "stt", "out", "vosk", "in")).toBe(false); // transcript → segment
   });
 
   it("rejects a second edge into an occupied input", () => {

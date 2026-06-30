@@ -13,6 +13,7 @@ import {
 } from "../providers/translate/translate-config";
 import { NEURAL_TTS_MODELS, AUTO_TTS_MODEL, AUTO_TTS_VOICE } from "../providers/tts/tts-config";
 import { MODEL_TASKS, MODEL_DTYPES, DEFAULT_MODEL_DTYPE } from "../providers/model/transformers-pipeline";
+import { VOSK_MODELS, DEFAULT_VOSK_MODEL } from "../providers/stt/vosk";
 import { useNodeLive } from "./useNodeLive";
 import { NodeMicPreview } from "./NodeMicPreview";
 import { isPreviewShown, setPreviewShown, subscribePrefs } from "../lib/prefs";
@@ -103,6 +104,7 @@ export function VoiceNode({ id, data }: NodeProps) {
   const voices = useVoices();
   const shown = useSyncExternalStore(subscribePrefs, () => isPreviewShown(id));
   const toggleShown = () => setPreviewShown(id, !shown);
+  const [cmdCopied, setCmdCopied] = useState(false);
 
   const onTouchStart = (e: React.TouchEvent) => {
     const t = e.touches[0];
@@ -320,6 +322,40 @@ export function VoiceNode({ id, data }: NodeProps) {
             />
           </label>
         )}
+        {d.voiceType === "vosk" && (
+          <label style={{ display: "flex", gap: 6, alignItems: "center", color: "#718096", marginTop: 4 }}>
+            model:
+            <select
+              value={(config?.model as string | undefined) ?? DEFAULT_VOSK_MODEL}
+              onChange={(e) => onConfig(id, { model: e.target.value })}
+              style={{ fontSize: 11, flex: 1 }}
+            >
+              {VOSK_MODELS.map((m) => (
+                <option key={m.id} value={m.url}>{m.name}</option>
+              ))}
+            </select>
+          </label>
+        )}
+        {d.voiceType === "pipe" && (() => {
+          const room = typeof location !== "undefined" ? location.pathname.replace(/^\/+|\/+$/g, "") : "";
+          const cmd = `npx otoji node ${typeof location !== "undefined" ? location.host : "otoji.org"}/${room || "<room>"}/${id}`;
+          return (
+            <div style={{ marginTop: 4 }}>
+              <div style={{ fontSize: 10, color: "#a0aec0", marginBottom: 2 }}>run in a terminal to bridge stdio:</div>
+              <div style={{ display: "flex", gap: 4, alignItems: "stretch" }}>
+                <code style={{ flex: 1, minWidth: 0, fontSize: 9.5, background: "#f7fafc", border: "1px solid #e2e8f0", borderRadius: 4, padding: "3px 5px", overflowX: "auto", whiteSpace: "nowrap" }}>{cmd}</code>
+                <button
+                  className="nodrag"
+                  title="copy command"
+                  onClick={() => { navigator.clipboard?.writeText(cmd); setCmdCopied(true); setTimeout(() => setCmdCopied(false), 1200); }}
+                  style={{ fontSize: 10, border: "1px solid #cbd5e0", borderRadius: 4, background: "#fff", cursor: "pointer", padding: "0 6px" }}
+                >
+                  {cmdCopied ? "✓" : "⧉"}
+                </button>
+              </div>
+            </div>
+          );
+        })()}
         {d.voiceType === "model" && (
           <>
             <label style={{ display: "flex", gap: 6, alignItems: "center", color: "#718096", marginTop: 4 }}>
@@ -424,7 +460,7 @@ export function VoiceNode({ id, data }: NodeProps) {
       {shown && (d.voiceType === "mic-vad" || d.voiceType === "mic-raw" || texts.length > 0) && (
         <div style={{ padding: "0 10px 8px" }}>
           {(d.voiceType === "mic-vad" || d.voiceType === "mic-raw") && <NodeMicPreview live={live} nodeId={id} width={150} height={28} />}
-          {(d.voiceType === "stt" || d.voiceType === "translate" || d.voiceType === "sink" || d.voiceType === "web-speech" || d.voiceType === "model") && (
+          {(d.voiceType === "stt" || d.voiceType === "translate" || d.voiceType === "sink" || d.voiceType === "web-speech" || d.voiceType === "vosk" || d.voiceType === "model") && (
             <div style={{ fontSize: 11, color: "#4a5568", lineHeight: 1.35 }}>
               {texts.map((t, i) => (
                 <div key={i} style={{ opacity: 1 - i * 0.3, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", maxWidth: 150 }}>

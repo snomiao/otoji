@@ -12,6 +12,7 @@ import { DEFAULT_TRANSLATE_LANG, DEFAULT_TRANSLATE_MODEL, langNameToCode } from 
 import { neuralTts } from "../providers/tts/neural";
 import { DEFAULT_NEURAL_TTS_MODEL, AUTO_TTS_MODEL, AUTO_TTS_VOICE, langToTtsModel, voiceMatchesLang } from "../providers/tts/tts-config";
 import { runAsr, runText, runTts, warmPipe, type ModelTask } from "../providers/model/transformers-pipeline";
+import { createVoskStream, warmVosk, DEFAULT_VOSK_MODEL, type VoskStream } from "../providers/stt/vosk";
 import type { SttLevel } from "../providers/types";
 import { buildSegmentFrame, buildTranscriptFrame, frameToMessage, type EdgeFrame } from "./frames";
 
@@ -173,6 +174,16 @@ export class GraphRuntime {
         this.adj.clear();
         return;
       }
+    }
+
+    // Preload Vosk streaming models — non-fatal (a failure only disables that node).
+    const voskModels = new Set<string>();
+    for (const n of Object.values(this.graph.nodes)) {
+      if (n.type === "vosk" && this.isLocal(n.id)) voskModels.add((n.config?.model as string | undefined) ?? DEFAULT_VOSK_MODEL);
+    }
+    if (voskModels.size) {
+      this.hooks.onStatus?.("loading streaming STT model…");
+      await Promise.all([...voskModels].map((u) => warmVosk(u).catch((e) => this.hooks.onError?.(e instanceof Error ? e : new Error(String(e))))));
     }
 
     // Preload translate (in-browser LLM) models — only for nodes using the LLM
@@ -348,6 +359,32 @@ export class GraphRuntime {
           try { rec.start(); } catch (e) { this.hooks.onError?.(e instanceof Error ? e : new Error(String(e))); }
         },
         stop: () => { stopped = true; try { rec?.stop(); } catch { /* ignore */ } },
+      };
+    }
+
+    if (type === "vosk") {
+      // Streaming ASR: feed each incoming audio frame to a persistent Vosk
+      // recognizer; partials → live preview, finals → downstream transcript.
+      const url = (this.graph.nodes[id]?.config?.model as string | undefined) ?? DEFAULT_VOSK_MODEL;
+      let stream: VoskStream | null = null;
+      return {
+        start: async () => {
+          try {
+            stream = await createVoskStream(
+              url,
+              (partial) => this.hooks.onRecognized?.(id, partial),
+              (text) => {
+                this.hooks.onRecognized?.(id, text);
+                this.emit(id, "out", { text, audio: { samples: new Float32Array(0), sampleRate: MIC_VAD_SR, durationMs: 0 } } as TranscriptMsg);
+              },
+            );
+          } catch (e) {
+            // Non-fatal: a failed model load only disables this node, not the graph.
+            this.hooks.onError?.(e instanceof Error ? e : new Error(String(e)));
+          }
+        },
+        input: (_port, msg) => stream?.accept((msg as SegmentMsg).samples),
+        stop: async () => { stream?.free(); stream = null; },
       };
     }
 

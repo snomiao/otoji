@@ -1,9 +1,11 @@
 #!/usr/bin/env node
-// otoji-node — bridge a terminal's stdio to a "CLI pipe" node in an otoji graph.
+// otoji node — bridge a terminal's stdio to a "CLI pipe" node in an otoji graph.
 //
-//   otoji-node <room> [-d]       (installed bin; or: node cli/otoji-node.mjs <room>)
-//     <room>   the room code (e.g. blue-otter-7x2k), or $OTOJI_ROOM
-//     -d       debug: log activity to stderr
+//   npx otoji node <host/room/nodeId> [-d]    (also: otoji-node <...>, node cli/otoji-node.mjs <...>)
+//     <host/room/nodeId>  e.g. otoji.org/blue-otter-7x2k/pipe-ab12 (copy it from the
+//                         pipe node in the graph). host and nodeId are optional:
+//                         just a room code targets all pipe nodes in the room.
+//     -d                  debug: log activity to stderr
 //
 // Text arriving at a pipe node in the graph is written to stdout (one line per
 // message); each line read from stdin is sent into the graph's pipe node(s).
@@ -20,12 +22,24 @@ import { createInterface } from "node:readline";
 
 const args = process.argv.slice(2);
 const debug = args.includes("-d") || args.includes("--debug");
-const room = (args.find((a) => !a.startsWith("-")) || process.env.OTOJI_ROOM || "").trim();
-const signal = (process.env.OTOJI_SIGNAL || "wss://otoji.org/signal").replace(/\/+$/, "");
+let pos = args.filter((a) => !a.startsWith("-"));
+if (pos[0] === "node") pos = pos.slice(1); // allow `otoji node <...>` (leading subcommand)
+const target = (pos[0] || process.env.OTOJI_ROOM || "").trim();
+
+// Parse <host/room/nodeId> | <room/nodeId> | <room> | full URL.
+const toks = target.replace(/^https?:\/\//, "").split("/").filter(Boolean);
+let host = "otoji.org";
+let parts = toks;
+// First token is a host if it looks like one (has a dot, a :port, or is localhost).
+if (toks[0] && (/[.:]/.test(toks[0]) || toks[0] === "localhost")) { host = toks[0]; parts = toks.slice(1); }
+const room = parts[0];
+const nodeId = parts[1] || null; // null = all pipe nodes in the room
+const proto = /^(localhost|127\.|0\.0\.0\.0)/.test(host) ? "ws" : "wss"; // local dev = no TLS
+const signal = (process.env.OTOJI_SIGNAL || `${proto}://${host}/signal`).replace(/\/+$/, "");
 const log = (...a) => debug && console.error("[otoji node]", ...a);
 
 if (!room) {
-  console.error("usage: otoji-node <room> [-d]   (room code, or set $OTOJI_ROOM)");
+  console.error("usage: otoji node <host/room/nodeId> [-d]   (or set $OTOJI_ROOM)");
   process.exit(2);
 }
 if (typeof WebSocket === "undefined") {
@@ -45,7 +59,7 @@ const outbox = []; // stdin lines awaiting an open socket (so early/reconnect in
 function flush() {
   while (ws && ws.readyState === 1 /* OPEN */ && outbox.length) {
     const text = outbox.shift();
-    try { ws.send(JSON.stringify({ type: "pipe", node: "*", text, src: "cli" })); } catch { outbox.unshift(text); break; }
+    try { ws.send(JSON.stringify({ type: "pipe", node: nodeId || "*", text, src: "cli" })); } catch { outbox.unshift(text); break; }
   }
 }
 
@@ -61,8 +75,9 @@ function connect() {
   ws.onmessage = (ev) => {
     let m;
     try { m = JSON.parse(typeof ev.data === "string" ? ev.data : ""); } catch { return; }
-    // Text from a graph pipe node -> stdout.
+    // Text from a graph pipe node -> stdout (only our bound node, if one was given).
     if (m && m.type === "pipe" && m.src === "node" && typeof m.text === "string") {
+      if (nodeId && m.node !== nodeId) return;
       process.stdout.write(m.text + "\n");
       log("graph →", m.text);
     }

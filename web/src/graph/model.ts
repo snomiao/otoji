@@ -10,6 +10,7 @@ export type NodeType =
   | "file-text"
   | "stt"
   | "web-speech"
+  | "vosk"
   | "translate"
   | "sink"
   | "audio-out"
@@ -65,6 +66,14 @@ export const NODE_SPECS: Record<NodeType, NodeSpec> = {
     // Browser-native streaming ASR with live interim results; opens its own mic on
     // the device it runs on (no audio input port).
     inputs: [],
+    outputs: [{ id: "out", type: "transcript" }],
+  },
+  vosk: {
+    type: "vosk",
+    label: "Streaming STT (Vosk)",
+    // On-device streaming ASR (Kaldi/WASM): feed continuous audio (e.g. mic-raw),
+    // emits a finalized transcript at each endpoint; partials show in the preview.
+    inputs: [{ id: "in", type: "segment" }],
     outputs: [{ id: "out", type: "transcript" }],
   },
   translate: {
@@ -148,7 +157,7 @@ export const NODE_SPECS: Record<NodeType, NodeSpec> = {
 /** Palette grouping for the node types. */
 export const NODE_CATEGORIES: { id: string; label: string; types: NodeType[] }[] = [
   { id: "input", label: "Input", types: ["mic-vad", "mic-raw", "file-audio", "file-text"] },
-  { id: "stt", label: "Speech → Text", types: ["stt", "web-speech"] },
+  { id: "stt", label: "Speech → Text", types: ["stt", "web-speech", "vosk"] },
   { id: "translate", label: "Text → Text", types: ["translate"] },
   { id: "tts", label: "Text → Speech", types: ["tts", "tts-model"] },
   { id: "output", label: "Output", types: ["sink", "audio-out", "srt-out", "speaker"] },
