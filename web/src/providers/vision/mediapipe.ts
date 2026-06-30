@@ -56,19 +56,6 @@ function getEngine(task: MpTask, onProgress?: (p: { text?: string }) => void): P
         });
       const eng = await create("GPU").catch(() => create("CPU"));
       eng.__connections = isPose ? mp.PoseLandmarker.POSE_CONNECTIONS : mp.HandLandmarker.HAND_CONNECTIONS;
-      // Precompile the GPU shaders during warm (one dummy detect ~1s) so the
-      // first real camera frame isn't a one-off stall. The WebGL delegate
-      // compiles per input resolution, so warm at the common 640×480 webcam size.
-      try {
-        const c = document.createElement("canvas");
-        c.width = 640;
-        c.height = 480;
-        const warmBmp = await createImageBitmap(c);
-        eng.detect(warmBmp);
-        warmBmp.close();
-      } catch {
-        /* non-fatal: shaders just compile on the first real frame instead */
-      }
       return eng;
     })().catch((e) => {
       engines.delete(task);
@@ -81,6 +68,26 @@ function getEngine(task: MpTask, onProgress?: (p: { text?: string }) => void): P
 
 export function warmMediapipe(task: MpTask, onProgress?: (p: { text?: string }) => void): Promise<unknown> {
   return getEngine(task, onProgress);
+}
+
+/**
+ * Precompile the GPU shaders for a given input resolution (one dummy detect),
+ * so the first real camera frame isn't a one-off stall. The WebGL delegate
+ * compiles per input size, so callers pass the camera's *actual* resolution.
+ * Non-fatal — on failure the shaders just compile lazily on the first frame.
+ */
+export async function prewarmMediapipe(task: MpTask, width: number, height: number): Promise<void> {
+  try {
+    const eng = await getEngine(task);
+    const c = document.createElement("canvas");
+    c.width = Math.max(1, Math.round(width));
+    c.height = Math.max(1, Math.round(height));
+    const bmp = await createImageBitmap(c);
+    eng.detect(bmp);
+    bmp.close();
+  } catch {
+    /* shaders compile on the first real frame instead */
+  }
 }
 
 /** Free all MediaPipe landmarkers (the last vision node left the graph). */
