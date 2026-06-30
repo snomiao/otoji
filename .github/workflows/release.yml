@@ -173,6 +173,14 @@ jobs:
           npx --no-install napi create-npm-dir -t .
           npx --no-install napi artifacts -d artifacts
           ls -R npm
+          # The umbrella @otoji/core ships the napi JS loader (index.js) so that
+          # `require("@otoji/core")` resolves the matching @otoji/core-<triple>
+          # optionalDependency. The loader is built (not committed) and is the
+          # same for every target — grab one copy from the downloaded artifacts.
+          loader=$(find artifacts -name index.js | head -1)
+          test -n "$loader" || { echo "::error::no index.js in artifacts — umbrella would ship without its native loader"; exit 1; }
+          cp "$loader" "$(dirname "$loader")/index.d.ts" .
+          ls -la index.js index.d.ts
 
       # Resilient publish: a single missing or already-published subpackage must
       # not abort the rest (otherwise one un-bootstrapped platform freezes the
@@ -181,13 +189,20 @@ jobs:
       # as success; a 404 means the package name was never bootstrapped (OIDC
       # trusted-publishing cannot CREATE a package — do that once with a classic
       # automation token), and is surfaced as a warning without blocking peers.
+      #
+      # --ignore-scripts is essential for the umbrella `.`: its prepublishOnly
+      # ("napi prepublish -t npm && npm run build:release") would otherwise try
+      # to re-publish the platform packages (403, already published this run) and
+      # rebuild the Rust binary on this publish-only runner — which froze the
+      # umbrella at 0.1.1 while the sub-packages moved ahead. The sub-package and
+      # cli dirs have no lifecycle scripts, so the flag is a no-op for them.
       - name: Publish to npm with provenance
         run: |
           set -uo pipefail
           fail=0
           publish() { # $1 = dir to publish from
             local dir="$1" out rc
-            out=$(cd "$dir" && npm publish --access public --tag latest --provenance 2>&1); rc=$?
+            out=$(cd "$dir" && npm publish --access public --tag latest --provenance --ignore-scripts 2>&1); rc=$?
             echo "$out"
             [ $rc -eq 0 ] && return 0
             if echo "$out" | grep -qiE "cannot publish over|previously published|EPUBLISHCONFLICT"; then

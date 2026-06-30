@@ -87,9 +87,16 @@ jobs:
             console.log("ok:", Object.keys(m));
           '
 
+      # Upload the .node plus the napi-generated JS loader (index.js/.d.ts).
+      # The umbrella @otoji/core ships index.js so `require("@otoji/core")`
+      # resolves the right platform sub-package; the loader is identical across
+      # targets, so the publish job just grabs one copy.
       - uses: actions/upload-artifact@v4
         with:
           name: bindings-${{ matrix.target }}
-          path: "*.node"
+          path: |
+            *.node
+            index.js
+            index.d.ts
           if-no-files-found: error
           retention-days: 7
