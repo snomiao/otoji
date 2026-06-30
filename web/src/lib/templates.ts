@@ -97,6 +97,25 @@ export const BUILTIN_TEMPLATES: GraphTemplate[] = [
     ],
   },
   {
+    id: "mix-two-mics",
+    name: "Mix two mics",
+    desc: "Two mics → time-aligned mix → STT (pick a device on each mic)",
+    builtin: true,
+    nodes: [
+      { key: "mic1", type: "mic-vad", dx: 0, dy: 0 },
+      { key: "mic2", type: "mic-vad", dx: 0, dy: ROW },
+      { key: "mix", type: "audio-mix", dx: COL, dy: ROW / 2 },
+      { key: "stt", type: "stt", dx: COL * 2, dy: ROW / 2 },
+      { key: "sink", type: "sink", dx: COL * 3, dy: ROW / 2 },
+    ],
+    edges: [
+      { from: "mic1", fromHandle: "out", to: "mix", toHandle: "in" },
+      { from: "mic2", fromHandle: "out", to: "mix", toHandle: "in" },
+      { from: "mix", fromHandle: "out", to: "stt", toHandle: "in" },
+      { from: "stt", fromHandle: "out", to: "sink", toHandle: "in" },
+    ],
+  },
+  {
     id: "depth-cam",
     name: "Depth camera",
     desc: "Camera → live depth map (preview)",
