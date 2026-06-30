@@ -131,6 +131,22 @@ export const BUILTIN_TEMPLATES: GraphTemplate[] = [
     ],
   },
   {
+    id: "screen-yolo",
+    name: "Screen YOLO",
+    desc: "Screen share → object detection → labels",
+    builtin: true,
+    nodes: [
+      { key: "screen", type: "screen-share", dx: 0, dy: 0 },
+      { key: "yolo", type: "vision-model", dx: COL, dy: 0 },
+      { key: "sink", type: "sink", dx: COL * 2, dy: 0 },
+    ],
+    edges: [
+      { from: "screen", fromHandle: "out", to: "yolo", toHandle: "in" },
+      { from: "yolo", fromHandle: "rate", to: "screen", toHandle: "rate" }, // backpressure
+      { from: "yolo", fromHandle: "labels", to: "sink", toHandle: "in" },
+    ],
+  },
+  {
     id: "depth-cam",
     name: "Depth camera",
     desc: "Camera → live depth map (preview)",
