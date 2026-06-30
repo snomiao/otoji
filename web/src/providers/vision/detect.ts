@@ -1,16 +1,12 @@
 // Object detection (YOLO-style) in the browser via transformers.js. The library
-// + model are lazy-loaded from the CDN (esm.run) only when a Vision-model node
-// runs, so non-vision users carry no extra bundle. Memoized per model id;
-// disposable when the last vision node leaves the graph.
+// + model are lazy-loaded only when a Vision-model node runs, so non-vision
+// users carry no extra bundle. Inference runs off the main thread (WebGPU, or a
+// wasm worker) via buildPipeline. Memoized per model id; disposable when the
+// last vision node leaves the graph.
 
 import { disposeMemo } from "../dispose-util";
+import { buildPipeline } from "./tfjs-pipe";
 import type { Detection } from "../../lib/detect-format";
-
-// Hide the URL from Vite's optimizer so it stays a runtime dynamic import.
-// esm.sh resolves transformers.js' deep dependency tree reliably; esm.run's
-// (jsdelivr +esm) bundle fails a sub-import for this package.
-const TFJS_URL = "https://esm.sh/@huggingface/transformers";
-const importTfjs = () => new Function("u", "return import(u)")(TFJS_URL) as Promise<any>;
 
 export const DETECT_MODELS = [
   { id: "Xenova/yolos-tiny", name: "YOLOS-tiny (fast)" },
@@ -23,15 +19,7 @@ const pipes = new Map<string, Promise<any>>();
 function getPipe(model: string, onProgress?: (p: { progress?: number; text?: string }) => void): Promise<any> {
   let p = pipes.get(model);
   if (!p) {
-    p = (async () => {
-      const tf = await importTfjs();
-      tf.env.allowLocalModels = false;
-      tf.env.useBrowserCache = true;
-      return tf.pipeline("object-detection", model, {
-        progress_callback: (r: { status?: string; progress?: number }) =>
-          onProgress?.({ progress: r.progress != null ? r.progress / 100 : undefined, text: r.status }),
-      });
-    })().catch((e) => {
+    p = buildPipeline("object-detection", model, onProgress).catch((e) => {
       pipes.delete(model); // allow retry on failure
       throw e;
     });

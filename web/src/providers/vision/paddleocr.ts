@@ -30,6 +30,8 @@ function getEngine(base = DEFAULT_CDN): Promise<OcrEngine> {
       const ort = (await import("onnxruntime-web")) as any;
       ort.env.wasm.numThreads = 1;
       ort.env.wasm.simd = true;
+      // Run inference in a worker thread so OCR frames don't freeze the UI.
+      ort.env.wasm.proxy = true;
       ort.env.wasm.wasmPaths = `https://cdn.jsdelivr.net/npm/onnxruntime-web@${ORT_VERSION}/dist/`;
       const mod = (await import("@gutenye/ocr-browser")) as any;
       const Ocr = mod.default ?? mod.Ocr ?? mod;
