@@ -4,6 +4,31 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+## [0.1.50] - 2026-07-01
+
+### Bug Fixes
+- Approve workerd build script so deploy-web can install wrangler *(ci)*
+
+### CI
+- Skip napi build matrix on release-plz version-bump PRs
+- Batch releases daily instead of per-commit *(release)*
+
+### Documentation
+- Add release/publish ops playbook (CLAUDE.md) + TODO ops section
+- Note live two-mic Mix-audio verification (no 2nd device on hand) ([#70](https://github.com/snomiao/otoji/pull/70)) *(todo)*
+
+### Features
+- Cross-device live preview (opt-in, streamed over the mesh) ([#75](https://github.com/snomiao/otoji/pull/75)) *(graph)*
+- Native sherpa-onnx STT node (bridge to `otoji server`) ([#74](https://github.com/snomiao/otoji/pull/74)) *(web)*
+- Connection-type badge ([wan]/[lan]/[browser]) + toolbar toggle *(peers)*
+- "Screen depth" — depth map of the shared screen ([#73](https://github.com/snomiao/otoji/pull/73)) *(templates)*
+- "Screen YOLO" — detect objects on the shared screen ([#72](https://github.com/snomiao/otoji/pull/72)) *(templates)*
+- "Screen audio → STT" — transcribe tab/system audio ([#71](https://github.com/snomiao/otoji/pull/71)) *(templates)*
+- "Mix two mics" — two mics → time-aligned mix → STT ([#69](https://github.com/snomiao/otoji/pull/69)) *(templates)*
+- Explicit echo-cancellation / denoise toggle on the Mic nodes ([#68](https://github.com/snomiao/otoji/pull/68)) *(mic)*
+- Mix audio node — wall-clock-aligned additive mixing ([#67](https://github.com/snomiao/otoji/pull/67)) *(graph)*
+- Screen share node (getDisplayMedia → frames + system audio) ([#66](https://github.com/snomiao/otoji/pull/66)) *(graph)*
+
 ## [0.1.49] - 2026-06-30
 
 ### Performance
