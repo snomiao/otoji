@@ -47,6 +47,19 @@ export class PeerMeshTransport implements Transport {
   /** Returns the bytes this device can serve for a url, or null. Set by GraphEditor. */
   onBlobRequest: ((url: string) => ArrayBuffer | null | Promise<ArrayBuffer | null>) | null = null;
 
+  // --- cross-device live preview (pv / pv-sub) ---
+  /** Route preview messages to the PreviewSync controller. Set by GraphEditor. */
+  onPreview: ((msg: any, peerId?: string) => void) | null = null;
+
+  /** Send a raw string to one peer (used by PreviewSync). */
+  sendString(peerId: string, s: string): boolean {
+    return this.raw(peerId, s);
+  }
+  /** Broadcast a raw string to every peer (used by PreviewSync). */
+  broadcastString(s: string): number {
+    return this.mesh?.broadcast(s) ?? 0;
+  }
+
   constructor(mesh: PeerMesh | null = null) {
     this.mesh = mesh;
   }
@@ -147,6 +160,10 @@ export class PeerMeshTransport implements Transport {
     try {
       msg = JSON.parse(data);
     } catch {
+      return;
+    }
+    if (msg?.k === "pv" || msg?.k === "pv-sub") {
+      this.onPreview?.(msg, peerId);
       return;
     }
     if (msg?.k === "blob-req") {

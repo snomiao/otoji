@@ -106,7 +106,7 @@ function useVoices(): SpeechSynthesisVoice[] {
 
 export function VoiceNode({ id, data }: NodeProps) {
   const d = data as VoiceNodeData;
-  const { devices, onAssign, onConfig, onDelete, getRecords, setFile, counts, live, openNodeMenu, trackerState } = useContext(GraphContext);
+  const { devices, myDeviceId, onAssign, onConfig, onDelete, getRecords, setFile, counts, live, openNodeMenu, trackerState } = useContext(GraphContext);
   const lpTimer = React.useRef<ReturnType<typeof setTimeout> | null>(null);
   const fileName = (d as any).config?.file as string | undefined;
   const spec = NODE_SPECS[d.voiceType];
@@ -119,8 +119,14 @@ export function VoiceNode({ id, data }: NodeProps) {
   const outputDevices = useAudioDevices("audiooutput");
   const cameraDevices = useAudioDevices("videoinput");
   const voices = useVoices();
-  const shown = useSyncExternalStore(subscribePrefs, () => isPreviewShown(id));
-  const toggleShown = () => setPreviewShown(id, !shown);
+  // A node previews by default only on the device that OWNS it (mirrors nodeOwner:
+  // explicit assignment, else smallest online deviceId; alone → ours). Turning it
+  // on elsewhere pulls the preview from the owner over the mesh.
+  const onlineIds = devices.filter((x) => x.online).map((x) => x.deviceId);
+  const owner = d.device || (onlineIds.length ? [...onlineIds].sort()[0] : null);
+  const ownedHere = owner == null || owner === myDeviceId;
+  const shown = useSyncExternalStore(subscribePrefs, () => isPreviewShown(id, ownedHere));
+  const toggleShown = () => setPreviewShown(id, !shown, ownedHere);
   const [cmdCopied, setCmdCopied] = useState(false);
   const [trackerErr, setTrackerErr] = useState<string | null>(null); // Signaling node input error
 

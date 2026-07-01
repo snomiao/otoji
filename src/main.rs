@@ -1765,7 +1765,16 @@ async fn run_file(
             let cfg = SenseVoiceConfig::from_env();
             let provider = SenseVoice::new(cfg);
             if plain {
-                drive_plain(provider, audio_rx, None, None, None, None, "original".into()).await
+                drive_plain(
+                    provider,
+                    audio_rx,
+                    None,
+                    None,
+                    None,
+                    None,
+                    "original".into(),
+                )
+                .await
             } else {
                 drive(provider, audio_rx).await
             }

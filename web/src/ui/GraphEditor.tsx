@@ -34,8 +34,9 @@ import {
 import { LiveStore } from "../graph/live-store";
 import { fileStore, fileKindForName } from "../graph/file-store";
 import { PeerMeshTransport } from "../graph/mesh-transport";
+import { PreviewSync } from "../graph/preview-sync";
 import { p2pModelCache } from "../providers/model/p2p-cache";
-import { togglePreviewShown, isPeerBadgeShown, togglePeerBadgeShown, subscribePrefs } from "../lib/prefs";
+import { togglePreviewShown, isPreviewShown, shownRemoteNodes, isPeerBadgeShown, togglePeerBadgeShown, subscribePrefs } from "../lib/prefs";
 import { RecordingPlayer, type Recording } from "./RecordingPlayer";
 import { computePeaks } from "../lib/peaks";
 import { isReadableTranscript } from "../lib/text";
@@ -322,6 +323,8 @@ function Editor({ initialRoom, local }: { initialRoom?: string; local?: boolean 
   const activityRef = useRef({ segments: 0, stt: 0 });
   const micLevelRef = useRef(0);
   const liveRef = useRef(new LiveStore());
+  const previewSyncRef = useRef<PreviewSync | null>(null);
+  if (!previewSyncRef.current) previewSyncRef.current = new PreviewSync(liveRef.current);
   const recordsByNodeRef = useRef(new Map<string, Recording[]>()); // uncapped, for file export
   const edgeBytesRef = useRef(new Map<string, number>()); // per-edge bytes accumulated this second
   const [edgeRates, setEdgeRates] = useState<Record<string, number>>({}); // per-edge bytes/sec
@@ -401,6 +404,32 @@ function Editor({ initialRoom, local }: { initialRoom?: string; local?: boolean 
     for (const [dev, info] of Object.entries(present)) map[dev] = info.peerId;
     transportRef.current?.setRouting(map);
   }, [present]);
+
+  // Does THIS device own (run) a node? Mirrors nodeOwner: explicit assignment, else
+  // the smallest online deviceId; with no online devices known (local mode) it's ours.
+  const ownsNodeHere = useCallback(
+    (nodeId: string): boolean => {
+      const dv = (nodesRef.current.find((n) => n.id === nodeId)?.data as any)?.device as string | null;
+      const online = onlineRef.current;
+      const owner = dv || (online.length ? [...online].sort()[0] : null);
+      return owner == null || owner === myDeviceId;
+    },
+    [myDeviceId],
+  );
+
+  // Tell the room which non-owned node previews we want streamed to us. Recompute
+  // on graph/presence changes (ownership) and when the user toggles a preview.
+  useEffect(() => {
+    const recompute = () => {
+      const ps = previewSyncRef.current;
+      if (!ps) return;
+      const owned = new Set<string>();
+      for (const n of nodesRef.current) if (ownsNodeHere(n.id)) owned.add(n.id);
+      ps.setSubscriptions(shownRemoteNodes(owned));
+    };
+    recompute();
+    return subscribePrefs(recompute);
+  }, [nodes, onlineDeviceIds, ownsNodeHere]);
 
   useEffect(() => () => { meshRef.current?.destroy(); sigRef.current?.close(); }, []);
 
@@ -504,11 +533,25 @@ function Editor({ initialRoom, local }: { initialRoom?: string; local?: boolean 
       meshRef.current?.destroy();
       const mesh = new PeerMesh(sig, m.peerId, {
         onData: (peer, _label, data) => transportRef.current?.handleData(data, peer),
-        onPeerState: (id, st) => setPeerStates((s) => ({ ...s, [id]: st })),
+        onPeerState: (id, st) => {
+          setPeerStates((s) => ({ ...s, [id]: st }));
+          // A freshly-connected peer hasn't seen our preview subscriptions yet;
+          // a dropped one may never send a signaling leave, so stop streaming to it.
+          if (st === "connected") previewSyncRef.current?.resync();
+          else if (st === "disconnected" || st === "failed" || st === "closed") previewSyncRef.current?.dropPeer(id);
+        },
       });
       meshRef.current = mesh;
       if (!transportRef.current) transportRef.current = new PeerMeshTransport(mesh);
       else transportRef.current.setMesh(mesh);
+      // Cross-device live preview: route pv/pv-sub messages to the controller and
+      // give it a sender backed by the (stable) transport.
+      const tp = transportRef.current;
+      tp.onPreview = (msg, peer) => previewSyncRef.current?.handleMessage(msg, peer);
+      previewSyncRef.current?.setSender({
+        send: (peer, s) => tp.sendString(peer, s),
+        broadcast: (s) => tp.broadcastString(s),
+      });
       // P2P model sharing: serve cached model files to roommates, and pull missing
       // ones from the room before transformers.js falls back to the network.
       transportRef.current.onBlobRequest = (url) => p2pModelCache.getServable(url);
@@ -527,6 +570,7 @@ function Editor({ initialRoom, local }: { initialRoom?: string; local?: boolean 
       meshRef.current?.consider(peer.peerId);
     });
     sig.on("peer-left", (m) => {
+      if (m.peerId) previewSyncRef.current?.dropPeer(m.peerId); // stop streaming preview to a gone peer
       setPresent((p) => {
         // Ignore a stale leave for a device that has since reconnected with a
         // new peerId (only remove when the stored peerId matches).
@@ -1022,17 +1066,21 @@ function Editor({ initialRoom, local }: { initialRoom?: string; local?: boolean 
     liveRef.current.reset();
     recordsByNodeRef.current.clear();
     const live = liveRef.current;
+    const pv = previewSyncRef.current;
     const rt = new GraphRuntime(graph, {
       // Local mode: no transport -> single-device (every node runs here).
       self: transport ? { myId: myDeviceId, deviceIds: onlineRef.current, transport } : undefined,
       onStatus: (s) => setRunStatus(s),
       onError: (e) => { setRunStatus(`error: ${e.message}`); setLastError(e.message); },
-      onLevel: (id, l) => { micLevelRef.current = l.rms; live.pushLevel(id, l); },
+      // Each preview hook updates the local store AND streams to any remote device
+      // that opted into this node's preview (no-op when nobody is subscribed).
+      onLevel: (id, l) => { micLevelRef.current = l.rms; live.pushLevel(id, l); pv?.onLocalPreview(id, "lvl", l); },
       onSegment: () => { activityRef.current.segments++; },
-      onImage: (id, bitmap) => live.setImage(id, bitmap),
-      onRecognized: (id, text) => { activityRef.current.stt++; if (isReadableTranscript(text)) live.pushText(id, text); },
-      onNodeBusy: (id, b) => live.setBusy(id, b),
-      onQueue: (id, processing, queued) => live.setQueue(id, processing, queued),
+      onImage: (id, bitmap) => { live.setImage(id, bitmap); pv?.onLocalPreview(id, "img", bitmap); },
+      onRecognized: (id, text) => { activityRef.current.stt++; if (isReadableTranscript(text)) { live.pushText(id, text); pv?.onLocalPreview(id, "txt", text); } },
+      onNodeBusy: (id, b) => { live.setBusy(id, b); pv?.onLocalPreview(id, "busy", b); },
+      onQueue: (id, processing, queued) => { live.setQueue(id, processing, queued); pv?.onLocalPreview(id, "queue", { processing, queued }); },
+      hasPreviewConsumer: (id) => isPreviewShown(id) || (pv?.hasSubscriber(id) ?? false),
       onPipeOut: (id, text) => sigRef.current?.pipe(id, text, "node"), // pipe node input → CLI stdout
       onEdgeBytes: (eid, bytes) => edgeBytesRef.current.set(eid, (edgeBytesRef.current.get(eid) ?? 0) + bytes),
       onSink: (sinkId, tr: TranscriptMsg) => {
@@ -1157,8 +1205,8 @@ function Editor({ initialRoom, local }: { initialRoom?: string; local?: boolean 
     [active, pending, approveTracker, revokeTracker],
   );
   const ctx = useMemo(
-    () => ({ devices, onAssign, onConfig, onDelete, getRecords, setFile, counts, live: liveRef.current, openNodeMenu, trackerState }),
-    [devices, onAssign, onConfig, onDelete, getRecords, setFile, counts, openNodeMenu, trackerState],
+    () => ({ devices, myDeviceId, onAssign, onConfig, onDelete, getRecords, setFile, counts, live: liveRef.current, openNodeMenu, trackerState }),
+    [devices, myDeviceId, onAssign, onConfig, onDelete, getRecords, setFile, counts, openNodeMenu, trackerState],
   );
 
   if (!joined) {
@@ -1433,7 +1481,7 @@ function Editor({ initialRoom, local }: { initialRoom?: string; local?: boolean 
             y={nodeMenu.y}
             onDuplicate={() => { duplicateNode(nodeMenu.nodeId); setNodeMenu(null); }}
             onReplace={(type) => { replaceNode(nodeMenu.nodeId, type); setNodeMenu(null); }}
-            onToggleVis={() => { togglePreviewShown(nodeMenu.nodeId); setNodeMenu(null); }}
+            onToggleVis={() => { togglePreviewShown(nodeMenu.nodeId, ownsNodeHere(nodeMenu.nodeId)); setNodeMenu(null); }}
             onRemove={() => { onDelete(nodeMenu.nodeId); setNodeMenu(null); }}
             onClose={() => setNodeMenu(null)}
           />
