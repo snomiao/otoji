@@ -13,6 +13,7 @@ export type NodeType =
   | "stt"
   | "web-speech"
   | "vosk"
+  | "sherpa"
   | "translate"
   | "sink"
   | "audio-out"
@@ -92,6 +93,16 @@ export const NODE_SPECS: Record<NodeType, NodeSpec> = {
     label: "Streaming STT (Vosk)",
     // On-device streaming ASR (Kaldi/WASM): feed continuous audio (e.g. mic-raw),
     // emits a finalized transcript at each endpoint; partials show in the preview.
+    inputs: [{ id: "in", type: "segment" }],
+    outputs: [{ id: "out", type: "transcript" }],
+  },
+  sherpa: {
+    type: "sherpa",
+    label: "Native STT (sherpa-onnx)",
+    // Bridges to a local `otoji server` (WebSocket) running the native
+    // sherpa-onnx worker: partials → live preview, finals → downstream
+    // transcript. Unlocks heavy native models (whisper-large-v3, zipformer,
+    // dolphin, full-precision SenseVoice) that are impractical in-browser.
     inputs: [{ id: "in", type: "segment" }],
     outputs: [{ id: "out", type: "transcript" }],
   },
@@ -242,7 +253,7 @@ export const NODE_SPECS: Record<NodeType, NodeSpec> = {
 /** Palette grouping for the node types. */
 export const NODE_CATEGORIES: { id: string; label: string; types: NodeType[] }[] = [
   { id: "input", label: "Input", types: ["mic-vad", "mic-raw", "audio-mix", "file-audio", "file-text"] },
-  { id: "stt", label: "Speech → Text", types: ["stt", "web-speech", "vosk"] },
+  { id: "stt", label: "Speech → Text", types: ["stt", "web-speech", "vosk", "sherpa"] },
   { id: "translate", label: "Text → Text", types: ["translate"] },
   { id: "tts", label: "Text → Speech", types: ["tts", "tts-model"] },
   { id: "output", label: "Output", types: ["sink", "audio-out", "srt-out", "speaker"] },

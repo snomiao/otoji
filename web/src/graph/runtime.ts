@@ -14,6 +14,7 @@ import { neuralTts } from "../providers/tts/neural";
 import { DEFAULT_NEURAL_TTS_MODEL, AUTO_TTS_MODEL, AUTO_TTS_VOICE, langToTtsModel, voiceMatchesLang } from "../providers/tts/tts-config";
 import { runAsr, runText, runTts, warmPipe, type ModelTask } from "../providers/model/transformers-pipeline";
 import { createVoskStream, warmVosk, DEFAULT_VOSK_MODEL, type VoskStream } from "../providers/stt/vosk";
+import { createSherpaNativeStream, DEFAULT_SHERPA_SERVER_URL, type SherpaNativeStream } from "../providers/stt/sherpa_native";
 import { startCamera, clampFps, DEFAULT_CAMERA_FPS, type CameraHandle } from "../providers/vision/camera";
 import { startScreenShare, type ScreenHandle } from "../providers/vision/screen";
 import { ocrRecognize, warmOcr } from "../providers/vision/paddleocr";
@@ -538,6 +539,34 @@ export class GraphRuntime {
           } catch (e) {
             // Non-fatal: a failed model load only disables this node, not the graph.
             this.hooks.onError?.(e instanceof Error ? e : new Error(String(e)));
+          }
+        },
+        input: (_port, msg) => stream?.accept((msg as SegmentMsg).samples),
+        stop: async () => { stream?.free(); stream = null; },
+      };
+    }
+
+    if (type === "sherpa") {
+      // Native sherpa-onnx STT bridged over a WebSocket to a local
+      // `otoji server`. Same streaming shape as Vosk: feed audio frames,
+      // partials → live preview, finals → downstream transcript.
+      const url = (this.graph.nodes[id]?.config?.serverUrl as string | undefined)?.trim() || DEFAULT_SHERPA_SERVER_URL;
+      let stream: SherpaNativeStream | null = null;
+      return {
+        start: async () => {
+          try {
+            stream = await createSherpaNativeStream(
+              url,
+              (partial) => this.hooks.onRecognized?.(id, partial),
+              (text) => {
+                this.hooks.onRecognized?.(id, text);
+                this.emit(id, "out", { text, audio: { samples: new Float32Array(0), sampleRate: MIC_VAD_SR, durationMs: 0 } } as TranscriptMsg);
+              },
+            );
+          } catch (e) {
+            // Non-fatal: an unreachable server only disables this node. Point the
+            // user at the one command that fixes it.
+            this.hooks.onError?.(new Error(`sherpa: ${e instanceof Error ? e.message : e}. Start it with:  otoji server`));
           }
         },
         input: (_port, msg) => stream?.accept((msg as SegmentMsg).samples),
