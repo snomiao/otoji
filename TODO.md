@@ -155,6 +155,12 @@
       preview sync (deferred).
 
 ### M5 — Future / hardening
+- [ ] **Verify Mix-audio live with two real mic devices** (rech): drop the "Mix
+  two mics" template, assign a *different* input device to each Mic + VAD, then
+  confirm on the shared wall-clock timeline that overlapping speech is summed +
+  soft-clipped (no harsh clipping) and STT transcribes the combined stream.
+  Deferred — no second mic on hand. (Unit-tested in `__tests__/audio-mix.test.ts`;
+  only the live two-device path is unverified.)
 - [ ] Cloudflare TURN for symmetric-NAT / cross-network reliability.
 - [ ] Polish (LLM) + TTS nodes; Recorder/persist node; audio-monitor node.
 - [ ] Reconnection resilience, graph conflict strategy (LWW → maybe CRDT).
@@ -178,3 +184,29 @@
 - `web/src/providers/stt/sensevoice.ts` — VAD + recognize, to be split into nodes.
 - `web/src/lib/backoff.ts` — φ backoff for signaling/peer reconnect.
 - `web/src/ui/RecordingPlayer.tsx`, `Waveform.tsx` — sink-node UI.
+
+## Release & npm publishing (ops)
+
+> Full playbook in [`CLAUDE.md`](./CLAUDE.md) (§ Release & publishing). Summary of
+> the current state and the only open items.
+
+**Pipeline (set up 2026-06-30):** releases are **batched daily** — `release.yml`
+cron `0 18 * * *` (03:00 JST) merges the accumulated release-plz PR and runs the
+napi build+publish matrix **once/day**. Pushes to main only refresh the release
+PR. To ship immediately: `gh workflow run release.yml -f release_now=true` (needs
+repo admin). npm publishing is OIDC trusted-publishing (no NPM_TOKEN).
+
+**Packages:** `@otoji/core` (umbrella, bundles all 5 `.node` + napi loader) ·
+`@otoji/core-{darwin-arm64,darwin-x64,linux-x64-gnu,linux-arm64-gnu,win32-x64-msvc}`
+· `otoji` (standalone zero-dep CLI, `npx otoji node <room>`).
+
+- [ ] **Verify the first daily release fires** (2026-07-01 18:00 UTC). A timer
+      shell is scheduled to auto-check at 18:30 UTC; confirm event=schedule run is
+      green and `publish` is NOT skipped.
+- [ ] **`@otoji/core-linux-arm64-gnu` is one version behind** (0.1.43 vs the rest)
+      because its npm Trusted Publisher was added after the last publish. The next
+      daily release should auto-sync it via OIDC — confirm it catches up; no manual
+      action expected.
+- [ ] (optional) Further CI trim: macOS jobs dominate the *hypothetical* private
+      cost (10× multiplier) but the repo is **public → all runners free ($0)**.
+      Only revisit if the repo goes private.

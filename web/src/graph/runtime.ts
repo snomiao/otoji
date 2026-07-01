@@ -4,6 +4,7 @@
 
 import type { VoiceGraph, NodeType, VoiceNode } from "./model";
 import { startMicVad, startMicRaw, segmentSamples, MIC_VAD_SR, type MicVadHandle } from "../lib/mic-vad";
+import { clusterSegments, mixCluster, type TimedSegment } from "../lib/audio-mix";
 import { fileStore } from "./file-store";
 import { sttRecognize, warmSenseVoice } from "../providers/stt/sensevoice";
 import { webllmTranslate } from "../providers/translate/webllm";
@@ -13,11 +14,13 @@ import { neuralTts } from "../providers/tts/neural";
 import { DEFAULT_NEURAL_TTS_MODEL, AUTO_TTS_MODEL, AUTO_TTS_VOICE, langToTtsModel, voiceMatchesLang } from "../providers/tts/tts-config";
 import { runAsr, runText, runTts, warmPipe, type ModelTask } from "../providers/model/transformers-pipeline";
 import { createVoskStream, warmVosk, DEFAULT_VOSK_MODEL, type VoskStream } from "../providers/stt/vosk";
+import { createSherpaNativeStream, DEFAULT_SHERPA_SERVER_URL, type SherpaNativeStream } from "../providers/stt/sherpa_native";
 import { startCamera, clampFps, DEFAULT_CAMERA_FPS, type CameraHandle } from "../providers/vision/camera";
+import { startScreenShare, type ScreenHandle } from "../providers/vision/screen";
 import { ocrRecognize, warmOcr } from "../providers/vision/paddleocr";
 import { detect, drawDetections, warmDetect, DEFAULT_DETECT_MODEL } from "../providers/vision/detect";
 import { estimateDepth, warmDepth } from "../providers/vision/depth";
-import { landmarks, drawLandmarks, formatLandmarksLabels, formatLandmarksJson, warmMediapipe, type MpTask } from "../providers/vision/mediapipe";
+import { landmarks, drawLandmarks, formatLandmarksLabels, formatLandmarksJson, warmMediapipe, prewarmMediapipe, type MpTask } from "../providers/vision/mediapipe";
 import { formatLabels, formatJsonl, type Detection } from "../lib/detect-format";
 import { diffText, type DiffStyle, DEFAULT_DIFF_STYLE } from "../lib/textdiff";
 import { isPreviewShown } from "../lib/prefs";
@@ -29,6 +32,7 @@ export interface SegmentMsg {
   sampleRate: number;
   durationMs: number;
   offsetMs?: number; // start of this segment in the source timeline (file/mic)
+  ts?: number; // wall-clock epoch (ms) of the FIRST sample — used to time-align mixing
 }
 export interface TranscriptMsg {
   text: string;
@@ -106,6 +110,7 @@ interface RuntimeNode {
   start?(): Promise<void> | void;
   stop?(): Promise<void> | void;
   input?(port: string, msg: unknown): void;
+  dims?(): { width: number; height: number } | null; // camera: live stream size
 }
 
 // Below this an audio segment is too short to recognize; feeding 0/near-0 samples
@@ -337,7 +342,50 @@ export class GraphRuntime {
     }
 
     for (const node of this.nodes.values()) await node.start?.();
+
+    // Now that cameras are live, precompile the MediaPipe GPU shaders at each
+    // pose/hand node's *actual* camera resolution (the WebGL delegate compiles
+    // per input size). Doing it here — during the loading window — hides the
+    // one-off first-frame stall. Non-fatal and best-effort.
+    const mpPrewarms: Array<Promise<void>> = [];
+    for (const n of Object.values(this.graph.nodes)) {
+      if (n.type !== "vision-model" || !this.isLocal(n.id)) continue;
+      const task = (n.config?.task as string | undefined) ?? "detect";
+      if (task !== "pose" && task !== "hand") continue;
+      const cam = this.upstreamCamera(n.id);
+      if (!cam) continue;
+      mpPrewarms.push(
+        this.waitForDims(cam).then((d) => (d ? prewarmMediapipe(task, d.width, d.height) : undefined)),
+      );
+    }
+    if (mpPrewarms.length) {
+      this.hooks.onStatus?.("preparing…");
+      await Promise.all(mpPrewarms);
+    }
+
     this.hooks.onStatus?.("running");
+  }
+
+  /** The frame source (camera or screen share) feeding this node's `in` port. */
+  private upstreamCamera(nodeId: string): RuntimeNode | null {
+    for (const e of this.graph.edges) {
+      if (e.target !== nodeId || e.targetHandle !== "in") continue;
+      const srcType = this.graph.nodes[e.source]?.type;
+      if (srcType !== "camera" && srcType !== "screen-share") continue;
+      const node = this.nodes.get(e.source);
+      if (node?.dims) return node;
+    }
+    return null;
+  }
+
+  /** Poll a camera node's dims until the stream reports a size (≤1s). */
+  private async waitForDims(node: RuntimeNode): Promise<{ width: number; height: number } | null> {
+    for (let i = 0; i < 20; i++) {
+      const d = node.dims?.();
+      if (d && d.width > 0 && d.height > 0) return d;
+      await new Promise((r) => setTimeout(r, 50));
+    }
+    return null;
   }
 
   /**
@@ -420,14 +468,17 @@ export class GraphRuntime {
     if (type === "mic-vad") {
       let handle: MicVadHandle | null = null;
       const inputDeviceId = this.graph.nodes[id]?.config?.inputDeviceId as string | undefined;
+      const aec = (this.graph.nodes[id]?.config?.aec as boolean | undefined) ?? true;
       return {
         start: async () => {
+          const startEpoch = Date.now(); // wall clock of sample 0, for mix alignment
           handle = await startMicVad({
             deviceId: inputDeviceId,
+            aec,
             onLevel: (l) => this.hooks.onLevel?.(id, l),
             onSegment: (samples, durationMs, offsetMs) => {
               this.hooks.onSegment?.(id);
-              this.emit(id, "out", { samples, sampleRate: MIC_VAD_SR, durationMs, offsetMs } as SegmentMsg);
+              this.emit(id, "out", { samples, sampleRate: MIC_VAD_SR, durationMs, offsetMs, ts: startEpoch + (offsetMs ?? 0) } as SegmentMsg);
             },
           });
         },
@@ -498,20 +549,89 @@ export class GraphRuntime {
       };
     }
 
+    if (type === "sherpa") {
+      // Native sherpa-onnx STT bridged over a WebSocket to a local
+      // `otoji server`. Same streaming shape as Vosk: feed audio frames,
+      // partials → live preview, finals → downstream transcript.
+      const url = (this.graph.nodes[id]?.config?.serverUrl as string | undefined)?.trim() || DEFAULT_SHERPA_SERVER_URL;
+      let stream: SherpaNativeStream | null = null;
+      return {
+        start: async () => {
+          try {
+            stream = await createSherpaNativeStream(
+              url,
+              (partial) => this.hooks.onRecognized?.(id, partial),
+              (text) => {
+                this.hooks.onRecognized?.(id, text);
+                this.emit(id, "out", { text, audio: { samples: new Float32Array(0), sampleRate: MIC_VAD_SR, durationMs: 0 } } as TranscriptMsg);
+              },
+            );
+          } catch (e) {
+            // Non-fatal: an unreachable server only disables this node. Point the
+            // user at the one command that fixes it.
+            this.hooks.onError?.(new Error(`sherpa: ${e instanceof Error ? e.message : e}. Start it with:  otoji server`));
+          }
+        },
+        input: (_port, msg) => stream?.accept((msg as SegmentMsg).samples),
+        stop: async () => { stream?.free(); stream = null; },
+      };
+    }
+
     if (type === "mic-raw") {
       let handle: MicVadHandle | null = null;
       const inputDeviceId = this.graph.nodes[id]?.config?.inputDeviceId as string | undefined;
+      const aec = (this.graph.nodes[id]?.config?.aec as boolean | undefined) ?? true;
       return {
         start: async () => {
+          const startEpoch = Date.now(); // wall clock of sample 0, for mix alignment
           handle = await startMicRaw({
             deviceId: inputDeviceId,
+            aec,
             onLevel: (l) => this.hooks.onLevel?.(id, l),
             onFrame: (samples, offsetMs) => {
-              this.emit(id, "out", { samples, sampleRate: MIC_VAD_SR, durationMs: (samples.length / MIC_VAD_SR) * 1000, offsetMs } as SegmentMsg);
+              this.emit(id, "out", { samples, sampleRate: MIC_VAD_SR, durationMs: (samples.length / MIC_VAD_SR) * 1000, offsetMs, ts: startEpoch + (offsetMs ?? 0) } as SegmentMsg);
             },
           });
         },
         stop: async () => { await handle?.stop(); },
+      };
+    }
+
+    if (type === "audio-mix") {
+      // Time-aligned additive mixer with a jitter buffer. Buffer incoming
+      // segments, periodically cluster by wall-clock overlap, and flush a cluster
+      // once it's settled (its end is older than `jitterMs`) so late-arriving
+      // overlapping audio still lands in the same mix.
+      const cfg = this.graph.nodes[id]?.config ?? {};
+      const jitterMs = typeof cfg.jitterMs === "number" ? (cfg.jitterMs as number) : 300;
+      const MAX_CLUSTER_MS = 20000; // force-flush a never-ending overlap
+      let pending: TimedSegment[] = [];
+      let timer: ReturnType<typeof setInterval> | null = null;
+      const endOf = (s: TimedSegment) => s.ts + (s.samples.length / s.sampleRate) * 1000;
+      const flush = (force: boolean) => {
+        if (!pending.length) return;
+        const now = Date.now();
+        const keep: TimedSegment[] = [];
+        for (const cl of clusterSegments(pending, 0)) {
+          const start = Math.min(...cl.map((s) => s.ts));
+          const end = Math.max(...cl.map(endOf));
+          if (force || end + jitterMs < now || end - start >= MAX_CLUSTER_MS) {
+            const { samples, ts } = mixCluster(cl, MIC_VAD_SR);
+            this.hooks.onSegment?.(id);
+            this.emit(id, "out", { samples, sampleRate: MIC_VAD_SR, durationMs: (samples.length / MIC_VAD_SR) * 1000, ts } as SegmentMsg);
+          } else {
+            keep.push(...cl);
+          }
+        }
+        pending = keep;
+      };
+      return {
+        start: () => { timer = setInterval(() => flush(false), 150); },
+        input: (_port, msg) => {
+          const s = msg as SegmentMsg;
+          if (s.samples?.length) pending.push({ samples: s.samples, sampleRate: s.sampleRate || MIC_VAD_SR, ts: s.ts ?? Date.now() });
+        },
+        stop: () => { if (timer) clearInterval(timer); timer = null; flush(true); },
       };
     }
 
@@ -895,6 +1015,48 @@ export class GraphRuntime {
           else if (typeof c.rate === "number") handle?.setRate(c.rate); // rate: free-run at fps
         },
         stop: () => handle?.stop(),
+        dims: () => handle?.dims() ?? null,
+      };
+    }
+
+    if (type === "screen-share") {
+      const cfg = this.graph.nodes[id]?.config ?? {};
+      const fps = clampFps((cfg.fps as number) ?? DEFAULT_CAMERA_FPS);
+      const demand = this.hasIncoming(id, "rate"); // backpressure when a rate edge feeds us
+      let handle: ScreenHandle | null = null;
+      return {
+        start: async () => {
+          // Emit system audio only when the `audio` port is wired (lazy).
+          const wantAudio = this.hasOutgoing(id, "audio");
+          const startEpoch = Date.now(); // wall clock of audio sample 0, for mix alignment
+          try {
+            handle = await startScreenShare({
+              fps,
+              demand,
+              onFrame: (bitmap, width, height) => {
+                this.hooks.onImage?.(id, bitmap);
+                this.emit(id, "out", { bitmap, width, height, ts: Date.now() } as ImageMsg);
+              },
+              onSegment: wantAudio
+                ? (samples, durationMs, offsetMs) => {
+                    this.hooks.onSegment?.(id);
+                    this.emit(id, "audio", { samples, sampleRate: MIC_VAD_SR, durationMs, offsetMs, ts: startEpoch + (offsetMs ?? 0) } as SegmentMsg);
+                  }
+                : undefined,
+              onEnded: () => this.hooks.onStatus?.("screen share ended"),
+              onError: (e) => this.hooks.onError?.(e),
+            });
+          } catch (e) {
+            this.hooks.onError?.(e instanceof Error ? e : new Error(String(e)));
+          }
+        },
+        input: (_port, msg) => {
+          const c = msg as ControlMsg;
+          if (c.pulse) handle?.grabNow();
+          else if (typeof c.rate === "number") handle?.setRate(c.rate);
+        },
+        stop: () => handle?.stop(),
+        dims: () => handle?.dims() ?? null,
       };
     }
 

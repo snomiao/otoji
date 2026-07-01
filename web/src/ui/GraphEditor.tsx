@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import {
   ReactFlow,
   ReactFlowProvider,
@@ -36,7 +36,7 @@ import { fileStore, fileKindForName } from "../graph/file-store";
 import { PeerMeshTransport } from "../graph/mesh-transport";
 import { PreviewSync } from "../graph/preview-sync";
 import { p2pModelCache } from "../providers/model/p2p-cache";
-import { togglePreviewShown, isPreviewShown, shownRemoteNodes, subscribePrefs } from "../lib/prefs";
+import { togglePreviewShown, isPreviewShown, shownRemoteNodes, isPeerBadgeShown, togglePeerBadgeShown, subscribePrefs } from "../lib/prefs";
 import { RecordingPlayer, type Recording } from "./RecordingPlayer";
 import { computePeaks } from "../lib/peaks";
 import { isReadableTranscript } from "../lib/text";
@@ -133,16 +133,18 @@ function fromRF(nodes: Node[], edges: Edge[], version: number): VoiceGraph {
   return g;
 }
 
-// --- Auto-layout: hard non-overlap constraint + connection spring ----------
-// Constraint-projection layout (position-based, no momentum). Each iteration:
+// --- Auto-layout: depth columns + hard non-overlap + connection spring -----
+// Constraint-projection layout (position-based, no momentum):
+//   0. seed each node into a COLUMN by its longest-path depth (cheap coarse
+//      layout that pre-solves the slow chain-stretch mode → fast convergence);
 //   1. a SOFT spring nudges connected nodes toward a rest gap and biases the
 //      flow left→right (source left of its target, aligned in y);
 //   2. then non-overlap is enforced as a STRONG/HARD constraint — overlapping
 //      boxes (sized by each node's MEASURED box) are projected fully apart,
 //      repeated until the layout is clean.
-// Because separation runs to completion AFTER the spring every step, the end-of-
-// iteration state is a genuine fixpoint: re-running leaves it put (no drift / no
-// sparsening). Pure + deterministic (no RNG), so it's safe to broadcast.
+// The result is a deterministic function of (nodes, edges, sizes) — it does NOT
+// read prior positions — so re-running yields the SAME tidy layout: a genuine
+// fixpoint (no drift / no sparsening). Pure + deterministic, safe to broadcast.
 function autoLayout(
   nodes: Node[],
   edges: Edge[],
@@ -161,45 +163,81 @@ function autoLayout(
 
   const GAP = 40; // hard min empty space between any two boxes
   const SPRING_GAP = 64; // desired edge-to-edge gap along a connection (≥ GAP)
-  const SPRING_K = 0.12; // soft spring step fraction (per endpoint)
-  const ITERS = 4000; // cap; the loop breaks early once movement settles
-  // Worst case (N boxes stacked in one column) needs ~N passes to fully spread;
-  // the `moved` early-out keeps it 1–2 passes once the layout is clean, so this
-  // bound is only ever hit on the first iteration. Guarantees no overlaps remain.
-  const SEP_PASSES = Math.max(32, P.length * 2);
+  const SPRING_K = 0.2; // soft spring step fraction (per endpoint)
+  const SEP_LOOP = 4; // cheap approximate separation passes inside the spring loop
+  // Iteration cap scaled DOWN as the graph grows so a non-converging dense graph
+  // can't lock the UI: cost is ~ITERS·N², so ITERS·N² is held ≈ constant (with a
+  // floor for quality on small graphs and a ceiling for big ones). Still breaks
+  // early on convergence, so small/typical graphs run far fewer iterations.
+  const ITERS = Math.max(80, Math.min(600, Math.round(2_000_000 / (P.length * P.length))));
+  // Global budget on separation passes (each is an O(N²) pairwise scan), so the
+  // total auto-arrange cost is hard-capped (~20M comparisons, tens of ms) and a
+  // pathological dense/cyclic graph can never freeze the UI. The budget is sized
+  // so the per-node pass allowance exceeds any realistic column height: at N=200
+  // it's ~500 passes (a 200-tall column needs ~200), and this editor's graphs are
+  // far smaller — so real graphs always fully de-overlap. Only an extreme graph
+  // (many hundreds of dense nodes) would hit the cap, degrading gracefully (a few
+  // residual overlaps) rather than hanging. settle()/the loop stop when clean OR
+  // when this is exhausted; for real inputs that's always "clean".
+  let sepBudget = Math.ceil(20_000_000 / (P.length * P.length));
 
-  // Resolve all box overlaps by projecting pairs apart along the axis of least
-  // penetration. Strong constraint: each pair is pushed fully out of overlap.
-  const separate = () => {
-    for (let pass = 0; pass < SEP_PASSES; pass++) {
-      let moved = false;
-      for (let i = 0; i < P.length; i++) {
-        for (let j = i + 1; j < P.length; j++) {
-          const a = P[i], b = P[j];
-          const dx = b.cx - a.cx, dy = b.cy - a.cy;
-          const minX = (a.w + b.w) / 2 + GAP;
-          const minY = (a.h + b.h) / 2 + GAP;
-          const ox = minX - Math.abs(dx);
-          const oy = minY - Math.abs(dy);
-          if (ox > 0 && oy > 0) {
-            moved = true;
-            // push apart along the axis of least penetration (half each).
-            // `|| s/2` breaks the exact dx/dy===0 tie so coincident boxes split.
-            if (ox <= oy) {
-              const s = (ox / 2) * (dx < 0 ? -1 : 1) || ox / 2;
-              a.cx -= s; b.cx += s;
-            } else {
-              const s = (oy / 2) * (dy < 0 ? -1 : 1) || oy / 2;
-              a.cy -= s; b.cy += s;
-            }
+  // Coarse initial layout: place each node in a COLUMN by its longest-path depth
+  // (source→target distance), rows stacked within a column. This solves the
+  // slow "stretch the whole chain" relaxation mode up front — the spring then
+  // only fine-tunes — so even long pipelines converge in a few dozen iterations
+  // instead of thousands. It also makes the result a deterministic function of
+  // (nodes, edges, sizes): re-running gives the same layout (a true fixpoint).
+  const depth = new Array(P.length).fill(0);
+  for (let pass = 0; pass < P.length; pass++) {
+    let changed = false;
+    for (const [s, t] of links) if (depth[t] < depth[s] + 1) { depth[t] = depth[s] + 1; changed = true; }
+    if (!changed) break; // (caps naturally on cycles after P.length passes)
+  }
+  const COL = 230, ROW = 140; // approx column/row pitch (≥ box+GAP); spring + separation refine it
+  const rowOf: Record<number, number> = {};
+  for (let k = 0; k < P.length; k++) {
+    const d = depth[k];
+    const r = (rowOf[d] = (rowOf[d] ?? 0) + 1) - 1;
+    P[k].cx = d * COL;
+    P[k].cy = r * ROW;
+  }
+
+  // One relaxation pass of the non-overlap constraint: project every overlapping
+  // box pair apart along the axis of least penetration (half each). Returns
+  // whether anything moved, so callers can stop once the layout is clean.
+  const separatePass = (): boolean => {
+    if (sepBudget <= 0) return false; // out of budget — stop separating (no freeze)
+    sepBudget--;
+    let moved = false;
+    for (let i = 0; i < P.length; i++) {
+      for (let j = i + 1; j < P.length; j++) {
+        const a = P[i], b = P[j];
+        const dx = b.cx - a.cx, dy = b.cy - a.cy;
+        const minX = (a.w + b.w) / 2 + GAP;
+        const minY = (a.h + b.h) / 2 + GAP;
+        const ox = minX - Math.abs(dx);
+        const oy = minY - Math.abs(dy);
+        if (ox > 0 && oy > 0) {
+          moved = true;
+          // `|| s/2` breaks the exact dx/dy===0 tie so coincident boxes split.
+          if (ox <= oy) {
+            const s = (ox / 2) * (dx < 0 ? -1 : 1) || ox / 2;
+            a.cx -= s; b.cx += s;
+          } else {
+            const s = (oy / 2) * (dy < 0 ? -1 : 1) || oy / 2;
+            a.cy -= s; b.cy += s;
           }
         }
       }
-      if (!moved) break; // clean — constraint satisfied
     }
+    return moved;
   };
+  // "Separate to completion": pass until nothing overlaps or the global budget
+  // runs out. Used for the initial seed and the FINAL guarantee, so the returned
+  // layout has zero overlaps whenever the budget allows (always, for real graphs).
+  const settle = () => { while (separatePass()) { /* until clean or out of budget */ } };
 
-  separate(); // start from a non-overlapping state
+  settle(); // start from a guaranteed non-overlapping state
   for (let it = 0; it < ITERS; it++) {
     // snapshot to measure net movement this iteration (for convergence break)
     const px = P.map((p) => p.cx), py = P.map((p) => p.cy);
@@ -213,18 +251,19 @@ function autoLayout(
       a.cx += ex * SPRING_K; a.cy += ey * SPRING_K;
       b.cx -= ex * SPRING_K; b.cy -= ey * SPRING_K;
     }
-    // 2) hard constraint: no boxes may overlap. Runs to completion every step,
-    //    so it always dominates the spring (the spring only arranges what's free).
-    separate();
-    // Stop once the layout has settled (net per-node move below ~0.1px). The
-    // end-of-iteration state is then at rest → re-running it is a fixpoint.
-    // Long chains relax slowly (~N² iters), hence the generous ITERS cap.
+    // 2) hard constraint: a few cheap separation passes — approximate is fine
+    //    mid-relaxation (the final settle() guarantees a clean result), and it
+    //    keeps per-iteration cost at O(SEP_LOOP·N²) instead of O(N³).
+    for (let s = 0; s < SEP_LOOP; s++) if (!separatePass()) break;
+    // Stop once the layout has settled (net per-node move below ~0.1px) so small
+    // graphs don't burn the whole ITERS budget.
     let maxMove = 0;
     for (let k = 0; k < P.length; k++) {
       maxMove = Math.max(maxMove, Math.abs(P[k].cx - px[k]), Math.abs(P[k].cy - py[k]));
     }
     if (maxMove < 0.1) break;
   }
+  settle(); // final guarantee: spread until truly clean (no overlaps remain)
 
   // Snap the whole layout so its top-left starts near a tidy origin.
   let minX = Infinity, minY = Infinity;
@@ -243,7 +282,7 @@ function Editor({ initialRoom, local }: { initialRoom?: string; local?: boolean 
   const [joined, setJoined] = useState(!!local); // local mode: no room, runs single-device
   const myDeviceId = useMemo(() => getDeviceId(), []);
   const [myPeerId, setMyPeerId] = useState<string | null>(null);
-  const [present, setPresent] = useState<Record<string, { peerId: string; name: string; role: string; hasMic: boolean }>>({});
+  const [present, setPresent] = useState<Record<string, { peerId: string; name: string; role: string; hasMic: boolean; runtime?: string; net?: string }>>({});
   const [status, setStatus] = useState("not connected");
   const [paused, setPaused] = useState(!!local); // local demo starts paused (don't grab the mic until asked)
   const [role, setRoleState] = useState<DeviceRole>(() => getRole());
@@ -290,6 +329,7 @@ function Editor({ initialRoom, local }: { initialRoom?: string; local?: boolean 
   const edgeBytesRef = useRef(new Map<string, number>()); // per-edge bytes accumulated this second
   const [edgeRates, setEdgeRates] = useState<Record<string, number>>({}); // per-edge bytes/sec
   const [lastError, setLastError] = useState<string>(""); // most recent runtime error, for bug reports
+  const peerBadgeShown = useSyncExternalStore(subscribePrefs, isPeerBadgeShown, () => true);
   const fileSeqRef = useRef(0);
   const nameCacheRef = useRef<Record<string, string>>({});
   const nodesRef = useRef(nodes);
@@ -347,6 +387,8 @@ function Editor({ initialRoom, local }: { initialRoom?: string; local?: boolean 
           me: deviceId === myDeviceId,
           role: on?.role ?? (deviceId === myDeviceId ? role : "general"),
           hasMic: on?.hasMic ?? (deviceId === myDeviceId ? caps.hasMic : true),
+          runtime: on?.runtime ?? (deviceId === myDeviceId ? "browser" : undefined),
+          net: on?.net,
         };
       })
       .sort((a, b) => (a.me ? -1 : b.me ? 1 : Number(b.online) - Number(a.online) || a.name.localeCompare(b.name)));
@@ -415,7 +457,7 @@ function Editor({ initialRoom, local }: { initialRoom?: string; local?: boolean 
     if (!local) return;
     // No signaling in local mode — register this device as present so its nodes
     // aren't shown offline / treated as unassigned.
-    setPresent({ [myDeviceId]: { peerId: myDeviceId, name, role, hasMic: caps.hasMic } });
+    setPresent({ [myDeviceId]: { peerId: myDeviceId, name, role, hasMic: caps.hasMic, runtime: "browser" } });
     const mk = (id: string, vt: NodeType, x: number): Node => ({
       id,
       type: "voice",
@@ -477,10 +519,10 @@ function Editor({ initialRoom, local }: { initialRoom?: string; local?: boolean 
     sig.on("hello", (m) => {
       setMyPeerId(m.peerId);
       setPresent(() => {
-        const p: Record<string, { peerId: string; name: string; role: string; hasMic: boolean }> = {
-          [myDeviceId]: { peerId: m.peerId, name: dn, role, hasMic: caps.hasMic },
+        const p: Record<string, { peerId: string; name: string; role: string; hasMic: boolean; runtime?: string; net?: string }> = {
+          [myDeviceId]: { peerId: m.peerId, name: dn, role, hasMic: caps.hasMic, runtime: "browser" },
         };
-        for (const peer of m.peers as Peer[]) p[peer.deviceId] = { peerId: peer.peerId, name: peer.name, role: peer.role, hasMic: peer.hasMic };
+        for (const peer of m.peers as Peer[]) p[peer.deviceId] = { peerId: peer.peerId, name: peer.name, role: peer.role, hasMic: peer.hasMic, runtime: peer.runtime, net: peer.net };
         return p;
       });
       applyRemote(m.graph);
@@ -524,7 +566,7 @@ function Editor({ initialRoom, local }: { initialRoom?: string; local?: boolean 
     });
     sig.on("peer-joined", (m) => {
       const peer = m.peer as Peer;
-      setPresent((p) => ({ ...p, [peer.deviceId]: { peerId: peer.peerId, name: peer.name, role: peer.role, hasMic: peer.hasMic } }));
+      setPresent((p) => ({ ...p, [peer.deviceId]: { peerId: peer.peerId, name: peer.name, role: peer.role, hasMic: peer.hasMic, runtime: peer.runtime, net: peer.net } }));
       meshRef.current?.consider(peer.peerId);
     });
     sig.on("peer-left", (m) => {
@@ -1274,6 +1316,13 @@ function Editor({ initialRoom, local }: { initialRoom?: string; local?: boolean 
           {view === "graph" && (
             <button onClick={autoArrange} style={{ fontSize: 12 }} title="Auto-arrange nodes (spring layout, no overlapping boxes)">⤢ Arrange</button>
           )}
+          <button
+            onClick={togglePeerBadgeShown}
+            title="Show/hide each peer's connection-type badge ([wan] / [lan] / [browser])"
+            style={{ fontSize: 12, fontWeight: peerBadgeShown ? 700 : 400, background: peerBadgeShown ? "#ebf4ff" : undefined }}
+          >
+            🏷 Peer type
+          </button>
           <span style={{ display: "flex", gap: 8, alignItems: "center", marginLeft: 8 }}>
             {runStatus && <span style={{ fontSize: 12, color: runStatus.startsWith("error") ? "#e53e3e" : "#718096" }}>{runStatus}</span>}
             <span style={{ fontSize: 12, color: running ? "#2f855a" : "#a0aec0" }}>{running ? "● live" : paused ? "paused" : "idle"}</span>

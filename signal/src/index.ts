@@ -46,6 +46,8 @@ interface PeerMeta {
   name: string;
   role: string;
   hasMic: boolean;
+  runtime: string; // "browser" | "node" — what the peer is running
+  net: string; // "lan" | "wan" | "" — a node peer's link to this relay
   lastSeen: number;
   winStart: number; // rate-limit window start (ms)
   winCount: number; // messages seen in the current window
@@ -86,6 +88,11 @@ export class RoomDurableObject {
     const deviceId = (url.searchParams.get("deviceId") || crypto.randomUUID()).slice(0, 100);
     const role = (url.searchParams.get("role") || "general").slice(0, 16);
     const hasMic = url.searchParams.get("hasMic") !== "0";
+    // Connection-type badge: what the peer runs ("browser"/"node") and, for a
+    // node CLI, whether it reaches this relay over the LAN or the WAN. Self-
+    // reported (relayed verbatim) — purely advisory UI metadata.
+    const runtime = (url.searchParams.get("runtime") || "browser").slice(0, 16);
+    const net = (url.searchParams.get("net") || "").slice(0, 8);
     // A client may supply a stable peerId (one identity across a federated server
     // set). Only accept a well-formed UUID — a crafted/short id is replaced with
     // a server-minted one so callers can't spoof structured identities.
@@ -105,10 +112,10 @@ export class RoomDurableObject {
 
     const { 0: client, 1: server } = new WebSocketPair();
     this.state.acceptWebSocket(server, [peerId]);
-    server.serializeAttachment({ peerId, deviceId, name, role, hasMic, lastSeen: Date.now(), winStart: Date.now(), winCount: 0 } satisfies PeerMeta);
+    server.serializeAttachment({ peerId, deviceId, name, role, hasMic, runtime, net, lastSeen: Date.now(), winStart: Date.now(), winCount: 0 } satisfies PeerMeta);
 
     server.send(JSON.stringify({ type: "hello", peerId, peers: this.peers(peerId), graph: await this.getGraph() }));
-    this.broadcast({ type: "peer-joined", peer: { peerId, deviceId, name, role, hasMic } }, peerId);
+    this.broadcast({ type: "peer-joined", peer: { peerId, deviceId, name, role, hasMic, runtime, net } }, peerId);
     await this.ensureAlarm();
 
     return new Response(null, { status: 101, webSocket: client });

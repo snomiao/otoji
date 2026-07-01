@@ -13,6 +13,7 @@ export type NodeType =
   | "stt"
   | "web-speech"
   | "vosk"
+  | "sherpa"
   | "translate"
   | "sink"
   | "audio-out"
@@ -24,9 +25,11 @@ export type NodeType =
   | "srt-out"
   | "tracker"
   | "camera"
+  | "screen-share"
   | "paddle-ocr"
   | "text-diff"
-  | "vision-model";
+  | "vision-model"
+  | "audio-mix";
 
 export interface NodeSpec {
   type: NodeType;
@@ -47,6 +50,16 @@ export const NODE_SPECS: Record<NodeType, NodeSpec> = {
     label: "Mic (raw, no VAD)",
     // Continuous fixed-size frames for streaming consumers (no segmentation).
     inputs: [],
+    outputs: [{ id: "out", type: "segment" }],
+  },
+  "audio-mix": {
+    type: "audio-mix",
+    label: "Mix audio",
+    // Combine multiple audio sources (wire several segment edges into `in`).
+    // Segments are time-aligned by wall-clock ts, overlaps summed and soft-
+    // clipped, then emitted as one mixed segment per overlap cluster. A small
+    // jitter buffer absorbs arrival skew before a cluster is flushed.
+    inputs: [{ id: "in", type: "segment" }],
     outputs: [{ id: "out", type: "segment" }],
   },
   "file-audio": {
@@ -80,6 +93,16 @@ export const NODE_SPECS: Record<NodeType, NodeSpec> = {
     label: "Streaming STT (Vosk)",
     // On-device streaming ASR (Kaldi/WASM): feed continuous audio (e.g. mic-raw),
     // emits a finalized transcript at each endpoint; partials show in the preview.
+    inputs: [{ id: "in", type: "segment" }],
+    outputs: [{ id: "out", type: "transcript" }],
+  },
+  sherpa: {
+    type: "sherpa",
+    label: "Native STT (sherpa-onnx)",
+    // Bridges to a local `otoji server` (WebSocket) running the native
+    // sherpa-onnx worker: partials → live preview, finals → downstream
+    // transcript. Unlocks heavy native models (whisper-large-v3, zipformer,
+    // dolphin, full-precision SenseVoice) that are impractical in-browser.
     inputs: [{ id: "in", type: "segment" }],
     outputs: [{ id: "out", type: "transcript" }],
   },
@@ -177,6 +200,19 @@ export const NODE_SPECS: Record<NodeType, NodeSpec> = {
     inputs: [{ id: "rate", type: "control" }],
     outputs: [{ id: "out", type: "image" }],
   },
+  "screen-share": {
+    type: "screen-share",
+    label: "Screen share",
+    // getDisplayMedia: screen/window/tab frames + (where granted) system audio.
+    // `out` mirrors the Camera node (image frames; the `rate` input enables
+    // backpressure). `audio` carries VAD-segmented system audio for STT — only
+    // when the browser provides an audio track (often tab-share only).
+    inputs: [{ id: "rate", type: "control" }],
+    outputs: [
+      { id: "out", type: "image" },
+      { id: "audio", type: "segment" },
+    ],
+  },
   "paddle-ocr": {
     type: "paddle-ocr",
     label: "OCR (PaddleOCR)",
@@ -216,14 +252,14 @@ export const NODE_SPECS: Record<NodeType, NodeSpec> = {
 
 /** Palette grouping for the node types. */
 export const NODE_CATEGORIES: { id: string; label: string; types: NodeType[] }[] = [
-  { id: "input", label: "Input", types: ["mic-vad", "mic-raw", "file-audio", "file-text"] },
-  { id: "stt", label: "Speech → Text", types: ["stt", "web-speech", "vosk"] },
+  { id: "input", label: "Input", types: ["mic-vad", "mic-raw", "audio-mix", "file-audio", "file-text"] },
+  { id: "stt", label: "Speech → Text", types: ["stt", "web-speech", "vosk", "sherpa"] },
   { id: "translate", label: "Text → Text", types: ["translate"] },
   { id: "tts", label: "Text → Speech", types: ["tts", "tts-model"] },
   { id: "output", label: "Output", types: ["sink", "audio-out", "srt-out", "speaker"] },
   { id: "model", label: "Custom model", types: ["model"] },
   { id: "pipe", label: "Pipe (CLI)", types: ["pipe"] },
-  { id: "vision", label: "Vision", types: ["camera", "paddle-ocr", "vision-model"] },
+  { id: "vision", label: "Vision", types: ["camera", "screen-share", "paddle-ocr", "vision-model"] },
   { id: "text", label: "Text", types: ["text-diff"] },
   { id: "net", label: "Network", types: ["tracker"] },
 ];

@@ -1,15 +1,16 @@
 name: release
 
-# End-to-end release pipeline.
+# End-to-end release pipeline — releases are batched DAILY, not per-commit.
 #
-# Per version:
-#   1. Conventional commits land on main.
-#   2. release-plz opens a release PR (Cargo.toml + CHANGELOG bump).
-#   3. PR merge → release-plz publishes the source crate to crates.io
-#      (--no-verify, so we skip the heavy sherpa-onnx-sys C++ build),
+#   1. Conventional commits land on main. Each push only refreshes the
+#      accumulating release PR (Cargo.toml + CHANGELOG bump) — it does NOT
+#      build or publish, so a busy day costs one release cycle, not N.
+#   2. Once a day (cron) — or on a manual `release_now` dispatch — the open
+#      release PR is squash-merged and release-plz publishes the source crate
+#      to crates.io (--no-verify, skipping the heavy sherpa-onnx-sys C++ build),
 #      pushes a `vX.Y.Z` git tag, and emits the version as a job output.
-#   4. The reusable _build.yml runs the cross-platform napi matrix.
-#   5. The publish job lays out per-target sub-packages, syncs every
+#   3. The reusable _build.yml runs the cross-platform napi matrix.
+#   4. The publish job lays out per-target sub-packages, syncs every
 #      version field to the released version, and runs `npm publish
 #      --provenance` for each `@otoji/core-<triple>` plus the umbrella
 #      `@otoji/core` package via OIDC trusted publishing.
@@ -29,10 +30,20 @@ name: release
 on:
   push:
     branches: [main]
+  # Releases are batched DAILY rather than cut per-commit: every push only
+  # refreshes the accumulating release PR; the scheduled run is what actually
+  # merges it and publishes. This collapses ~N pushes/day into one build+publish
+  # cycle (the full macOS/Windows/Linux napi matrix) instead of N of them.
+  schedule:
+    - cron: "0 18 * * *" # 18:00 UTC = 03:00 JST — batch the day's commits overnight
   workflow_dispatch:
     inputs:
       force_npm:
         description: "Force npm build + publish even when release-plz didn't cut a new version"
+        type: boolean
+        default: false
+      release_now:
+        description: "Merge the open release PR and publish immediately (don't wait for the daily schedule)"
         type: boolean
         default: false
 
@@ -49,7 +60,10 @@ jobs:
   # ─── Step 1: Cargo.toml bump + crates.io publish ──────────────────────
   release-plz:
     name: release-plz (crates.io)
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    if: |
+      (github.event_name == 'push' && github.ref == 'refs/heads/main')
+      || github.event_name == 'schedule'
+      || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -71,10 +85,13 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
 
-      # Auto-merge the release PR so feat/fix commits on main ship
-      # without manual intervention (semantic-release-style flow).
+      # Merge the accumulated release PR — but only on the DAILY schedule (or a
+      # manual release_now dispatch), NOT on every push. Pushes just keep the PR
+      # up to date via release-pr above; this is the once-a-day batch point.
       - name: Auto-merge release PR
-        if: steps.release-pr.outputs.prs != '' && steps.release-pr.outputs.prs != '[]'
+        if: |
+          (github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && inputs.release_now))
+          && steps.release-pr.outputs.prs != '' && steps.release-pr.outputs.prs != '[]'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
@@ -84,6 +101,12 @@ jobs:
             echo "Auto-merging release PR #$pr_number"
             gh pr merge "$pr_number" --repo "$GITHUB_REPOSITORY" --squash --admin || \
               gh pr merge "$pr_number" --repo "$GITHUB_REPOSITORY" --squash
+            # The action checked out main BEFORE this merge; sync to the merged
+            # HEAD so the `release` step below sees the new version and publishes
+            # it in THIS run (otherwise it lags to the next push, since a
+            # GITHUB_TOKEN merge does not itself trigger a workflow run).
+            git fetch origin main
+            git reset --hard origin/main
           fi
 
       - id: release

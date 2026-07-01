@@ -41,7 +41,13 @@ jobs:
       # need a dedicated bin job.
       - run: cargo check --all-targets
 
-  # Cross-platform napi build only on PR (main pushes are covered by release.yml).
+  # Cross-platform napi matrix runs on real PRs only:
+  #   - main pushes are covered by release.yml (daily build+publish),
+  #   - the release-plz version-bump PR only touches Cargo.toml/CHANGELOG and is
+  #     rebuilt+published by release.yml on the daily schedule, so building it
+  #     here is pure waste (it updates on every push to main → many runs/day).
   build:
-    if: github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch'
+    if: |
+      (github.event_name == 'pull_request' && !startsWith(github.head_ref, 'release-plz-'))
+      || github.event_name == 'workflow_dispatch'
     uses: ./.github/workflows/_build.yml

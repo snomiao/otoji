@@ -58,3 +58,30 @@ export function shownRemoteNodes(ownedIds: Set<string>): string[] {
   for (const [id, shown] of load()) if (shown && !ownedIds.has(id)) out.push(id);
   return out;
 }
+
+// --- Peer connection-type badge ([wan]/[lan]/[browser]) visibility ----------
+// A single device-local boolean (shown by default). Stored as a sentinel so its
+// absence reads as "shown"; shares the prefs listener set for reactive UI.
+const BADGE_KEY = "otoji.peerBadge.hidden";
+
+export function isPeerBadgeShown(): boolean {
+  try {
+    return localStorage.getItem(BADGE_KEY) !== "1";
+  } catch {
+    return true;
+  }
+}
+
+export function setPeerBadgeShown(shown: boolean): void {
+  try {
+    if (shown) localStorage.removeItem(BADGE_KEY);
+    else localStorage.setItem(BADGE_KEY, "1");
+  } catch {
+    /* ignore */
+  }
+  listeners.forEach((f) => f());
+}
+
+export function togglePeerBadgeShown(): void {
+  setPeerBadgeShown(!isPeerBadgeShown());
+}

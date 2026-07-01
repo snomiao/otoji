@@ -17,6 +17,22 @@ export interface MicVadOptions {
   onLevel?: (level: SttLevel) => void;
   onSpeechStart?: () => void;
   deviceId?: string; // hardware INPUT device to capture from (default mic if unset)
+  aec?: boolean; // browser echo cancellation + noise suppression + AGC (default on)
+}
+
+/**
+ * getUserMedia audio constraints. echoCancellation/noiseSuppression/autoGainControl
+ * are Chrome-on-by-default; we set them explicitly so the Mic node can turn the
+ * cleanup OFF for raw capture. AEC references the device's own playback, so it
+ * cancels a same-device speaker/TTS loop (residual leakage is normal).
+ */
+function audioConstraints(deviceId?: string, aec = true): MediaStreamConstraints["audio"] {
+  return {
+    ...(deviceId ? { deviceId: { exact: deviceId } } : {}),
+    echoCancellation: aec,
+    noiseSuppression: aec,
+    autoGainControl: aec,
+  };
 }
 
 export interface MicVadHandle {
@@ -112,6 +128,7 @@ export interface MicRawOptions {
   onLevel?: (level: SttLevel) => void;
   deviceId?: string;
   frameMs?: number; // emitted chunk size (default 250ms)
+  aec?: boolean; // browser echo cancellation + noise suppression + AGC (default on)
 }
 
 /**
@@ -120,7 +137,7 @@ export interface MicRawOptions {
  */
 export async function startMicRaw(opts: MicRawOptions): Promise<MicVadHandle> {
   const stream = await navigator.mediaDevices.getUserMedia({
-    audio: opts.deviceId ? { deviceId: { exact: opts.deviceId } } : true,
+    audio: audioConstraints(opts.deviceId, opts.aec),
   });
   const AudioCtor: typeof AudioContext = (window as any).AudioContext || (window as any).webkitAudioContext;
   const audioCtx = new AudioCtor({ sampleRate: MIC_VAD_SR });
@@ -162,8 +179,17 @@ export async function startMicRaw(opts: MicRawOptions): Promise<MicVadHandle> {
 
 export async function startMicVad(opts: MicVadOptions): Promise<MicVadHandle> {
   const stream = await navigator.mediaDevices.getUserMedia({
-    audio: opts.deviceId ? { deviceId: { exact: opts.deviceId } } : true,
+    audio: audioConstraints(opts.deviceId, opts.aec),
   });
+  return vadFromStream(stream, opts);
+}
+
+/**
+ * Run VAD segmentation over an existing audio MediaStream (e.g. the audio track
+ * of a screen share). Same endpointing as startMicVad; owns its AudioContext and
+ * stops the stream's tracks on stop().
+ */
+export function vadFromStream(stream: MediaStream, opts: MicVadOptions): MicVadHandle {
   const AudioCtor: typeof AudioContext = (window as any).AudioContext || (window as any).webkitAudioContext;
   const audioCtx = new AudioCtor({ sampleRate: MIC_VAD_SR });
   const srcRate = audioCtx.sampleRate;

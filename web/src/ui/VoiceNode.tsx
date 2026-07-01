@@ -16,6 +16,7 @@ import {
 import { NEURAL_TTS_MODELS, AUTO_TTS_MODEL, AUTO_TTS_VOICE } from "../providers/tts/tts-config";
 import { MODEL_TASKS, MODEL_DTYPES, DEFAULT_MODEL_DTYPE } from "../providers/model/transformers-pipeline";
 import { VOSK_MODELS, DEFAULT_VOSK_MODEL } from "../providers/stt/vosk";
+import { DEFAULT_SHERPA_SERVER_URL } from "../providers/stt/sherpa_native";
 import { useNodeLive } from "./useNodeLive";
 import { NodeMicPreview } from "./NodeMicPreview";
 import { NodeImagePreview } from "./NodeImagePreview";
@@ -43,6 +44,8 @@ export interface DeviceOpt {
   online: boolean;
   role: string;
   hasMic: boolean;
+  runtime?: string; // "browser" | "node" — drives the connection-type badge
+  net?: string; // "lan" | "wan" for a node peer
 }
 
 export interface VoiceNodeData {
@@ -347,6 +350,32 @@ export function VoiceNode({ id, data }: NodeProps) {
             </select>
           </label>
         )}
+        {(d.voiceType === "mic-vad" || d.voiceType === "mic-raw") && (
+          <label style={{ display: "flex", gap: 5, alignItems: "center", color: "#718096", marginTop: 4, fontSize: 11 }} title="Browser echo cancellation, noise suppression & auto-gain. Turn off for raw capture.">
+            <input
+              type="checkbox"
+              checked={(config?.aec as boolean | undefined) ?? true}
+              onChange={(e) => onConfig(id, { aec: e.target.checked })}
+            />
+            echo cancel / denoise
+          </label>
+        )}
+        {d.voiceType === "audio-mix" && (
+          <label style={{ display: "flex", gap: 6, alignItems: "center", color: "#718096", marginTop: 4 }}>
+            jitter:
+            <input
+              type="number"
+              min={0}
+              max={2000}
+              step={50}
+              defaultValue={(config?.jitterMs as number | undefined) ?? 300}
+              onBlur={(e) => onConfig(id, { jitterMs: Math.max(0, Number(e.target.value) || 0) })}
+              onKeyDown={(e) => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); }}
+              style={{ fontSize: 11, width: 56 }}
+            />
+            <span style={{ fontSize: 9, color: "#a0aec0" }}>ms · wire several inputs</span>
+          </label>
+        )}
         {d.voiceType === "speaker" && (
           <label style={{ display: "flex", gap: 6, alignItems: "center", color: "#718096", marginTop: 4 }}>
             out:
@@ -456,6 +485,23 @@ export function VoiceNode({ id, data }: NodeProps) {
             </label>
           </>
         )}
+
+        {d.voiceType === "screen-share" && (
+          <label style={{ display: "flex", gap: 6, alignItems: "center", color: "#718096", marginTop: 4 }}>
+            fps:
+            <input
+              type="number"
+              min={0.2}
+              max={30}
+              step={0.5}
+              defaultValue={(config?.fps as number | undefined) ?? DEFAULT_CAMERA_FPS}
+              onBlur={(e) => onConfig(id, { fps: Number(e.target.value) || DEFAULT_CAMERA_FPS })}
+              onKeyDown={(e) => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); }}
+              style={{ fontSize: 11, width: 56 }}
+            />
+            <span style={{ fontSize: 9, color: "#a0aec0" }}>(or wire rate) · audio→STT</span>
+          </label>
+        )}
         {d.voiceType === "vision-model" && (
           <>
             <label style={{ display: "flex", gap: 6, alignItems: "center", color: "#718096", marginTop: 4 }}>
@@ -529,6 +575,24 @@ export function VoiceNode({ id, data }: NodeProps) {
               ))}
             </select>
           </label>
+        )}
+        {d.voiceType === "sherpa" && (
+          <>
+            <label style={{ display: "flex", gap: 6, alignItems: "center", color: "#718096", marginTop: 4 }}>
+              server:
+              <input
+                className="nodrag"
+                value={(config?.serverUrl as string | undefined) ?? DEFAULT_SHERPA_SERVER_URL}
+                onChange={(e) => onConfig(id, { serverUrl: e.target.value })}
+                placeholder={DEFAULT_SHERPA_SERVER_URL}
+                spellCheck={false}
+                style={{ fontSize: 11, flex: 1, minWidth: 0 }}
+              />
+            </label>
+            <div style={{ fontSize: 9.5, color: "#a0aec0", marginTop: 2 }}>
+              run <code>otoji server</code> locally (native sherpa-onnx)
+            </div>
+          </>
         )}
         {d.voiceType === "pipe" && (() => {
           const room = typeof location !== "undefined" ? location.pathname.replace(/^\/+|\/+$/g, "") : "";
@@ -676,10 +740,10 @@ export function VoiceNode({ id, data }: NodeProps) {
         )}
       </div>
 
-      {shown && (d.voiceType === "mic-vad" || d.voiceType === "mic-raw" || d.voiceType === "camera" || d.voiceType === "paddle-ocr" || d.voiceType === "vision-model" || texts.length > 0) && (
+      {shown && (d.voiceType === "mic-vad" || d.voiceType === "mic-raw" || d.voiceType === "camera" || d.voiceType === "screen-share" || d.voiceType === "paddle-ocr" || d.voiceType === "vision-model" || texts.length > 0) && (
         <div style={{ padding: "0 10px 8px" }}>
           {(d.voiceType === "mic-vad" || d.voiceType === "mic-raw") && <NodeMicPreview live={live} nodeId={id} width={150} height={28} />}
-          {(d.voiceType === "camera" || d.voiceType === "paddle-ocr" || d.voiceType === "vision-model") && <NodeImagePreview live={live} nodeId={id} width={150} height={84} />}
+          {(d.voiceType === "camera" || d.voiceType === "screen-share" || d.voiceType === "paddle-ocr" || d.voiceType === "vision-model") && <NodeImagePreview live={live} nodeId={id} width={150} height={84} />}
           {(d.voiceType === "stt" || d.voiceType === "translate" || d.voiceType === "sink" || d.voiceType === "web-speech" || d.voiceType === "vosk" || d.voiceType === "model" || d.voiceType === "paddle-ocr" || d.voiceType === "text-diff" || d.voiceType === "vision-model") && (
             <div style={{ fontSize: 11, color: "#4a5568", lineHeight: 1.35, whiteSpace: "pre-wrap" }}>
               {texts.map((t, i) => (

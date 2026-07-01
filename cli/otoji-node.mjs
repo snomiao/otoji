@@ -48,7 +48,15 @@ if (typeof WebSocket === "undefined") {
 }
 
 const deviceId = "cli-" + Math.random().toString(36).slice(2, 10);
-const url = `${signal}/${encodeURIComponent(room)}?name=cli&deviceId=${deviceId}&role=general&hasMic=false`;
+// Connection-type badge (shown in the web UI): we run on `node`, and we reach
+// the relay over the LAN iff its host is loopback / a private (RFC1918) address
+// / a *.local mDNS name — otherwise the WAN. Classify from `signal` (the URL we
+// actually connect to), so an $OTOJI_SIGNAL override is reflected correctly.
+const isLanHost = (h) =>
+  /^(localhost|127\.|0\.0\.0\.0|10\.|192\.168\.|172\.(1[6-9]|2[0-9]|3[01])\.|\[?::1\]?$)/.test(h) || /\.local$/i.test(h);
+const signalHost = signal.replace(/^wss?:\/\//i, "").replace(/[/?].*$/, "").replace(/:\d+$/, "");
+const net = isLanHost(signalHost) ? "lan" : "wan";
+const url = `${signal}/${encodeURIComponent(room)}?name=cli&deviceId=${deviceId}&role=general&hasMic=false&runtime=node&net=${net}`;
 log("connecting", url);
 
 let ws;

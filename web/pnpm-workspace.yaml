@@ -3,3 +3,7 @@
 allowBuilds:
   esbuild: true
   protobufjs: true
+  # wrangler pulls in workerd at deploy time (wrangler-action runs `pnpm add
+  # wrangler`); without this, that install aborts with ERR_PNPM_IGNORED_BUILDS
+  # and deploy-web fails before it can publish.
+  workerd: true

@@ -164,6 +164,11 @@ enum Cmd {
         /// Disable real-time pacing (send as fast as possible).
         #[arg(long)]
         burst: bool,
+        /// Skip the ratatui TUI and emit AsrEvents as JSON lines on stdout.
+        /// Auto-enabled when stdout is not a terminal (e.g. piped). Useful
+        /// for headless testing of the streaming SenseVoice path.
+        #[arg(long)]
+        plain: bool,
     },
     /// Start a WebSocket server that accepts binary PCM audio (16 kHz
     /// mono s16le) and broadcasts AsrEvents as JSON text frames.
@@ -725,7 +730,11 @@ async fn main() -> Result<()> {
             provider,
             frame_ms,
             burst,
-        } => run_file(provider, path, frame_ms, !burst).await,
+            plain,
+        } => {
+            let force_plain = plain || !std::io::stdout().is_terminal();
+            run_file(provider, path, frame_ms, !burst, force_plain).await
+        }
         Cmd::Say {
             text,
             provider,
@@ -1731,7 +1740,13 @@ fn resolve_any_polisher() -> Option<Arc<dyn Polisher>> {
     None
 }
 
-async fn run_file(kind: AsrKind, path: PathBuf, frame_ms: u32, realtime: bool) -> Result<()> {
+async fn run_file(
+    kind: AsrKind,
+    path: PathBuf,
+    frame_ms: u32,
+    realtime: bool,
+    plain: bool,
+) -> Result<()> {
     let (audio_tx, audio_rx) = audio::channel(64);
     let p = path.clone();
     tokio::spawn(async move {
@@ -1748,7 +1763,21 @@ async fn run_file(kind: AsrKind, path: PathBuf, frame_ms: u32, realtime: bool) -
         }
         AsrKind::Sensevoice => {
             let cfg = SenseVoiceConfig::from_env();
-            drive(SenseVoice::new(cfg), audio_rx).await
+            let provider = SenseVoice::new(cfg);
+            if plain {
+                drive_plain(
+                    provider,
+                    audio_rx,
+                    None,
+                    None,
+                    None,
+                    None,
+                    "original".into(),
+                )
+                .await
+            } else {
+                drive(provider, audio_rx).await
+            }
         }
     }
 }

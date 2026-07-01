@@ -1,7 +1,10 @@
 import React from "react";
+import { useSyncExternalStore } from "react";
 import type { DeviceOpt } from "./VoiceNode";
 import { nodeOwner } from "../graph/runtime";
 import { NODE_SPECS, type VoiceGraph, type PortType } from "../graph/model";
+import { PeerBadge } from "./PeerBadge";
+import { isPeerBadgeShown, subscribePrefs } from "../lib/prefs";
 
 interface NetworkViewProps {
   myId: string;
@@ -26,6 +29,7 @@ export function NetworkView({ myId, devices, peerStates, graph, stats }: Network
   const dev = (id: string) => devices.find((d) => d.deviceId === id);
   const nameOf = (id: string) => dev(id)?.name ?? id.slice(0, 6);
   const me = dev(myId);
+  const showBadge = useSyncExternalStore(subscribePrefs, isPeerBadgeShown, () => true);
 
   const nodesByDevice = new Map<string, string[]>();
   for (const n of Object.values(graph.nodes)) {
@@ -93,7 +97,10 @@ export function NetworkView({ myId, devices, peerStates, graph, stats }: Network
               style={{ border: "1px solid #cbd5e0", borderRadius: 10, padding: 12, minWidth: 180, opacity: dv.online || dv.me ? 1 : 0.6 }}
             >
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                <strong>{dv.name}{dv.me ? " (me)" : ""}</strong>
+                <span style={{ display: "flex", gap: 6, alignItems: "center", minWidth: 0 }}>
+                  <strong>{dv.name}{dv.me ? " (me)" : ""}</strong>
+                  {showBadge && (dv.online || dv.me) && <PeerBadge runtime={dv.runtime} net={dv.net} />}
+                </span>
                 <span style={{ fontSize: 11, color: ok ? "#2f855a" : "#c05621" }}>● {state}</span>
               </div>
               <div style={{ fontSize: 11, color: "#a0aec0" }}>

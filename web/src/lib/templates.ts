@@ -97,6 +97,70 @@ export const BUILTIN_TEMPLATES: GraphTemplate[] = [
     ],
   },
   {
+    id: "mix-two-mics",
+    name: "Mix two mics",
+    desc: "Two mics → time-aligned mix → STT (pick a device on each mic)",
+    builtin: true,
+    nodes: [
+      { key: "mic1", type: "mic-vad", dx: 0, dy: 0 },
+      { key: "mic2", type: "mic-vad", dx: 0, dy: ROW },
+      { key: "mix", type: "audio-mix", dx: COL, dy: ROW / 2 },
+      { key: "stt", type: "stt", dx: COL * 2, dy: ROW / 2 },
+      { key: "sink", type: "sink", dx: COL * 3, dy: ROW / 2 },
+    ],
+    edges: [
+      { from: "mic1", fromHandle: "out", to: "mix", toHandle: "in" },
+      { from: "mic2", fromHandle: "out", to: "mix", toHandle: "in" },
+      { from: "mix", fromHandle: "out", to: "stt", toHandle: "in" },
+      { from: "stt", fromHandle: "out", to: "sink", toHandle: "in" },
+    ],
+  },
+  {
+    id: "screen-audio-stt",
+    name: "Screen audio → STT",
+    desc: "Capture tab/system audio → transcript (share a tab with audio)",
+    builtin: true,
+    nodes: [
+      { key: "screen", type: "screen-share", dx: 0, dy: 0 },
+      { key: "stt", type: "stt", dx: COL, dy: 0 },
+      { key: "sink", type: "sink", dx: COL * 2, dy: 0 },
+    ],
+    edges: [
+      { from: "screen", fromHandle: "audio", to: "stt", toHandle: "in" },
+      { from: "stt", fromHandle: "out", to: "sink", toHandle: "in" },
+    ],
+  },
+  {
+    id: "screen-yolo",
+    name: "Screen YOLO",
+    desc: "Screen share → object detection → labels",
+    builtin: true,
+    nodes: [
+      { key: "screen", type: "screen-share", dx: 0, dy: 0 },
+      { key: "yolo", type: "vision-model", dx: COL, dy: 0 },
+      { key: "sink", type: "sink", dx: COL * 2, dy: 0 },
+    ],
+    edges: [
+      { from: "screen", fromHandle: "out", to: "yolo", toHandle: "in" },
+      { from: "yolo", fromHandle: "rate", to: "screen", toHandle: "rate" }, // backpressure
+      { from: "yolo", fromHandle: "labels", to: "sink", toHandle: "in" },
+    ],
+  },
+  {
+    id: "screen-depth",
+    name: "Screen depth",
+    desc: "Screen share → live depth map (preview)",
+    builtin: true,
+    nodes: [
+      { key: "screen", type: "screen-share", dx: 0, dy: 0 },
+      { key: "depth", type: "vision-model", dx: COL, dy: 0, config: { task: "depth" } },
+    ],
+    edges: [
+      { from: "screen", fromHandle: "out", to: "depth", toHandle: "in" },
+      { from: "depth", fromHandle: "rate", to: "screen", toHandle: "rate" },
+    ],
+  },
+  {
     id: "depth-cam",
     name: "Depth camera",
     desc: "Camera → live depth map (preview)",
