@@ -16,6 +16,7 @@ import {
 import { NEURAL_TTS_MODELS, AUTO_TTS_MODEL, AUTO_TTS_VOICE } from "../providers/tts/tts-config";
 import { MODEL_TASKS, MODEL_DTYPES, DEFAULT_MODEL_DTYPE } from "../providers/model/transformers-pipeline";
 import { VOSK_MODELS, DEFAULT_VOSK_MODEL } from "../providers/stt/vosk";
+import { DEFAULT_SHERPA_SERVER_URL } from "../providers/stt/sherpa_native";
 import { useNodeLive } from "./useNodeLive";
 import { NodeMicPreview } from "./NodeMicPreview";
 import { NodeImagePreview } from "./NodeImagePreview";
@@ -568,6 +569,24 @@ export function VoiceNode({ id, data }: NodeProps) {
               ))}
             </select>
           </label>
+        )}
+        {d.voiceType === "sherpa" && (
+          <>
+            <label style={{ display: "flex", gap: 6, alignItems: "center", color: "#718096", marginTop: 4 }}>
+              server:
+              <input
+                className="nodrag"
+                value={(config?.serverUrl as string | undefined) ?? DEFAULT_SHERPA_SERVER_URL}
+                onChange={(e) => onConfig(id, { serverUrl: e.target.value })}
+                placeholder={DEFAULT_SHERPA_SERVER_URL}
+                spellCheck={false}
+                style={{ fontSize: 11, flex: 1, minWidth: 0 }}
+              />
+            </label>
+            <div style={{ fontSize: 9.5, color: "#a0aec0", marginTop: 2 }}>
+              run <code>otoji server</code> locally (native sherpa-onnx)
+            </div>
+          </>
         )}
         {d.voiceType === "pipe" && (() => {
           const room = typeof location !== "undefined" ? location.pathname.replace(/^\/+|\/+$/g, "") : "";
