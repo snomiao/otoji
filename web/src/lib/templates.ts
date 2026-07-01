@@ -147,6 +147,20 @@ export const BUILTIN_TEMPLATES: GraphTemplate[] = [
     ],
   },
   {
+    id: "screen-depth",
+    name: "Screen depth",
+    desc: "Screen share → live depth map (preview)",
+    builtin: true,
+    nodes: [
+      { key: "screen", type: "screen-share", dx: 0, dy: 0 },
+      { key: "depth", type: "vision-model", dx: COL, dy: 0, config: { task: "depth" } },
+    ],
+    edges: [
+      { from: "screen", fromHandle: "out", to: "depth", toHandle: "in" },
+      { from: "depth", fromHandle: "rate", to: "screen", toHandle: "rate" },
+    ],
+  },
+  {
     id: "depth-cam",
     name: "Depth camera",
     desc: "Camera → live depth map (preview)",
