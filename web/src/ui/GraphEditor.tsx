@@ -34,8 +34,9 @@ import {
 import { LiveStore } from "../graph/live-store";
 import { fileStore, fileKindForName } from "../graph/file-store";
 import { PeerMeshTransport } from "../graph/mesh-transport";
+import { PreviewSync } from "../graph/preview-sync";
 import { p2pModelCache } from "../providers/model/p2p-cache";
-import { togglePreviewShown } from "../lib/prefs";
+import { togglePreviewShown, isPreviewShown, shownRemoteNodes, subscribePrefs } from "../lib/prefs";
 import { RecordingPlayer, type Recording } from "./RecordingPlayer";
 import { computePeaks } from "../lib/peaks";
 import { isReadableTranscript } from "../lib/text";
@@ -132,14 +133,16 @@ function fromRF(nodes: Node[], edges: Edge[], version: number): VoiceGraph {
   return g;
 }
 
-// --- Auto-layout: box-collision + spring (force-directed) ------------------
-// Relaxes node positions so boxes stop overlapping (separation uses each node's
-// MEASURED size — the "box model") while edges act as springs that pull
-// connected nodes to a rest gap and bias the flow left→right (source left of
-// its target). The ONLY repulsion is box-collision, which is exactly zero once
-// boxes no longer overlap — so "no overlaps + springs at rest" is a genuine
-// fixpoint: re-running on the result leaves it put (no endless drift / sparsen).
-// Pure + deterministic (no RNG), so it's safe to broadcast.
+// --- Auto-layout: hard non-overlap constraint + connection spring ----------
+// Constraint-projection layout (position-based, no momentum). Each iteration:
+//   1. a SOFT spring nudges connected nodes toward a rest gap and biases the
+//      flow left→right (source left of its target, aligned in y);
+//   2. then non-overlap is enforced as a STRONG/HARD constraint — overlapping
+//      boxes (sized by each node's MEASURED box) are projected fully apart,
+//      repeated until the layout is clean.
+// Because separation runs to completion AFTER the spring every step, the end-of-
+// iteration state is a genuine fixpoint: re-running leaves it put (no drift / no
+// sparsening). Pure + deterministic (no RNG), so it's safe to broadcast.
 function autoLayout(
   nodes: Node[],
   edges: Edge[],
@@ -148,7 +151,7 @@ function autoLayout(
   // Work in box CENTERS (node.position is the top-left corner).
   const P = nodes.map((n) => {
     const { w, h } = sizeOf(n.id);
-    return { id: n.id, cx: n.position.x + w / 2, cy: n.position.y + h / 2, w, h, vx: 0, vy: 0 };
+    return { id: n.id, cx: n.position.x + w / 2, cy: n.position.y + h / 2, w, h };
   });
   if (P.length === 0) return {};
   const idx = new Map(P.map((p, i) => [p.id, i] as const));
@@ -156,52 +159,71 @@ function autoLayout(
     .map((e) => [idx.get(e.source), idx.get(e.target)] as [number | undefined, number | undefined])
     .filter((l): l is [number, number] => l[0] != null && l[1] != null);
 
-  const GAP = 44; // min empty space kept between two boxes
-  const SPRING_GAP = 80; // desired edge-to-edge gap along a connection
-  const SPRING_K = 0.09; // spring stiffness
-  const DAMP = 0.8;
-  const STEP = 34; // clamp per-iteration displacement (avoids blow-ups)
-  const ITERS = 600;
+  const GAP = 40; // hard min empty space between any two boxes
+  const SPRING_GAP = 64; // desired edge-to-edge gap along a connection (≥ GAP)
+  const SPRING_K = 0.12; // soft spring step fraction (per endpoint)
+  const ITERS = 4000; // cap; the loop breaks early once movement settles
+  // Worst case (N boxes stacked in one column) needs ~N passes to fully spread;
+  // the `moved` early-out keeps it 1–2 passes once the layout is clean, so this
+  // bound is only ever hit on the first iteration. Guarantees no overlaps remain.
+  const SEP_PASSES = Math.max(32, P.length * 2);
 
-  for (let it = 0; it < ITERS; it++) {
-    // pairwise: box-overlap separation ONLY (no force once boxes are apart, so
-    // the system can actually come to rest instead of spreading every re-run).
-    for (let i = 0; i < P.length; i++) {
-      for (let j = i + 1; j < P.length; j++) {
-        const a = P[i], b = P[j];
-        const dx = b.cx - a.cx, dy = b.cy - a.cy;
-        const minX = (a.w + b.w) / 2 + GAP;
-        const minY = (a.h + b.h) / 2 + GAP;
-        const ox = minX - Math.abs(dx);
-        const oy = minY - Math.abs(dy);
-        if (ox > 0 && oy > 0) {
-          // boxes overlap → push apart along the axis of least penetration.
-          // `|| ox/2` breaks the exact dx===0 tie so coincident boxes separate.
-          if (ox <= oy) {
-            const push = (ox / 2) * (dx < 0 ? -1 : 1) || ox / 2;
-            a.vx -= push; b.vx += push;
-          } else {
-            const push = (oy / 2) * (dy < 0 ? -1 : 1) || oy / 2;
-            a.vy -= push; b.vy += push;
+  // Resolve all box overlaps by projecting pairs apart along the axis of least
+  // penetration. Strong constraint: each pair is pushed fully out of overlap.
+  const separate = () => {
+    for (let pass = 0; pass < SEP_PASSES; pass++) {
+      let moved = false;
+      for (let i = 0; i < P.length; i++) {
+        for (let j = i + 1; j < P.length; j++) {
+          const a = P[i], b = P[j];
+          const dx = b.cx - a.cx, dy = b.cy - a.cy;
+          const minX = (a.w + b.w) / 2 + GAP;
+          const minY = (a.h + b.h) / 2 + GAP;
+          const ox = minX - Math.abs(dx);
+          const oy = minY - Math.abs(dy);
+          if (ox > 0 && oy > 0) {
+            moved = true;
+            // push apart along the axis of least penetration (half each).
+            // `|| s/2` breaks the exact dx/dy===0 tie so coincident boxes split.
+            if (ox <= oy) {
+              const s = (ox / 2) * (dx < 0 ? -1 : 1) || ox / 2;
+              a.cx -= s; b.cx += s;
+            } else {
+              const s = (oy / 2) * (dy < 0 ? -1 : 1) || oy / 2;
+              a.cy -= s; b.cy += s;
+            }
           }
         }
       }
+      if (!moved) break; // clean — constraint satisfied
     }
-    // springs along edges: settle at a rest gap to the right + align vertically
+  };
+
+  separate(); // start from a non-overlapping state
+  for (let it = 0; it < ITERS; it++) {
+    // snapshot to measure net movement this iteration (for convergence break)
+    const px = P.map((p) => p.cx), py = P.map((p) => p.cy);
+    // 1) soft springs: nudge connected nodes toward a rest gap to the right and
+    //    into the same row. Small steps so the hard pass can always restore order.
     for (const [s, t] of links) {
       const a = P[s], b = P[t];
       const wantX = (a.w + b.w) / 2 + SPRING_GAP;
       const ex = (b.cx - a.cx) - wantX; // x error (>0 too far / <0 too close)
       const ey = b.cy - a.cy; // y error → pull into the same row
-      a.vx += ex * SPRING_K; a.vy += ey * SPRING_K;
-      b.vx -= ex * SPRING_K; b.vy -= ey * SPRING_K;
+      a.cx += ex * SPRING_K; a.cy += ey * SPRING_K;
+      b.cx -= ex * SPRING_K; b.cy -= ey * SPRING_K;
     }
-    // integrate with damping + step clamp
-    for (const p of P) {
-      p.cx += Math.max(-STEP, Math.min(STEP, p.vx));
-      p.cy += Math.max(-STEP, Math.min(STEP, p.vy));
-      p.vx *= DAMP; p.vy *= DAMP;
+    // 2) hard constraint: no boxes may overlap. Runs to completion every step,
+    //    so it always dominates the spring (the spring only arranges what's free).
+    separate();
+    // Stop once the layout has settled (net per-node move below ~0.1px). The
+    // end-of-iteration state is then at rest → re-running it is a fixpoint.
+    // Long chains relax slowly (~N² iters), hence the generous ITERS cap.
+    let maxMove = 0;
+    for (let k = 0; k < P.length; k++) {
+      maxMove = Math.max(maxMove, Math.abs(P[k].cx - px[k]), Math.abs(P[k].cy - py[k]));
     }
+    if (maxMove < 0.1) break;
   }
 
   // Snap the whole layout so its top-left starts near a tidy origin.
@@ -262,6 +284,8 @@ function Editor({ initialRoom, local }: { initialRoom?: string; local?: boolean 
   const activityRef = useRef({ segments: 0, stt: 0 });
   const micLevelRef = useRef(0);
   const liveRef = useRef(new LiveStore());
+  const previewSyncRef = useRef<PreviewSync | null>(null);
+  if (!previewSyncRef.current) previewSyncRef.current = new PreviewSync(liveRef.current);
   const recordsByNodeRef = useRef(new Map<string, Recording[]>()); // uncapped, for file export
   const edgeBytesRef = useRef(new Map<string, number>()); // per-edge bytes accumulated this second
   const [edgeRates, setEdgeRates] = useState<Record<string, number>>({}); // per-edge bytes/sec
@@ -338,6 +362,32 @@ function Editor({ initialRoom, local }: { initialRoom?: string; local?: boolean 
     for (const [dev, info] of Object.entries(present)) map[dev] = info.peerId;
     transportRef.current?.setRouting(map);
   }, [present]);
+
+  // Does THIS device own (run) a node? Mirrors nodeOwner: explicit assignment, else
+  // the smallest online deviceId; with no online devices known (local mode) it's ours.
+  const ownsNodeHere = useCallback(
+    (nodeId: string): boolean => {
+      const dv = (nodesRef.current.find((n) => n.id === nodeId)?.data as any)?.device as string | null;
+      const online = onlineRef.current;
+      const owner = dv || (online.length ? [...online].sort()[0] : null);
+      return owner == null || owner === myDeviceId;
+    },
+    [myDeviceId],
+  );
+
+  // Tell the room which non-owned node previews we want streamed to us. Recompute
+  // on graph/presence changes (ownership) and when the user toggles a preview.
+  useEffect(() => {
+    const recompute = () => {
+      const ps = previewSyncRef.current;
+      if (!ps) return;
+      const owned = new Set<string>();
+      for (const n of nodesRef.current) if (ownsNodeHere(n.id)) owned.add(n.id);
+      ps.setSubscriptions(shownRemoteNodes(owned));
+    };
+    recompute();
+    return subscribePrefs(recompute);
+  }, [nodes, onlineDeviceIds, ownsNodeHere]);
 
   useEffect(() => () => { meshRef.current?.destroy(); sigRef.current?.close(); }, []);
 
@@ -441,11 +491,25 @@ function Editor({ initialRoom, local }: { initialRoom?: string; local?: boolean 
       meshRef.current?.destroy();
       const mesh = new PeerMesh(sig, m.peerId, {
         onData: (peer, _label, data) => transportRef.current?.handleData(data, peer),
-        onPeerState: (id, st) => setPeerStates((s) => ({ ...s, [id]: st })),
+        onPeerState: (id, st) => {
+          setPeerStates((s) => ({ ...s, [id]: st }));
+          // A freshly-connected peer hasn't seen our preview subscriptions yet;
+          // a dropped one may never send a signaling leave, so stop streaming to it.
+          if (st === "connected") previewSyncRef.current?.resync();
+          else if (st === "disconnected" || st === "failed" || st === "closed") previewSyncRef.current?.dropPeer(id);
+        },
       });
       meshRef.current = mesh;
       if (!transportRef.current) transportRef.current = new PeerMeshTransport(mesh);
       else transportRef.current.setMesh(mesh);
+      // Cross-device live preview: route pv/pv-sub messages to the controller and
+      // give it a sender backed by the (stable) transport.
+      const tp = transportRef.current;
+      tp.onPreview = (msg, peer) => previewSyncRef.current?.handleMessage(msg, peer);
+      previewSyncRef.current?.setSender({
+        send: (peer, s) => tp.sendString(peer, s),
+        broadcast: (s) => tp.broadcastString(s),
+      });
       // P2P model sharing: serve cached model files to roommates, and pull missing
       // ones from the room before transformers.js falls back to the network.
       transportRef.current.onBlobRequest = (url) => p2pModelCache.getServable(url);
@@ -464,6 +528,7 @@ function Editor({ initialRoom, local }: { initialRoom?: string; local?: boolean 
       meshRef.current?.consider(peer.peerId);
     });
     sig.on("peer-left", (m) => {
+      if (m.peerId) previewSyncRef.current?.dropPeer(m.peerId); // stop streaming preview to a gone peer
       setPresent((p) => {
         // Ignore a stale leave for a device that has since reconnected with a
         // new peerId (only remove when the stored peerId matches).
@@ -959,17 +1024,21 @@ function Editor({ initialRoom, local }: { initialRoom?: string; local?: boolean 
     liveRef.current.reset();
     recordsByNodeRef.current.clear();
     const live = liveRef.current;
+    const pv = previewSyncRef.current;
     const rt = new GraphRuntime(graph, {
       // Local mode: no transport -> single-device (every node runs here).
       self: transport ? { myId: myDeviceId, deviceIds: onlineRef.current, transport } : undefined,
       onStatus: (s) => setRunStatus(s),
       onError: (e) => { setRunStatus(`error: ${e.message}`); setLastError(e.message); },
-      onLevel: (id, l) => { micLevelRef.current = l.rms; live.pushLevel(id, l); },
+      // Each preview hook updates the local store AND streams to any remote device
+      // that opted into this node's preview (no-op when nobody is subscribed).
+      onLevel: (id, l) => { micLevelRef.current = l.rms; live.pushLevel(id, l); pv?.onLocalPreview(id, "lvl", l); },
       onSegment: () => { activityRef.current.segments++; },
-      onImage: (id, bitmap) => live.setImage(id, bitmap),
-      onRecognized: (id, text) => { activityRef.current.stt++; if (isReadableTranscript(text)) live.pushText(id, text); },
-      onNodeBusy: (id, b) => live.setBusy(id, b),
-      onQueue: (id, processing, queued) => live.setQueue(id, processing, queued),
+      onImage: (id, bitmap) => { live.setImage(id, bitmap); pv?.onLocalPreview(id, "img", bitmap); },
+      onRecognized: (id, text) => { activityRef.current.stt++; if (isReadableTranscript(text)) { live.pushText(id, text); pv?.onLocalPreview(id, "txt", text); } },
+      onNodeBusy: (id, b) => { live.setBusy(id, b); pv?.onLocalPreview(id, "busy", b); },
+      onQueue: (id, processing, queued) => { live.setQueue(id, processing, queued); pv?.onLocalPreview(id, "queue", { processing, queued }); },
+      hasPreviewConsumer: (id) => isPreviewShown(id) || (pv?.hasSubscriber(id) ?? false),
       onPipeOut: (id, text) => sigRef.current?.pipe(id, text, "node"), // pipe node input → CLI stdout
       onEdgeBytes: (eid, bytes) => edgeBytesRef.current.set(eid, (edgeBytesRef.current.get(eid) ?? 0) + bytes),
       onSink: (sinkId, tr: TranscriptMsg) => {
@@ -1094,8 +1163,8 @@ function Editor({ initialRoom, local }: { initialRoom?: string; local?: boolean 
     [active, pending, approveTracker, revokeTracker],
   );
   const ctx = useMemo(
-    () => ({ devices, onAssign, onConfig, onDelete, getRecords, setFile, counts, live: liveRef.current, openNodeMenu, trackerState }),
-    [devices, onAssign, onConfig, onDelete, getRecords, setFile, counts, openNodeMenu, trackerState],
+    () => ({ devices, myDeviceId, onAssign, onConfig, onDelete, getRecords, setFile, counts, live: liveRef.current, openNodeMenu, trackerState }),
+    [devices, myDeviceId, onAssign, onConfig, onDelete, getRecords, setFile, counts, openNodeMenu, trackerState],
   );
 
   if (!joined) {
@@ -1363,7 +1432,7 @@ function Editor({ initialRoom, local }: { initialRoom?: string; local?: boolean 
             y={nodeMenu.y}
             onDuplicate={() => { duplicateNode(nodeMenu.nodeId); setNodeMenu(null); }}
             onReplace={(type) => { replaceNode(nodeMenu.nodeId, type); setNodeMenu(null); }}
-            onToggleVis={() => { togglePreviewShown(nodeMenu.nodeId); setNodeMenu(null); }}
+            onToggleVis={() => { togglePreviewShown(nodeMenu.nodeId, ownsNodeHere(nodeMenu.nodeId)); setNodeMenu(null); }}
             onRemove={() => { onDelete(nodeMenu.nodeId); setNodeMenu(null); }}
             onClose={() => setNodeMenu(null)}
           />

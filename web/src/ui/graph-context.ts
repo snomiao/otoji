@@ -5,6 +5,8 @@ import { LiveStore } from "../graph/live-store";
 
 export interface GraphCtx {
   devices: DeviceOpt[];
+  /** This device's stable id (to decide which node previews default to on here). */
+  myDeviceId: string;
   onAssign: (nodeId: string, device: string | null) => void;
   /** Update a node's config (e.g. STT model selection). */
   onConfig: (nodeId: string, patch: Record<string, unknown>) => void;
@@ -32,6 +34,7 @@ export interface GraphCtx {
 
 export const GraphContext = createContext<GraphCtx>({
   devices: [],
+  myDeviceId: "",
   onAssign: () => {},
   onConfig: () => {},
   onDelete: () => {},

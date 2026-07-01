@@ -76,6 +76,9 @@ export interface RuntimeHooks {
   onRecognized?: (nodeId: string, text: string) => void; // an STT node finished (text may be empty)
   onNodeBusy?: (nodeId: string, busy: boolean) => void; // node started/finished processing
   onQueue?: (nodeId: string, processing: string | null, queued: string[]) => void; // work queue state
+  // Whether anyone (this device's own preview, or a remote subscriber) is viewing
+  // this node's preview — keeps a lazy vision node running for cross-device viewers.
+  hasPreviewConsumer?: (nodeId: string) => boolean;
   onSink?: (nodeId: string, tr: TranscriptMsg) => void;
   onAudio?: (nodeId: string, audio: SegmentMsg) => void; // raw audio collected at audio-out
   onPipeOut?: (nodeId: string, text: string) => void; // pipe node input -> external CLI stdout
@@ -945,10 +948,11 @@ export class GraphRuntime {
           const wantLabels = this.hasOutgoing(id, "labels");
           const wantJson = this.hasOutgoing(id, "json");
           // LAZY: skip the expensive inference when nothing needs a result — no
-          // downstream edge AND the node's own preview (the overlay) is hidden.
-          // For depth/pose/hand the overlay IS the demo, so a visible preview is
-          // reason enough to run even with no output wired.
-          if (!wantImg && !wantLabels && !wantJson && !isPreviewShown(id)) {
+          // downstream edge AND nobody is viewing the preview (here or on another
+          // device). For depth/pose/hand the overlay IS the demo, so a visible
+          // preview is reason enough to run even with no output wired.
+          const wantPreview = this.hooks.hasPreviewConsumer ? this.hooks.hasPreviewConsumer(id) : isPreviewShown(id);
+          if (!wantImg && !wantLabels && !wantJson && !wantPreview) {
             this.hooks.onImage?.(id, img.bitmap);
             return;
           }
