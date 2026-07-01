@@ -14,6 +14,12 @@ export interface Peer {
   name: string;
   role: string;
   hasMic: boolean;
+  // Connection-type badge metadata (advisory). `runtime` is what the peer runs
+  // ("browser" for a web tab, "node" for an `otoji node` CLI); `net` is a node
+  // peer's link to the relay ("lan"/"wan", "" for browsers). Both optional so
+  // older servers/peers that don't send them still parse.
+  runtime?: string;
+  net?: string;
 }
 
 export type Handler = (msg: any) => void;
@@ -73,7 +79,7 @@ export class SignalingClient implements Signaling {
     this.closedByUser = false;
     // base is canonical http(s); a wss endpoint lives at the same origin.
     const url =
-      `${toSocketUrl(this.base)}/${encodeURIComponent(this.room)}?name=${encodeURIComponent(this.name)}&deviceId=${encodeURIComponent(this.deviceId)}&role=${encodeURIComponent(this.role)}&hasMic=${this.hasMic ? "1" : "0"}` +
+      `${toSocketUrl(this.base)}/${encodeURIComponent(this.room)}?name=${encodeURIComponent(this.name)}&deviceId=${encodeURIComponent(this.deviceId)}&role=${encodeURIComponent(this.role)}&hasMic=${this.hasMic ? "1" : "0"}&runtime=browser` +
       (this.peerId ? `&peerId=${encodeURIComponent(this.peerId)}` : "");
     const ws = new WebSocket(url);
     this.ws = ws;

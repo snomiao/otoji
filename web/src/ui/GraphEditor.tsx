@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import {
   ReactFlow,
   ReactFlowProvider,
@@ -35,7 +35,7 @@ import { LiveStore } from "../graph/live-store";
 import { fileStore, fileKindForName } from "../graph/file-store";
 import { PeerMeshTransport } from "../graph/mesh-transport";
 import { p2pModelCache } from "../providers/model/p2p-cache";
-import { togglePreviewShown } from "../lib/prefs";
+import { togglePreviewShown, isPeerBadgeShown, togglePeerBadgeShown, subscribePrefs } from "../lib/prefs";
 import { RecordingPlayer, type Recording } from "./RecordingPlayer";
 import { computePeaks } from "../lib/peaks";
 import { isReadableTranscript } from "../lib/text";
@@ -281,7 +281,7 @@ function Editor({ initialRoom, local }: { initialRoom?: string; local?: boolean 
   const [joined, setJoined] = useState(!!local); // local mode: no room, runs single-device
   const myDeviceId = useMemo(() => getDeviceId(), []);
   const [myPeerId, setMyPeerId] = useState<string | null>(null);
-  const [present, setPresent] = useState<Record<string, { peerId: string; name: string; role: string; hasMic: boolean }>>({});
+  const [present, setPresent] = useState<Record<string, { peerId: string; name: string; role: string; hasMic: boolean; runtime?: string; net?: string }>>({});
   const [status, setStatus] = useState("not connected");
   const [paused, setPaused] = useState(!!local); // local demo starts paused (don't grab the mic until asked)
   const [role, setRoleState] = useState<DeviceRole>(() => getRole());
@@ -326,6 +326,7 @@ function Editor({ initialRoom, local }: { initialRoom?: string; local?: boolean 
   const edgeBytesRef = useRef(new Map<string, number>()); // per-edge bytes accumulated this second
   const [edgeRates, setEdgeRates] = useState<Record<string, number>>({}); // per-edge bytes/sec
   const [lastError, setLastError] = useState<string>(""); // most recent runtime error, for bug reports
+  const peerBadgeShown = useSyncExternalStore(subscribePrefs, isPeerBadgeShown, () => true);
   const fileSeqRef = useRef(0);
   const nameCacheRef = useRef<Record<string, string>>({});
   const nodesRef = useRef(nodes);
@@ -383,6 +384,8 @@ function Editor({ initialRoom, local }: { initialRoom?: string; local?: boolean 
           me: deviceId === myDeviceId,
           role: on?.role ?? (deviceId === myDeviceId ? role : "general"),
           hasMic: on?.hasMic ?? (deviceId === myDeviceId ? caps.hasMic : true),
+          runtime: on?.runtime ?? (deviceId === myDeviceId ? "browser" : undefined),
+          net: on?.net,
         };
       })
       .sort((a, b) => (a.me ? -1 : b.me ? 1 : Number(b.online) - Number(a.online) || a.name.localeCompare(b.name)));
@@ -425,7 +428,7 @@ function Editor({ initialRoom, local }: { initialRoom?: string; local?: boolean 
     if (!local) return;
     // No signaling in local mode — register this device as present so its nodes
     // aren't shown offline / treated as unassigned.
-    setPresent({ [myDeviceId]: { peerId: myDeviceId, name, role, hasMic: caps.hasMic } });
+    setPresent({ [myDeviceId]: { peerId: myDeviceId, name, role, hasMic: caps.hasMic, runtime: "browser" } });
     const mk = (id: string, vt: NodeType, x: number): Node => ({
       id,
       type: "voice",
@@ -487,10 +490,10 @@ function Editor({ initialRoom, local }: { initialRoom?: string; local?: boolean 
     sig.on("hello", (m) => {
       setMyPeerId(m.peerId);
       setPresent(() => {
-        const p: Record<string, { peerId: string; name: string; role: string; hasMic: boolean }> = {
-          [myDeviceId]: { peerId: m.peerId, name: dn, role, hasMic: caps.hasMic },
+        const p: Record<string, { peerId: string; name: string; role: string; hasMic: boolean; runtime?: string; net?: string }> = {
+          [myDeviceId]: { peerId: m.peerId, name: dn, role, hasMic: caps.hasMic, runtime: "browser" },
         };
-        for (const peer of m.peers as Peer[]) p[peer.deviceId] = { peerId: peer.peerId, name: peer.name, role: peer.role, hasMic: peer.hasMic };
+        for (const peer of m.peers as Peer[]) p[peer.deviceId] = { peerId: peer.peerId, name: peer.name, role: peer.role, hasMic: peer.hasMic, runtime: peer.runtime, net: peer.net };
         return p;
       });
       applyRemote(m.graph);
@@ -520,7 +523,7 @@ function Editor({ initialRoom, local }: { initialRoom?: string; local?: boolean 
     });
     sig.on("peer-joined", (m) => {
       const peer = m.peer as Peer;
-      setPresent((p) => ({ ...p, [peer.deviceId]: { peerId: peer.peerId, name: peer.name, role: peer.role, hasMic: peer.hasMic } }));
+      setPresent((p) => ({ ...p, [peer.deviceId]: { peerId: peer.peerId, name: peer.name, role: peer.role, hasMic: peer.hasMic, runtime: peer.runtime, net: peer.net } }));
       meshRef.current?.consider(peer.peerId);
     });
     sig.on("peer-left", (m) => {
@@ -1265,6 +1268,13 @@ function Editor({ initialRoom, local }: { initialRoom?: string; local?: boolean 
           {view === "graph" && (
             <button onClick={autoArrange} style={{ fontSize: 12 }} title="Auto-arrange nodes (spring layout, no overlapping boxes)">⤢ Arrange</button>
           )}
+          <button
+            onClick={togglePeerBadgeShown}
+            title="Show/hide each peer's connection-type badge ([wan] / [lan] / [browser])"
+            style={{ fontSize: 12, fontWeight: peerBadgeShown ? 700 : 400, background: peerBadgeShown ? "#ebf4ff" : undefined }}
+          >
+            🏷 Peer type
+          </button>
           <span style={{ display: "flex", gap: 8, alignItems: "center", marginLeft: 8 }}>
             {runStatus && <span style={{ fontSize: 12, color: runStatus.startsWith("error") ? "#e53e3e" : "#718096" }}>{runStatus}</span>}
             <span style={{ fontSize: 12, color: running ? "#2f855a" : "#a0aec0" }}>{running ? "● live" : paused ? "paused" : "idle"}</span>

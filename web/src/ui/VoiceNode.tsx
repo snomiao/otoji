@@ -43,6 +43,8 @@ export interface DeviceOpt {
   online: boolean;
   role: string;
   hasMic: boolean;
+  runtime?: string; // "browser" | "node" — drives the connection-type badge
+  net?: string; // "lan" | "wan" for a node peer
 }
 
 export interface VoiceNodeData {
