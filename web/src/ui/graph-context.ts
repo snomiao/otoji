@@ -14,6 +14,8 @@ export interface GraphCtx {
   onDelete: (nodeId: string) => void;
   /** Records collected at a sink/output node (oldest first), for file export. */
   getRecords: (nodeId: string) => Recording[];
+  /** Drop the records collected at one node (the sink inspector's Clear). */
+  clearRecords?: (nodeId: string) => void;
   /** Associate a local file with a file-source node (audio decoded at runtime). */
   setFile: (nodeId: string, file: File) => void;
   /** Stored-data count per node id (badge), e.g. sink transcript/recording count. */

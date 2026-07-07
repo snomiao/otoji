@@ -17,6 +17,7 @@ import { MODEL_TASKS, MODEL_DTYPES, DEFAULT_MODEL_DTYPE } from "../providers/mod
 import { VOSK_MODELS, DEFAULT_VOSK_MODEL } from "../providers/stt/vosk";
 import { DEFAULT_SHERPA_SERVER_URL } from "../providers/stt/sherpa_native";
 import { useNodeLive } from "./useNodeLive";
+import { RecordingPlayer } from "./RecordingPlayer";
 import { DIFF_STYLES, DEFAULT_DIFF_STYLE } from "../lib/textdiff";
 import { DEFAULT_CAMERA_FPS } from "../providers/vision/camera";
 import { DETECT_MODELS, DEFAULT_DETECT_MODEL } from "../providers/vision/detect";
@@ -80,7 +81,7 @@ export interface InspectorNode {
 }
 
 export function NodeInspector({ node, onClose }: { node: InspectorNode; onClose?: () => void }) {
-  const { devices, myDeviceId, onAssign, onConfig, onDelete, getRecords, setFile, counts, live, trackerState } =
+  const { devices, myDeviceId, onAssign, onConfig, onDelete, getRecords, clearRecords, setFile, counts, live, trackerState } =
     useContext(GraphContext);
   const id = node.id;
   const vt = node.voiceType;
@@ -359,6 +360,27 @@ export function NodeInspector({ node, onClose }: { node: InspectorNode; onClose?
               <input type="text" defaultValue={url ?? ""} placeholder="…or paste a URL"
                 onBlur={(e) => useUrl(e.target.value.trim())}
                 onKeyDown={(e) => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); }} style={{ fontSize: 10, width: "100%", marginTop: 3, boxSizing: "border-box" }} />
+            </div>
+          );
+        })()}
+
+        {vt === "sink" && (() => {
+          // Recordings live IN the sink node (the floating "Sink output" card is
+          // gone). Newest first, capped for render; the overlay scrolls (rgui
+          // clip:"node" + overflow:"auto") if the list outgrows the node.
+          const recs = getRecords(id);
+          const shownRecs = recs.slice(-8).reverse();
+          return (
+            <div style={{ marginTop: 6 }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: 11, color: "#718096" }}>
+                <span>recordings ({recs.length})</span>
+                {recs.length > 0 && <button style={{ fontSize: 10 }} onClick={() => clearRecords?.(id)}>Clear</button>}
+              </div>
+              {recs.length === 0 ? (
+                <div style={{ color: "#a0aec0", fontSize: 11 }}>Run the graph to collect transcripts.</div>
+              ) : (
+                shownRecs.map((r, i) => <RecordingPlayer key={r.id} rec={r} index={recs.length - 1 - i} />)
+              )}
             </div>
           );
         })()}

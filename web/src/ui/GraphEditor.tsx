@@ -41,7 +41,7 @@ import { PreviewSync } from "../graph/preview-sync";
 import { p2pModelCache } from "../providers/model/p2p-cache";
 import { DEFAULT_CAMERA_FPS } from "../providers/vision/camera";
 import { togglePreviewShown, isPreviewShown, shownRemoteNodes, isPeerBadgeShown, togglePeerBadgeShown, subscribePrefs } from "../lib/prefs";
-import { RecordingPlayer, type Recording } from "./RecordingPlayer";
+import { type Recording } from "./RecordingPlayer";
 import { computePeaks } from "../lib/peaks";
 import { isReadableTranscript } from "../lib/text";
 import { isRoomCode, joinUrl } from "../lib/roomcode";
@@ -96,7 +96,7 @@ const LOCAL_GRAPH_KEY = "otoji.local.graph";
 // scrolls (overlay is clip:"node" + overflow:"auto"), it never covers the preview.
 const CONTROL_ROWS: Partial<Record<NodeType, number>> = {
   "mic-vad": 3, "mic-raw": 2, stt: 3, "web-speech": 3, vosk: 3, sherpa: 3,
-  translate: 5, sink: 4, tts: 4, "tts-model": 5, model: 5, camera: 3,
+  translate: 5, sink: 7, tts: 4, "tts-model": 5, model: 5, camera: 3,
   "screen-share": 2, "paddle-ocr": 2, "vision-model": 4, "text-diff": 3,
 };
 
@@ -1589,9 +1589,13 @@ function Editor({ initialRoom, local }: { initialRoom?: string; local?: boolean 
     () => ({ active, pending, approve: approveTracker, revoke: revokeTracker }),
     [active, pending, approveTracker, revokeTracker],
   );
+  const clearRecords = useCallback((nodeId: string) => {
+    recordsByNodeRef.current.delete(nodeId);
+    setSinkRecs((prev) => prev.filter((r) => r.nodeId !== nodeId));
+  }, []);
   const ctx = useMemo(
-    () => ({ devices, myDeviceId, onAssign, onConfig, onDelete, getRecords, setFile, counts, live: liveRef.current, openNodeMenu, trackerState }),
-    [devices, myDeviceId, onAssign, onConfig, onDelete, getRecords, setFile, counts, openNodeMenu, trackerState],
+    () => ({ devices, myDeviceId, onAssign, onConfig, onDelete, getRecords, clearRecords, setFile, counts, live: liveRef.current, openNodeMenu, trackerState }),
+    [devices, myDeviceId, onAssign, onConfig, onDelete, getRecords, clearRecords, setFile, counts, openNodeMenu, trackerState],
   );
 
   if (!joined) {
@@ -1722,27 +1726,9 @@ function Editor({ initialRoom, local }: { initialRoom?: string; local?: boolean 
             rguiPanels). Click a palette item to add at center, or drag it onto
             the canvas to drop at that point. */}
 
-        {/* floating sink output card (draggable) */}
-        {view === "graph" && (
-          <DraggableCard pkey="sink" width={320} maxHeight="calc(100vh - 24px)" defaultPos={{ x: Math.max(12, (typeof window !== "undefined" ? window.innerWidth : 1200) - 332), y: 12 }}>
-            <div style={{ padding: "0 12px 10px" }}>
-            {/* mic level + segment/recognition counts + run state are drawn natively
-                by rgui on the canvas (bottom-left HUD); this card holds only the
-                recordings, which need interactive audio players. */}
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-              <strong style={{ fontSize: 13 }}>Sink output ({sinkRecs.length})</strong>
-              {sinkRecs.length > 0 && (
-                <button onClick={() => { setSinkRecs([]); recordsByNodeRef.current.clear(); }} style={{ fontSize: 11 }}>Clear</button>
-              )}
-            </div>
-            {sinkRecs.length === 0 ? (
-              <p style={{ color: "#a0aec0", fontSize: 12 }}>No recordings yet.</p>
-            ) : (
-              sinkRecs.map((r, i) => <RecordingPlayer key={r.id} rec={r} index={sinkRecs.length - 1 - i} />)
-            )}
-            </div>
-          </DraggableCard>
-        )}
+        {/* Sink output lives IN the sink node now: the recordings list (interactive
+            audio players) renders inside the sink's NodeInspector overlay, and the
+            run-status HUD is drawn natively on the canvas — no floating card. */}
 
         {/* network / timeline as floating overlay cards */}
         {view === "network" && (
