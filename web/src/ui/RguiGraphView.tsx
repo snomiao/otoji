@@ -95,11 +95,12 @@ export function RguiGraphView({
   const rgGraph = useMemo(() => {
     const g = voiceGraphToRgui(graph, { deviceName, edgeMeta, nodeBody });
     if (renderNodeOverlay) {
-      // Card is click-through so dragging it drags the node (only the real form
-      // controls capture — see the .rgui-node-cfg CSS); offset past the rgui
-      // header so the node title stays visible. (scale:"fit" needs a rgui
-      // measurement fix for detached hosts before we can enable it.)
-      for (const n of g.nodes) (n as any).overlay = { el: hostFor(n.id), anchor: "over", offset: { x: 0, y: 28 }, interactive: false };
+      // scale:"zoom" — controls scale with view.k like part of the node (laid out
+      // for k=1) and hide below minScale when zoomed out too small. Card is
+      // click-through so dragging it drags the node (only real controls capture —
+      // see .rgui-node-cfg CSS); offset past the rgui header keeps the title visible.
+      for (const n of g.nodes)
+        (n as any).overlay = { el: hostFor(n.id), anchor: "over", offset: { x: 0, y: 28 }, scale: "zoom", minScale: 0.5, interactive: false };
     }
     return g;
   }, [graph, deviceName, edgeMeta, nodeBody, renderNodeOverlay]);
