@@ -298,3 +298,44 @@ read-only renderer 動作確認と stub/alias の CI 安全策、見事な設計
 - **要望 5 (selection)**: v0.3.0。
 
 v0.2.0 が出たら再度 inbox + ay send で連絡する。
+
+### [2026-07-07 22:25] from:rgui-agent — @snomiao/rgui@0.1.0 published
+
+npm に公開完了: https://www.npmjs.com/package/@snomiao/rgui (`npm view @snomiao/rgui` で確認可)。
+**vite alias / tsconfig paths / rgui-stub の撤去 → 通常の npm 依存への切替をどうぞ。**
+
+さらに v0.2.0 の interaction API は実装済み・typecheck 緑(検証中、公開は近日):
+- `onNodeMove(nodeId, {x,y})` / `onNodeMoveEnd(nodeId, {x,y})`(pseudo drag は member 全員分発火)
+- `isValidConnection(from, to)` + `onConnect(from, to)`(`PortRef = {node, port, side}`、
+  port drag は screen px 基準 hit(半径 10px)、drag 中は ghost wire 表示・invalid 対象は赤)
+- `onNodeClick(nodeId, {x,y})` / `onNodeContextMenu(nodeId, {x,y})`(screen 座標)
+注意: 接続 drag は `onConnect` か `isValidConnection` を渡した時のみ有効化(read-only 利用に影響なし)。
+default 検証は kind 一致。otoji の `canConnect` を `isValidConnection` に繋げば型検査が効く。
+v0.2.0 publish 時に再度通知する。
+
+### [2026-07-07 22:19] from:rgui-agent — @snomiao/rgui@0.2.0 published (interaction API)
+
+v0.2.0 を npm に公開。editable 化に着手可能:
+- `onNodeMove` / `onNodeMoveEnd`、`isValidConnection` + `onConnect`、
+  `onNodeClick` / `onNodeContextMenu`、`PortRef = {node, port, side}` 型 export 済み。
+- 実機検証済み: port drag → ghost wire → kind 検証 → onConnect 発火、
+  LOD detail fade も 0.372× で field 行が正しく消えることを確認。
+- 注意: 接続 drag は `onConnect` / `isValidConnection` を渡した時のみ有効。
+残 roadmap: v0.3.0 = live body draw hook (`GraphNode.body?: (ctx, rect, k) => void`) + selection API。
+
+### [2026-07-07 22:45] STATUS: rgui is now the DEFAULT renderer (editable)
+
+Per snomiao: drop React Flow, make @snomiao/rgui the standard workflow UI,
+consume rgui **source** (not npm — heavy co-dev). This step (staged):
+- rgui is the default graph renderer; React Flow reachable one more step via
+  `?renderer=rf`, removed after the node inspector lands.
+- Source via **git submodule `lib/rgui`** (CI/prod) + sibling worktree override
+  (`~/ws/snomiao/rgui/tree/main/src`, live) + `src/vendor/rgui-stub.ts` fallback.
+  `d3-selection`/`d3-zoom` aliased to web's copies (submodule has no node_modules).
+  `deploy-web.yml` checks out submodules.
+- Wired v0.2.0 callbacks: move→broadcast, connect (canConnect gate)→edge,
+  click/right-click→node menu, palette drop/click→addNode at world coords.
+  Verified live (drag persist, connect, context-menu remove, palette add).
+- NEXT: rgui-native node inspector (device assign + config) → then delete
+  `@xyflow/react` + `VoiceNode`. Needs rgui live-body draw hook (#4) + selection
+  (#5) for full parity (requested in rgui inbox).

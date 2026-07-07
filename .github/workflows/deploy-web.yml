@@ -25,7 +25,11 @@ jobs:
       run:
         working-directory: web
     steps:
+      # submodules: the web build consumes @snomiao/rgui SOURCE from lib/rgui;
+      # without the submodule the vite alias falls back to a read-only stub.
       - uses: actions/checkout@v4
+        with:
+          submodules: recursive
 
       - uses: actions/setup-node@v4
         with:

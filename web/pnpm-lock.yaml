@@ -17,6 +17,12 @@ importers:
       blueimp-md5:
         specifier: ^2.19.0
         version: 2.19.0
+      d3-selection:
+        specifier: ^3.0.0
+        version: 3.0.0
+      d3-zoom:
+        specifier: ^3.0.0
+        version: 3.0.0
       marked:
         specifier: ^12.0.0
         version: 12.0.2
