@@ -1,5 +1,5 @@
 import { createContext } from "react";
-import type { DeviceOpt } from "./VoiceNode";
+import type { DeviceOpt } from "./device-opt";
 import type { Recording } from "./RecordingPlayer";
 import { LiveStore } from "../graph/live-store";
 

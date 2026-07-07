@@ -1,26 +1,28 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
-import {
-  ReactFlow,
-  ReactFlowProvider,
-  Background,
-  Controls,
-  ViewportPortal,
-  addEdge,
-  useNodesState,
-  useEdgesState,
-  useReactFlow,
-  type Node,
-  type Edge,
-  type Connection,
-  type FinalConnectionState,
-} from "@xyflow/react";
-import "@xyflow/react/dist/style.css";
 import { type Peer } from "../net/signaling";
+
+// Local graph node/edge types (the graph is rendered by @snomiao/rgui, not React
+// Flow). `data` mirrors the old React Flow node data payload the code reads/writes.
+type Node = {
+  id: string;
+  type?: string;
+  position: { x: number; y: number };
+  data: Record<string, any>;
+  selected?: boolean;
+};
+type Edge = {
+  id: string;
+  source: string;
+  sourceHandle?: string;
+  target: string;
+  targetHandle?: string;
+  selected?: boolean;
+};
 import { MultiSignalingClient } from "../net/multi-signaling";
 import { envTrackers, capTrackers, urlTrackers, appendTrackers, dedupeTrackers } from "../lib/trackers";
 import { loadApproved, saveApproved, vetTracker } from "../lib/tracker-trust";
 import { PeerMesh } from "../net/peers";
-import { VoiceNode, type DeviceOpt } from "./VoiceNode";
+import { type DeviceOpt } from "./device-opt";
 import { GraphContext } from "./graph-context";
 import { GraphRuntime, nodeOwner, type TranscriptMsg } from "../graph/runtime";
 import { HEAVY_NODE_TYPES, offloadType } from "../graph/model-lifecycle";
@@ -60,7 +62,6 @@ import {
   type VoiceGraph,
 } from "../graph/model";
 
-const nodeTypes = { voice: VoiceNode };
 
 /** Trackers ADVERTISED by Signaling nodes in the synced graph. These are
  *  proposals from the room — untrusted until the local user approves them. */
@@ -80,6 +81,9 @@ function trackersFromNodes(ns: Node[]): string[] {
 function activeTrackers(approved: string[]): string[] {
   return capTrackers([...envTrackers(), ...approved]);
 }
+
+/** Port/signal-type accent colors (palette dots, etc.). */
+const PORT_COLOR: Record<PortType, string> = { segment: "#dd6b20", transcript: "#2b6cb0", image: "#319795", control: "#d69e2e" };
 
 /** Truncate text with an ellipsis to fit `maxW` screen px in the given ctx. */
 function clipText(ctx: CanvasRenderingContext2D, text: string, maxW: number): string {
@@ -300,8 +304,8 @@ function Editor({ initialRoom, local }: { initialRoom?: string; local?: boolean 
   const [role, setRoleState] = useState<DeviceRole>(() => getRole());
   const caps = useMemo(() => detectCaps(), []);
 
-  const [nodes, setNodes, onNodesChange] = useNodesState<Node>([]);
-  const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([]);
+  const [nodes, setNodes] = useState<Node[]>([]);
+  const [edges, setEdges] = useState<Edge[]>([]);
 
   const [running, setRunning] = useState(false);
   const [runStatus, setRunStatus] = useState("");
@@ -335,13 +339,8 @@ function Editor({ initialRoom, local }: { initialRoom?: string; local?: boolean 
   const [selectedEdge, setSelectedEdge] = useState<string | null>(null);
   const selectedEdgeRef = useRef<string | null>(null);
   selectedEdgeRef.current = selectedEdge;
-  // rgui (@snomiao/rgui readable-grid canvas) is the DEFAULT renderer. React
-  // Flow stays reachable via `?renderer=rf` one more step while node config UI
-  // is relocated into an rgui-native inspector; after that it's removed.
-  const useRgui = useMemo(() => {
-    const r = new URLSearchParams(location.search).get("renderer");
-    return r !== "rf" && r !== "reactflow" && r !== "classic";
-  }, []);
+  // rgui (@snomiao/rgui readable-grid canvas) is the ONLY renderer now.
+  const useRgui = true;
 
   const rguiApiRef = useRef<RguiApi | null>(null); // imperative viewport (fitView/zoom)
   const sigRef = useRef<MultiSignalingClient | null>(null);
@@ -703,18 +702,11 @@ function Editor({ initialRoom, local }: { initialRoom?: string; local?: boolean 
     [setNodes, broadcast],
   );
 
-  const rf = useReactFlow();
-
   const addNode = useCallback(
-    (type: NodeType, screen?: { x: number; y: number }, worldPos?: { x: number; y: number }) => {
+    (type: NodeType, worldPos?: { x: number; y: number }) => {
       const id = `${type}-${Math.random().toString(36).slice(2, 8)}`;
-      // worldPos (from the rgui canvas) is already in flow/world coords; screen
-      // (from React Flow DnD) needs projecting; else a random spot.
-      const position = worldPos
-        ? worldPos
-        : screen
-        ? rf.screenToFlowPosition(screen)
-        : { x: 80 + Math.random() * 120, y: 80 + Math.random() * 160 };
+      // worldPos (from the rgui canvas drop) is in world coords; else a random spot.
+      const position = worldPos ?? { x: 80 + Math.random() * 120, y: 80 + Math.random() * 160 };
       const n: Node = {
         id,
         type: "voice",
@@ -743,7 +735,7 @@ function Editor({ initialRoom, local }: { initialRoom?: string; local?: boolean 
       setEdges(nextEdges);
       broadcast(nextNodes, nextEdges);
     },
-    [myDeviceId, setNodes, setEdges, broadcast, rf],
+    [myDeviceId, setNodes, setEdges, broadcast],
   );
 
   // --- Templates: drop a subgraph onto the canvas (fresh ids, auto-selected). ---
@@ -752,7 +744,7 @@ function Editor({ initialRoom, local }: { initialRoom?: string; local?: boolean 
 
   const addTemplate = useCallback(
     (tpl: GraphTemplate, screen?: { x: number; y: number }, worldPos?: { x: number; y: number }) => {
-      const base = worldPos ?? (screen ? rf.screenToFlowPosition(screen) : { x: 80 + Math.random() * 80, y: 80 + Math.random() * 80 });
+      const base = worldPos ?? { x: 80 + Math.random() * 80, y: 80 + Math.random() * 80 };
       const idOf = new Map<string, string>();
       const newNodes: Node[] = tpl.nodes.map((tn) => {
         const id = `${tn.type}-${Math.random().toString(36).slice(2, 8)}`;
@@ -786,7 +778,7 @@ function Editor({ initialRoom, local }: { initialRoom?: string; local?: boolean 
       setEdges(nextEdges);
       broadcast(nextNodes, nextEdges);
     },
-    [myDeviceId, setNodes, setEdges, broadcast, rf],
+    [myDeviceId, setNodes, setEdges, broadcast],
   );
 
   const saveSelectionAsTemplate = useCallback(() => {
@@ -926,7 +918,7 @@ function Editor({ initialRoom, local }: { initialRoom?: string; local?: boolean 
       if (!kind) return;
       const voiceType = kind === "audio" ? "file-audio" : "file-text";
       const id = `${voiceType}-${Math.random().toString(36).slice(2, 8)}`;
-      const position = worldPos ?? rf.screenToFlowPosition({ x: clientX, y: clientY });
+      const position = worldPos ?? { x: 80 + Math.random() * 120, y: 80 + Math.random() * 120 };
       const n: Node = { id, type: "voice", position, data: { voiceType, device: myDeviceId, config: { file: file.name } } };
       fileStore.set(id, { kind, name: file.name, file });
       const next = [...nodesRef.current, n];
@@ -934,7 +926,7 @@ function Editor({ initialRoom, local }: { initialRoom?: string; local?: boolean 
       setNodes(next);
       broadcast(next, edgesRef.current);
     },
-    [rf, myDeviceId, setNodes, broadcast],
+    [myDeviceId, setNodes, broadcast],
   );
 
   // Keyboard: Ctrl/Cmd+A selects all nodes; Delete/Backspace removes the current
@@ -999,93 +991,30 @@ function Editor({ initialRoom, local }: { initialRoom?: string; local?: boolean 
   }, [myDeviceId, devices, caps.hasMic, setNodes, setEdges, broadcast]);
 
   // Auto-arrange: relax all node positions with a box-collision spring layout so
-  // boxes stop overlapping and connected nodes flow left→right. Uses each node's
-  // MEASURED size from React Flow, then fits the view to the result.
+  // boxes stop overlapping and connected nodes flow left→right, then fit the view.
+  // rgui draws all nodes at a uniform width; a per-type height estimate keeps the
+  // non-overlap layout roughly right without needing measured DOM sizes.
   const autoArrange = useCallback(() => {
-    const measured = new Map(
-      rf.getNodes().map((n) => [n.id, { w: n.measured?.width ?? n.width ?? 200, h: n.measured?.height ?? n.height ?? 96 }] as const),
-    );
-    const sizeOf = (id: string) => measured.get(id) ?? { w: 200, h: 96 };
+    const sizeOf = (id: string) => {
+      const t = (nodesRef.current.find((n) => n.id === id)?.data as any)?.voiceType as NodeType | undefined;
+      const rows = t ? Math.max(NODE_SPECS[t].inputs.length, NODE_SPECS[t].outputs.length, 1) + 1 : 2;
+      return { w: 200, h: 40 + rows * 22 };
+    };
     const pos = autoLayout(nodesRef.current, edgesRef.current, sizeOf);
     const next = nodesRef.current.map((n) => (pos[n.id] ? { ...n, position: pos[n.id] } : n));
     nodesRef.current = next;
     setNodes(next);
     broadcast(next, edgesRef.current);
-    // Fit the view to the fresh layout (rgui viewport API, or React Flow fallback).
-    if (useRgui) setTimeout(() => rguiApiRef.current?.fitView(48), 60);
-    else setTimeout(() => rf.fitView({ duration: 400, padding: 0.2 }), 60);
-  }, [rf, setNodes, broadcast, useRgui]);
-
-  const onConnect = useCallback(
-    (params: Connection) => {
-      const g = fromRF(nodesRef.current, edgesRef.current, versionRef.current);
-      if (!canConnect(g, params.source!, params.sourceHandle ?? "out", params.target!, params.targetHandle ?? "in")) {
-        setStatus("✗ incompatible ports");
-        return;
-      }
-      const id = edgeId({
-        source: params.source!,
-        sourceHandle: params.sourceHandle ?? "out",
-        target: params.target!,
-        targetHandle: params.targetHandle ?? "in",
-      });
-      const next = addEdge({ ...params, id }, edgesRef.current);
-      edgesRef.current = next; // keep ref synchronous across batched calls
-      setEdges(next);
-      broadcast(nodesRef.current, next);
-    },
-    [setEdges, broadcast],
-  );
-
-  const isValidConnection = useCallback((c: Connection | Edge) => {
-    const g = fromRF(nodesRef.current, edgesRef.current, 0);
-    return canConnect(g, c.source!, c.sourceHandle ?? "out", c.target!, c.targetHandle ?? "in");
-  }, []);
-
-  // Dropping a connection on empty canvas opens the omnibox (instead of doing
-  // nothing). From an OUTPUT it lists downstream node types that accept the
-  // port type; from an INPUT it lists upstream node types that produce it.
-  const onConnectEnd = useCallback((event: MouseEvent | TouchEvent, conn: FinalConnectionState) => {
-    if (conn.isValid) return; // landed on a real handle → onConnect already wired it
-    // Only treat as empty-canvas: an invalid drop ONTO a handle/node (e.g. a
-    // mismatched port) should just be rejected, not open the omnibox over it.
-    if (conn.toHandle || conn.toNode) return;
-    const from = conn.fromHandle;
-    const fromNode = conn.fromNode;
-    if (!from || !fromNode) return;
-    const vt = (fromNode.data as any)?.voiceType as NodeType | undefined;
-    if (!vt) return;
-    const dir = from.type; // "source" (output) or "target" (input)
-    const handleId = from.id ?? (dir === "source" ? "out" : "in");
-    // An input takes a single incoming edge (see canConnect): don't offer to
-    // create+wire an upstream node when this input is already connected.
-    if (dir === "target" && edgesRef.current.some((e) => e.target === fromNode.id && (e.targetHandle ?? "in") === handleId)) return;
-    // From an output we match downstream INPUTS; from an input we match
-    // upstream OUTPUTS. The port type to match comes from the dragged handle.
-    const portType =
-      dir === "source"
-        ? NODE_SPECS[vt]?.outputs.find((p) => p.id === handleId)?.type
-        : NODE_SPECS[vt]?.inputs.find((p) => p.id === handleId)?.type;
-    if (!portType) return;
-    const options = (Object.keys(NODE_SPECS) as NodeType[])
-      .filter((t) =>
-        dir === "source"
-          ? NODE_SPECS[t].inputs.some((p) => p.type === portType)
-          : NODE_SPECS[t].outputs.some((p) => p.type === portType),
-      )
-      .map((t) => ({ type: t, label: NODE_SPECS[t].label }));
-    if (!options.length) return;
-    const pt = "changedTouches" in event ? event.changedTouches[0] : (event as MouseEvent);
-    setConnectMenu({ x: pt.clientX, y: pt.clientY, anchor: { nodeId: fromNode.id, handleId, portType, dir }, options });
-  }, []);
+    setTimeout(() => rguiApiRef.current?.fitView(48), 60);
+  }, [setNodes, broadcast]);
 
   // Create the chosen node at the drop point and wire it to the dragged handle,
   // in one synced update. If the drag started from an output the new node is the
   // target (downstream); if from an input the new node is the source (upstream).
   const createConnectedNode = useCallback(
-    (type: NodeType, anchor: { nodeId: string; handleId: string; portType: PortType; dir: "source" | "target" }, screen: { x: number; y: number }, worldPos?: { x: number; y: number }) => {
+    (type: NodeType, anchor: { nodeId: string; handleId: string; portType: PortType; dir: "source" | "target" }, worldPos?: { x: number; y: number }) => {
       const id = `${type}-${Math.random().toString(36).slice(2, 8)}`;
-      const position = worldPos ?? rf.screenToFlowPosition(screen);
+      const position = worldPos ?? { x: 80 + Math.random() * 120, y: 80 + Math.random() * 120 };
       const n: Node = { id, type: "voice", position, data: { voiceType: type, device: myDeviceId, config: {} } };
       let edge: Edge;
       if (anchor.dir === "source") {
@@ -1106,13 +1035,8 @@ function Editor({ initialRoom, local }: { initialRoom?: string; local?: boolean 
       broadcast(nextNodes, nextEdges);
       setConnectMenu(null);
     },
-    [rf, myDeviceId, setNodes, setEdges, broadcast],
+    [myDeviceId, setNodes, setEdges, broadcast],
   );
-
-  const afterDelete = useCallback(() => {
-    // state settles via onNodesChange/onEdgesChange first
-    setTimeout(() => broadcast(nodesRef.current, edgesRef.current), 0);
-  }, [broadcast]);
 
   const stopRuntime = useCallback(async () => {
     const rt = runtimeRef.current;
@@ -1232,32 +1156,6 @@ function Editor({ initialRoom, local }: { initialRoom?: string; local?: boolean 
 
   useEffect(() => () => { runtimeRef.current?.stop(); }, []);
 
-  const PORT_COLOR: Record<PortType, string> = { segment: "#dd6b20", transcript: "#2b6cb0", image: "#319795", control: "#d69e2e" };
-  // Color edges by their source port type; animate while running (data in motion).
-  const styledEdges = useMemo(
-    () =>
-      edges.map((e) => {
-        const src = nodes.find((n) => n.id === e.source);
-        const t = src
-          ? NODE_SPECS[(src.data as any).voiceType as NodeType].outputs.find((o) => o.id === (e.sourceHandle ?? "out"))?.type
-          : undefined;
-        const stroke = t ? PORT_COLOR[t] : "#b0b6c0";
-        const rate = edgeRates[e.id]; // cross-device bytes/sec on this edge
-        return {
-          ...e,
-          animated: running,
-          interactionWidth: 24, // wider invisible hit area so edges are easy to click
-          style: e.selected
-            ? { stroke: "#1a202c", strokeWidth: 4 }
-            : { stroke, strokeWidth: 2 },
-          label: rate ? formatRate(rate) : undefined,
-          labelStyle: { fontSize: 10, fill: "#2d3748" },
-          labelBgStyle: { fill: "#fff", fillOpacity: 0.85 },
-          labelBgPadding: [3, 1] as [number, number],
-        };
-      }),
-    [edges, nodes, running, edgeRates],
-  );
 
   // Per-node record counts from the uncapped export buffer (sink transcripts AND
   // raw audio collected at audio-out). Recomputed on tick so memoized nodes that
@@ -1353,7 +1251,7 @@ function Editor({ initialRoom, local }: { initialRoom?: string; local?: boolean 
           return;
         }
         const t = dt.getData("application/otoji-node") as NodeType;
-        if (t && NODE_SPECS[t]) addNode(t, undefined, world);
+        if (t && NODE_SPECS[t]) addNode(t, world);
       },
     }),
     [setNodes, setEdges, broadcast, addNode, addTemplate, addFileNodeAt, allTemplates, removeEdge],
@@ -1470,45 +1368,7 @@ function Editor({ initialRoom, local }: { initialRoom?: string; local?: boolean 
       <div style={{ position: "relative", height: "100vh", overflow: "hidden", fontFamily: "system-ui, sans-serif" }}>
         {/* full-bleed graph canvas — the whole background */}
         <div style={{ position: "absolute", inset: 0 }}>
-          {useRgui ? (
-            <RguiGraphView graph={currentGraph} deviceName={deviceNameOf} handlers={rguiHandlers} selection={selected} edgeMeta={edgeMeta} nodeBody={nodeBody} live={liveRef.current} apiRef={rguiApiRef} />
-          ) : (
-          <ReactFlow
-            nodes={nodes}
-            edges={styledEdges}
-            nodeTypes={nodeTypes}
-            onNodesChange={onNodesChange}
-            onEdgesChange={onEdgesChange}
-            onConnect={onConnect}
-            onConnectEnd={onConnectEnd}
-            isValidConnection={isValidConnection}
-            onNodeContextMenu={(e, n) => { e.preventDefault(); setNodeMenu({ nodeId: n.id, x: e.clientX, y: e.clientY }); }}
-            onNodeDragStop={() => broadcast(nodesRef.current, edgesRef.current)}
-            onNodesDelete={afterDelete}
-            onEdgesDelete={afterDelete}
-            deleteKeyCode={["Delete"]}
-            selectionOnDrag
-            panOnDrag={[1, 2]}
-            onDragOver={(e) => { e.preventDefault(); e.dataTransfer.dropEffect = "copy"; }}
-            onDrop={(e) => {
-              e.preventDefault();
-              const f = e.dataTransfer.files?.[0];
-              if (f) { addFileNodeAt(f, e.clientX, e.clientY); return; }
-              const tplId = e.dataTransfer.getData("application/otoji-template");
-              if (tplId) {
-                const tpl = allTemplates.find((x) => x.id === tplId);
-                if (tpl) addTemplate(tpl, { x: e.clientX, y: e.clientY });
-                return;
-              }
-              const t = e.dataTransfer.getData("application/otoji-node") as NodeType;
-              if (t && NODE_SPECS[t]) addNode(t, { x: e.clientX, y: e.clientY });
-            }}
-            fitView
-          >
-            <Background />
-            <Controls position="bottom-right" />
-          </ReactFlow>
-          )}
+          <RguiGraphView graph={currentGraph} deviceName={deviceNameOf} handlers={rguiHandlers} selection={selected} edgeMeta={edgeMeta} nodeBody={nodeBody} live={liveRef.current} apiRef={rguiApiRef} />
         </div>
 
         {/* floating title / toolbar card (draggable) */}
@@ -1701,7 +1561,7 @@ function Editor({ initialRoom, local }: { initialRoom?: string; local?: boolean 
             y={connectMenu.y}
             options={connectMenu.options}
             placeholder={connectMenu.anchor.dir === "source" ? "connect to…" : "connect from…"}
-            onPick={(type) => createConnectedNode(type, connectMenu.anchor, { x: connectMenu.x, y: connectMenu.y }, connectMenu.world)}
+            onPick={(type) => createConnectedNode(type, connectMenu.anchor, connectMenu.world)}
             onClose={() => setConnectMenu(null)}
           />
         )}
@@ -1809,73 +1669,45 @@ function DraggableCard({
   zIndex?: number;
   children: React.ReactNode;
 }) {
-  const rf = useReactFlow();
-  // rgui has no React Flow <ViewportPortal>, so graph-pinned (unpinned) cards
-  // can't ride the viewport yet — render every card in SCREEN space instead, so
-  // the panels are always visible. (Graph-pinning via rgui's view: task #15.)
-  const screenOnly = useMemo(() => {
-    const r = new URLSearchParams(location.search).get("renderer");
-    return r !== "rf" && r !== "reactflow" && r !== "classic";
-  }, []);
-  const [state, setState] = useState<{ x: number; y: number; pinned: boolean }>(() => {
+  // Panels are screen-fixed (the rgui graph canvas is the full-bleed background).
+  const [pos, setPos] = useState<{ x: number; y: number }>(() => {
     try {
       const s = localStorage.getItem("otoji.panel." + pkey);
       if (s) {
         const p = JSON.parse(s);
-        return { x: p.x ?? defaultPos.x, y: p.y ?? defaultPos.y, pinned: p.pinned ?? true };
+        // Legacy graph-pinned positions stored flow coords — fall back to default.
+        if (p.pinned === false) return { ...defaultPos };
+        return { x: p.x ?? defaultPos.x, y: p.y ?? defaultPos.y };
       }
     } catch {
       /* ignore */
     }
-    return { ...defaultPos, pinned: true };
+    return { ...defaultPos };
   });
-  const { x, y, pinned } = state;
-  const effPinned = pinned || screenOnly;
-  // A stored unpinned position is in FLOW coords — invalid as screen coords, so
-  // fall back to defaultPos when forcing screen-space in rgui mode.
-  const effX = screenOnly && !pinned ? defaultPos.x : x;
-  const effY = screenOnly && !pinned ? defaultPos.y : y;
-  const persist = (next: { x: number; y: number; pinned: boolean }) => {
-    try { localStorage.setItem("otoji.panel." + pkey, JSON.stringify(next)); } catch { /* ignore */ }
+  const { x, y } = pos;
+  const persist = (next: { x: number; y: number }) => {
+    try { localStorage.setItem("otoji.panel." + pkey, JSON.stringify({ ...next, pinned: true })); } catch { /* ignore */ }
   };
-  const save = (next: { x: number; y: number; pinned: boolean }) => { setState(next); persist(next); };
 
   const drag = useRef<{ px: number; py: number; ox: number; oy: number } | null>(null);
   const onDown = (e: React.PointerEvent) => {
-    e.stopPropagation(); // don't let the graph pane start panning when we grab the grip
-    drag.current = { px: e.clientX, py: e.clientY, ox: effX, oy: effY };
+    e.stopPropagation();
+    drag.current = { px: e.clientX, py: e.clientY, ox: x, oy: y };
     (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
   };
   const onMove = (e: React.PointerEvent) => {
     const d = drag.current;
     if (!d) return;
-    // On screen: 1px pointer travel = 1px move. On the graph: divide by zoom so
-    // the card tracks the cursor at any zoom level.
-    const k = effPinned ? 1 : 1 / rf.getViewport().zoom;
-    const nx = d.ox + (e.clientX - d.px) * k;
-    const ny = d.oy + (e.clientY - d.py) * k;
-    setState((s) => ({ ...s, x: effPinned ? Math.max(0, nx) : nx, y: effPinned ? Math.max(0, ny) : ny }));
+    setPos({ x: Math.max(0, d.ox + (e.clientX - d.px)), y: Math.max(0, d.oy + (e.clientY - d.py)) });
   };
   const onUp = () => {
     if (!drag.current) return;
     drag.current = null;
-    persist({ x, y, pinned });
-  };
-  const togglePin = () => {
-    const { x: vx, y: vy, zoom } = rf.getViewport();
-    if (pinned) {
-      // screen → flow, so the card stays put as it detaches onto the graph
-      save({ x: (x - vx) / zoom, y: (y - vy) / zoom, pinned: false });
-    } else {
-      // flow → screen, clamped back into the viewport
-      save({ x: Math.max(0, x * zoom + vx), y: Math.max(0, y * zoom + vy), pinned: true });
-    }
+    persist({ x, y });
   };
 
-  const card = (
-    // nopan/nowheel: while unpinned the card sits inside the RF pane, so these
-    // stop clicks/scroll on it from panning or zooming the canvas underneath.
-    <div className="nopan nowheel" style={{ ...CARD, position: effPinned ? "fixed" : "absolute", left: effX, top: effY, width, maxHeight, overflow: maxHeight ? "auto" : undefined, zIndex }}>
+  return (
+    <div style={{ ...CARD, position: "fixed", left: x, top: y, width, maxHeight, overflow: maxHeight ? "auto" : undefined, zIndex }}>
       <div style={{ display: "flex", alignItems: "center", padding: "3px 6px 5px" }}>
         <div
           onPointerDown={onDown}
@@ -1886,20 +1718,10 @@ function DraggableCard({
         >
           ⠿⠿⠿
         </div>
-        {!screenOnly && (
-          <button
-            onClick={togglePin}
-            title={pinned ? "Pinned to screen — click to place it on the graph" : "On the graph — click to pin it to the screen"}
-            style={{ border: "none", background: "transparent", cursor: "pointer", fontSize: 12, lineHeight: "12px", padding: 0, opacity: pinned ? 1 : 0.5 }}
-          >
-            📌
-          </button>
-        )}
       </div>
       {children}
     </div>
   );
-  return effPinned ? card : <ViewportPortal>{card}</ViewportPortal>;
 }
 
 // Right-click / long-press node menu: duplicate, replace (→ type list), toggle the
@@ -1959,9 +1781,5 @@ function NodeMenu({
 }
 
 export function GraphEditor({ initialRoom, local }: { initialRoom?: string; local?: boolean }) {
-  return (
-    <ReactFlowProvider>
-      <Editor initialRoom={initialRoom} local={local} />
-    </ReactFlowProvider>
-  );
+  return <Editor initialRoom={initialRoom} local={local} />;
 }

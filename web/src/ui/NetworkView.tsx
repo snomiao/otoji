@@ -1,6 +1,6 @@
 import React from "react";
 import { useSyncExternalStore } from "react";
-import type { DeviceOpt } from "./VoiceNode";
+import type { DeviceOpt } from "./device-opt";
 import { nodeOwner } from "../graph/runtime";
 import { NODE_SPECS, type VoiceGraph, type PortType } from "../graph/model";
 import { PeerBadge } from "./PeerBadge";

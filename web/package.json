@@ -17,7 +17,6 @@
   },
   "dependencies": {
     "@gutenye/ocr-browser": "^1.4.8",
-    "@xyflow/react": "^12.11.1",
     "blueimp-md5": "^2.19.0",
     "d3-selection": "^3.0.0",
     "d3-zoom": "^3.0.0",
