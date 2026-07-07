@@ -90,6 +90,16 @@ const PORT_COLOR: Record<PortType, string> = { segment: "#dd6b20", transcript: "
 /** localStorage key for the persisted local-mode graph (rooms use the DO). */
 const LOCAL_GRAPH_KEY = "otoji.local.graph";
 
+// Rows (22px world units each) the config-controls overlay needs per node type,
+// reserved in the node body ABOVE the live-preview strip so both are visible at
+// readable zoom. Rough fit of NodeInspector's per-type content; a low estimate
+// scrolls (overlay is clip:"node" + overflow:"auto"), it never covers the preview.
+const CONTROL_ROWS: Partial<Record<NodeType, number>> = {
+  "mic-vad": 3, "mic-raw": 2, stt: 3, "web-speech": 3, vosk: 3, sherpa: 3,
+  translate: 5, sink: 4, tts: 4, "tts-model": 5, model: 5, camera: 3,
+  "screen-share": 2, "paddle-ocr": 2, "vision-model": 4, "text-diff": 3,
+};
+
 /** Truncate text with an ellipsis to fit `maxW` screen px in the given ctx. */
 function clipText(ctx: CanvasRenderingContext2D, text: string, maxW: number): string {
   if (ctx.measureText(text).width <= maxW) return text;
@@ -1234,13 +1244,10 @@ function Editor({ initialRoom, local }: { initialRoom?: string; local?: boolean 
   // (device + per-type config) that rgui glues to the node and auto-hides when
   // the node isn't readable-sized. Stable identity; reads the latest node state.
   const renderNodeOverlay = useCallback((id: string) => {
-    // Config controls overlay only the SELECTED node(s). Unselected nodes leave
-    // their body clear so rgui's native live preview (transcript / waveform /
-    // image) is visible — otherwise the controls would cover it. Reads the ref
-    // (not `selected`) so this callback stays identity-stable and the rgui graph
-    // memo doesn't rebuild on every selection change; the portal map re-runs on
-    // selection change anyway (RguiGraphView re-renders on the `selection` prop).
-    if (!selectedRef.current.includes(id)) return null;
+    // Semantic zoom: controls show whenever the node is READABLE-scaled (rgui's
+    // overlay minScale hides them below that), not only when selected. Zoomed in
+    // = edit mode (controls over the body); zoomed out past minScale = monitor
+    // mode (rgui's native live preview / summaries show instead).
     const n = nodesRef.current.find((x) => x.id === id);
     if (!n) return null;
     const node = {
@@ -1352,10 +1359,20 @@ function Editor({ initialRoom, local }: { initialRoom?: string; local?: boolean 
     const isText = t === "stt" || t === "translate" || t === "sink" || t === "web-speech" || t === "vosk" || t === "model" || t === "paddle-ocr" || t === "text-diff";
     if (!isMic && !isImg && !isText) return undefined;
     const id = node.id;
+    // The body hosts BOTH the config-controls overlay (upper zone, HTML, shown
+    // whenever the node is readable-scaled) and the live preview (bottom strip,
+    // canvas). Reserve rows for each; when rgui hides the overlay below its
+    // minScale, the preview expands to the full body.
+    const previewRows = isImg ? 4 : 2;
+    const controlRows = CONTROL_ROWS[t] ?? 3;
     return {
-      rows: isImg ? 4 : 2,
-      draw: (ctx: CanvasRenderingContext2D, rect: { width: number; height: number }) => {
+      rows: previewRows + controlRows,
+      draw: (ctx: CanvasRenderingContext2D, rect: { width: number; height: number }, view?: { k: number }) => {
         const live = liveRef.current;
+        const k = view?.k ?? 1;
+        // overlay (controls) visible above minScale 0.5 → keep to the bottom strip
+        const top = k >= 0.5 ? Math.max(0, rect.height - previewRows * 22 * k) : 0;
+        const availH = rect.height - top;
         if (isMic) {
           const levels = live.getLevels(id);
           const N = 48;
@@ -1363,15 +1380,15 @@ function Editor({ initialRoom, local }: { initialRoom?: string; local?: boolean 
           ctx.fillStyle = "#dd6b20";
           for (let i = 0; i < N; i++) {
             const lv = levels[levels.length - N + i];
-            const h = Math.min(rect.height, (lv?.rms ?? 0) * rect.height * 4);
+            const h = Math.min(availH, (lv?.rms ?? 0) * availH * 4);
             if (h > 0.5) ctx.fillRect(i * bw, rect.height - h, Math.max(1, bw - 1), h);
           }
         } else if (isImg) {
           const img = live.getImage(id);
           if (img) {
-            const s = Math.min(rect.width / img.width, rect.height / img.height);
+            const s = Math.min(rect.width / img.width, availH / img.height);
             const w = img.width * s, h = img.height * s;
-            ctx.drawImage(img, (rect.width - w) / 2, (rect.height - h) / 2, w, h);
+            ctx.drawImage(img, (rect.width - w) / 2, top + (availH - h) / 2, w, h);
           }
         } else {
           const texts = live.getTexts(id);
@@ -1383,8 +1400,9 @@ function Editor({ initialRoom, local }: { initialRoom?: string; local?: boolean 
           // rgui nodes are dark (#2b3036); light text so transcripts are readable
           // (was #4a5568 — a light-theme leftover, invisible on the dark body).
           ctx.fillStyle = "#e6e9ec";
-          let y = 0;
+          let y = top;
           for (let i = 0; i < Math.min(texts.length, 2); i++) {
+            if (y + 14 > rect.height + 1) break;
             ctx.globalAlpha = 1 - i * 0.45;
             ctx.fillText(clipText(ctx, texts[i], rect.width), 0, y);
             y += 15;
