@@ -24,10 +24,21 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - host: macos-latest
+          # macOS binaries are cross-compiled from Linux with cargo-zigbuild —
+          # no paid macos-latest runner. The zigbuild Docker image bundles zig +
+          # the macOS SDK and sets BOTH the target linker AND CC/CXX, so ring's
+          # per-target asm and the prebuilt sherpa-onnx / onnxruntime static libs
+          # link and the resulting .node loads on real macOS (verified). NOTE:
+          # `napi build --zig` is NOT sufficient — it only swaps the linker, so
+          # the C deps still compile for the Linux host and the link fails.
+          - host: ubuntu-latest
             target: aarch64-apple-darwin
-          - host: macos-latest
+            zig: true
+            napi_name: darwin-arm64
+          - host: ubuntu-latest
             target: x86_64-apple-darwin
+            zig: true
+            napi_name: darwin-x64
           - host: ubuntu-latest
             target: x86_64-unknown-linux-gnu
           # Native arm64 Linux runner (free for public repos) — no cross-compile,
@@ -43,8 +54,11 @@ jobs:
         with:
           targets: ${{ matrix.target }}
 
+      # Native Linux target deps only. The darwin cross jobs (matrix.zig) build
+      # inside the cargo-zigbuild container, which carries its own toolchain, and
+      # never compile alsa-sys (Linux-only) — so they need none of this.
       - name: Install Linux build deps
-        if: runner.os == 'Linux'
+        if: runner.os == 'Linux' && !matrix.zig
         run: |
           sudo apt-get update
           sudo apt-get install -y cmake clang libasound2-dev pkg-config
@@ -55,7 +69,12 @@ jobs:
         shell: pwsh
 
       - uses: oven-sh/setup-bun@v2
+        if: ${{ !matrix.zig }}
+      # rust-cache is skipped for the darwin cross jobs: they build inside the
+      # zigbuild container (root-owned target/) which a host-side cache save
+      # can't reliably reuse, and each has its own fresh image layer cache.
       - uses: Swatinem/rust-cache@v2
+        if: ${{ !matrix.zig }}
         with:
           key: napi-${{ matrix.target }}
 
@@ -64,14 +83,42 @@ jobs:
       # attempts and fails them even with --no-optional ("Failed to install 5
       # packages"). The build only needs the napi devDependency (@napi-rs/cli),
       # which installs first — so tolerate the optional failures here and let
-      # the `bun run build` step below be the real gate.
-      - run: bun install --frozen-lockfile --no-optional || bun install --no-optional || true
+      # the `bun run build` step below be the real gate. (Not needed by the
+      # darwin cross jobs — those build the .node straight from cargo-zigbuild.)
+      - if: ${{ !matrix.zig }}
+        run: bun install --frozen-lockfile --no-optional || bun install --no-optional || true
 
-      - name: Build .node
+      - name: Build .node (native napi)
+        if: ${{ !matrix.zig }}
         run: bun run build -- --target ${{ matrix.target }}
         shell: bash
 
+      # Cross-compile the macOS .node from Linux with cargo-zigbuild. The image
+      # ships zig + the macOS SDK and sets the target linker AND CC/CXX, so ring's
+      # asm + the prebuilt sherpa-onnx/onnxruntime static libs link and Apple
+      # frameworks resolve. Output is target/<triple>/release/libotoji.dylib
+      # (cdylib); downstream `napi artifacts` matches the .node by filename, so we
+      # rename it to the napi platform name (core.darwin-arm64.node, etc.). The
+      # napi-generated index.js is identical across targets and the publish job
+      # grabs it from a native job, so the darwin artifact ships only the .node.
+      - name: Build .node (darwin via cargo-zigbuild)
+        if: matrix.zig
+        shell: bash
+        run: |
+          docker run --rm \
+            -v "${{ github.workspace }}":/io -w /io \
+            -e CARGO_TERM_COLOR=always -e CARGO_INCREMENTAL=0 \
+            ghcr.io/rust-cross/cargo-zigbuild:latest \
+            bash -c "rustup target add ${{ matrix.target }} && cargo zigbuild --release --target ${{ matrix.target }} --lib --features node"
+          cp "target/${{ matrix.target }}/release/libotoji.dylib" "core.${{ matrix.napi_name }}.node"
+          file "core.${{ matrix.napi_name }}.node"
+          file "core.${{ matrix.napi_name }}.node" | grep -q "Mach-O" || { echo "::error::cross-built .node is not a Mach-O dylib"; exit 1; }
+
+      # Native jobs can load their freshly-built addon; a cross-built darwin .node
+      # cannot be require()'d on the Linux builder, so it is smoke-tested on real
+      # macOS by smoke-published.yml after release instead.
       - name: Smoke-test require()
+        if: ${{ !matrix.zig }}
         shell: bash
         run: |
           ls -la *.node
