@@ -59,6 +59,7 @@ export function RguiGraphView({
   panels,
   renderNodeOverlay,
   summarize,
+  hud,
   apiRef,
 }: {
   graph: VoiceGraph;
@@ -79,6 +80,8 @@ export function RguiGraphView({
   renderNodeOverlay?: (nodeId: string) => React.ReactNode;
   /** compact summary rule for small / merged nodes (rgui renders it) */
   summarize?: SummarizeFn;
+  /** screen-space wordmark + status line, drawn natively on the canvas (top-left) */
+  hud?: { title: string; subtitle: string };
   /** populated with imperative viewport controls (fitView / zoom) */
   apiRef?: React.MutableRefObject<RguiApi | null>;
 }) {
@@ -141,13 +144,15 @@ export function RguiGraphView({
   panelsRef.current = panels;
   const sumRef = useRef<SummarizeFn | undefined>(summarize);
   sumRef.current = summarize;
+  const hudRef = useRef<{ title: string; subtitle: string } | undefined>(hud);
+  hudRef.current = hud;
 
   // Create the viewer once the canvas is mounted; destroy on unmount.
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
     let disposed = false;
-    createViewer(canvas, rgGraphRef, hRef, panelsRef, sumRef)
+    createViewer(canvas, rgGraphRef, hRef, panelsRef, sumRef, hudRef)
       .then((viewer) => {
         if (disposed) viewer?.destroy();
         else {
@@ -174,6 +179,11 @@ export function RguiGraphView({
   useEffect(() => {
     if (panels) viewerRef.current?.setPanels(panels as any);
   }, [panels]);
+
+  // Repaint when the HUD wordmark/status text changes (onFrame reads hudRef).
+  useEffect(() => {
+    viewerRef.current?.invalidate();
+  }, [hud?.title, hud?.subtitle]);
 
 
   // Redraw the canvas when any node's live preview updates (waveform/text/image).
@@ -255,6 +265,7 @@ async function createViewer(
   hRef: React.MutableRefObject<RguiHandlers | undefined>,
   panelsRef: React.MutableRefObject<Panel[] | undefined>,
   sumRef: React.MutableRefObject<SummarizeFn | undefined>,
+  hudRef: React.MutableRefObject<{ title: string; subtitle: string } | undefined>,
 ) {
   const { default: createRgui } = await import("@snomiao/rgui");
   return createRgui(canvas, {
@@ -274,7 +285,44 @@ async function createViewer(
     onEdgeClick: (edge, screen) => hRef.current?.onEdgeClick?.(edge, screen),
     onEdgeContextMenu: (edge, screen) => hRef.current?.onEdgeContextMenu?.(edge, screen),
     onConnectEnd: (from, at) => hRef.current?.onConnectEnd?.(from, at),
+    // Screen-space chrome: rgui composites the title HUD last, on top of the
+    // graph, every frame (the canvas keeps the last frame while idle).
+    onFrame: () => drawHud(canvas, hudRef.current),
   });
+}
+
+// Draw the "otoji" wordmark + status line directly on the rgui canvas, top-left,
+// in screen space (unaffected by pan/zoom/tilt). rgui's own renderer left the
+// ctx at dpr scale after compositing; we reset it explicitly and paint on top.
+function drawHud(canvas: HTMLCanvasElement, hud?: { title: string; subtitle: string }) {
+  if (!hud?.title) return;
+  const ctx = canvas.getContext("2d");
+  if (!ctx) return;
+  const dpr = canvas.clientWidth ? canvas.width / canvas.clientWidth : 1;
+  const x = 16;
+  ctx.save();
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.textBaseline = "alphabetic";
+  // wordmark — rgui's purple→gold crossover, so it reads as part of the canvas
+  ctx.font = "700 22px system-ui, -apple-system, sans-serif";
+  const w = ctx.measureText(hud.title).width;
+  const grad = ctx.createLinearGradient(x, 0, x + w, 0);
+  grad.addColorStop(0, "#9b34bf");
+  grad.addColorStop(1, "#f3820d");
+  ctx.shadowColor = "rgba(0,0,0,0.35)";
+  ctx.shadowBlur = 6;
+  ctx.shadowOffsetY = 1;
+  ctx.fillStyle = grad;
+  ctx.fillText(hud.title, x, 30);
+  ctx.shadowColor = "transparent";
+  ctx.shadowBlur = 0;
+  ctx.shadowOffsetY = 0;
+  if (hud.subtitle) {
+    ctx.font = "12px system-ui, -apple-system, sans-serif";
+    ctx.fillStyle = "#8a94a6";
+    ctx.fillText(hud.subtitle, x, 46);
+  }
+  ctx.restore();
 }
 
 // Imperative viewport helpers built on the viewer's setView/fitView.

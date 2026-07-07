@@ -1480,16 +1480,14 @@ function Editor({ initialRoom, local }: { initialRoom?: string; local?: boolean 
       <div style={{ position: "relative", height: "100vh", overflow: "hidden", fontFamily: "system-ui, sans-serif" }}>
         {/* full-bleed graph canvas — the whole background */}
         <div style={{ position: "absolute", inset: 0 }}>
-          <RguiGraphView graph={currentGraph} deviceName={deviceNameOf} handlers={rguiHandlers} selection={selected} edgeMeta={edgeMeta} nodeBody={nodeBody} live={liveRef.current} panels={rguiPanels} renderNodeOverlay={renderNodeOverlay} summarize={summarize} apiRef={rguiApiRef} />
+          <RguiGraphView graph={currentGraph} deviceName={deviceNameOf} handlers={rguiHandlers} selection={selected} edgeMeta={edgeMeta} nodeBody={nodeBody} live={liveRef.current} panels={rguiPanels} renderNodeOverlay={renderNodeOverlay} summarize={summarize} hud={{ title: "otoji", subtitle: local ? "local · this device only" : `room ${room} · ${status} · ${role} · ${devices.length} device(s)` }} apiRef={rguiApiRef} />
         </div>
 
-        {/* floating title / toolbar card (draggable) */}
-        <DraggableCard pkey="toolbar" defaultPos={{ x: 12, y: 12 }} zIndex={11}>
+        {/* floating toolbar card (draggable). The "otoji" wordmark + status line
+            are drawn natively by rgui on the canvas (top-left); this card carries
+            only the interactive controls, sitting just below the canvas wordmark. */}
+        <DraggableCard pkey="toolbar2" defaultPos={{ x: 12, y: 54 }} zIndex={11}>
         <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", padding: "2px 12px 8px", maxWidth: "calc(100vw - 48px)" }}>
-          <strong>otoji</strong>
-          <span style={{ fontSize: 12, color: "#718096" }}>
-            {local ? "local · this device only" : `room ${room} · ${status} · ${role} · ${devices.length} device(s)`}
-          </span>
           {local ? (
             <a href="/" style={{ fontSize: 12 }}>＋ create / join a room</a>
           ) : (
