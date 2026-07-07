@@ -348,6 +348,9 @@ function Editor({ initialRoom, local }: { initialRoom?: string; local?: boolean 
   const useRgui = true;
 
   const rguiApiRef = useRef<RguiApi | null>(null); // imperative viewport (fitView/zoom)
+  // 3-D billboard gizmo: drag the mic handle to tilt the graph plane (yaw/pitch),
+  // double-click to flatten it. Records the base orientation + grab point on down.
+  const gizmoDrag = useRef<{ x0: number; y0: number; base: { yaw: number; pitch: number; roll: number } } | null>(null);
   const sigRef = useRef<MultiSignalingClient | null>(null);
   const meshRef = useRef<PeerMesh | null>(null);
   const transportRef = useRef<PeerMeshTransport | null>(null);
@@ -1517,6 +1520,37 @@ function Editor({ initialRoom, local }: { initialRoom?: string; local?: boolean 
               <button onClick={() => rguiApiRef.current?.zoomBy(1.25)} style={{ fontSize: 12 }} title="Zoom in">＋</button>
               <button onClick={() => rguiApiRef.current?.zoomBy(0.8)} style={{ fontSize: 12 }} title="Zoom out">－</button>
               <button onClick={() => rguiApiRef.current?.fitView(48)} style={{ fontSize: 12 }} title="Fit graph to view">⤢ Fit</button>
+              <button
+                title="Drag to tilt the graph in 3-D · double-click to flatten"
+                style={{ fontSize: 12, cursor: "grab", touchAction: "none" }}
+                onPointerDown={(e) => {
+                  const api = rguiApiRef.current;
+                  if (!api) return;
+                  gizmoDrag.current = { x0: e.clientX, y0: e.clientY, base: api.rotation3() };
+                  e.currentTarget.setPointerCapture(e.pointerId);
+                  e.currentTarget.style.cursor = "grabbing";
+                }}
+                onPointerMove={(e) => {
+                  const d = gizmoDrag.current;
+                  if (!d) return;
+                  const S = 0.012; // rad per px — horizontal = yaw, vertical = pitch
+                  rguiApiRef.current?.setRotation3(
+                    { yaw: d.base.yaw + (e.clientX - d.x0) * S, pitch: d.base.pitch - (e.clientY - d.y0) * S },
+                    { animate: false },
+                  );
+                }}
+                onPointerUp={(e) => {
+                  gizmoDrag.current = null;
+                  e.currentTarget.style.cursor = "grab";
+                }}
+                onPointerCancel={(e) => {
+                  gizmoDrag.current = null;
+                  e.currentTarget.style.cursor = "grab";
+                }}
+                onDoubleClick={() => rguiApiRef.current?.setRotation3({ yaw: 0, pitch: 0, roll: 0 }, { animate: true })}
+              >
+                🎙 Tilt
+              </button>
             </span>
           )}
           <button

@@ -120,6 +120,10 @@ export interface Rgui {
   /** v0.3.0: programmatic viewport control */
   setView(view: ViewTransform): void;
   fitView(paddingPx?: number): void;
+  /** v1.7.0 billboard 3-D: current graph-plane orientation (radians) */
+  readonly rotation3: { yaw: number; pitch: number; roll: number };
+  /** v1.7.0 billboard 3-D: tilt the graph plane (nodes stay upright 2-D cards) */
+  setRotation3(target: { yaw?: number; pitch?: number; roll?: number }, opts?: { animate?: boolean }): void;
   /** v0.3.0: replace the canvas-native palettes */
   setPanels(panels: Panel[]): void;
   /** v0.3.0: attach/replace/remove a node-anchored HTML overlay */

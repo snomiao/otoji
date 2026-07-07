@@ -42,6 +42,10 @@ export interface RguiApi {
   zoomBy: (factor: number) => void;
   /** snap a world position to the current readable grid (for tidy drops) */
   snapWorld: (pos: { x: number; y: number }) => { x: number; y: number };
+  /** current graph-plane 3-D orientation (radians) */
+  rotation3: () => { yaw: number; pitch: number; roll: number };
+  /** tilt the graph plane in 3-D (nodes stay upright); no arg / zeros = flat */
+  setRotation3: (target: { yaw?: number; pitch?: number; roll?: number }, opts?: { animate?: boolean }) => void;
 }
 
 export function RguiGraphView({
@@ -292,5 +296,7 @@ function makeApi(viewer: Awaited<ReturnType<typeof createViewer>>, canvas: HTMLC
       const step = gridLevels(viewer.view.k, r.minGridPx, r.ladder)[1]!.step;
       return { x: snap(pos.x, step), y: snap(pos.y, step) };
     },
+    rotation3: () => viewer.rotation3,
+    setRotation3: (target, opts) => viewer.setRotation3(target, opts),
   };
 }
