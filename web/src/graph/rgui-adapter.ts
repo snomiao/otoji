@@ -27,6 +27,10 @@ export interface RgGraphNode {
   inputs: RgPort[];
   outputs: RgPort[];
   fields: [string, string][];
+  /** reserved live-body rows (rgui draws `body` inside them) */
+  bodyRows?: number;
+  /** live-body draw hook — screen-space ctx clipped to the body region */
+  body?: (ctx: CanvasRenderingContext2D, rect: { width: number; height: number }, view: { k: number }) => void;
 }
 export interface RgEdgeStyle {
   color?: string;
@@ -74,6 +78,8 @@ export interface RguiMeta {
     dashed?: boolean;
     label?: string;
   } | undefined;
+  /** live-body draw hook per node (waveform / partial text / image / busy) */
+  nodeBody?: (node: { id: string; type: NodeType }) => { rows: number; draw: RgGraphNode["body"] } | undefined;
 }
 
 /**
@@ -86,6 +92,7 @@ export function voiceGraphToRgui(graph: VoiceGraph, meta: RguiMeta = {}): RgGrap
   const nodes: RgGraphNode[] = Object.values(graph.nodes).map((n) => {
     const spec = NODE_SPECS[n.type];
     const fields: [string, string][] = [["device", nameOf(n.device)]];
+    const body = meta.nodeBody?.({ id: n.id, type: n.type });
     return {
       id: n.id,
       title: spec.label,
@@ -96,6 +103,7 @@ export function voiceGraphToRgui(graph: VoiceGraph, meta: RguiMeta = {}): RgGrap
       inputs: spec.inputs.map((p) => ({ id: p.id, label: p.id, kind: KIND[p.type] })),
       outputs: spec.outputs.map((p) => ({ id: p.id, label: p.id, kind: KIND[p.type] })),
       fields,
+      ...(body ? { bodyRows: body.rows, body: body.draw } : {}),
     };
   });
   // Drop edges whose endpoints are missing (defensive; the synced graph can lag).

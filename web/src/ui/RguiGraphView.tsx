@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import type { VoiceGraph } from "../graph/model";
 import { voiceGraphToRgui, type RguiMeta } from "../graph/rgui-adapter";
+import type { LiveStore } from "../graph/live-store";
 import type { PortRef } from "@snomiao/rgui";
 
 // Primary graph renderer: draws + edits the voice graph with @snomiao/rgui
@@ -46,6 +47,8 @@ export function RguiGraphView({
   handlers,
   selection,
   edgeMeta,
+  nodeBody,
+  live,
   apiRef,
 }: {
   graph: VoiceGraph;
@@ -55,6 +58,10 @@ export function RguiGraphView({
   selection?: string[];
   /** per-edge visual overrides (selection highlight, running animation, labels) */
   edgeMeta?: RguiMeta["edgeMeta"];
+  /** per-node live-body draw hook (waveform / text / image / busy) */
+  nodeBody?: RguiMeta["nodeBody"];
+  /** live store — subscribe to redraw the canvas when node previews update */
+  live?: LiveStore;
   /** populated with imperative viewport controls (fitView / zoom) */
   apiRef?: React.MutableRefObject<RguiApi | null>;
 }) {
@@ -62,7 +69,8 @@ export function RguiGraphView({
   const viewerRef = useRef<Awaited<ReturnType<typeof createViewer>> | null>(null);
   const [error, setError] = useState<string>("");
 
-  const rgGraph = useMemo(() => voiceGraphToRgui(graph, { deviceName, edgeMeta }), [graph, deviceName, edgeMeta]);
+  const rgGraph = useMemo(() => voiceGraphToRgui(graph, { deviceName, edgeMeta, nodeBody }), [graph, deviceName, edgeMeta, nodeBody]);
+  const nodeIdsKey = useMemo(() => rgGraph.nodes.map((n) => n.id).join(","), [rgGraph]);
   const rgGraphRef = useRef(rgGraph);
   rgGraphRef.current = rgGraph;
 
@@ -97,6 +105,14 @@ export function RguiGraphView({
   useEffect(() => {
     viewerRef.current?.setGraph(rgGraph as any);
   }, [rgGraph]);
+
+  // Redraw the canvas when any node's live preview updates (waveform/text/image).
+  useEffect(() => {
+    if (!live) return;
+    const ids = nodeIdsKey ? nodeIdsKey.split(",") : [];
+    const unsubs = ids.map((id) => live.subscribe(id, () => viewerRef.current?.invalidate()));
+    return () => unsubs.forEach((u) => u());
+  }, [live, nodeIdsKey]);
 
   // Reflect host-owned selection into the canvas (e.g. Ctrl/Cmd+A), skipping when
   // it already matches to avoid a setSelection→onSelectionChange feedback loop.

@@ -81,6 +81,14 @@ function activeTrackers(approved: string[]): string[] {
   return capTrackers([...envTrackers(), ...approved]);
 }
 
+/** Truncate text with an ellipsis to fit `maxW` screen px in the given ctx. */
+function clipText(ctx: CanvasRenderingContext2D, text: string, maxW: number): string {
+  if (ctx.measureText(text).width <= maxW) return text;
+  let s = text;
+  while (s.length > 1 && ctx.measureText(s + "…").width > maxW) s = s.slice(0, -1);
+  return s + "…";
+}
+
 /** Human-readable throughput, e.g. 1536 -> "1.5 KB/s". */
 function formatRate(bytesPerSec: number): string {
   if (bytesPerSec >= 1024 * 1024) return `${(bytesPerSec / 1024 / 1024).toFixed(1)} MB/s`;
@@ -782,9 +790,12 @@ function Editor({ initialRoom, local }: { initialRoom?: string; local?: boolean 
   );
 
   const saveSelectionAsTemplate = useCallback(() => {
-    const sel = nodesRef.current.filter((n) => n.selected);
+    // rgui: the selection is the rgui-owned `selected` set; React Flow: node.selected.
+    const sel = useRgui
+      ? nodesRef.current.filter((n) => selectedRef.current.includes(n.id))
+      : nodesRef.current.filter((n) => n.selected);
     if (sel.length === 0) {
-      alert("Select one or more nodes first (Shift-drag a box, or Shift-click).");
+      alert("Select one or more nodes first (Shift-drag a box, or click a node).");
       return;
     }
     const name = prompt(`Save ${sel.length} node(s) as a template named:`, "my template");
@@ -796,7 +807,7 @@ function Editor({ initialRoom, local }: { initialRoom?: string; local?: boolean 
       Math.random().toString(36).slice(2, 8),
     );
     setUserTemplates(saveUserTemplate(tpl));
-  }, []);
+  }, [useRgui]);
 
   const onConfig = useCallback(
     (nodeId: string, patch: Record<string, unknown>) => {
@@ -1363,6 +1374,60 @@ function Editor({ initialRoom, local }: { initialRoom?: string; local?: boolean 
     [selectedEdge, edgeRates, running],
   );
 
+  // Live node body drawn on the rgui canvas (screen-space, clipped to the body
+  // region): mic waveform, latest image frame, latest transcript lines, busy dot.
+  // Reads the LiveStore at draw time; RguiGraphView invalidates on live updates.
+  const nodeBody = useCallback((node: { id: string; type: NodeType }) => {
+    const t = node.type;
+    const isMic = t === "mic-vad" || t === "mic-raw";
+    const isImg = t === "camera" || t === "screen-share" || t === "paddle-ocr" || t === "vision-model";
+    const isText = t === "stt" || t === "translate" || t === "sink" || t === "web-speech" || t === "vosk" || t === "model" || t === "paddle-ocr" || t === "text-diff";
+    if (!isMic && !isImg && !isText) return undefined;
+    const id = node.id;
+    return {
+      rows: isImg ? 4 : 2,
+      draw: (ctx: CanvasRenderingContext2D, rect: { width: number; height: number }) => {
+        const live = liveRef.current;
+        if (isMic) {
+          const levels = live.getLevels(id);
+          const N = 48;
+          const bw = rect.width / N;
+          ctx.fillStyle = "#dd6b20";
+          for (let i = 0; i < N; i++) {
+            const lv = levels[levels.length - N + i];
+            const h = Math.min(rect.height, (lv?.rms ?? 0) * rect.height * 4);
+            if (h > 0.5) ctx.fillRect(i * bw, rect.height - h, Math.max(1, bw - 1), h);
+          }
+        } else if (isImg) {
+          const img = live.getImage(id);
+          if (img) {
+            const s = Math.min(rect.width / img.width, rect.height / img.height);
+            const w = img.width * s, h = img.height * s;
+            ctx.drawImage(img, (rect.width - w) / 2, (rect.height - h) / 2, w, h);
+          }
+        } else {
+          const texts = live.getTexts(id);
+          ctx.font = "12px system-ui, sans-serif";
+          ctx.textBaseline = "top";
+          ctx.fillStyle = "#4a5568";
+          let y = 0;
+          for (let i = 0; i < Math.min(texts.length, 2); i++) {
+            ctx.globalAlpha = 1 - i * 0.4;
+            ctx.fillText(clipText(ctx, texts[i], rect.width), 0, y);
+            y += 15;
+          }
+          ctx.globalAlpha = 1;
+        }
+        if (live.getBusy(id)) {
+          ctx.fillStyle = "#dd6b20";
+          ctx.beginPath();
+          ctx.arc(rect.width - 5, 5, 3, 0, Math.PI * 2);
+          ctx.fill();
+        }
+      },
+    };
+  }, []);
+
   const openNodeMenu = useCallback((nodeId: string, x: number, y: number) => setNodeMenu({ nodeId, x, y }), []);
 
   const trackerState = useMemo(
@@ -1406,7 +1471,7 @@ function Editor({ initialRoom, local }: { initialRoom?: string; local?: boolean 
         {/* full-bleed graph canvas — the whole background */}
         <div style={{ position: "absolute", inset: 0 }}>
           {useRgui ? (
-            <RguiGraphView graph={currentGraph} deviceName={deviceNameOf} handlers={rguiHandlers} selection={selected} edgeMeta={edgeMeta} apiRef={rguiApiRef} />
+            <RguiGraphView graph={currentGraph} deviceName={deviceNameOf} handlers={rguiHandlers} selection={selected} edgeMeta={edgeMeta} nodeBody={nodeBody} live={liveRef.current} apiRef={rguiApiRef} />
           ) : (
           <ReactFlow
             nodes={nodes}
