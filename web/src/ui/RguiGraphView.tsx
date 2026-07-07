@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 import type { VoiceGraph } from "../graph/model";
 import { voiceGraphToRgui, type RguiMeta } from "../graph/rgui-adapter";
 import type { LiveStore } from "../graph/live-store";
-import type { PortRef, Panel } from "@snomiao/rgui";
+import { snap, gridLevels, type PortRef, type Panel } from "@snomiao/rgui";
 
 // Primary graph renderer: draws + edits the voice graph with @snomiao/rgui
 // (readable-grid, semantic-zoom LOD, Canvas 2D). rgui owns pan/zoom, grid-snap
@@ -39,6 +39,8 @@ export type RgEdgeRef = { from: { node: string; port: string }; to: { node: stri
 export interface RguiApi {
   fitView: (paddingPx?: number) => void;
   zoomBy: (factor: number) => void;
+  /** snap a world position to the current readable grid (for tidy drops) */
+  snapWorld: (pos: { x: number; y: number }) => { x: number; y: number };
 }
 
 export function RguiGraphView({
@@ -219,6 +221,13 @@ function makeApi(viewer: Awaited<ReturnType<typeof createViewer>>, canvas: HTMLC
       const k = v.k * factor;
       // keep the world point under the viewport center fixed
       viewer.setView({ k, x: cx - ((cx - v.x) / v.k) * k, y: cy - ((cy - v.y) / v.k) * k });
+    },
+    snapWorld: (pos) => {
+      // Snap to the minor readable-grid step (same step rgui snaps node drags to),
+      // so dropped nodes/workflows land aligned to the visible grid.
+      const r = viewer.rule;
+      const step = gridLevels(viewer.view.k, r.minGridPx, r.ladder)[1]!.step;
+      return { x: snap(pos.x, step), y: snap(pos.y, step) };
     },
   };
 }

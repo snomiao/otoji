@@ -703,11 +703,15 @@ function Editor({ initialRoom, local }: { initialRoom?: string; local?: boolean 
     [setNodes, broadcast],
   );
 
+  // Snap a dropped world position to the rgui readable grid so nodes/workflows
+  // land aligned to the visible grid (and connected template nodes snap flush).
+  const snapWorld = useCallback((p: { x: number; y: number }) => rguiApiRef.current?.snapWorld(p) ?? p, []);
+
   const addNode = useCallback(
     (type: NodeType, worldPos?: { x: number; y: number }) => {
       const id = `${type}-${Math.random().toString(36).slice(2, 8)}`;
       // worldPos (from the rgui canvas drop) is in world coords; else a random spot.
-      const position = worldPos ?? { x: 80 + Math.random() * 120, y: 80 + Math.random() * 160 };
+      const position = worldPos ? snapWorld(worldPos) : { x: 80 + Math.random() * 120, y: 80 + Math.random() * 160 };
       const n: Node = {
         id,
         type: "voice",
@@ -745,7 +749,7 @@ function Editor({ initialRoom, local }: { initialRoom?: string; local?: boolean 
 
   const addTemplate = useCallback(
     (tpl: GraphTemplate, screen?: { x: number; y: number }, worldPos?: { x: number; y: number }) => {
-      const base = worldPos ?? { x: 80 + Math.random() * 80, y: 80 + Math.random() * 80 };
+      const base = worldPos ? snapWorld(worldPos) : { x: 80 + Math.random() * 80, y: 80 + Math.random() * 80 };
       const idOf = new Map<string, string>();
       const newNodes: Node[] = tpl.nodes.map((tn) => {
         const id = `${tn.type}-${Math.random().toString(36).slice(2, 8)}`;
@@ -919,7 +923,7 @@ function Editor({ initialRoom, local }: { initialRoom?: string; local?: boolean 
       if (!kind) return;
       const voiceType = kind === "audio" ? "file-audio" : "file-text";
       const id = `${voiceType}-${Math.random().toString(36).slice(2, 8)}`;
-      const position = worldPos ?? { x: 80 + Math.random() * 120, y: 80 + Math.random() * 120 };
+      const position = worldPos ? snapWorld(worldPos) : { x: 80 + Math.random() * 120, y: 80 + Math.random() * 120 };
       const n: Node = { id, type: "voice", position, data: { voiceType, device: myDeviceId, config: { file: file.name } } };
       fileStore.set(id, { kind, name: file.name, file });
       const next = [...nodesRef.current, n];
@@ -1015,7 +1019,7 @@ function Editor({ initialRoom, local }: { initialRoom?: string; local?: boolean 
   const createConnectedNode = useCallback(
     (type: NodeType, anchor: { nodeId: string; handleId: string; portType: PortType; dir: "source" | "target" }, worldPos?: { x: number; y: number }) => {
       const id = `${type}-${Math.random().toString(36).slice(2, 8)}`;
-      const position = worldPos ?? { x: 80 + Math.random() * 120, y: 80 + Math.random() * 120 };
+      const position = worldPos ? snapWorld(worldPos) : { x: 80 + Math.random() * 120, y: 80 + Math.random() * 120 };
       const n: Node = { id, type: "voice", position, data: { voiceType: type, device: myDeviceId, config: {} } };
       let edge: Edge;
       if (anchor.dir === "source") {

@@ -61,6 +61,7 @@ export interface Panel {
 export interface RgRule {
   collapsePx: number;
   minGridPx: number;
+  ladder: number[];
   [k: string]: unknown;
 }
 
@@ -114,3 +115,16 @@ export function createRgui(_canvas: HTMLCanvasElement, _options?: RguiOptions): 
 }
 
 export default createRgui;
+
+// Grid helpers (real impls come from rgui source at runtime; these satisfy tsgo).
+export interface GridLevel {
+  step: number;
+  px: number;
+  alpha: number;
+}
+export function snap(_v: number, _step: number): number {
+  throw new Error("@snomiao/rgui source is not available in this build");
+}
+export function gridLevels(_k: number, _minPx?: number, _ladder?: number[]): GridLevel[] {
+  throw new Error("@snomiao/rgui source is not available in this build");
+}
