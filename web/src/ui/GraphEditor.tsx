@@ -40,10 +40,11 @@ import { togglePreviewShown, isPreviewShown, shownRemoteNodes, isPeerBadgeShown,
 import { RecordingPlayer, type Recording } from "./RecordingPlayer";
 import { computePeaks } from "../lib/peaks";
 import { isReadableTranscript } from "../lib/text";
-import { generateRoomCode, isRoomCode, joinUrl } from "../lib/roomcode";
-import { getDeviceId, getDeviceName, setDeviceName, generateDeviceName } from "../lib/device-id";
-import { getRole, setRole, detectCaps, ROLES, type DeviceRole } from "../lib/device-role";
+import { isRoomCode, joinUrl } from "../lib/roomcode";
+import { getDeviceId, getDeviceName, setDeviceName } from "../lib/device-id";
+import { getRole, setRole, detectCaps, type DeviceRole } from "../lib/device-role";
 import { NetworkView } from "./NetworkView";
+import { JoinGate } from "./JoinGate";
 import { TimelineView } from "./TimelineView";
 import type { PortType } from "../graph/model";
 import {
@@ -595,6 +596,21 @@ function Editor({ initialRoom, local }: { initialRoom?: string; local?: boolean 
     // Reflect the room in the address bar so it's a shareable join URL.
     if (isRoomCode(room.trim())) history.replaceState(null, "", `/${room.trim()}`);
   }
+
+  // Auto-join when arriving via a shareable room link (otoji.org/<code>): the
+  // room/name/role fields are already populated with sensible defaults, so drop
+  // straight into the editor instead of showing the gate a second time. The ref
+  // guards against React StrictMode's double effect-invocation opening two
+  // signaling clients (setJoined hasn't re-rendered yet between the two calls).
+  const autoJoinedRef = useRef(false);
+  useEffect(() => {
+    if (autoJoinedRef.current || local || joined) return;
+    if (initialRoom && isRoomCode(initialRoom)) {
+      autoJoinedRef.current = true;
+      join();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Open GitHub's new-issue page prefilled with the current error + graph context.
   function reportIssue() {
@@ -1211,28 +1227,18 @@ function Editor({ initialRoom, local }: { initialRoom?: string; local?: boolean 
 
   if (!joined) {
     return (
-      <div style={{ fontFamily: "system-ui, sans-serif", maxWidth: 520, margin: "60px auto", padding: 16 }}>
-        <h1>otoji · voice graph</h1>
-        <p style={{ color: "#666", fontSize: 13 }}>
-          Join a room (pairing code), then build a node graph. Open on multiple devices to assign nodes per device.
-        </p>
-        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-          <input placeholder="room code" value={room} onChange={(e) => setRoom(e.target.value)} style={{ width: 150 }} />
-          <input
-            placeholder="your name"
-            value={name}
-            onChange={(e) => { setName(e.target.value); setDeviceName(e.target.value); }}
-            style={{ width: 120 }}
-          />
-          <button onClick={() => { const n = generateDeviceName(); setName(n); setDeviceName(n); }} title="random name">🎲</button>
-          <select value={role} onChange={(e) => { setRoleState(e.target.value as DeviceRole); setRole(e.target.value as DeviceRole); }} title="this device's role">
-            {ROLES.map((r) => <option key={r.id} value={r.id}>{r.label}</option>)}
-          </select>
-          <button onClick={() => setRoom(generateRoomCode())}>new room</button>
-          <button onClick={join} disabled={!room.trim()}>Join</button>
-        </div>
-        {isRoomCode(room.trim()) && (
-          <p style={{ fontSize: 12, color: "#718096", marginTop: 10 }}>
+      <JoinGate
+        room={room}
+        onRoomChange={setRoom}
+        name={name}
+        onNameChange={(v) => { setName(v); setDeviceName(v); }}
+        role={role}
+        onRoleChange={(v) => { setRoleState(v); setRole(v); }}
+        submitLabel="Join"
+        onSubmit={join}
+        tagline="Join a room, then build a node graph. Open on multiple devices to assign nodes per device."
+        footer={isRoomCode(room.trim()) && (
+          <p style={{ fontSize: 12, color: "#718096", marginTop: 12 }}>
             Shareable link: <code>{shareUrl()}</code>
             <br />
             <span style={{ fontSize: 11, color: "#a0aec0" }}>
@@ -1241,7 +1247,7 @@ function Editor({ initialRoom, local }: { initialRoom?: string; local?: boolean 
             </span>
           </p>
         )}
-      </div>
+      />
     );
   }
 
