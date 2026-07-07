@@ -14,14 +14,40 @@ const WEBLLM_URL = "https://esm.run/@mlc-ai/web-llm";
 const importWebLLM = () =>
   (new Function("u", "return import(u)")(WEBLLM_URL) as Promise<any>);
 
+// `navigator.gpu` can exist while `requestAdapter()` still yields no compatible
+// adapter (headless / VM Chrome, or a machine with no supported GPU). WebLLM only
+// discovers this deep inside CreateMLCEngine, where it throws a scary "Unable to
+// find a compatible GPU…" message. So probe the adapter ourselves: a false result
+// hides the provider from the router and lets us surface a clear error first.
+let gpuAdapterOk: boolean | null = null;
+async function probeWebGPU(): Promise<boolean> {
+  if (gpuAdapterOk != null) return gpuAdapterOk;
+  try {
+    const gpu = (navigator as any)?.gpu;
+    gpuAdapterOk = !!gpu && !!(await gpu.requestAdapter());
+  } catch {
+    gpuAdapterOk = false;
+  }
+  return gpuAdapterOk;
+}
+// Kick the probe off eagerly so isAvailable() reflects the real answer soon after load.
+if (typeof navigator !== "undefined" && "gpu" in navigator) void probeWebGPU();
+
 function webgpuAvailable(): boolean {
-  return typeof navigator !== "undefined" && "gpu" in navigator;
+  // Sync gate for the provider router; probeWebGPU() refines it to false once it
+  // resolves on a GPU-less machine, so the router falls back to another provider.
+  return typeof navigator !== "undefined" && "gpu" in navigator && gpuAdapterOk !== false;
 }
 
 /** One engine per model id; engine creation is heavy, so we cache + dedupe. */
 const engines = new Map<string, Promise<any>>();
 
 async function getEngine(modelId: string, onProgress?: (p: TranslateLoadProgress) => void): Promise<any> {
+  // Guard both warm() and translate() paths before WebLLM can throw its own
+  // opaque GPU error.
+  if (!(await probeWebGPU())) {
+    throw new Error("WebGPU not available — the in-browser translate model needs a WebGPU-capable browser/GPU.");
+  }
   let p = engines.get(modelId);
   if (!p) {
     p = (async () => {

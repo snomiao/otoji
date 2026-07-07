@@ -227,10 +227,14 @@ export class GraphRuntime {
     // backend; the browser Translator API downloads packs lazily. Non-fatal: a
     // failure here only disables translate (passthrough), never aborts STT/sink.
     const translateModels = new Set<string>();
-    for (const n of Object.values(this.graph.nodes)) {
-      if (n.type === "translate" && this.isLocal(n.id) && (n.config?.provider ?? "llm") === "llm")
-        translateModels.add((n.config?.model as string | undefined) ?? DEFAULT_TRANSLATE_MODEL);
-    }
+    // Skip on GPU-less machines: webllmTranslate.isAvailable() probes for a real
+    // WebGPU adapter, so translate silently passes through instead of surfacing a
+    // "no compatible GPU" error from deep inside WebLLM.
+    if (webllmTranslate.isAvailable())
+      for (const n of Object.values(this.graph.nodes)) {
+        if (n.type === "translate" && this.isLocal(n.id) && (n.config?.provider ?? "llm") === "llm")
+          translateModels.add((n.config?.model as string | undefined) ?? DEFAULT_TRANSLATE_MODEL);
+      }
     if (translateModels.size) {
       this.hooks.onStatus?.("loading translate model…");
       await Promise.all(
