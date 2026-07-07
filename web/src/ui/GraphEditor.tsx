@@ -1218,6 +1218,13 @@ function Editor({ initialRoom, local }: { initialRoom?: string; local?: boolean 
   // (device + per-type config) that rgui glues to the node and auto-hides when
   // the node isn't readable-sized. Stable identity; reads the latest node state.
   const renderNodeOverlay = useCallback((id: string) => {
+    // Config controls overlay only the SELECTED node(s). Unselected nodes leave
+    // their body clear so rgui's native live preview (transcript / waveform /
+    // image) is visible — otherwise the controls would cover it. Reads the ref
+    // (not `selected`) so this callback stays identity-stable and the rgui graph
+    // memo doesn't rebuild on every selection change; the portal map re-runs on
+    // selection change anyway (RguiGraphView re-renders on the `selection` prop).
+    if (!selectedRef.current.includes(id)) return null;
     const n = nodesRef.current.find((x) => x.id === id);
     if (!n) return null;
     const node = {
@@ -1354,10 +1361,15 @@ function Editor({ initialRoom, local }: { initialRoom?: string; local?: boolean 
           const texts = live.getTexts(id);
           ctx.font = "12px system-ui, sans-serif";
           ctx.textBaseline = "top";
-          ctx.fillStyle = "#4a5568";
+          // rgui draws field VALUES right-aligned and leaves ctx.textAlign="right";
+          // reset it or the transcript is drawn off the left edge (invisible).
+          ctx.textAlign = "left";
+          // rgui nodes are dark (#2b3036); light text so transcripts are readable
+          // (was #4a5568 — a light-theme leftover, invisible on the dark body).
+          ctx.fillStyle = "#e6e9ec";
           let y = 0;
           for (let i = 0; i < Math.min(texts.length, 2); i++) {
-            ctx.globalAlpha = 1 - i * 0.4;
+            ctx.globalAlpha = 1 - i * 0.45;
             ctx.fillText(clipText(ctx, texts[i], rect.width), 0, y);
             y += 15;
           }
@@ -1409,6 +1421,7 @@ function Editor({ initialRoom, local }: { initialRoom?: string; local?: boolean 
         select: (ids: string[]) => setSelected(ids),
         nodes: () => nodesRef.current,
         edges: () => edgesRef.current,
+        live: liveRef.current,
       };
     }
   }, [addNode, addTemplate]);
