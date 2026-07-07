@@ -11,8 +11,8 @@
       /* Stop the touchpad two-finger horizontal pan from triggering the browser's
          back/forward swipe navigation. */
       html, body { overscroll-behavior: none; }
-      /* Node config overlays sit ON the node: the card itself is click-through
-         (so dragging it drags the node underneath), only real controls capture. */
+      /* Node config overlays sit ON the node: the card is click-through (dragging
+         it drags the node), only real controls capture. */
       .rgui-node-cfg, .rgui-node-cfg * { pointer-events: none; }
       .rgui-node-cfg select, .rgui-node-cfg input, .rgui-node-cfg button,
       .rgui-node-cfg textarea, .rgui-node-cfg a { pointer-events: auto; }

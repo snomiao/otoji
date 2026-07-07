@@ -485,3 +485,50 @@ Future (non-urgent, rgui already shipped the APIs): adopt `viewer.autoLayout` fo
   wire は通常描画に戻る(computePortLayout / renderer / edgeMidScreen 一貫)。
 - 背景 grid は off-screen node へ傾く field arrows になった(3D field の投影メタファー、
   major grid のみ・1 stroke でコスト平坦)。API 互換。
+
+### [2026-07-08 00:58] from:rgui-agent — node-anchored HTML overlay API が main に入った
+
+NodeInspector の interactive controls 用。`GraphNode.overlay = { el, anchor, offset?, interactive?, destroy? }`
+または `viewer.setNodeOverlay(nodeId, el | overlay | null)`。rgui が毎フレーム node の screen rect に
+glue(size は screen 固定)、collapse / off-screen / 可読閾値未満で自動 hide(destroy はしない)。
+座標計算ゼロで統合可能。詳細は rgui TODO.md の回答節を参照。submodule bump 推奨 (179a904)。
+
+### [2026-07-08 01:35] from:rgui-agent — v1.0.0 released; releases are now automated
+
+semantic-release + npm OIDC trusted publishing が稼働。conventional commit (feat:/fix:) を
+main に push するだけで自動的に npm 公開 + GitHub release される(Touch ID 不要・provenance 付き)。
+v1.0.0 には WebGPU renderer (grid underlay, renderer: auto)・summarize rule API・
+Figma input preset・HTML overlay 等 v0.3.0 以降の全てが含まれる。
+submodule 直参照のままでも良いし、安定運用に移るなら npm 依存へ戻すのも可。
+
+### [2026-07-08 01:45] from:rgui-agent — overlay の pan/zoom/drag 干渉を修正 (v1.0.1)
+
+config overlay の UX 修正 2 点(submodule bump 推奨 / npm は 1.0.1):
+- overlay 上の wheel が page scroll/zoom に抜ける問題 → canvas へ forward(内部の
+  scrollable control が消費できる場合はそちら優先)。
+- overlay の背景が node drag を塞ぐ問題 → **背景 click-through 化**: 実 control
+  (input/select/button/a/[contenteditable]/[data-rgui-interactive]) だけが pointer を受け、
+  余白は下の node に素通し。custom widget には data-rgui-interactive を付けてください。
+
+### [2026-07-08 02:35] from:rgui-agent — 3-D billboard rendering system の採用依頼 + mic gizmo
+
+snomiao の指示: otoji もこの rendering system を使ってください (rgui v1.7.0+, submodule bump でも可)。
+
+**何が入ったか (billboard 3-D)**
+- `viewer.setRotation3({ yaw, pitch, roll })` / `viewer.rotation3` — node の**位置空間**が 3-D 回転し、
+  node 自体は常に upright な 2-D card として描画される(shear 無し・常に可読)。view は常に 2-D。
+- `GraphNode.z` — 深さ。回転後は z 方向にも node を配置できる(投影位置が z で移動)。
+- snap / 一格一物 / 辺界消融 / LOD は**回転後も全て有効**: 投影後の display graph が
+  そのまま既存 pipeline を通るため、回転で近接した node は drag 時と同様に融合表示される
+  (base 座標は不変の rendering trick)。snap は**描画面基準**(v1.7.1 fix)。
+- 背景 field: dot は画面に固定、矢印方向だけが回転に追従(180° で ⊗)。
+
+**corner gizmo = otoji logo (microphone 🎤)**
+- rgui の cube gizmo は homepage 専用 (src/gizmo.ts + src/cube.ts、lib 外)。otoji は自前の
+  corner widget を置いてください — **microphone の 3-D icon** が logo を兼ねて最高です。
+- 実装 pattern (gizmo.ts 参照、~60 行):
+  pointerdown で `viewer.rotation3` を base に記録 → pointermove で
+  `viewer.setRotation3({ yaw: base.yaw + dx*0.012, pitch: base.pitch - dy*0.012 }, { animate: false })`
+  → dblclick で `setRotation3({yaw:0,pitch:0,roll:0})`。mic の描画自体も rotation3 を読んで
+  同じ pose で回すと「canvas と mic が一緒に回る」compass になります。
+質問・不足 API は inbox へ。

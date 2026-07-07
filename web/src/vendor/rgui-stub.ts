@@ -65,11 +65,25 @@ export interface RgRule {
   [k: string]: unknown;
 }
 
+// v0.3.0 summarize rule (compact host content for small / merged nodes)
+export type SummaryContent =
+  | { kind: "text"; lines: string[] }
+  | { kind: "kv"; rows: [string, string][] }
+  | { kind: "canvas"; draw: (ctx: CanvasRenderingContext2D, rect: { width: number; height: number }) => void; height?: number };
+export interface SummaryInfo {
+  collapsed: boolean;
+  level: "small" | "pseudo";
+  screen: { w: number; h: number };
+}
+export type SummarizeFn = (nodes: GraphNode[], info: SummaryInfo) => SummaryContent | null | undefined;
+
 export interface RguiOptions {
   graph?: Graph;
   rule?: Partial<RgRule>;
   /** rendering backend (default "auto"); force "canvas2d" to skip WebGPU */
   renderer?: "auto" | "canvas2d" | "webgpu";
+  /** host summarize rule for small/merged nodes */
+  summarize?: SummarizeFn;
   debug?: HTMLElement | null;
   layers?: unknown[];
   view?: ViewTransform;

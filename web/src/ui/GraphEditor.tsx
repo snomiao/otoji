@@ -39,6 +39,7 @@ import { fileStore, fileKindForName } from "../graph/file-store";
 import { PeerMeshTransport } from "../graph/mesh-transport";
 import { PreviewSync } from "../graph/preview-sync";
 import { p2pModelCache } from "../providers/model/p2p-cache";
+import { DEFAULT_CAMERA_FPS } from "../providers/vision/camera";
 import { togglePreviewShown, isPreviewShown, shownRemoteNodes, isPeerBadgeShown, togglePeerBadgeShown, subscribePrefs } from "../lib/prefs";
 import { RecordingPlayer, type Recording } from "./RecordingPlayer";
 import { computePeaks } from "../lib/peaks";
@@ -50,7 +51,7 @@ import { NetworkView } from "./NetworkView";
 import { JoinGate } from "./JoinGate";
 import { RguiGraphView, type RguiHandlers, type RguiApi } from "./RguiGraphView";
 import { NodeInspector } from "./NodeInspector";
-import type { Panel } from "@snomiao/rgui";
+import type { Panel, SummaryContent } from "@snomiao/rgui";
 import { TimelineView } from "./TimelineView";
 import type { PortType } from "../graph/model";
 import {
@@ -1409,6 +1410,31 @@ function Editor({ initialRoom, local }: { initialRoom?: string; local?: boolean 
     }
   }, [addNode, addTemplate]);
 
+  // Compact summary rgui renders when a node is too small for its config, or when
+  // nodes merge into a pseudo-node. The host knows what each node means, so it
+  // returns the key facts (device + type-specific model/lang), or a group line.
+  const summarize = useCallback(
+    (rgNodes: any[], info: any): SummaryContent | null => {
+      if (info?.level === "pseudo") {
+        const titles = rgNodes.map((n) => n.title);
+        return { kind: "text", lines: [`${rgNodes.length} nodes`, titles.slice(0, 3).join(" → ")] };
+      }
+      const rg = rgNodes[0];
+      if (!rg) return null;
+      const n = nodesRef.current.find((x) => x.id === rg.id);
+      const vt = (n?.data as any)?.voiceType as NodeType | undefined;
+      const cfg = ((n?.data as any)?.config ?? {}) as Record<string, any>;
+      const rows: [string, string][] = [["on", deviceNameOf((n?.data as any)?.device ?? null)]];
+      if (vt === "stt") rows.push(["model", String(cfg.model ?? "SenseVoice")]);
+      else if (vt === "translate") rows.push(["to", String(cfg.lang ?? "auto")]);
+      else if (vt === "vosk" || vt === "tts-model" || vt === "model") rows.push(["model", String(cfg.model ?? "")]);
+      else if (vt === "web-speech") rows.push(["lang", String(cfg.lang ?? "auto")]);
+      else if (vt === "camera" || vt === "screen-share") rows.push(["fps", String(cfg.fps ?? DEFAULT_CAMERA_FPS)]);
+      return { kind: "kv", rows };
+    },
+    [deviceNameOf],
+  );
+
   const openNodeMenu = useCallback((nodeId: string, x: number, y: number) => setNodeMenu({ nodeId, x, y }), []);
 
   const trackerState = useMemo(
@@ -1451,7 +1477,7 @@ function Editor({ initialRoom, local }: { initialRoom?: string; local?: boolean 
       <div style={{ position: "relative", height: "100vh", overflow: "hidden", fontFamily: "system-ui, sans-serif" }}>
         {/* full-bleed graph canvas — the whole background */}
         <div style={{ position: "absolute", inset: 0 }}>
-          <RguiGraphView graph={currentGraph} deviceName={deviceNameOf} handlers={rguiHandlers} selection={selected} edgeMeta={edgeMeta} nodeBody={nodeBody} live={liveRef.current} panels={rguiPanels} renderNodeOverlay={renderNodeOverlay} apiRef={rguiApiRef} />
+          <RguiGraphView graph={currentGraph} deviceName={deviceNameOf} handlers={rguiHandlers} selection={selected} edgeMeta={edgeMeta} nodeBody={nodeBody} live={liveRef.current} panels={rguiPanels} renderNodeOverlay={renderNodeOverlay} summarize={summarize} apiRef={rguiApiRef} />
         </div>
 
         {/* floating title / toolbar card (draggable) */}

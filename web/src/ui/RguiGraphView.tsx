@@ -3,7 +3,7 @@ import { createPortal } from "react-dom";
 import type { VoiceGraph } from "../graph/model";
 import { voiceGraphToRgui, type RguiMeta } from "../graph/rgui-adapter";
 import type { LiveStore } from "../graph/live-store";
-import { snap, gridLevels, type PortRef, type Panel } from "@snomiao/rgui";
+import { snap, gridLevels, type PortRef, type Panel, type SummarizeFn } from "@snomiao/rgui";
 
 // Primary graph renderer: draws + edits the voice graph with @snomiao/rgui
 // (readable-grid, semantic-zoom LOD, Canvas 2D). rgui owns pan/zoom, grid-snap
@@ -54,6 +54,7 @@ export function RguiGraphView({
   live,
   panels,
   renderNodeOverlay,
+  summarize,
   apiRef,
 }: {
   graph: VoiceGraph;
@@ -72,6 +73,8 @@ export function RguiGraphView({
   /** render the config controls overlay for a node — rgui glues one per node to
    *  its screen rect and auto-hides it when the node isn't readable-sized */
   renderNodeOverlay?: (nodeId: string) => React.ReactNode;
+  /** compact summary rule for small / merged nodes (rgui renders it) */
+  summarize?: SummarizeFn;
   /** populated with imperative viewport controls (fitView / zoom) */
   apiRef?: React.MutableRefObject<RguiApi | null>;
 }) {
@@ -120,13 +123,15 @@ export function RguiGraphView({
   hRef.current = handlers;
   const panelsRef = useRef<Panel[] | undefined>(panels);
   panelsRef.current = panels;
+  const sumRef = useRef<SummarizeFn | undefined>(summarize);
+  sumRef.current = summarize;
 
   // Create the viewer once the canvas is mounted; destroy on unmount.
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
     let disposed = false;
-    createViewer(canvas, rgGraphRef, hRef, panelsRef)
+    createViewer(canvas, rgGraphRef, hRef, panelsRef, sumRef)
       .then((viewer) => {
         if (disposed) viewer?.destroy();
         else {
@@ -233,6 +238,7 @@ async function createViewer(
   graphRef: React.MutableRefObject<ReturnType<typeof voiceGraphToRgui>>,
   hRef: React.MutableRefObject<RguiHandlers | undefined>,
   panelsRef: React.MutableRefObject<Panel[] | undefined>,
+  sumRef: React.MutableRefObject<SummarizeFn | undefined>,
 ) {
   const { default: createRgui } = await import("@snomiao/rgui");
   return createRgui(canvas, {
@@ -242,6 +248,7 @@ async function createViewer(
     // lags on some machines. The 2D renderer is the stable baseline.
     renderer: "canvas2d",
     panels: panelsRef.current as any,
+    summarize: (nodes: any, info: any) => sumRef.current?.(nodes, info) ?? null,
     onNodeMoveEnd: (id, pos) => hRef.current?.onNodeMoveEnd?.(id, pos),
     isValidConnection: (from, to) => hRef.current?.isValidConnection?.(from, to) ?? true,
     onConnect: (from, to) => hRef.current?.onConnect?.(from, to),
