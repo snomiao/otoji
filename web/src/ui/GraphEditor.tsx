@@ -46,6 +46,7 @@ import { getDeviceId, getDeviceName, setDeviceName } from "../lib/device-id";
 import { getRole, setRole, detectCaps, type DeviceRole } from "../lib/device-role";
 import { NetworkView } from "./NetworkView";
 import { JoinGate } from "./JoinGate";
+import { RguiGraphView } from "./RguiGraphView";
 import { TimelineView } from "./TimelineView";
 import type { PortType } from "../graph/model";
 import {
@@ -1215,6 +1216,15 @@ function Editor({ initialRoom, local }: { initialRoom?: string; local?: boolean 
 
   const currentGraph = useMemo(() => fromRF(nodes, edges, versionRef.current), [nodes, edges]);
 
+  // Experimental opt-in renderer: `?renderer=rgui` swaps the React Flow canvas
+  // for the @snomiao/rgui readable-grid view (read-only for now). Editing still
+  // happens via the default renderer.
+  const useRgui = useMemo(() => new URLSearchParams(location.search).get("renderer") === "rgui", []);
+  const deviceNameOf = useCallback(
+    (id: string | null) => (id ? devices.find((d) => d.deviceId === id)?.name ?? id.slice(0, 6) : "unassigned"),
+    [devices],
+  );
+
   const openNodeMenu = useCallback((nodeId: string, x: number, y: number) => setNodeMenu({ nodeId, x, y }), []);
 
   const trackerState = useMemo(
@@ -1257,6 +1267,9 @@ function Editor({ initialRoom, local }: { initialRoom?: string; local?: boolean 
       <div style={{ position: "relative", height: "100vh", overflow: "hidden", fontFamily: "system-ui, sans-serif" }}>
         {/* full-bleed graph canvas — the whole background */}
         <div style={{ position: "absolute", inset: 0 }}>
+          {useRgui ? (
+            <RguiGraphView graph={currentGraph} deviceName={deviceNameOf} />
+          ) : (
           <ReactFlow
             nodes={nodes}
             edges={styledEdges}
@@ -1292,6 +1305,7 @@ function Editor({ initialRoom, local }: { initialRoom?: string; local?: boolean 
             <Background />
             <Controls position="bottom-right" />
           </ReactFlow>
+          )}
         </div>
 
         {/* floating title / toolbar card (draggable) */}
