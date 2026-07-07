@@ -316,6 +316,18 @@ function Editor({ initialRoom, local }: { initialRoom?: string; local?: boolean 
   >(null);
   // Per-node context menu (right-click / long-press): duplicate/replace/remove/visibility.
   const [nodeMenu, setNodeMenu] = useState<null | { x: number; y: number; nodeId: string }>(null);
+  // rgui-owned selection (click / shift-drag box). Mirrored to the canvas and
+  // used by Ctrl/Cmd+A and Delete when rgui is the renderer.
+  const [selected, setSelected] = useState<string[]>([]);
+  const selectedRef = useRef<string[]>([]);
+  selectedRef.current = selected;
+  // rgui (@snomiao/rgui readable-grid canvas) is the DEFAULT renderer. React
+  // Flow stays reachable via `?renderer=rf` one more step while node config UI
+  // is relocated into an rgui-native inspector; after that it's removed.
+  const useRgui = useMemo(() => {
+    const r = new URLSearchParams(location.search).get("renderer");
+    return r !== "rf" && r !== "reactflow" && r !== "classic";
+  }, []);
 
   const sigRef = useRef<MultiSignalingClient | null>(null);
   const meshRef = useRef<PeerMesh | null>(null);
@@ -904,21 +916,25 @@ function Editor({ initialRoom, local }: { initialRoom?: string; local?: boolean 
       if (el && /^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName)) return;
       if ((e.ctrlKey || e.metaKey) && (e.key === "a" || e.key === "A")) {
         e.preventDefault();
-        setNodes(nodesRef.current.map((n) => ({ ...n, selected: true })));
+        if (useRgui) setSelected(nodesRef.current.map((n) => n.id));
+        else setNodes(nodesRef.current.map((n) => ({ ...n, selected: true })));
         return;
       }
       if (e.key === "Delete" || e.key === "Backspace") {
-        const selN = nodesRef.current.filter((n) => n.selected).map((n) => n.id);
-        const selE = edgesRef.current.filter((ed) => ed.selected).map((ed) => ed.id);
+        // rgui: selection is the rgui-owned `selected` set (nodes only).
+        // React Flow: read node/edge `.selected` flags.
+        const selN = useRgui ? selectedRef.current : nodesRef.current.filter((n) => n.selected).map((n) => n.id);
+        const selE = useRgui ? [] : edgesRef.current.filter((ed) => ed.selected).map((ed) => ed.id);
         if (selN.length || selE.length) {
           e.preventDefault();
           removeNodes(selN, selE);
+          if (useRgui) setSelected([]);
         }
       }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [joined, setNodes, removeNodes]);
+  }, [joined, setNodes, removeNodes, useRgui]);
 
   // One-click pre-wired Mic+VAD -> STT -> Sink, assigned to me. Removes the
   // manual add+connect friction (the usual reason "no transcript" appears).
@@ -1220,13 +1236,6 @@ function Editor({ initialRoom, local }: { initialRoom?: string; local?: boolean 
 
   const currentGraph = useMemo(() => fromRF(nodes, edges, versionRef.current), [nodes, edges]);
 
-  // rgui (@snomiao/rgui readable-grid canvas) is the DEFAULT renderer. React
-  // Flow stays reachable one more step via `?renderer=rf` while node config UI
-  // is relocated into an rgui-native inspector; after that it's removed.
-  const useRgui = useMemo(() => {
-    const r = new URLSearchParams(location.search).get("renderer");
-    return r !== "rf" && r !== "reactflow" && r !== "classic";
-  }, []);
   const deviceNameOf = useCallback(
     (id: string | null) => (id ? devices.find((d) => d.deviceId === id)?.name ?? id.slice(0, 6) : "unassigned"),
     [devices],
@@ -1253,10 +1262,10 @@ function Editor({ initialRoom, local }: { initialRoom?: string; local?: boolean 
         setEdges(next);
         broadcast(nodesRef.current, next);
       },
-      // No inline node UI on canvas yet: both click and right-click open the
-      // per-node menu (duplicate / replace / remove / visibility).
-      onNodeClick: (id, screen) => setNodeMenu({ nodeId: id, x: screen.x, y: screen.y }),
+      // Right-click opens the per-node menu (duplicate / replace / remove /
+      // visibility). Left-click selection is handled by rgui (onSelectionChange).
       onNodeContextMenu: (id, screen) => setNodeMenu({ nodeId: id, x: screen.x, y: screen.y }),
+      onSelectionChange: (ids) => setSelected(ids),
       onCanvasDrop: (world, dt) => {
         const f = dt.files?.[0];
         if (f) return addFileNodeAt(f, 0, 0, world);
@@ -1316,7 +1325,7 @@ function Editor({ initialRoom, local }: { initialRoom?: string; local?: boolean 
         {/* full-bleed graph canvas — the whole background */}
         <div style={{ position: "absolute", inset: 0 }}>
           {useRgui ? (
-            <RguiGraphView graph={currentGraph} deviceName={deviceNameOf} handlers={rguiHandlers} />
+            <RguiGraphView graph={currentGraph} deviceName={deviceNameOf} handlers={rguiHandlers} selection={selected} />
           ) : (
           <ReactFlow
             nodes={nodes}

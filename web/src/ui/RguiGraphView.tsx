@@ -21,16 +21,21 @@ export interface RguiHandlers {
   onNodeContextMenu?: (nodeId: string, screen: { x: number; y: number }) => void;
   /** something dropped on the canvas at a world position (palette / file / template) */
   onCanvasDrop?: (world: { x: number; y: number }, dataTransfer: DataTransfer) => void;
+  /** selection changed via the canvas (click / shift-drag box) */
+  onSelectionChange?: (nodeIds: string[]) => void;
 }
 
 export function RguiGraphView({
   graph,
   deviceName,
   handlers,
+  selection,
 }: {
   graph: VoiceGraph;
   deviceName?: (deviceId: string | null) => string;
   handlers?: RguiHandlers;
+  /** host-owned selection to reflect into the canvas (e.g. select-all) */
+  selection?: string[];
 }) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const viewerRef = useRef<Awaited<ReturnType<typeof createViewer>> | null>(null);
@@ -69,6 +74,16 @@ export function RguiGraphView({
   useEffect(() => {
     viewerRef.current?.setGraph(rgGraph as any);
   }, [rgGraph]);
+
+  // Reflect host-owned selection into the canvas (e.g. Ctrl/Cmd+A), skipping when
+  // it already matches to avoid a setSelection→onSelectionChange feedback loop.
+  useEffect(() => {
+    const v = viewerRef.current;
+    if (!v || !selection) return;
+    const cur = v.selection;
+    if (cur.length === selection.length && cur.every((id, i) => id === selection[i])) return;
+    v.setSelection(selection);
+  }, [selection]);
 
   // Native drop (palette node / template / file) → world coords → host handler.
   const onDrop = (e: React.DragEvent) => {
@@ -135,5 +150,6 @@ async function createViewer(
     onConnect: (from, to) => hRef.current?.onConnect?.(from, to),
     onNodeClick: (id, screen) => hRef.current?.onNodeClick?.(id, screen),
     onNodeContextMenu: (id, screen) => hRef.current?.onNodeContextMenu?.(id, screen),
+    onSelectionChange: (ids) => hRef.current?.onSelectionChange?.(ids),
   });
 }
