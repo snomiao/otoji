@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import type { VoiceGraph } from "../graph/model";
-import { voiceGraphToRgui } from "../graph/rgui-adapter";
+import { voiceGraphToRgui, type RguiMeta } from "../graph/rgui-adapter";
 import type { PortRef } from "@snomiao/rgui";
 
 // Primary graph renderer: draws + edits the voice graph with @snomiao/rgui
@@ -23,6 +23,21 @@ export interface RguiHandlers {
   onCanvasDrop?: (world: { x: number; y: number }, dataTransfer: DataTransfer) => void;
   /** selection changed via the canvas (click / shift-drag box) */
   onSelectionChange?: (nodeIds: string[]) => void;
+  /** left-click on an edge (rgui edge = {from,to}) */
+  onEdgeClick?: (edge: RgEdgeRef, screen: { x: number; y: number }) => void;
+  /** right-click on an edge */
+  onEdgeContextMenu?: (edge: RgEdgeRef, screen: { x: number; y: number }) => void;
+  /** a port drag ended on empty canvas → open the create-and-wire omnibox */
+  onConnectEnd?: (from: PortRef, at: { screen: { x: number; y: number }; world: { x: number; y: number } }) => void;
+}
+
+/** rgui edge endpoints (subset of rgui's Edge) */
+export type RgEdgeRef = { from: { node: string; port: string }; to: { node: string; port: string } };
+
+/** imperative viewport controls exposed to the host */
+export interface RguiApi {
+  fitView: (paddingPx?: number) => void;
+  zoomBy: (factor: number) => void;
 }
 
 export function RguiGraphView({
@@ -30,18 +45,24 @@ export function RguiGraphView({
   deviceName,
   handlers,
   selection,
+  edgeMeta,
+  apiRef,
 }: {
   graph: VoiceGraph;
   deviceName?: (deviceId: string | null) => string;
   handlers?: RguiHandlers;
   /** host-owned selection to reflect into the canvas (e.g. select-all) */
   selection?: string[];
+  /** per-edge visual overrides (selection highlight, running animation, labels) */
+  edgeMeta?: RguiMeta["edgeMeta"];
+  /** populated with imperative viewport controls (fitView / zoom) */
+  apiRef?: React.MutableRefObject<RguiApi | null>;
 }) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const viewerRef = useRef<Awaited<ReturnType<typeof createViewer>> | null>(null);
   const [error, setError] = useState<string>("");
 
-  const rgGraph = useMemo(() => voiceGraphToRgui(graph, { deviceName }), [graph, deviceName]);
+  const rgGraph = useMemo(() => voiceGraphToRgui(graph, { deviceName, edgeMeta }), [graph, deviceName, edgeMeta]);
   const rgGraphRef = useRef(rgGraph);
   rgGraphRef.current = rgGraph;
 
@@ -59,6 +80,7 @@ export function RguiGraphView({
         if (disposed) viewer?.destroy();
         else {
           viewerRef.current = viewer;
+          if (apiRef) apiRef.current = makeApi(viewer, canvas);
           if (import.meta.env.DEV) (window as any).__rgui = viewer; // e2e / debug handle
         }
       })
@@ -67,6 +89,7 @@ export function RguiGraphView({
       disposed = true;
       viewerRef.current?.destroy();
       viewerRef.current = null;
+      if (apiRef) apiRef.current = null;
     };
   }, []);
 
@@ -151,5 +174,23 @@ async function createViewer(
     onNodeClick: (id, screen) => hRef.current?.onNodeClick?.(id, screen),
     onNodeContextMenu: (id, screen) => hRef.current?.onNodeContextMenu?.(id, screen),
     onSelectionChange: (ids) => hRef.current?.onSelectionChange?.(ids),
+    onEdgeClick: (edge, screen) => hRef.current?.onEdgeClick?.(edge, screen),
+    onEdgeContextMenu: (edge, screen) => hRef.current?.onEdgeContextMenu?.(edge, screen),
+    onConnectEnd: (from, at) => hRef.current?.onConnectEnd?.(from, at),
   });
+}
+
+// Imperative viewport helpers built on the viewer's setView/fitView.
+function makeApi(viewer: Awaited<ReturnType<typeof createViewer>>, canvas: HTMLCanvasElement): RguiApi {
+  return {
+    fitView: (paddingPx = 48) => viewer.fitView(paddingPx),
+    zoomBy: (factor) => {
+      const v = viewer.view;
+      const cx = canvas.clientWidth / 2;
+      const cy = canvas.clientHeight / 2;
+      const k = v.k * factor;
+      // keep the world point under the viewport center fixed
+      viewer.setView({ k, x: cx - ((cx - v.x) / v.k) * k, y: cy - ((cy - v.y) / v.k) * k });
+    },
+  };
 }
