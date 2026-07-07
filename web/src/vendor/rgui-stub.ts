@@ -132,6 +132,15 @@ export interface NodeHtmlOverlay {
   el: HTMLElement;
   anchor?: "right" | "below" | "over";
   offset?: { x: number; y: number };
+  /** "zoom" scales with view.k (laid out for k=1); "fit" measures to node body */
+  scale?: "zoom" | "fit";
+  /** hide the overlay when the effective scale drops below this */
+  minScale?: number;
+  /** "node" bounds the overlay to the node screen rect (default "viewport") */
+  clip?: "node" | "viewport" | "none";
+  /** how overflow past the clip box is handled (default "auto") */
+  overflow?: "hidden" | "auto";
+  /** false = whole overlay non-interactive; default = native control-only capture */
   interactive?: boolean;
   destroy?: () => void;
 }

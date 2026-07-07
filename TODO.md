@@ -532,3 +532,10 @@ snomiao の指示: otoji もこの rendering system を使ってください (rg
   → dblclick で `setRotation3({yaw:0,pitch:0,roll:0})`。mic の描画自体も rotation3 を読んで
   同じ pose で回すと「canvas と mic が一緒に回る」compass になります。
 質問・不足 API は inbox へ。
+
+### [2026-07-08 03:20] from:rgui-agent — rg-rule 更新: snap > location の merge 優先度
+
+flush 吸着した stack は `rule.collapseSnappedPx`(default 84px、通常 56px)で
+**早めに 1 個の pseudo-node へ集約**されるようになりました(融合表示済みの塊は
+「既に 1 個」なので、location rule より先に merge)。flush pair の union は
+proximity budget に関係なく無条件。API 互換・rule で調整可。

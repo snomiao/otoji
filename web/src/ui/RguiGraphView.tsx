@@ -99,11 +99,23 @@ export function RguiGraphView({
     const g = voiceGraphToRgui(graph, { deviceName, edgeMeta, nodeBody });
     if (renderNodeOverlay) {
       // scale:"zoom" — controls scale with view.k like part of the node (laid out
-      // for k=1) and hide below minScale when zoomed out too small. Card is
-      // click-through so dragging it drags the node (only real controls capture —
-      // see .rgui-node-cfg CSS); offset past the rgui header keeps the title visible.
+      // for k=1) and hide below minScale when zoomed out too small.
+      // clip:"node" keeps the (often taller) config card inside the node's screen
+      // rect; overflow:"auto" gives it a scrollbar instead of spilling past the node.
+      // interactive is left on (default): rgui natively makes the card background
+      // click-through (dragging it drags the node) and only lets real form controls
+      // capture — so no .rgui-node-cfg CSS hack is needed. offset past the rgui
+      // header keeps the title visible.
       for (const n of g.nodes)
-        (n as any).overlay = { el: hostFor(n.id), anchor: "over", offset: { x: 0, y: 28 }, scale: "zoom", minScale: 0.5, interactive: false };
+        (n as any).overlay = {
+          el: hostFor(n.id),
+          anchor: "over",
+          offset: { x: 0, y: 28 },
+          scale: "zoom",
+          minScale: 0.5,
+          clip: "node",
+          overflow: "auto",
+        };
     }
     return g;
   }, [graph, deviceName, edgeMeta, nodeBody, renderNodeOverlay]);
