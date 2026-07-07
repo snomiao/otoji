@@ -1354,6 +1354,19 @@ function Editor({ initialRoom, local }: { initialRoom?: string; local?: boolean 
     return [...nodePanels, tplPanel];
   }, [allTemplates, addNode, addTemplate]);
 
+  // DEV-only QA handle (like window.__rgui): drive add/inspect/connect from e2e.
+  useEffect(() => {
+    if (import.meta.env.DEV) {
+      (window as any).__otoji = {
+        addNode,
+        addTemplate,
+        select: (ids: string[]) => setSelected(ids),
+        nodes: () => nodesRef.current,
+        edges: () => edgesRef.current,
+      };
+    }
+  }, [addNode, addTemplate]);
+
   const openNodeMenu = useCallback((nodeId: string, x: number, y: number) => setNodeMenu({ nodeId, x, y }), []);
 
   const trackerState = useMemo(
