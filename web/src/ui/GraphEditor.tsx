@@ -86,6 +86,9 @@ function activeTrackers(approved: string[]): string[] {
 /** Port/signal-type accent colors (palette dots, etc.). */
 const PORT_COLOR: Record<PortType, string> = { segment: "#dd6b20", transcript: "#2b6cb0", image: "#319795", control: "#d69e2e" };
 
+/** localStorage key for the persisted local-mode graph (rooms use the DO). */
+const LOCAL_GRAPH_KEY = "otoji.local.graph";
+
 /** Truncate text with an ellipsis to fit `maxW` screen px in the given ctx. */
 function clipText(ctx: CanvasRenderingContext2D, text: string, maxW: number): string {
   if (ctx.measureText(text).width <= maxW) return text;
@@ -488,6 +491,24 @@ function Editor({ initialRoom, local }: { initialRoom?: string; local?: boolean 
     // No signaling in local mode — register this device as present so its nodes
     // aren't shown offline / treated as unassigned.
     setPresent({ [myDeviceId]: { peerId: myDeviceId, name, role, hasMic: caps.hasMic, runtime: "browser" } });
+    // Remember the local layout across refreshes: restore a saved graph if any,
+    // otherwise seed the runnable demo pipeline (mic → STT → translate → sink).
+    try {
+      const saved = localStorage.getItem(LOCAL_GRAPH_KEY);
+      if (saved) {
+        const g = JSON.parse(saved) as VoiceGraph;
+        if (g?.nodes && Object.keys(g.nodes).length) {
+          const rf = toRF(g);
+          nodesRef.current = rf.nodes;
+          edgesRef.current = rf.edges;
+          setNodes(rf.nodes);
+          setEdges(rf.edges);
+          return;
+        }
+      }
+    } catch {
+      /* ignore corrupt storage → fall through to the demo seed */
+    }
     const mk = (id: string, vt: NodeType, x: number): Node => ({
       id,
       type: "voice",
@@ -503,6 +524,13 @@ function Editor({ initialRoom, local }: { initialRoom?: string; local?: boolean 
     setEdges(es);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [local]);
+
+  // Persist the local layout on every change (local mode only; rooms sync to the
+  // DO instead). Skip empty graphs so the initial mount doesn't clobber a save.
+  useEffect(() => {
+    if (!local || nodes.length === 0) return;
+    try { localStorage.setItem(LOCAL_GRAPH_KEY, JSON.stringify(fromRF(nodes, edges, versionRef.current))); } catch { /* ignore */ }
+  }, [local, nodes, edges]);
 
   const broadcast = useCallback((ns: Node[], es: Edge[]) => {
     versionRef.current += 1;
