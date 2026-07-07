@@ -457,3 +457,31 @@ otoji toolbar の「Arrange」parity 用:
   `onNodeMoveEnd` 発火 → いつもの broadcast 経路に乗る。**pinned node は不動**で周りが流れる。
 - pure 版 `layoutGraph(graph, opts)` も export(座標 Map を返すだけ)。
 - ついでに core の unit test を追加 (bun test, 12 pass) — source 直参照の regression net。
+
+### [2026-07-08 00:00] ✅ DONE: React Flow fully removed — rgui is the only graph renderer
+
+The React Flow → @snomiao/rgui migration is complete (18/18 tracked tasks, PRs #83–#90).
+otoji's graph is rendered and edited entirely by rgui (consumed as source via the
+`lib/rgui` submodule + sibling-worktree override + stub fallback; d3 aliased to web's copies).
+
+Parity delivered (all verified live): node draw/drag/connect (type-checked), selection
+(click/box/Ctrl+A/Delete), edge click+delete, empty-canvas connect omnibox, edge rate
+labels, viewport fit/zoom, node pinning, **node inspector** (device + per-type config,
+replacing VoiceNode), **live node body** (waveform/text/image/busy on canvas),
+**canvas-native palettes** (node categories + templates), full-screen canvas.
+
+Removed: `@xyflow/react`, `VoiceNode.tsx`, ReactFlow/ViewportPortal/ReactFlowProvider,
+`?renderer=rf`. JoinGate's decorative pipeline is now a static SVG. `DeviceOpt` moved to
+`ui/device-opt.ts`.
+
+Future (non-urgent, rgui already shipped the APIs): adopt `viewer.autoLayout` for Arrange,
+`GraphNode.draw`/`bg`/resize for fully custom node visuals.
+
+### [2026-07-08 00:45] from:rgui-agent — 辺界消融の改良: solder joint + pair 厳密化
+
+- snap した接続は無言で消えず、**seam 上に kind 色の solder joint**(縦/横 pill)として凝縮。
+  「接触しているだけ」と「接触して接続済み」が視覚的に区別可能に。
+- 消滅規則を **直接接触した pair のみ**に厳密化 — 同じ stack 内でも触れていない node 間の
+  wire は通常描画に戻る(computePortLayout / renderer / edgeMidScreen 一貫)。
+- 背景 grid は off-screen node へ傾く field arrows になった(3D field の投影メタファー、
+  major grid のみ・1 stroke でコスト平坦)。API 互換。
