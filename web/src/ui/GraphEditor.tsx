@@ -1385,6 +1385,41 @@ function Editor({ initialRoom, local }: { initialRoom?: string; local?: boolean 
     };
   }, []);
 
+  // Screen-space run-status HUD, drawn natively by rgui on the canvas (bottom-left)
+  // instead of in the HTML sink card: mic level + segment/recognition counts +
+  // run state. Reads refs (activityRef / micLevelRef) fresh each frame; RguiGraphView
+  // invalidates on live events (per recognition) so the counts/level stay current.
+  const hudStatus = useCallback((ctx: CanvasRenderingContext2D, size: { width: number; height: number }) => {
+    // keep clear of the left node-palette panels (~190px); roughly centered on wide screens
+    const x = Math.max(210, size.width / 2 - 170);
+    ctx.textAlign = "left";
+    ctx.textBaseline = "alphabetic";
+    ctx.font = "12px system-ui, -apple-system, sans-serif";
+    if (running) {
+      const y0 = size.height - 14;
+      // status line (bottom): green dot + hint
+      ctx.fillStyle = "#48bb78";
+      ctx.beginPath();
+      ctx.arc(x + 4, y0 - 4, 4, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = "#cbd5e0";
+      ctx.fillText("Running — speak to produce transcripts", x + 15, y0);
+      // line above: mic level bar + counts
+      const y1 = y0 - 18;
+      const bw = 80, bh = 6, by = y1 - 9;
+      ctx.fillStyle = "rgba(255,255,255,0.16)";
+      ctx.fillRect(x, by, bw, bh);
+      const lvl = Math.max(0, Math.min(1, micLevelRef.current * 6));
+      ctx.fillStyle = "#48bb78";
+      ctx.fillRect(x, by, bw * lvl, bh);
+      ctx.fillStyle = "#8a94a6";
+      ctx.fillText(`segments ${activityRef.current.segments} · recognized ${activityRef.current.stt}`, x + bw + 12, y1);
+    } else {
+      ctx.fillStyle = "rgba(180,190,205,0.5)";
+      ctx.fillText(paused ? "paused — press Resume to start" : "Run the graph to produce transcripts.", x, size.height - 14);
+    }
+  }, [running, paused]);
+
   // Canvas-native palettes (rgui panels): a node palette per category + a
   // templates panel. Click adds at viewport center; drag drops at the world pos.
   const rguiPanels = useMemo<Panel[]>(() => {
@@ -1493,7 +1528,7 @@ function Editor({ initialRoom, local }: { initialRoom?: string; local?: boolean 
       <div style={{ position: "relative", height: "100vh", overflow: "hidden", fontFamily: "system-ui, sans-serif" }}>
         {/* full-bleed graph canvas — the whole background */}
         <div style={{ position: "absolute", inset: 0 }}>
-          <RguiGraphView graph={currentGraph} deviceName={deviceNameOf} handlers={rguiHandlers} selection={selected} edgeMeta={edgeMeta} nodeBody={nodeBody} live={liveRef.current} panels={rguiPanels} renderNodeOverlay={renderNodeOverlay} summarize={summarize} hud={{ title: "otoji", subtitle: local ? "local · this device only" : `room ${room} · ${status} · ${role} · ${devices.length} device(s)` }} apiRef={rguiApiRef} />
+          <RguiGraphView graph={currentGraph} deviceName={deviceNameOf} handlers={rguiHandlers} selection={selected} edgeMeta={edgeMeta} nodeBody={nodeBody} live={liveRef.current} panels={rguiPanels} renderNodeOverlay={renderNodeOverlay} summarize={summarize} hud={{ title: "otoji", subtitle: local ? "local · this device only" : `room ${room} · ${status} · ${role} · ${devices.length} device(s)` }} hudStatus={hudStatus} apiRef={rguiApiRef} />
         </div>
 
         {/* floating toolbar card (draggable). The "otoji" wordmark + status line
@@ -1594,17 +1629,9 @@ function Editor({ initialRoom, local }: { initialRoom?: string; local?: boolean 
         {view === "graph" && (
           <DraggableCard pkey="sink" width={320} maxHeight="calc(100vh - 24px)" defaultPos={{ x: Math.max(12, (typeof window !== "undefined" ? window.innerWidth : 1200) - 332), y: 12 }}>
             <div style={{ padding: "0 12px 10px" }}>
-            {running && (
-              <div style={{ fontSize: 11, color: "#718096", marginBottom: 6 }}>
-                <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                  mic
-                  <span style={{ display: "inline-block", width: 80, height: 6, background: "#e2e8f0", borderRadius: 3, overflow: "hidden" }}>
-                    <span style={{ display: "block", height: "100%", width: `${Math.min(100, micLevelRef.current * 600)}%`, background: "#2f855a" }} />
-                  </span>
-                </div>
-                <div>segments {activityRef.current.segments} · recognized {activityRef.current.stt}</div>
-              </div>
-            )}
+            {/* mic level + segment/recognition counts + run state are drawn natively
+                by rgui on the canvas (bottom-left HUD); this card holds only the
+                recordings, which need interactive audio players. */}
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
               <strong style={{ fontSize: 13 }}>Sink output ({sinkRecs.length})</strong>
               {sinkRecs.length > 0 && (
@@ -1612,9 +1639,7 @@ function Editor({ initialRoom, local }: { initialRoom?: string; local?: boolean 
               )}
             </div>
             {sinkRecs.length === 0 ? (
-              <p style={{ color: "#a0aec0", fontSize: 12 }}>
-                {running ? "Running — speak to produce transcripts." : "Run the graph to produce transcripts."}
-              </p>
+              <p style={{ color: "#a0aec0", fontSize: 12 }}>No recordings yet.</p>
             ) : (
               sinkRecs.map((r, i) => <RecordingPlayer key={r.id} rec={r} index={sinkRecs.length - 1 - i} />)
             )}

@@ -60,6 +60,7 @@ export function RguiGraphView({
   renderNodeOverlay,
   summarize,
   hud,
+  hudStatus,
   apiRef,
 }: {
   graph: VoiceGraph;
@@ -82,6 +83,9 @@ export function RguiGraphView({
   summarize?: SummarizeFn;
   /** screen-space wordmark + status line, drawn natively on the canvas (top-left) */
   hud?: { title: string; subtitle: string };
+  /** host draw hook for a screen-space status HUD (mic level / counts / run state);
+   *  handed a dpr-normalized ctx (CSS px) + the canvas CSS size, drawn each frame */
+  hudStatus?: (ctx: CanvasRenderingContext2D, size: { width: number; height: number }) => void;
   /** populated with imperative viewport controls (fitView / zoom) */
   apiRef?: React.MutableRefObject<RguiApi | null>;
 }) {
@@ -146,13 +150,15 @@ export function RguiGraphView({
   sumRef.current = summarize;
   const hudRef = useRef<{ title: string; subtitle: string } | undefined>(hud);
   hudRef.current = hud;
+  const hudStatusRef = useRef(hudStatus);
+  hudStatusRef.current = hudStatus;
 
   // Create the viewer once the canvas is mounted; destroy on unmount.
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
     let disposed = false;
-    createViewer(canvas, rgGraphRef, hRef, panelsRef, sumRef, hudRef)
+    createViewer(canvas, rgGraphRef, hRef, panelsRef, sumRef, hudRef, hudStatusRef)
       .then((viewer) => {
         if (disposed) viewer?.destroy();
         else {
@@ -180,10 +186,11 @@ export function RguiGraphView({
     if (panels) viewerRef.current?.setPanels(panels as any);
   }, [panels]);
 
-  // Repaint when the HUD wordmark/status text changes (onFrame reads hudRef).
+  // Repaint when the HUD wordmark/status text or the status-HUD hook changes
+  // (onFrame reads the refs; hudStatus identity changes when run-state flips).
   useEffect(() => {
     viewerRef.current?.invalidate();
-  }, [hud?.title, hud?.subtitle]);
+  }, [hud?.title, hud?.subtitle, hudStatus]);
 
 
   // Redraw the canvas when any node's live preview updates (waveform/text/image).
@@ -266,6 +273,7 @@ async function createViewer(
   panelsRef: React.MutableRefObject<Panel[] | undefined>,
   sumRef: React.MutableRefObject<SummarizeFn | undefined>,
   hudRef: React.MutableRefObject<{ title: string; subtitle: string } | undefined>,
+  hudStatusRef: React.MutableRefObject<((ctx: CanvasRenderingContext2D, size: { width: number; height: number }) => void) | undefined>,
 ) {
   const { default: createRgui } = await import("@snomiao/rgui");
   return createRgui(canvas, {
@@ -285,9 +293,23 @@ async function createViewer(
     onEdgeClick: (edge, screen) => hRef.current?.onEdgeClick?.(edge, screen),
     onEdgeContextMenu: (edge, screen) => hRef.current?.onEdgeContextMenu?.(edge, screen),
     onConnectEnd: (from, at) => hRef.current?.onConnectEnd?.(from, at),
-    // Screen-space chrome: rgui composites the title HUD last, on top of the
-    // graph, every frame (the canvas keeps the last frame while idle).
-    onFrame: () => drawHud(canvas, hudRef.current),
+    // Screen-space chrome: rgui composites the title HUD (and the host status
+    // HUD) last, on top of the graph, every frame (canvas keeps the last frame
+    // while idle).
+    onFrame: () => {
+      drawHud(canvas, hudRef.current);
+      const hs = hudStatusRef.current;
+      if (hs) {
+        const ctx = canvas.getContext("2d");
+        if (ctx) {
+          const dpr = canvas.clientWidth ? canvas.width / canvas.clientWidth : 1;
+          ctx.save();
+          ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+          hs(ctx, { width: canvas.clientWidth, height: canvas.clientHeight });
+          ctx.restore();
+        }
+      }
+    },
   });
 }
 
