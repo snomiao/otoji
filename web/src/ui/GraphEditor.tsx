@@ -46,7 +46,7 @@ import { getDeviceId, getDeviceName, setDeviceName } from "../lib/device-id";
 import { getRole, setRole, detectCaps, type DeviceRole } from "../lib/device-role";
 import { NetworkView } from "./NetworkView";
 import { JoinGate } from "./JoinGate";
-import { RguiGraphView, type RguiHandlers } from "./RguiGraphView";
+import { RguiGraphView, type RguiHandlers, type RguiApi } from "./RguiGraphView";
 import { TimelineView } from "./TimelineView";
 import type { PortType } from "../graph/model";
 import {
@@ -312,6 +312,7 @@ function Editor({ initialRoom, local }: { initialRoom?: string; local?: boolean 
         y: number;
         anchor: { nodeId: string; handleId: string; portType: PortType; dir: "source" | "target" };
         options: { type: NodeType; label: string }[];
+        world?: { x: number; y: number }; // rgui: drop point in world coords
       }
   >(null);
   // Per-node context menu (right-click / long-press): duplicate/replace/remove/visibility.
@@ -321,6 +322,10 @@ function Editor({ initialRoom, local }: { initialRoom?: string; local?: boolean 
   const [selected, setSelected] = useState<string[]>([]);
   const selectedRef = useRef<string[]>([]);
   selectedRef.current = selected;
+  // rgui: currently-selected edge id (click to select, Delete to remove).
+  const [selectedEdge, setSelectedEdge] = useState<string | null>(null);
+  const selectedEdgeRef = useRef<string | null>(null);
+  selectedEdgeRef.current = selectedEdge;
   // rgui (@snomiao/rgui readable-grid canvas) is the DEFAULT renderer. React
   // Flow stays reachable via `?renderer=rf` one more step while node config UI
   // is relocated into an rgui-native inspector; after that it's removed.
@@ -329,6 +334,7 @@ function Editor({ initialRoom, local }: { initialRoom?: string; local?: boolean 
     return r !== "rf" && r !== "reactflow" && r !== "classic";
   }, []);
 
+  const rguiApiRef = useRef<RguiApi | null>(null); // imperative viewport (fitView/zoom)
   const sigRef = useRef<MultiSignalingClient | null>(null);
   const meshRef = useRef<PeerMesh | null>(null);
   const transportRef = useRef<PeerMeshTransport | null>(null);
@@ -821,6 +827,18 @@ function Editor({ initialRoom, local }: { initialRoom?: string; local?: boolean 
 
   const onDelete = useCallback((nodeId: string) => removeNodes([nodeId]), [removeNodes]);
 
+  // Remove a single edge (rgui edge click/right-click, or Delete on a selected edge).
+  const removeEdge = useCallback(
+    (edgeId: string) => {
+      if (!edgesRef.current.some((e) => e.id === edgeId)) return;
+      const next = edgesRef.current.filter((e) => e.id !== edgeId);
+      edgesRef.current = next;
+      setEdges(next);
+      broadcast(nodesRef.current, next);
+    },
+    [setEdges, broadcast],
+  );
+
   // Clone a node (same type/device/config) slightly offset.
   const duplicateNode = useCallback(
     (nodeId: string) => {
@@ -921,14 +939,16 @@ function Editor({ initialRoom, local }: { initialRoom?: string; local?: boolean 
         return;
       }
       if (e.key === "Delete" || e.key === "Backspace") {
-        // rgui: selection is the rgui-owned `selected` set (nodes only).
+        // rgui: selection is the rgui-owned `selected` set (nodes) + `selectedEdge`.
         // React Flow: read node/edge `.selected` flags.
         const selN = useRgui ? selectedRef.current : nodesRef.current.filter((n) => n.selected).map((n) => n.id);
-        const selE = useRgui ? [] : edgesRef.current.filter((ed) => ed.selected).map((ed) => ed.id);
+        const selE = useRgui
+          ? selectedEdgeRef.current ? [selectedEdgeRef.current] : []
+          : edgesRef.current.filter((ed) => ed.selected).map((ed) => ed.id);
         if (selN.length || selE.length) {
           e.preventDefault();
           removeNodes(selN, selE);
-          if (useRgui) setSelected([]);
+          if (useRgui) { setSelected([]); setSelectedEdge(null); }
         }
       }
     };
@@ -979,8 +999,10 @@ function Editor({ initialRoom, local }: { initialRoom?: string; local?: boolean 
     nodesRef.current = next;
     setNodes(next);
     broadcast(next, edgesRef.current);
-    setTimeout(() => rf.fitView({ duration: 400, padding: 0.2 }), 60);
-  }, [rf, setNodes, broadcast]);
+    // Fit the view to the fresh layout (rgui viewport API, or React Flow fallback).
+    if (useRgui) setTimeout(() => rguiApiRef.current?.fitView(48), 60);
+    else setTimeout(() => rf.fitView({ duration: 400, padding: 0.2 }), 60);
+  }, [rf, setNodes, broadcast, useRgui]);
 
   const onConnect = useCallback(
     (params: Connection) => {
@@ -1049,9 +1071,9 @@ function Editor({ initialRoom, local }: { initialRoom?: string; local?: boolean 
   // in one synced update. If the drag started from an output the new node is the
   // target (downstream); if from an input the new node is the source (upstream).
   const createConnectedNode = useCallback(
-    (type: NodeType, anchor: { nodeId: string; handleId: string; portType: PortType; dir: "source" | "target" }, screen: { x: number; y: number }) => {
+    (type: NodeType, anchor: { nodeId: string; handleId: string; portType: PortType; dir: "source" | "target" }, screen: { x: number; y: number }, worldPos?: { x: number; y: number }) => {
       const id = `${type}-${Math.random().toString(36).slice(2, 8)}`;
-      const position = rf.screenToFlowPosition(screen);
+      const position = worldPos ?? rf.screenToFlowPosition(screen);
       const n: Node = { id, type: "voice", position, data: { voiceType: type, device: myDeviceId, config: {} } };
       let edge: Edge;
       if (anchor.dir === "source") {
@@ -1266,6 +1288,35 @@ function Editor({ initialRoom, local }: { initialRoom?: string; local?: boolean 
       // visibility). Left-click selection is handled by rgui (onSelectionChange).
       onNodeContextMenu: (id, screen) => setNodeMenu({ nodeId: id, x: screen.x, y: screen.y }),
       onSelectionChange: (ids) => setSelected(ids),
+      // Edge: left-click selects (highlight; Delete removes), right-click removes.
+      onEdgeClick: (edge) =>
+        setSelectedEdge(edgeId({ source: edge.from.node, sourceHandle: edge.from.port, target: edge.to.node, targetHandle: edge.to.port })),
+      onEdgeContextMenu: (edge) =>
+        removeEdge(edgeId({ source: edge.from.node, sourceHandle: edge.from.port, target: edge.to.node, targetHandle: edge.to.port })),
+      // Port drag ended on empty canvas → create-and-wire omnibox of compatible
+      // node types (downstream inputs from an output; upstream outputs from an input).
+      onConnectEnd: (from, at) => {
+        const node = nodesRef.current.find((n) => n.id === from.node);
+        if (!node) return;
+        const vt = (node.data as any).voiceType as NodeType;
+        const dir: "source" | "target" = from.side === "out" ? "source" : "target";
+        // an input takes a single incoming edge — don't offer if already wired
+        if (dir === "target" && edgesRef.current.some((e) => e.target === from.node && (e.targetHandle ?? "in") === from.port)) return;
+        const portType =
+          dir === "source"
+            ? NODE_SPECS[vt]?.outputs.find((p) => p.id === from.port)?.type
+            : NODE_SPECS[vt]?.inputs.find((p) => p.id === from.port)?.type;
+        if (!portType) return;
+        const options = (Object.keys(NODE_SPECS) as NodeType[])
+          .filter((t) =>
+            dir === "source"
+              ? NODE_SPECS[t].inputs.some((p) => p.type === portType)
+              : NODE_SPECS[t].outputs.some((p) => p.type === portType),
+          )
+          .map((t) => ({ type: t, label: NODE_SPECS[t].label }));
+        if (!options.length) return;
+        setConnectMenu({ x: at.screen.x, y: at.screen.y, anchor: { nodeId: from.node, handleId: from.port, portType, dir }, options, world: at.world });
+      },
       onCanvasDrop: (world, dt) => {
         const f = dt.files?.[0];
         if (f) return addFileNodeAt(f, 0, 0, world);
@@ -1279,7 +1330,22 @@ function Editor({ initialRoom, local }: { initialRoom?: string; local?: boolean 
         if (t && NODE_SPECS[t]) addNode(t, undefined, world);
       },
     }),
-    [setNodes, setEdges, broadcast, addNode, addTemplate, addFileNodeAt, allTemplates],
+    [setNodes, setEdges, broadcast, addNode, addTemplate, addFileNodeAt, allTemplates, removeEdge],
+  );
+
+  // Per-edge visuals for the rgui canvas: highlight the selected edge, animate
+  // (dashed) while the runtime is running, and label cross-device edges with rate.
+  const edgeMeta = useCallback(
+    (e: { id: string; source: string; target: string }) => {
+      const selected = e.id === selectedEdge;
+      const rate = edgeRates[e.id];
+      return {
+        dashed: running || undefined,
+        style: selected ? { color: "#1a202c", width: 4 } : undefined,
+        label: rate ? formatRate(rate) : undefined,
+      };
+    },
+    [selectedEdge, edgeRates, running],
   );
 
   const openNodeMenu = useCallback((nodeId: string, x: number, y: number) => setNodeMenu({ nodeId, x, y }), []);
@@ -1325,7 +1391,7 @@ function Editor({ initialRoom, local }: { initialRoom?: string; local?: boolean 
         {/* full-bleed graph canvas — the whole background */}
         <div style={{ position: "absolute", inset: 0 }}>
           {useRgui ? (
-            <RguiGraphView graph={currentGraph} deviceName={deviceNameOf} handlers={rguiHandlers} selection={selected} />
+            <RguiGraphView graph={currentGraph} deviceName={deviceNameOf} handlers={rguiHandlers} selection={selected} edgeMeta={edgeMeta} apiRef={rguiApiRef} />
           ) : (
           <ReactFlow
             nodes={nodes}
@@ -1393,6 +1459,13 @@ function Editor({ initialRoom, local }: { initialRoom?: string; local?: boolean 
           )}
           {view === "graph" && (
             <button onClick={autoArrange} style={{ fontSize: 12 }} title="Auto-arrange nodes (spring layout, no overlapping boxes)">⤢ Arrange</button>
+          )}
+          {view === "graph" && useRgui && (
+            <span style={{ display: "flex", gap: 2 }}>
+              <button onClick={() => rguiApiRef.current?.zoomBy(1.25)} style={{ fontSize: 12 }} title="Zoom in">＋</button>
+              <button onClick={() => rguiApiRef.current?.zoomBy(0.8)} style={{ fontSize: 12 }} title="Zoom out">－</button>
+              <button onClick={() => rguiApiRef.current?.fitView(48)} style={{ fontSize: 12 }} title="Fit graph to view">⤢ Fit</button>
+            </span>
           )}
           <button
             onClick={togglePeerBadgeShown}
@@ -1548,7 +1621,7 @@ function Editor({ initialRoom, local }: { initialRoom?: string; local?: boolean 
             y={connectMenu.y}
             options={connectMenu.options}
             placeholder={connectMenu.anchor.dir === "source" ? "connect to…" : "connect from…"}
-            onPick={(type) => createConnectedNode(type, connectMenu.anchor, { x: connectMenu.x, y: connectMenu.y })}
+            onPick={(type) => createConnectedNode(type, connectMenu.anchor, { x: connectMenu.x, y: connectMenu.y }, connectMenu.world)}
             onClose={() => setConnectMenu(null)}
           />
         )}
@@ -1656,6 +1729,13 @@ function DraggableCard({
   children: React.ReactNode;
 }) {
   const rf = useReactFlow();
+  // rgui has no React Flow <ViewportPortal>, so graph-pinned (unpinned) cards
+  // can't ride the viewport yet — render every card in SCREEN space instead, so
+  // the panels are always visible. (Graph-pinning via rgui's view: task #15.)
+  const screenOnly = useMemo(() => {
+    const r = new URLSearchParams(location.search).get("renderer");
+    return r !== "rf" && r !== "reactflow" && r !== "classic";
+  }, []);
   const [state, setState] = useState<{ x: number; y: number; pinned: boolean }>(() => {
     try {
       const s = localStorage.getItem("otoji.panel." + pkey);
@@ -1669,6 +1749,11 @@ function DraggableCard({
     return { ...defaultPos, pinned: true };
   });
   const { x, y, pinned } = state;
+  const effPinned = pinned || screenOnly;
+  // A stored unpinned position is in FLOW coords — invalid as screen coords, so
+  // fall back to defaultPos when forcing screen-space in rgui mode.
+  const effX = screenOnly && !pinned ? defaultPos.x : x;
+  const effY = screenOnly && !pinned ? defaultPos.y : y;
   const persist = (next: { x: number; y: number; pinned: boolean }) => {
     try { localStorage.setItem("otoji.panel." + pkey, JSON.stringify(next)); } catch { /* ignore */ }
   };
@@ -1677,7 +1762,7 @@ function DraggableCard({
   const drag = useRef<{ px: number; py: number; ox: number; oy: number } | null>(null);
   const onDown = (e: React.PointerEvent) => {
     e.stopPropagation(); // don't let the graph pane start panning when we grab the grip
-    drag.current = { px: e.clientX, py: e.clientY, ox: x, oy: y };
+    drag.current = { px: e.clientX, py: e.clientY, ox: effX, oy: effY };
     (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
   };
   const onMove = (e: React.PointerEvent) => {
@@ -1685,10 +1770,10 @@ function DraggableCard({
     if (!d) return;
     // On screen: 1px pointer travel = 1px move. On the graph: divide by zoom so
     // the card tracks the cursor at any zoom level.
-    const k = pinned ? 1 : 1 / rf.getViewport().zoom;
+    const k = effPinned ? 1 : 1 / rf.getViewport().zoom;
     const nx = d.ox + (e.clientX - d.px) * k;
     const ny = d.oy + (e.clientY - d.py) * k;
-    setState((s) => ({ ...s, x: pinned ? Math.max(0, nx) : nx, y: pinned ? Math.max(0, ny) : ny }));
+    setState((s) => ({ ...s, x: effPinned ? Math.max(0, nx) : nx, y: effPinned ? Math.max(0, ny) : ny }));
   };
   const onUp = () => {
     if (!drag.current) return;
@@ -1709,7 +1794,7 @@ function DraggableCard({
   const card = (
     // nopan/nowheel: while unpinned the card sits inside the RF pane, so these
     // stop clicks/scroll on it from panning or zooming the canvas underneath.
-    <div className="nopan nowheel" style={{ ...CARD, position: pinned ? "fixed" : "absolute", left: x, top: y, width, maxHeight, overflow: maxHeight ? "auto" : undefined, zIndex }}>
+    <div className="nopan nowheel" style={{ ...CARD, position: effPinned ? "fixed" : "absolute", left: effX, top: effY, width, maxHeight, overflow: maxHeight ? "auto" : undefined, zIndex }}>
       <div style={{ display: "flex", alignItems: "center", padding: "3px 6px 5px" }}>
         <div
           onPointerDown={onDown}
@@ -1720,18 +1805,20 @@ function DraggableCard({
         >
           ⠿⠿⠿
         </div>
-        <button
-          onClick={togglePin}
-          title={pinned ? "Pinned to screen — click to place it on the graph" : "On the graph — click to pin it to the screen"}
-          style={{ border: "none", background: "transparent", cursor: "pointer", fontSize: 12, lineHeight: "12px", padding: 0, opacity: pinned ? 1 : 0.5 }}
-        >
-          📌
-        </button>
+        {!screenOnly && (
+          <button
+            onClick={togglePin}
+            title={pinned ? "Pinned to screen — click to place it on the graph" : "On the graph — click to pin it to the screen"}
+            style={{ border: "none", background: "transparent", cursor: "pointer", fontSize: 12, lineHeight: "12px", padding: 0, opacity: pinned ? 1 : 0.5 }}
+          >
+            📌
+          </button>
+        )}
       </div>
       {children}
     </div>
   );
-  return pinned ? card : <ViewportPortal>{card}</ViewportPortal>;
+  return effPinned ? card : <ViewportPortal>{card}</ViewportPortal>;
 }
 
 // Right-click / long-press node menu: duplicate, replace (→ type list), toggle the

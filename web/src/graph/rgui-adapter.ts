@@ -28,10 +28,17 @@ export interface RgGraphNode {
   outputs: RgPort[];
   fields: [string, string][];
 }
+export interface RgEdgeStyle {
+  color?: string;
+  width?: number;
+  dash?: number[];
+}
 export interface RgEdge {
   from: { node: string; port: string };
   to: { node: string; port: string };
   dashed?: boolean;
+  style?: RgEdgeStyle;
+  label?: string;
 }
 export interface RgGraph {
   nodes: RgGraphNode[];
@@ -61,6 +68,12 @@ const DEFAULT_W = 200;
 export interface RguiMeta {
   /** deviceId -> human label, for the node's `device` field row */
   deviceName?: (deviceId: string | null) => string;
+  /** per-edge visual overrides (running animation, selection, rate label) */
+  edgeMeta?: (edge: { id: string; source: string; target: string }) => {
+    style?: RgEdgeStyle;
+    dashed?: boolean;
+    label?: string;
+  } | undefined;
 }
 
 /**
@@ -89,9 +102,15 @@ export function voiceGraphToRgui(graph: VoiceGraph, meta: RguiMeta = {}): RgGrap
   const has = (id: string) => id in graph.nodes;
   const edges: RgEdge[] = graph.edges
     .filter((e) => has(e.source) && has(e.target))
-    .map((e) => ({
-      from: { node: e.source, port: e.sourceHandle },
-      to: { node: e.target, port: e.targetHandle },
-    }));
+    .map((e) => {
+      const m = meta.edgeMeta?.({ id: e.id, source: e.source, target: e.target });
+      return {
+        from: { node: e.source, port: e.sourceHandle },
+        to: { node: e.target, port: e.targetHandle },
+        ...(m?.dashed != null ? { dashed: m.dashed } : {}),
+        ...(m?.style ? { style: m.style } : {}),
+        ...(m?.label ? { label: m.label } : {}),
+      };
+    });
   return { nodes, edges };
 }

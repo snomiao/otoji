@@ -63,6 +63,13 @@ export interface RguiOptions {
   onNodeContextMenu?: (nodeId: string, screen: { x: number; y: number }) => void;
   // v0.3.0 selection
   onSelectionChange?: (nodeIds: string[]) => void;
+  // v0.3.0 edge interaction + wire-drop-on-empty
+  onEdgeClick?: (edge: Edge, screen: { x: number; y: number }) => void;
+  onEdgeContextMenu?: (edge: Edge, screen: { x: number; y: number }) => void;
+  onConnectEnd?: (
+    from: PortRef,
+    at: { screen: { x: number; y: number }; world: { x: number; y: number } },
+  ) => void;
 }
 
 export interface Rgui {
@@ -74,6 +81,9 @@ export interface Rgui {
   /** v0.3.0: selected node ids (click / shift-drag box) */
   readonly selection: string[];
   setSelection(nodeIds: string[]): void;
+  /** v0.3.0: programmatic viewport control */
+  setView(view: ViewTransform): void;
+  fitView(paddingPx?: number): void;
   invalidate(): void;
   destroy(): void;
 }
