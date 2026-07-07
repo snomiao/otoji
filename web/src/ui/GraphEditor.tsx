@@ -4,6 +4,7 @@ import {
   ReactFlowProvider,
   Background,
   Controls,
+  ViewportPortal,
   addEdge,
   useNodesState,
   useEdgesState,
@@ -1562,7 +1563,12 @@ function ConnectMenu({
   );
 }
 
-// A floating card the user can reposition by its grip. Position persists per key.
+// A floating card the user can reposition by its grip. Position + pin state
+// persist per key. Pinned (default): fixed to the screen, unaffected by pan/zoom.
+// Unpinned (📍): the card lives ON the graph — rendered inside the viewport so it
+// pans and zooms with the canvas like a node. The 📌 button toggles between them,
+// converting the stored position between screen and flow coordinates so the card
+// doesn't jump.
 function DraggableCard({
   pkey,
   defaultPos,
@@ -1578,44 +1584,83 @@ function DraggableCard({
   zIndex?: number;
   children: React.ReactNode;
 }) {
-  const [pos, setPos] = useState<{ x: number; y: number }>(() => {
+  const rf = useReactFlow();
+  const [state, setState] = useState<{ x: number; y: number; pinned: boolean }>(() => {
     try {
       const s = localStorage.getItem("otoji.panel." + pkey);
-      if (s) return JSON.parse(s);
+      if (s) {
+        const p = JSON.parse(s);
+        return { x: p.x ?? defaultPos.x, y: p.y ?? defaultPos.y, pinned: p.pinned ?? true };
+      }
     } catch {
       /* ignore */
     }
-    return defaultPos;
+    return { ...defaultPos, pinned: true };
   });
-  const drag = useRef<{ dx: number; dy: number } | null>(null);
+  const { x, y, pinned } = state;
+  const persist = (next: { x: number; y: number; pinned: boolean }) => {
+    try { localStorage.setItem("otoji.panel." + pkey, JSON.stringify(next)); } catch { /* ignore */ }
+  };
+  const save = (next: { x: number; y: number; pinned: boolean }) => { setState(next); persist(next); };
+
+  const drag = useRef<{ px: number; py: number; ox: number; oy: number } | null>(null);
   const onDown = (e: React.PointerEvent) => {
-    drag.current = { dx: e.clientX - pos.x, dy: e.clientY - pos.y };
+    e.stopPropagation(); // don't let the graph pane start panning when we grab the grip
+    drag.current = { px: e.clientX, py: e.clientY, ox: x, oy: y };
     (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
   };
   const onMove = (e: React.PointerEvent) => {
     const d = drag.current;
     if (!d) return;
-    setPos({ x: Math.max(0, e.clientX - d.dx), y: Math.max(0, e.clientY - d.dy) });
+    // On screen: 1px pointer travel = 1px move. On the graph: divide by zoom so
+    // the card tracks the cursor at any zoom level.
+    const k = pinned ? 1 : 1 / rf.getViewport().zoom;
+    const nx = d.ox + (e.clientX - d.px) * k;
+    const ny = d.oy + (e.clientY - d.py) * k;
+    setState((s) => ({ ...s, x: pinned ? Math.max(0, nx) : nx, y: pinned ? Math.max(0, ny) : ny }));
   };
   const onUp = () => {
     if (!drag.current) return;
     drag.current = null;
-    try { localStorage.setItem("otoji.panel." + pkey, JSON.stringify(pos)); } catch { /* ignore */ }
+    persist({ x, y, pinned });
   };
-  return (
-    <div style={{ ...CARD, position: "fixed", left: pos.x, top: pos.y, width, maxHeight, overflow: maxHeight ? "auto" : undefined, zIndex }}>
-      <div
-        onPointerDown={onDown}
-        onPointerMove={onMove}
-        onPointerUp={onUp}
-        title="drag to move this panel"
-        style={{ cursor: "grab", textAlign: "center", color: "#cbd5e0", fontSize: 11, lineHeight: "11px", padding: "3px 0 5px", userSelect: "none", touchAction: "none" }}
-      >
-        ⠿⠿⠿
+  const togglePin = () => {
+    const { x: vx, y: vy, zoom } = rf.getViewport();
+    if (pinned) {
+      // screen → flow, so the card stays put as it detaches onto the graph
+      save({ x: (x - vx) / zoom, y: (y - vy) / zoom, pinned: false });
+    } else {
+      // flow → screen, clamped back into the viewport
+      save({ x: Math.max(0, x * zoom + vx), y: Math.max(0, y * zoom + vy), pinned: true });
+    }
+  };
+
+  const card = (
+    // nopan/nowheel: while unpinned the card sits inside the RF pane, so these
+    // stop clicks/scroll on it from panning or zooming the canvas underneath.
+    <div className="nopan nowheel" style={{ ...CARD, position: pinned ? "fixed" : "absolute", left: x, top: y, width, maxHeight, overflow: maxHeight ? "auto" : undefined, zIndex }}>
+      <div style={{ display: "flex", alignItems: "center", padding: "3px 6px 5px" }}>
+        <div
+          onPointerDown={onDown}
+          onPointerMove={onMove}
+          onPointerUp={onUp}
+          title="drag to move this panel"
+          style={{ flex: 1, cursor: "grab", textAlign: "center", color: "#cbd5e0", fontSize: 11, lineHeight: "11px", userSelect: "none", touchAction: "none" }}
+        >
+          ⠿⠿⠿
+        </div>
+        <button
+          onClick={togglePin}
+          title={pinned ? "Pinned to screen — click to place it on the graph" : "On the graph — click to pin it to the screen"}
+          style={{ border: "none", background: "transparent", cursor: "pointer", fontSize: 12, lineHeight: "12px", padding: 0, opacity: pinned ? 1 : 0.5 }}
+        >
+          📌
+        </button>
       </div>
       {children}
     </div>
   );
+  return pinned ? card : <ViewportPortal>{card}</ViewportPortal>;
 }
 
 // Right-click / long-press node menu: duplicate, replace (→ type list), toggle the
