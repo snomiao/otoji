@@ -1484,6 +1484,47 @@ function Editor({ initialRoom, local }: { initialRoom?: string; local?: boolean 
     (rgNodes: any[], info: any): SummaryContent | null => {
       if (info?.level === "pseudo") {
         const titles = rgNodes.map((n) => n.title);
+        // Wave superposition: when the merged block contains mic nodes, draw the
+        // COMBINED level envelope of all of them. The live store keeps RMS
+        // envelopes (not raw samples), and uncorrelated sources superpose in
+        // POWER, so per time window: rms = sqrt(Σ rmsᵢ²). (Raw-sample addition —
+        // true superposition — is what the Mix node's mixCluster does downstream.)
+        const micIds = rgNodes
+          .map((n) => n.id)
+          .filter((id) => {
+            const t = (nodesRef.current.find((x) => x.id === id)?.data as any)?.voiceType;
+            return t === "mic-vad" || t === "mic-raw";
+          });
+        if (micIds.length) {
+          const label = `${rgNodes.length} nodes · ${titles.slice(0, 3).join(" → ")}`;
+          return {
+            kind: "canvas",
+            height: 44,
+            draw: (ctx: CanvasRenderingContext2D, rect: { width: number; height: number }) => {
+              const live = liveRef.current;
+              ctx.font = "10px system-ui, sans-serif";
+              ctx.textAlign = "left";
+              ctx.textBaseline = "top";
+              ctx.fillStyle = "#8a94a6";
+              ctx.fillText(clipText(ctx, label, rect.width), 0, 0);
+              const waveTop = 13;
+              const waveH = rect.height - waveTop;
+              const N = 48;
+              const bw = rect.width / N;
+              ctx.fillStyle = "#dd6b20";
+              for (let i = 0; i < N; i++) {
+                let p = 0;
+                for (const id of micIds) {
+                  const ls = live.getLevels(id);
+                  const lv = ls[ls.length - N + i];
+                  if (lv) p += lv.rms * lv.rms;
+                }
+                const h = Math.min(waveH, Math.sqrt(p) * waveH * 4);
+                if (h > 0.5) ctx.fillRect(i * bw, rect.height - h, Math.max(1, bw - 1), h);
+              }
+            },
+          };
+        }
         return { kind: "text", lines: [`${rgNodes.length} nodes`, titles.slice(0, 3).join(" → ")] };
       }
       const rg = rgNodes[0];
