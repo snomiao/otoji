@@ -1173,19 +1173,20 @@ function Editor({ initialRoom, local }: { initialRoom?: string; local?: boolean 
 
   const currentGraph = useMemo(() => fromRF(nodes, edges, versionRef.current), [nodes, edges]);
 
-  // rgui has no inline node widgets — a single-selected node opens the inspector
-  // panel (device assignment + per-type config), replacing VoiceNode's inline UI.
-  const inspectedNode = useMemo(() => {
-    if (!useRgui || selected.length !== 1) return null;
-    const n = nodes.find((x) => x.id === selected[0]);
+  // rgui has no inline node widgets — every node gets a config-controls overlay
+  // (device + per-type config) that rgui glues to the node and auto-hides when
+  // the node isn't readable-sized. Stable identity; reads the latest node state.
+  const renderNodeOverlay = useCallback((id: string) => {
+    const n = nodesRef.current.find((x) => x.id === id);
     if (!n) return null;
-    return {
+    const node = {
       id: n.id,
       voiceType: (n.data as any).voiceType as NodeType,
       device: ((n.data as any).device ?? null) as string | null,
       config: (n.data as any).config as Record<string, unknown> | undefined,
     };
-  }, [useRgui, selected, nodes]);
+    return <NodeInspector node={node} />;
+  }, []);
 
   const deviceNameOf = useCallback(
     (id: string | null) => (id ? devices.find((d) => d.deviceId === id)?.name ?? id.slice(0, 6) : "unassigned"),
@@ -1413,7 +1414,7 @@ function Editor({ initialRoom, local }: { initialRoom?: string; local?: boolean 
       <div style={{ position: "relative", height: "100vh", overflow: "hidden", fontFamily: "system-ui, sans-serif" }}>
         {/* full-bleed graph canvas — the whole background */}
         <div style={{ position: "absolute", inset: 0 }}>
-          <RguiGraphView graph={currentGraph} deviceName={deviceNameOf} handlers={rguiHandlers} selection={selected} edgeMeta={edgeMeta} nodeBody={nodeBody} live={liveRef.current} panels={rguiPanels} apiRef={rguiApiRef} />
+          <RguiGraphView graph={currentGraph} deviceName={deviceNameOf} handlers={rguiHandlers} selection={selected} edgeMeta={edgeMeta} nodeBody={nodeBody} live={liveRef.current} panels={rguiPanels} renderNodeOverlay={renderNodeOverlay} apiRef={rguiApiRef} />
         </div>
 
         {/* floating title / toolbar card (draggable) */}
@@ -1547,7 +1548,6 @@ function Editor({ initialRoom, local }: { initialRoom?: string; local?: boolean 
             onClose={() => setNodeMenu(null)}
           />
         )}
-        {inspectedNode && <NodeInspector node={inspectedNode} onClose={() => setSelected([])} />}
       </div>
     </GraphContext.Provider>
   );

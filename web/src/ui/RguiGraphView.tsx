@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import type { VoiceGraph } from "../graph/model";
 import { voiceGraphToRgui, type RguiMeta } from "../graph/rgui-adapter";
 import type { LiveStore } from "../graph/live-store";
@@ -52,6 +53,7 @@ export function RguiGraphView({
   nodeBody,
   live,
   panels,
+  renderNodeOverlay,
   apiRef,
 }: {
   graph: VoiceGraph;
@@ -67,6 +69,9 @@ export function RguiGraphView({
   live?: LiveStore;
   /** canvas-native palettes (node palette, templates) */
   panels?: Panel[];
+  /** render the config controls overlay for a node — rgui glues one per node to
+   *  its screen rect and auto-hides it when the node isn't readable-sized */
+  renderNodeOverlay?: (nodeId: string) => React.ReactNode;
   /** populated with imperative viewport controls (fitView / zoom) */
   apiRef?: React.MutableRefObject<RguiApi | null>;
 }) {
@@ -74,8 +79,34 @@ export function RguiGraphView({
   const viewerRef = useRef<Awaited<ReturnType<typeof createViewer>> | null>(null);
   const [error, setError] = useState<string>("");
 
-  const rgGraph = useMemo(() => voiceGraphToRgui(graph, { deviceName, edgeMeta, nodeBody }), [graph, deviceName, edgeMeta, nodeBody]);
+  // One detached host div per node for its config overlay (rgui positions each
+  // and auto-hides the ones whose node isn't readable-sized). React fills them
+  // via portals; hosts persist across re-maps so their controls keep focus.
+  const hostsRef = useRef<Map<string, HTMLDivElement>>(new Map());
+  const hostFor = (id: string) => {
+    let h = hostsRef.current.get(id);
+    if (!h) {
+      h = document.createElement("div");
+      hostsRef.current.set(id, h);
+    }
+    return h;
+  };
+
+  const rgGraph = useMemo(() => {
+    const g = voiceGraphToRgui(graph, { deviceName, edgeMeta, nodeBody });
+    if (renderNodeOverlay) {
+      for (const n of g.nodes) (n as any).overlay = { el: hostFor(n.id), anchor: "over", interactive: true };
+    }
+    return g;
+  }, [graph, deviceName, edgeMeta, nodeBody, renderNodeOverlay]);
   const nodeIdsKey = useMemo(() => rgGraph.nodes.map((n) => n.id).join(","), [rgGraph]);
+
+  // Drop hosts for removed nodes (rgui detaches their overlays when the node
+  // leaves the graph); keeps the map from growing unbounded.
+  useEffect(() => {
+    const live = new Set(nodeIdsKey ? nodeIdsKey.split(",") : []);
+    for (const id of [...hostsRef.current.keys()]) if (!live.has(id)) hostsRef.current.delete(id);
+  }, [nodeIdsKey]);
   const rgGraphRef = useRef(rgGraph);
   rgGraphRef.current = rgGraph;
 
@@ -117,6 +148,7 @@ export function RguiGraphView({
   useEffect(() => {
     if (panels) viewerRef.current?.setPanels(panels as any);
   }, [panels]);
+
 
   // Redraw the canvas when any node's live preview updates (waveform/text/image).
   useEffect(() => {
@@ -176,10 +208,14 @@ export function RguiGraphView({
           }}
         >
           rgui renderer unavailable: {error}
-          <br />
-          <span style={{ opacity: 0.7 }}>Add ?renderer=rf to use the React Flow renderer.</span>
         </div>
       )}
+      {/* Per-node config overlays: React renders into the detached hosts; rgui
+          re-parents + positions each host at its node and hides non-readable ones. */}
+      {renderNodeOverlay &&
+        rgGraph.nodes.map((n) => (
+          <React.Fragment key={n.id}>{createPortal(renderNodeOverlay(n.id), hostFor(n.id))}</React.Fragment>
+        ))}
     </div>
   );
 }

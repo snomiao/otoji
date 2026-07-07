@@ -106,8 +106,18 @@ export interface Rgui {
   fitView(paddingPx?: number): void;
   /** v0.3.0: replace the canvas-native palettes */
   setPanels(panels: Panel[]): void;
+  /** v0.3.0: attach/replace/remove a node-anchored HTML overlay */
+  setNodeOverlay(nodeId: string, overlay: HTMLElement | NodeHtmlOverlay | null): void;
   invalidate(): void;
   destroy(): void;
+}
+
+export interface NodeHtmlOverlay {
+  el: HTMLElement;
+  anchor?: "right" | "below" | "over";
+  offset?: { x: number; y: number };
+  interactive?: boolean;
+  destroy?: () => void;
 }
 
 export function createRgui(_canvas: HTMLCanvasElement, _options?: RguiOptions): Rgui {

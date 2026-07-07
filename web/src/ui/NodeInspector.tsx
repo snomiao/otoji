@@ -16,8 +16,6 @@ import { NEURAL_TTS_MODELS, AUTO_TTS_MODEL, AUTO_TTS_VOICE } from "../providers/
 import { MODEL_TASKS, MODEL_DTYPES, DEFAULT_MODEL_DTYPE } from "../providers/model/transformers-pipeline";
 import { VOSK_MODELS, DEFAULT_VOSK_MODEL } from "../providers/stt/vosk";
 import { DEFAULT_SHERPA_SERVER_URL } from "../providers/stt/sherpa_native";
-import { NodeMicPreview } from "./NodeMicPreview";
-import { NodeImagePreview } from "./NodeImagePreview";
 import { useNodeLive } from "./useNodeLive";
 import { DIFF_STYLES, DEFAULT_DIFF_STYLE } from "../lib/textdiff";
 import { DEFAULT_CAMERA_FPS } from "../providers/vision/camera";
@@ -81,7 +79,7 @@ export interface InspectorNode {
   config?: Record<string, unknown>;
 }
 
-export function NodeInspector({ node, onClose }: { node: InspectorNode; onClose: () => void }) {
+export function NodeInspector({ node, onClose }: { node: InspectorNode; onClose?: () => void }) {
   const { devices, myDeviceId, onAssign, onConfig, onDelete, getRecords, setFile, counts, live, trackerState } =
     useContext(GraphContext);
   const id = node.id;
@@ -91,7 +89,7 @@ export function NodeInspector({ node, onClose }: { node: InspectorNode; onClose:
   const fileName = config?.file as string | undefined;
   const assigned = devices.find((x) => x.deviceId === node.device);
   const count = counts[id] ?? 0;
-  const { texts, queue } = useNodeLive(live, id);
+  const { queue } = useNodeLive(live, id);
   const inputDevices = useAudioDevices("audioinput");
   const outputDevices = useAudioDevices("audiooutput");
   const cameraDevices = useAudioDevices("videoinput");
@@ -119,21 +117,18 @@ export function NodeInspector({ node, onClose }: { node: InspectorNode; onClose:
   };
   const display = (t: string) => t.replace(/^https?:\/\//, "");
 
+  // Positioned by rgui (glued to the node via setNodeOverlay); this is just the card.
   return (
     <div
       style={{
-        position: "fixed",
-        top: 12,
-        right: 12,
-        width: 264,
-        maxHeight: "calc(100vh - 24px)",
+        width: 240,
+        maxHeight: "70vh",
         overflow: "auto",
         background: "rgba(255,255,255,0.97)",
         border: "1px solid #e2e8f0",
         borderRadius: 10,
         boxShadow: "0 4px 16px rgba(0,0,0,0.14)",
         backdropFilter: "blur(4px)",
-        zIndex: 12,
         fontSize: 12,
         fontFamily: "system-ui, sans-serif",
       }}
@@ -143,8 +138,8 @@ export function NodeInspector({ node, onClose }: { node: InspectorNode; onClose:
         <span style={{ display: "flex", gap: 8, alignItems: "center" }}>
           {count > 0 && <span style={{ fontSize: 11, color: "#2b6cb0", background: "#ebf4ff", borderRadius: 8, padding: "0 6px" }}>▤ {count}</span>}
           <button onClick={() => setPreviewShown(id, !shown, ownedHere)} title={shown ? "hide preview" : "show preview"} style={{ border: "none", background: "transparent", cursor: "pointer", color: "#a0aec0", fontSize: 12 }}>{shown ? "👁" : "🚫"}</button>
-          <button onClick={() => { onDelete(id); onClose(); }} title="remove node" style={{ border: "none", background: "transparent", cursor: "pointer", color: "#e53e3e", fontSize: 13 }}>✕</button>
-          <button onClick={onClose} title="close" style={{ border: "none", background: "transparent", cursor: "pointer", color: "#a0aec0", fontSize: 14 }}>×</button>
+          <button onClick={() => { onDelete(id); onClose?.(); }} title="remove node" style={{ border: "none", background: "transparent", cursor: "pointer", color: "#e53e3e", fontSize: 13 }}>✕</button>
+          {onClose && <button onClick={onClose} title="close" style={{ border: "none", background: "transparent", cursor: "pointer", color: "#a0aec0", fontSize: 14 }}>×</button>}
         </span>
       </div>
 
@@ -438,18 +433,8 @@ export function NodeInspector({ node, onClose }: { node: InspectorNode; onClose:
 
         {!node.device && <div style={{ color: "#e53e3e", fontSize: 10, marginTop: 4 }}>unassigned</div>}
         {assigned && !assigned.online && <div style={{ color: "#c05621", fontSize: 10, marginTop: 4 }}>● {assigned.name} offline</div>}
-
-        {shown && (
-          <div style={{ marginTop: 8 }}>
-            {(vt === "mic-vad" || vt === "mic-raw") && <NodeMicPreview live={live} nodeId={id} width={240} height={32} />}
-            {(vt === "camera" || vt === "screen-share" || vt === "paddle-ocr" || vt === "vision-model") && <NodeImagePreview live={live} nodeId={id} width={240} height={135} />}
-            {texts.length > 0 && (
-              <div style={{ fontSize: 11, color: "#4a5568", lineHeight: 1.35, whiteSpace: "pre-wrap", marginTop: 4 }}>
-                {texts.map((t, i) => <div key={i} style={{ opacity: 1 - i * 0.3 }}>{t}</div>)}
-              </div>
-            )}
-          </div>
-        )}
+        {/* Live preview (waveform / image / text) is drawn natively by rgui on
+            the node body — the inspector holds only the editable controls. */}
       </div>
     </div>
   );
