@@ -95,11 +95,10 @@ export function RguiGraphView({
   const rgGraph = useMemo(() => {
     const g = voiceGraphToRgui(graph, { deviceName, edgeMeta, nodeBody });
     if (renderNodeOverlay) {
-      // interactive:false → rgui leaves the host pointer-events:none so drags on
-      // the card pass through to the canvas (node stays draggable); only the form
-      // controls opt back in to pointer-events:auto (see the .rgui-node-cfg CSS).
-      // offset y past the rgui-drawn header so the node title stays visible; the
-      // controls sit in the body region.
+      // Card is click-through so dragging it drags the node (only the real form
+      // controls capture — see the .rgui-node-cfg CSS); offset past the rgui
+      // header so the node title stays visible. (scale:"fit" needs a rgui
+      // measurement fix for detached hosts before we can enable it.)
       for (const n of g.nodes) (n as any).overlay = { el: hostFor(n.id), anchor: "over", offset: { x: 0, y: 28 }, interactive: false };
     }
     return g;
@@ -238,6 +237,9 @@ async function createViewer(
   return createRgui(canvas, {
     graph: graphRef.current as any,
     rule: { collapsePx: 56 },
+    // Force Canvas 2D — the "auto" WebGPU path errors ("no compatible GPU") and
+    // lags on some machines. The 2D renderer is the stable baseline.
+    renderer: "canvas2d",
     panels: panelsRef.current as any,
     onNodeMoveEnd: (id, pos) => hRef.current?.onNodeMoveEnd?.(id, pos),
     isValidConnection: (from, to) => hRef.current?.isValidConnection?.(from, to) ?? true,

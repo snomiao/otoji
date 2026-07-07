@@ -532,6 +532,15 @@ function Editor({ initialRoom, local }: { initialRoom?: string; local?: boolean 
     try { localStorage.setItem(LOCAL_GRAPH_KEY, JSON.stringify(fromRF(nodes, edges, versionRef.current))); } catch { /* ignore */ }
   }, [local, nodes, edges]);
 
+  // Frame the graph once when it first loads (demo seed / restored local layout /
+  // room graph) so a saved layout is never stranded off-screen.
+  const didFitRef = useRef(false);
+  useEffect(() => {
+    if (didFitRef.current || nodes.length === 0) return;
+    didFitRef.current = true;
+    setTimeout(() => rguiApiRef.current?.fitView(60), 150);
+  }, [nodes.length]);
+
   const broadcast = useCallback((ns: Node[], es: Edge[]) => {
     versionRef.current += 1;
     sigRef.current?.patchGraph(fromRF(ns, es, versionRef.current));

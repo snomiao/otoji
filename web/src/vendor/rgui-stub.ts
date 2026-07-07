@@ -68,6 +68,8 @@ export interface RgRule {
 export interface RguiOptions {
   graph?: Graph;
   rule?: Partial<RgRule>;
+  /** rendering backend (default "auto"); force "canvas2d" to skip WebGPU */
+  renderer?: "auto" | "canvas2d" | "webgpu";
   debug?: HTMLElement | null;
   layers?: unknown[];
   view?: ViewTransform;
