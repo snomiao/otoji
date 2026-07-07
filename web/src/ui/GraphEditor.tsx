@@ -47,6 +47,7 @@ import { getRole, setRole, detectCaps, type DeviceRole } from "../lib/device-rol
 import { NetworkView } from "./NetworkView";
 import { JoinGate } from "./JoinGate";
 import { RguiGraphView, type RguiHandlers, type RguiApi } from "./RguiGraphView";
+import { NodeInspector } from "./NodeInspector";
 import { TimelineView } from "./TimelineView";
 import type { PortType } from "../graph/model";
 import {
@@ -1258,6 +1259,20 @@ function Editor({ initialRoom, local }: { initialRoom?: string; local?: boolean 
 
   const currentGraph = useMemo(() => fromRF(nodes, edges, versionRef.current), [nodes, edges]);
 
+  // rgui has no inline node widgets — a single-selected node opens the inspector
+  // panel (device assignment + per-type config), replacing VoiceNode's inline UI.
+  const inspectedNode = useMemo(() => {
+    if (!useRgui || selected.length !== 1) return null;
+    const n = nodes.find((x) => x.id === selected[0]);
+    if (!n) return null;
+    return {
+      id: n.id,
+      voiceType: (n.data as any).voiceType as NodeType,
+      device: ((n.data as any).device ?? null) as string | null,
+      config: (n.data as any).config as Record<string, unknown> | undefined,
+    };
+  }, [useRgui, selected, nodes]);
+
   const deviceNameOf = useCallback(
     (id: string | null) => (id ? devices.find((d) => d.deviceId === id)?.name ?? id.slice(0, 6) : "unassigned"),
     [devices],
@@ -1637,6 +1652,7 @@ function Editor({ initialRoom, local }: { initialRoom?: string; local?: boolean 
             onClose={() => setNodeMenu(null)}
           />
         )}
+        {inspectedNode && <NodeInspector node={inspectedNode} onClose={() => setSelected([])} />}
       </div>
     </GraphContext.Provider>
   );
