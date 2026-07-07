@@ -1,6 +1,4 @@
 import React from "react";
-import { ReactFlow, Background, type Node, type Edge } from "@xyflow/react";
-import "@xyflow/react/dist/style.css";
 import { generateRoomCode, isRoomCode } from "../lib/roomcode";
 import { generateDeviceName } from "../lib/device-id";
 import { ROLES, type DeviceRole } from "../lib/device-role";
@@ -10,39 +8,39 @@ import { ROLES, type DeviceRole } from "../lib/device-role";
 // purely presentational — the parent owns room/name/role state and decides what
 // `onSubmit` does (Lobby navigates to /<room>; GraphEditor connects in place).
 
-const GHOST = "0 1px 3px rgba(0,0,0,0.06)";
-function ghostNode(id: string, label: string, x: number, color: string): Node {
-  return {
-    id,
-    position: { x, y: 0 },
-    data: { label },
-    draggable: false,
-    selectable: false,
-    style: {
-      border: `1px solid ${color}`,
-      borderRadius: 8,
-      background: "#fff",
-      padding: "8px 12px",
-      fontSize: 12,
-      color: "#4a5568",
-      opacity: 0.6,
-      boxShadow: GHOST,
-      width: 150,
-    },
-  };
+// Decorative, static mic→stt→translate→speaker pipeline behind the join card.
+const DEMO_BOXES: { label: string; color: string }[] = [
+  { label: "🎙  Mic + VAD", color: "#dd6b20" },
+  { label: "📝  SenseVoice STT", color: "#cbd5e0" },
+  { label: "🌐  Translate", color: "#2b6cb0" },
+  { label: "🔊  Speaker", color: "#dd6b20" },
+];
+function DecorPipeline() {
+  const bw = 150, bh = 40, gap = 70, y = 0;
+  const total = DEMO_BOXES.length * bw + (DEMO_BOXES.length - 1) * gap;
+  const vh = bh + 20;
+  return (
+    <svg
+      viewBox={`0 0 ${total} ${vh}`}
+      preserveAspectRatio="xMidYMid meet"
+      style={{ position: "absolute", inset: 0, width: "100%", height: "100%", opacity: 0.55, padding: "0 6%" }}
+    >
+      {DEMO_BOXES.slice(0, -1).map((_, i) => {
+        const x1 = i * (bw + gap) + bw;
+        return <line key={i} x1={x1} y1={y + bh / 2 + 10} x2={x1 + gap} y2={y + bh / 2 + 10} stroke="#94a3b8" strokeWidth={2} strokeDasharray="6 5" />;
+      })}
+      {DEMO_BOXES.map((b, i) => {
+        const x = i * (bw + gap);
+        return (
+          <g key={i}>
+            <rect x={x} y={y + 10} width={bw} height={bh} rx={8} fill="#fff" stroke={b.color} />
+            <text x={x + bw / 2} y={y + 10 + bh / 2 + 4} textAnchor="middle" fontSize={12} fill="#4a5568">{b.label}</text>
+          </g>
+        );
+      })}
+    </svg>
+  );
 }
-
-const DEMO_NODES: Node[] = [
-  ghostNode("mic", "🎙  Mic + VAD", 0, "#dd6b20"),
-  ghostNode("stt", "📝  SenseVoice STT", 220, "#cbd5e0"),
-  ghostNode("tr", "🌐  Translate", 440, "#2b6cb0"),
-  ghostNode("spk", "🔊  Speaker", 660, "#dd6b20"),
-];
-const DEMO_EDGES: Edge[] = [
-  { id: "a", source: "mic", target: "stt", animated: true, style: { stroke: "#dd6b20" } },
-  { id: "b", source: "stt", target: "tr", animated: true, style: { stroke: "#2b6cb0" } },
-  { id: "c", source: "tr", target: "spk", animated: true, style: { stroke: "#2b6cb0" } },
-];
 
 const CARD: React.CSSProperties = {
   background: "rgba(255,255,255,0.97)",
@@ -76,23 +74,8 @@ export function JoinGate({ room, onRoomChange, name, onNameChange, role, onRoleC
   return (
     <div style={{ position: "relative", height: "100vh", overflow: "hidden", fontFamily: "system-ui, sans-serif" }}>
       {/* decorative graph background */}
-      <div style={{ position: "absolute", inset: 0 }}>
-        <ReactFlow
-          nodes={DEMO_NODES}
-          edges={DEMO_EDGES}
-          nodesDraggable={false}
-          nodesConnectable={false}
-          elementsSelectable={false}
-          panOnDrag={false}
-          zoomOnScroll={false}
-          zoomOnPinch={false}
-          zoomOnDoubleClick={false}
-          fitView
-          fitViewOptions={{ padding: 0.3 }}
-          proOptions={{ hideAttribution: true }}
-        >
-          <Background />
-        </ReactFlow>
+      <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center" }}>
+        <DecorPipeline />
       </div>
 
       {/* floating "hello" card */}

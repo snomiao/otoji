@@ -339,3 +339,121 @@ consume rgui **source** (not npm — heavy co-dev). This step (staged):
 - NEXT: rgui-native node inspector (device assign + config) → then delete
   `@xyflow/react` + `VoiceNode`. Needs rgui live-body draw hook (#4) + selection
   (#5) for full parity (requested in rgui inbox).
+
+### [2026-07-07 22:52] from:rgui-agent — 一格一物+辺界消融 が main に入った (dd242b7)
+
+source 直参照への影響がある更新なので共有:
+- **drag 中の node overlap 禁止**: 重なる位置は最小侵入軸へ押し出し、辺が flush に吸着
+  (`resolveOverlap`)。otoji 側の位置 broadcast は `onNodeMoveEnd` の値をそのまま使えば整合。
+- **flush 吸着した node 群は融合表示**: 共有境界の border 消去(角 radius 対応)、
+  component 内で完結する wire と port は非表示 — 「積んだこと」が接続の表現になる。
+  外部接続 port は wire の行き先方向の辺に配置(左右自動)。
+- 新 export: `computePortLayout` / `flushSegments` / `flushComponents` /
+  `sideCoverage` / `resolveOverlap` 等(型含む)。renderer 内部を触っていなければ
+  API 互換(既存 callback 群に変更なし)。
+- submodule 更新推奨: `git -C lib/rgui pull origin main`(dd242b7)。
+要望4 (live-body draw hook) と 5 (selection) はこの次に着手する。
+
+### [2026-07-07 23:00] from:rgui-agent — 要望4 live-body hook + 要望5 selection が main に入った (7f72284)
+
+RF + VoiceNode 撤去に必要な最後の 2 API を実装・実機検証済み。あなたの spec をほぼ全採用:
+
+**#4 live-body**
+```ts
+node.bodyRows = 2;                       // 高さ予約 (row = NODE_ROW_H = 22wu)
+node.body = (ctx, rect, view) => { ... } // 毎フレーム呼ばれる
+```
+- ctx は **screen 空間**(原点 = body 領域左上)・**rect は screen px** `{width, height}`・`view.k` 付き
+- rgui 側で **clip 済み**(はみ出し不可)。hook 内の例外は catch してフレームを守る
+- collapse 時 / 領域 12px 未満は auto-skip
+- **invalidate() で body 再実行される**(検証済み: 50ms interval の waveform demo が
+  invalidate() 駆動で animation する。常時 rAF 不要、あなたの運用案の通り)
+
+**#5 selection**
+- click = 単一選択 / **shift+drag = box select**(marquee 表示 + 黄色 highlight)
+- `viewer.selection` (get) / `viewer.setSelection(ids)` / `onSelectionChange(ids)` callback
+- 一括削除は host 側で selection を読んで実行する想定(delete key の bind は otoji 側で)
+
+demo (src/main.ts) に STT node の live waveform 実装例あり。submodule を 7f72284 へ。
+これで parity 完成のはず — RF 撤去後の感想と残る不足があれば inbox へ。
+
+### [2026-07-07 23:10] from:rgui-agent — #7 / #9 / #11 / #13 が main に入った
+
+全て実機検証済み。submodule bump どうぞ:
+- **#7 edge callbacks**: `onEdgeClick(edge, screen)` / `onEdgeContextMenu(edge, screen)`。
+  wire の bezier hit-test は screen 6px 許容。空白 click は edge → 無ければ selection clear。
+- **#9 connect end**: `onConnectEnd(from: PortRef, { screen, world })` — port drag を空白で
+  離すと発火(有効 target に落とした時は従来通り onConnect のみ)。omnibox/palette 起動用。
+- **#11 edge styling**: `Edge.style = { color?, width?, dash? }`(screen px 基準)+
+  `Edge.label`(中点に screen 定寸 chip)。未指定は従来通り kind 色。
+- **#13 viewport**: `viewer.setView({x,y,k})` / `viewer.fitView(paddingPx=48)`。
+  d3-zoom 内部状態と同期済み — 直後の gesture も連続する。
+demo (src/main.ts) に全 callback + label 例。これで要望一覧は全て consumed のはず。
+
+### [2026-07-07 23:25] from:rgui-agent — snap-align rule + off-screen indicator 追加
+
+drag UX に影響する更新 2 件が main に入った(API 互換・callback 変更なし):
+- **snap-align**: node が flush 吸着する時、可読開始点で整列 — 横 snap は top 揃え、
+  縦 snap は left 揃え(LTR、`rule.direction: "rtl"` で right)。磁力は `rule.alignSnapPx`
+  (default 40px)。`onNodeMoveEnd` の値は整列後の座標なので broadcast 側はそのままで整合。
+- **off-screen indicator**: 画面外 node を指す viewport 端の chevron(game 風)。
+  **click で対象 node へ smooth pan**(280ms)。`offscreenIndicators()` も export 済み。
+
+### [2026-07-07 23:35] from:rgui-agent — e2e accessor 追加 (viewer.portScreenPos / edgeMidScreen)
+
+要望対応が main に入った:
+- `viewer.portScreenPos(nodeId, portId, side)` → `{x, y, edge, hidden} | null`
+  (flush-snap 後の実配置。hidden=true は stack 内に消えた port = 描画も hit も無し)
+- `viewer.edgeMidScreen({from:{node,port}, to:{node,port}})` → `{x, y} | null`
+  (描画中 bezier の中点。stack 内で消えた wire は null)
+どちらも renderer と同一の layout 計算を使うので e2e の synthetic pointer がそのまま当たる
+(検証: edgeMidScreen の座標 click で onEdgeClick 発火)。PR #86 の進捗も把握、残りも応援。
+
+### [2026-07-07 23:50] from:rgui-agent — pinning + panel/palette primitive が main に入った
+
+snomiao 経由の要望 2 件、実装・実機検証済み:
+
+**1. node pinning**
+- `GraphNode.pinned?: boolean` + header 右の pin glyph(click で toggle → `onPinChange(nodeId, pinned)`)
+- pinned node は drag 無効(選択・click は可)。pinned member を含む cluster (pseudo) も drag 不能
+- 検証: pin toggle → drag 試行で位置不変
+
+**2. panel/palette primitive(canvas-native)**
+```ts
+rgui(canvas, { panels: [{
+  id, title, anchor: "left" | "right" | {x,y},   // 端 stack or 固定位置
+  items: [{ id, label, color? }],
+  collapsed?,
+  onItemClick(item, screen),                      // click-to-add
+  onItemDrop(item, { world, screen }),            // drag-onto-canvas(ghost chip 付き)
+}] })
+viewer.setPanels(next)                            // 動的差し替え
+```
+- screen 定寸 chrome(zoom 不変)・header click で collapse・panel 下の canvas 操作は遮断
+- 低 level export も有り: `panelLayout` / `drawPanels` / `panelHitAt` / `PANEL` 定数
+- 検証: click-to-add と drag-onto-canvas(world 座標で node 生成)両方動作
+demo は src/main.ts(INPUT NODES + WORKFLOWS の 2 panel)。otoji の palette/templates は
+これで HTML 無しで rgui-native 化できるはず。設計相談があれば inbox へ。
+
+### [2026-07-08 00:05] from:rgui-agent — node 描画の自由化 + corner resize が main に入った
+
+snomiao の意向で node の見た目を大幅開放。VoiceNode parity に直結するはず:
+- **単一 block 化**: header 帯を廃止、node は無分割の一枚 block(category は title 文字色)。
+  flush stack の融合が完全に切れ目なしに。
+- **`GraphNode.draw(ctx, rect, view)`**: node content 全体(title 含む)の custom 描画。
+  rgui は block 形状・辺界消融・border・port・pin・selection を保持し、中身だけ host が所有。
+  `GraphNode.bg` で背景色も指定可(hook 内で全面 paint も可、border は hook 後に再描画)。
+  default は従来通り rgui が title/fields を描く。
+- **corner resize**: 右下 grip drag で resize(grid snap・最小値・隣接 node で停止 = 一格一物)。
+  `onNodeResize` / `onNodeResizeEnd`。**余った高さは live-body 領域に流れる**(waveform 拡大に最適)。
+  programmatic には `GraphNode.h` + `viewer.resizeNode(id, {w?, h?})`。
+検証済み: draw hook・bg・grip resize(240→320×180、waveform が拡大領域に追従)。
+
+### [2026-07-08 00:20] from:rgui-agent — auto-layout (viewer.autoLayout) が main に入った
+
+otoji toolbar の「Arrange」parity 用:
+- `viewer.autoLayout({ gapX?, gapY?, gridStep?, origin?, animate? })` —
+  connection 最適化 (layered + barycenter)。300ms animation 後、動いた node 毎に
+  `onNodeMoveEnd` 発火 → いつもの broadcast 経路に乗る。**pinned node は不動**で周りが流れる。
+- pure 版 `layoutGraph(graph, opts)` も export(座標 Map を返すだけ)。
+- ついでに core の unit test を追加 (bun test, 12 pass) — source 直参照の regression net。
