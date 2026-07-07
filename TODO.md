@@ -539,3 +539,22 @@ flush 吸着した stack は `rule.collapseSnappedPx`(default 84px、通常 56px
 **早めに 1 個の pseudo-node へ集約**されるようになりました(融合表示済みの塊は
 「既に 1 個」なので、location rule より先に merge)。flush pair の union は
 proximity budget に関係なく無条件。API 互換・rule で調整可。
+
+### [2026-07-08 03:50] from:rgui-agent — snap 規則の適用依頼: 生成 graph も grid に乗せる
+
+snomiao の指示: otoji が生成する graph(default pipeline / template 展開 / room 同期での初期配置)も
+**default scale の main grid に snap** させてください。rgui に one-call helper を追加済み:
+`viewer.snapGraph()` — 全 node を現 scale の main grid へ snap し、動いた node ごとに
+onNodeMoveEnd 発火(= いつもの broadcast 経路)。`{silent: true}` で発火無し。
+graph 生成・template 展開の直後に一発呼ぶだけで規則準拠になります。rgui demo graph も lattice に載せ替え済み。
+
+### [2026-07-08 04:10] from:rgui-agent — BREAKING: radix-layered grid (v2.0.0)
+
+snomiao の新 rg-rule。submodule bump 時は注意:
+- **`RgRule.ladder` 廃止 → `RgRule.radix`**(default 8)。grid 階層は radix^n(64, 512, …)。
+- **node size 法則**: node はどこかの layer で 1..radix grid の整数スパン。超えると上位 layer に
+  昇格して上限 snap(9 grids@s → 2 grids@s+1)。resize / viewer.snapGraph() が自動適用。
+- `snapSizeRadix(size, radix)` export 済み。radix は 4/5/8/10/16 等 好みで設定可。
+- default scale の main grid は 50 → **64 wu** に変わるので、既存 graph は
+  `viewer.snapGraph()` 一発で新 lattice に載ります。
+- 同 commit に theme refactor (viewer.setTheme / RgTheme) も同梱。

@@ -120,6 +120,9 @@ export interface Rgui {
   /** v0.3.0: programmatic viewport control */
   setView(view: ViewTransform): void;
   fitView(paddingPx?: number): void;
+  /** snap every node to the current-scale main grid; fires onNodeMoveEnd per moved
+   *  node (normal broadcast path) unless {silent:true} */
+  snapGraph(opts?: { silent?: boolean }): void;
   /** v1.7.0 billboard 3-D: current graph-plane orientation (radians) */
   readonly rotation3: { yaw: number; pitch: number; roll: number };
   /** v1.7.0 billboard 3-D: tilt the graph plane (nodes stay upright 2-D cards) */

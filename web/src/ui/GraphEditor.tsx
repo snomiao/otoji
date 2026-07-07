@@ -348,6 +348,9 @@ function Editor({ initialRoom, local }: { initialRoom?: string; local?: boolean 
   const useRgui = true;
 
   const rguiApiRef = useRef<RguiApi | null>(null); // imperative viewport (fitView/zoom)
+  // set by graph-generation paths (default pipeline / template expand / arrange) so
+  // the next commit snaps the whole graph to rgui's main grid (see the effect below).
+  const pendingSnapRef = useRef(false);
   // 3-D billboard gizmo: drag the mic handle to tilt the graph plane (yaw/pitch),
   // double-click to flatten it. Records the base orientation + grab point on down.
   const gizmoDrag = useRef<{ x0: number; y0: number; base: { yaw: number; pitch: number; roll: number } } | null>(null);
@@ -375,6 +378,16 @@ function Editor({ initialRoom, local }: { initialRoom?: string; local?: boolean 
   edgesRef.current = edges;
   const roomRef = useRef(room);
   roomRef.current = room.trim(); // canonical room key (join/load/save must agree)
+
+  // After a graph-generation commit, snap every node to rgui's main grid. Runs
+  // AFTER RguiGraphView's setGraph effect (child effects flush before parent), so
+  // the viewer already holds the new nodes. snapGraph fires onNodeMoveEnd per moved
+  // node (otoji's normal broadcast path); it's idempotent so it can't loop.
+  useEffect(() => {
+    if (!pendingSnapRef.current) return;
+    pendingSnapRef.current = false;
+    rguiApiRef.current?.snapGraph();
+  }, [nodes]);
 
   // --- Federation trust: which signaling servers (trackers) THIS browser will
   // connect to. active = trusted env defaults + locally-approved. Proposals from
@@ -820,6 +833,7 @@ function Editor({ initialRoom, local }: { initialRoom?: string; local?: boolean 
       const nextEdges = [...edgesRef.current.map((e) => ({ ...e, selected: false })), ...newEdges];
       nodesRef.current = nextNodes;
       edgesRef.current = nextEdges;
+      pendingSnapRef.current = true; // align the expanded template to the grid
       setNodes(nextNodes);
       setEdges(nextEdges);
       broadcast(nextNodes, nextEdges);
@@ -1031,6 +1045,7 @@ function Editor({ initialRoom, local }: { initialRoom?: string; local?: boolean 
     const nextEdges = [...edgesRef.current, mkEdge(mic, stt), mkEdge(stt, sink)];
     nodesRef.current = nextNodes;
     edgesRef.current = nextEdges;
+    pendingSnapRef.current = true; // tidy the new pipeline onto the grid
     setNodes(nextNodes);
     setEdges(nextEdges);
     broadcast(nextNodes, nextEdges);
@@ -1049,6 +1064,7 @@ function Editor({ initialRoom, local }: { initialRoom?: string; local?: boolean 
     const pos = autoLayout(nodesRef.current, edgesRef.current, sizeOf);
     const next = nodesRef.current.map((n) => (pos[n.id] ? { ...n, position: pos[n.id] } : n));
     nodesRef.current = next;
+    pendingSnapRef.current = true; // land the spring layout on the grid
     setNodes(next);
     broadcast(next, edgesRef.current);
     setTimeout(() => rguiApiRef.current?.fitView(48), 60);

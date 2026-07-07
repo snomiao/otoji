@@ -42,6 +42,8 @@ export interface RguiApi {
   zoomBy: (factor: number) => void;
   /** snap a world position to the current readable grid (for tidy drops) */
   snapWorld: (pos: { x: number; y: number }) => { x: number; y: number };
+  /** snap ALL nodes to the main grid (tidy a freshly generated/expanded graph) */
+  snapGraph: (opts?: { silent?: boolean }) => void;
   /** current graph-plane 3-D orientation (radians) */
   rotation3: () => { yaw: number; pitch: number; roll: number };
   /** tilt the graph plane in 3-D (nodes stay upright); no arg / zeros = flat */
@@ -368,5 +370,6 @@ function makeApi(viewer: Awaited<ReturnType<typeof createViewer>>, canvas: HTMLC
     },
     rotation3: () => viewer.rotation3,
     setRotation3: (target, opts) => viewer.setRotation3(target, opts),
+    snapGraph: (opts) => viewer.snapGraph(opts),
   };
 }
