@@ -120,33 +120,15 @@ export function NodeInspector({ node, onClose }: { node: InspectorNode; onClose?
   // Positioned by rgui (glued to the node via setNodeOverlay); this is just the card.
   // `rgui-node-cfg`: the card is click-through so dragging it drags the node;
   // only the form controls capture pointer events (see index.html).
+  // Just the interactive controls — rgui draws the node frame, title, and ports.
+  // The container is transparent + click-through (only the controls capture); it
+  // is anchored over the node's body region by rgui.
   return (
     <div
       className="rgui-node-cfg"
-      style={{
-        width: 240,
-        maxHeight: "70vh",
-        overflow: "auto",
-        background: "rgba(255,255,255,0.97)",
-        border: "1px solid #e2e8f0",
-        borderRadius: 10,
-        boxShadow: "0 4px 16px rgba(0,0,0,0.14)",
-        backdropFilter: "blur(4px)",
-        fontSize: 12,
-        fontFamily: "system-ui, sans-serif",
-      }}
+      style={{ width: 190, fontSize: 12, fontFamily: "system-ui, sans-serif" }}
     >
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 6, padding: "8px 10px", borderBottom: "1px solid #edf2f7", fontWeight: 600 }}>
-        <span>{spec.label}</span>
-        <span style={{ display: "flex", gap: 8, alignItems: "center" }}>
-          {count > 0 && <span style={{ fontSize: 11, color: "#2b6cb0", background: "#ebf4ff", borderRadius: 8, padding: "0 6px" }}>▤ {count}</span>}
-          <button onClick={() => setPreviewShown(id, !shown, ownedHere)} title={shown ? "hide preview" : "show preview"} style={{ border: "none", background: "transparent", cursor: "pointer", color: "#a0aec0", fontSize: 12 }}>{shown ? "👁" : "🚫"}</button>
-          <button onClick={() => { onDelete(id); onClose?.(); }} title="remove node" style={{ border: "none", background: "transparent", cursor: "pointer", color: "#e53e3e", fontSize: 13 }}>✕</button>
-          {onClose && <button onClick={onClose} title="close" style={{ border: "none", background: "transparent", cursor: "pointer", color: "#a0aec0", fontSize: 14 }}>×</button>}
-        </span>
-      </div>
-
-      <div style={{ padding: "6px 10px 10px" }}>
+      <div style={{ padding: "2px 10px 6px" }}>
         <label style={row}>
           on:
           <select value={node.device ?? ""} onChange={(e) => onAssign(id, e.target.value || null)} style={sel}>

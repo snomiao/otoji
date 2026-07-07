@@ -98,7 +98,9 @@ export function RguiGraphView({
       // interactive:false → rgui leaves the host pointer-events:none so drags on
       // the card pass through to the canvas (node stays draggable); only the form
       // controls opt back in to pointer-events:auto (see the .rgui-node-cfg CSS).
-      for (const n of g.nodes) (n as any).overlay = { el: hostFor(n.id), anchor: "over", interactive: false };
+      // offset y past the rgui-drawn header so the node title stays visible; the
+      // controls sit in the body region.
+      for (const n of g.nodes) (n as any).overlay = { el: hostFor(n.id), anchor: "over", offset: { x: 0, y: 28 }, interactive: false };
     }
     return g;
   }, [graph, deviceName, edgeMeta, nodeBody, renderNodeOverlay]);
