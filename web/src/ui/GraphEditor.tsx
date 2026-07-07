@@ -50,6 +50,7 @@ import { NetworkView } from "./NetworkView";
 import { JoinGate } from "./JoinGate";
 import { RguiGraphView, type RguiHandlers, type RguiApi } from "./RguiGraphView";
 import { NodeInspector } from "./NodeInspector";
+import type { Panel } from "@snomiao/rgui";
 import { TimelineView } from "./TimelineView";
 import type { PortType } from "../graph/model";
 import {
@@ -1326,6 +1327,33 @@ function Editor({ initialRoom, local }: { initialRoom?: string; local?: boolean 
     };
   }, []);
 
+  // Canvas-native palettes (rgui panels): a node palette per category + a
+  // templates panel. Click adds at viewport center; drag drops at the world pos.
+  const rguiPanels = useMemo<Panel[]>(() => {
+    const kindColor = (t: NodeType) => {
+      const spec = NODE_SPECS[t];
+      const pt = spec.outputs[0]?.type ?? spec.inputs[0]?.type;
+      return pt ? PORT_COLOR[pt] : "#a0aec0";
+    };
+    const nodePanels: Panel[] = NODE_CATEGORIES.map((cat) => ({
+      id: `cat-${cat.id}`,
+      title: cat.label,
+      anchor: "left" as const,
+      items: cat.types.map((t) => ({ id: t, label: NODE_SPECS[t].label, color: kindColor(t) })),
+      onItemClick: (it) => addNode(it.id as NodeType),
+      onItemDrop: (it, at) => addNode(it.id as NodeType, at.world),
+    }));
+    const tplPanel: Panel = {
+      id: "templates",
+      title: "Templates",
+      anchor: "right",
+      items: allTemplates.map((tpl) => ({ id: tpl.id, label: tpl.name })),
+      onItemClick: (it) => { const tpl = allTemplates.find((x) => x.id === it.id); if (tpl) addTemplate(tpl); },
+      onItemDrop: (it, at) => { const tpl = allTemplates.find((x) => x.id === it.id); if (tpl) addTemplate(tpl, undefined, at.world); },
+    };
+    return [...nodePanels, tplPanel];
+  }, [allTemplates, addNode, addTemplate]);
+
   const openNodeMenu = useCallback((nodeId: string, x: number, y: number) => setNodeMenu({ nodeId, x, y }), []);
 
   const trackerState = useMemo(
@@ -1368,7 +1396,7 @@ function Editor({ initialRoom, local }: { initialRoom?: string; local?: boolean 
       <div style={{ position: "relative", height: "100vh", overflow: "hidden", fontFamily: "system-ui, sans-serif" }}>
         {/* full-bleed graph canvas — the whole background */}
         <div style={{ position: "absolute", inset: 0 }}>
-          <RguiGraphView graph={currentGraph} deviceName={deviceNameOf} handlers={rguiHandlers} selection={selected} edgeMeta={edgeMeta} nodeBody={nodeBody} live={liveRef.current} apiRef={rguiApiRef} />
+          <RguiGraphView graph={currentGraph} deviceName={deviceNameOf} handlers={rguiHandlers} selection={selected} edgeMeta={edgeMeta} nodeBody={nodeBody} live={liveRef.current} panels={rguiPanels} apiRef={rguiApiRef} />
         </div>
 
         {/* floating title / toolbar card (draggable) */}
@@ -1400,6 +1428,9 @@ function Editor({ initialRoom, local }: { initialRoom?: string; local?: boolean 
           {view === "graph" && (
             <button onClick={autoArrange} style={{ fontSize: 12 }} title="Auto-arrange nodes (spring layout, no overlapping boxes)">⤢ Arrange</button>
           )}
+          {view === "graph" && (
+            <button onClick={saveSelectionAsTemplate} style={{ fontSize: 12 }} title="Save the selected nodes as a reusable template">★ Save template</button>
+          )}
           {view === "graph" && useRgui && (
             <span style={{ display: "flex", gap: 2 }}>
               <button onClick={() => rguiApiRef.current?.zoomBy(1.25)} style={{ fontSize: 12 }} title="Zoom in">＋</button>
@@ -1429,87 +1460,9 @@ function Editor({ initialRoom, local }: { initialRoom?: string; local?: boolean 
         </div>
         </DraggableCard>
 
-        {/* floating node palette — drag a folded node onto the canvas (or click). The
-            panel itself is draggable by its grip. */}
-        {view === "graph" && (
-          <DraggableCard pkey="palette" width={188} maxHeight="calc(100vh - 120px)" defaultPos={{ x: 12, y: Math.max(64, (typeof window !== "undefined" ? window.innerHeight : 800) - 420) }}>
-            <div style={{ padding: "0 10px 8px" }}>
-            <div style={{ fontSize: 11, color: "#a0aec0", marginBottom: 6 }}>drag onto canvas — or click to add</div>
-            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-              {NODE_CATEGORIES.map((cat) => (
-                <div key={cat.id}>
-                  <div style={{ fontSize: 9, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.05em", color: "#a0aec0", margin: "0 0 3px 1px" }}>{cat.label}</div>
-                  <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-                    {cat.types.map((t) => {
-                      const spec = NODE_SPECS[t];
-                      const dot = (spec.outputs[0]?.type ?? spec.inputs[0]?.type ?? "transcript") as PortType;
-                      return (
-                        <div
-                          key={t}
-                          draggable
-                          onDragStart={(e) => {
-                            e.dataTransfer.setData("application/otoji-node", t);
-                            e.dataTransfer.effectAllowed = "copy";
-                          }}
-                          onClick={() => addNode(t)}
-                          title={`drag onto canvas or click to add — ${spec.label}`}
-                          style={{ cursor: "grab", border: "1px solid #cbd5e0", borderRadius: 6, background: "#fff", padding: "4px 8px", fontSize: 11, display: "flex", gap: 6, alignItems: "center", boxShadow: "0 1px 2px rgba(0,0,0,0.06)" }}
-                        >
-                          <span style={{ width: 7, height: 7, borderRadius: 4, background: PORT_COLOR[dot], flex: "none" }} />
-                          {spec.label}
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
-              ))}
-            </div>
-            </div>
-          </DraggableCard>
-        )}
-
-        {/* floating templates card — drag a template onto the canvas to drop a
-            ready-made subgraph (auto-selected). */}
-        {view === "graph" && (
-          <DraggableCard pkey="templates" width={196} maxHeight="calc(100vh - 120px)" defaultPos={{ x: 220, y: Math.max(64, (typeof window !== "undefined" ? window.innerHeight : 800) - 360) }}>
-            <div style={{ padding: "0 10px 8px" }}>
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
-                <span style={{ fontSize: 11, color: "#a0aec0" }}>drag a template onto canvas</span>
-                <button className="nodrag" onClick={saveSelectionAsTemplate} title="Save the selected nodes as a template" style={{ fontSize: 10 }}>+ save sel</button>
-              </div>
-              <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-                {allTemplates.map((tpl) => (
-                  <div
-                    key={tpl.id}
-                    className="nodrag"
-                    draggable
-                    onDragStart={(e) => {
-                      e.dataTransfer.setData("application/otoji-template", tpl.id);
-                      e.dataTransfer.effectAllowed = "copy";
-                    }}
-                    onClick={() => addTemplate(tpl)}
-                    title={tpl.desc || tpl.name}
-                    style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 6, border: "1px solid #e2e8f0", borderRadius: 6, padding: "4px 7px", cursor: "grab", background: "#fff" }}
-                  >
-                    <span style={{ fontSize: 11, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                      {tpl.builtin ? "◫" : "★"} {tpl.name}
-                    </span>
-                    {!tpl.builtin && (
-                      <button
-                        className="nodrag"
-                        onClick={(e) => { e.stopPropagation(); setUserTemplates(deleteUserTemplate(tpl.id)); }}
-                        title="delete template"
-                        style={{ fontSize: 10, border: "none", background: "transparent", cursor: "pointer", color: "#a0aec0" }}
-                      >
-                        ✕
-                      </button>
-                    )}
-                  </div>
-                ))}
-              </div>
-            </div>
-          </DraggableCard>
-        )}
+        {/* Node palette + templates are drawn as rgui canvas panels (see
+            rguiPanels). Click a palette item to add at center, or drag it onto
+            the canvas to drop at that point. */}
 
         {/* floating sink output card (draggable) */}
         {view === "graph" && (

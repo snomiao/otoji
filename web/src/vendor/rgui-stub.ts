@@ -41,6 +41,23 @@ export interface PortRef {
   side: "in" | "out";
 }
 
+// v0.3.0 canvas-native palettes/panels
+export interface PanelItem {
+  id: string;
+  label: string;
+  color?: string;
+}
+export interface Panel {
+  id: string;
+  title: string;
+  anchor?: "left" | "right" | { x: number; y: number };
+  w?: number;
+  items: PanelItem[];
+  collapsed?: boolean;
+  onItemClick?: (item: PanelItem, screen: { x: number; y: number }) => void;
+  onItemDrop?: (item: PanelItem, at: { world: { x: number; y: number }; screen: { x: number; y: number } }) => void;
+}
+
 export interface RgRule {
   collapsePx: number;
   minGridPx: number;
@@ -70,6 +87,8 @@ export interface RguiOptions {
     from: PortRef,
     at: { screen: { x: number; y: number }; world: { x: number; y: number } },
   ) => void;
+  // v0.3.0 canvas-native palettes
+  panels?: Panel[];
 }
 
 export interface Rgui {
@@ -84,6 +103,8 @@ export interface Rgui {
   /** v0.3.0: programmatic viewport control */
   setView(view: ViewTransform): void;
   fitView(paddingPx?: number): void;
+  /** v0.3.0: replace the canvas-native palettes */
+  setPanels(panels: Panel[]): void;
   invalidate(): void;
   destroy(): void;
 }

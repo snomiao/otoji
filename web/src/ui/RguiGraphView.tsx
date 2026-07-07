@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 import type { VoiceGraph } from "../graph/model";
 import { voiceGraphToRgui, type RguiMeta } from "../graph/rgui-adapter";
 import type { LiveStore } from "../graph/live-store";
-import type { PortRef } from "@snomiao/rgui";
+import type { PortRef, Panel } from "@snomiao/rgui";
 
 // Primary graph renderer: draws + edits the voice graph with @snomiao/rgui
 // (readable-grid, semantic-zoom LOD, Canvas 2D). rgui owns pan/zoom, grid-snap
@@ -49,6 +49,7 @@ export function RguiGraphView({
   edgeMeta,
   nodeBody,
   live,
+  panels,
   apiRef,
 }: {
   graph: VoiceGraph;
@@ -62,6 +63,8 @@ export function RguiGraphView({
   nodeBody?: RguiMeta["nodeBody"];
   /** live store — subscribe to redraw the canvas when node previews update */
   live?: LiveStore;
+  /** canvas-native palettes (node palette, templates) */
+  panels?: Panel[];
   /** populated with imperative viewport controls (fitView / zoom) */
   apiRef?: React.MutableRefObject<RguiApi | null>;
 }) {
@@ -77,13 +80,15 @@ export function RguiGraphView({
   // Latest handlers behind a ref so the viewer (created once) never goes stale.
   const hRef = useRef<RguiHandlers | undefined>(handlers);
   hRef.current = handlers;
+  const panelsRef = useRef<Panel[] | undefined>(panels);
+  panelsRef.current = panels;
 
   // Create the viewer once the canvas is mounted; destroy on unmount.
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
     let disposed = false;
-    createViewer(canvas, rgGraphRef, hRef)
+    createViewer(canvas, rgGraphRef, hRef, panelsRef)
       .then((viewer) => {
         if (disposed) viewer?.destroy();
         else {
@@ -105,6 +110,11 @@ export function RguiGraphView({
   useEffect(() => {
     viewerRef.current?.setGraph(rgGraph as any);
   }, [rgGraph]);
+
+  // Push palette updates (templates list changes, etc.) into the viewer.
+  useEffect(() => {
+    if (panels) viewerRef.current?.setPanels(panels as any);
+  }, [panels]);
 
   // Redraw the canvas when any node's live preview updates (waveform/text/image).
   useEffect(() => {
@@ -179,11 +189,13 @@ async function createViewer(
   canvas: HTMLCanvasElement,
   graphRef: React.MutableRefObject<ReturnType<typeof voiceGraphToRgui>>,
   hRef: React.MutableRefObject<RguiHandlers | undefined>,
+  panelsRef: React.MutableRefObject<Panel[] | undefined>,
 ) {
   const { default: createRgui } = await import("@snomiao/rgui");
   return createRgui(canvas, {
     graph: graphRef.current as any,
     rule: { collapsePx: 56 },
+    panels: panelsRef.current as any,
     onNodeMoveEnd: (id, pos) => hRef.current?.onNodeMoveEnd?.(id, pos),
     isValidConnection: (from, to) => hRef.current?.isValidConnection?.(from, to) ?? true,
     onConnect: (from, to) => hRef.current?.onConnect?.(from, to),
