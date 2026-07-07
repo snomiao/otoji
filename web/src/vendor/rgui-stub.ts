@@ -61,6 +61,8 @@ export interface RguiOptions {
   onConnect?: (from: PortRef, to: PortRef) => void;
   onNodeClick?: (nodeId: string, screen: { x: number; y: number }) => void;
   onNodeContextMenu?: (nodeId: string, screen: { x: number; y: number }) => void;
+  // v0.3.0 selection
+  onSelectionChange?: (nodeIds: string[]) => void;
 }
 
 export interface Rgui {
@@ -69,6 +71,9 @@ export interface Rgui {
   readonly rule: RgRule;
   graph: Graph;
   setGraph(g: Graph): void;
+  /** v0.3.0: selected node ids (click / shift-drag box) */
+  readonly selection: string[];
+  setSelection(nodeIds: string[]): void;
   invalidate(): void;
   destroy(): void;
 }
