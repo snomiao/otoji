@@ -195,7 +195,7 @@ export function RguiGraphView({
       }}
       onDrop={onDrop}
     >
-      <canvas ref={canvasRef} style={{ width: "100%", height: "100%", display: "block" }} />
+      <canvas ref={canvasRef} style={{ width: "100%", height: "100%", display: "block", touchAction: "none", overscrollBehavior: "none" }} />
       {error && (
         <div
           style={{

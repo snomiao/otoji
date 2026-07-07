@@ -8,6 +8,9 @@
       /* Kill the default body margin so the full-bleed graph canvas (height:100vh)
          reaches every edge. Scrollable pages (classic app / lobby) keep normal flow. */
       html, body, #root { margin: 0; padding: 0; }
+      /* Stop the touchpad two-finger horizontal pan from triggering the browser's
+         back/forward swipe navigation. */
+      html, body { overscroll-behavior: none; }
       /* Node config overlays sit ON the node: the card itself is click-through
          (so dragging it drags the node underneath), only real controls capture. */
       .rgui-node-cfg, .rgui-node-cfg * { pointer-events: none; }
