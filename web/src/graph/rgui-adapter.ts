@@ -27,6 +27,9 @@ export interface RgGraphNode {
   inputs: RgPort[];
   outputs: RgPort[];
   fields: [string, string][];
+  /** how each field merges when this node renormalizes into a contracted block
+   *  (rgui aggregate rule; unlisted keys fall back to "mode") */
+  fieldRules?: Record<string, "max" | "min" | "sum" | "mean" | "range" | "mode" | "set" | "median" | "same" | "any" | "all" | "first" | "last" | "count">;
   /** reserved live-body rows (rgui draws `body` inside them) */
   bodyRows?: number;
   /** live-body draw hook — screen-space ctx clipped to the body region */
@@ -103,6 +106,9 @@ export function voiceGraphToRgui(graph: VoiceGraph, meta: RguiMeta = {}): RgGrap
       inputs: spec.inputs.map((p) => ({ id: p.id, label: p.id, kind: KIND[p.type] })),
       outputs: spec.outputs.map((p) => ({ id: p.id, label: p.id, kind: KIND[p.type] })),
       fields,
+      // when a chain contracts, show the SET of distinct devices in the block
+      // (otoji is multi-device; "set" beats the "mode" fallback here)
+      fieldRules: { device: "set" },
       ...(body ? { bodyRows: body.rows, body: body.draw } : {}),
     };
   });
