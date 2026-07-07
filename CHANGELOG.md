@@ -4,6 +4,47 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+## [0.1.52] - 2026-07-07
+
+### Bug Fixes
+- Show live transcript preview on STT (and other text) nodes *(web)*
+- No "no compatible GPU" error on WebGPU-less machines *(web)*
+- Force rgui canvas2d renderer (WebGPU "no compatible GPU" + lag) *(web)*
+- Stop touchpad pan from triggering browser back/forward *(web)*
+- Keep nodes draggable under their config overlay *(web)*
+
+### Chores
+- Bump rgui submodule to v1.7 (chevron ports, snap unify, overlay UX) *(web)*
+- DEV-only window.__otoji QA hook (add/select/inspect nodes from e2e) ([#92](https://github.com/snomiao/otoji/pull/92)) *(web)*
+- Bump rgui submodule to 9727607 (solder joints + grid field) ([#91](https://github.com/snomiao/otoji/pull/91)) *(web)*
+- Bump rgui submodule to dd242b7 (no-overlap flush snap + border dissolution) ([#84](https://github.com/snomiao/otoji/pull/84)) *(web)*
+
+### Documentation
+- Mark React Flow -> rgui migration complete (18/18)
+
+### Features
+- Snap generated graphs to rgui's main grid (viewer.snapGraph) *(web)*
+- Draw run-status (mic level / counts / state) natively on the canvas *(web)*
+- Draw the otoji title wordmark natively on the rgui canvas *(web)*
+- 3-D billboard tilt gizmo — drag the mic handle to rotate the plane *(web)*
+- Rgui overlay clips to node + native click-through; bump submodule *(web)*
+- Host summarize rule — compact node/group summaries on rgui *(web)*
+- Config overlay scales with zoom (scale:"zoom") *(web)*
+- Persist the local-mode graph across refreshes *(web)*
+- Render only the config controls over the node (no HTML card) *(web)*
+- Per-node config overlays glued by rgui (every readable node) *(web)*
+- Snap dropped nodes/workflows to the rgui grid *(web)*
+- Rgui-native palettes — node + template panels on the canvas ([#90](https://github.com/snomiao/otoji/pull/90)) *(web)*
+- Remove React Flow — rgui is the only graph renderer ([#89](https://github.com/snomiao/otoji/pull/89)) *(web)*
+- Live node body on the rgui canvas + save-template via rgui selection ([#88](https://github.com/snomiao/otoji/pull/88)) *(web)*
+- Rgui-native node inspector (device + per-type config) ([#87](https://github.com/snomiao/otoji/pull/87)) *(web)*
+- Rgui edges, viewport controls, full-screen, visible panels ([#86](https://github.com/snomiao/otoji/pull/86)) *(web)*
+- Rgui node selection — click/box select, Ctrl+A, Delete ([#85](https://github.com/snomiao/otoji/pull/85)) *(web)*
+- Make @snomiao/rgui the default graph renderer (editable, source-linked) ([#83](https://github.com/snomiao/otoji/pull/83)) *(web)*
+- Opt-in @snomiao/rgui graph renderer (?renderer=rgui) ([#81](https://github.com/snomiao/otoji/pull/81)) *(web)*
+- Toggle pinning of floating panels (screen ↔ graph) ([#80](https://github.com/snomiao/otoji/pull/80)) *(web)*
+- Auto-join shareable room links; dedupe join gate ([#78](https://github.com/snomiao/otoji/pull/78)) *(web)*
+
 ## [0.1.51] - 2026-07-02
 
 ### Testing
