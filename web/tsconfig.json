@@ -10,6 +10,9 @@
     "skipLibCheck": true,
     "resolveJsonModule": true,
     "isolatedModules": true,
+    "paths": {
+      "@snomiao/rgui": ["./src/vendor/rgui-stub.ts"]
+    },
     "noEmit": true,
     "allowSyntheticDefaultImports": true,
     "types": ["vite/client", "vitest/globals", "node"]
