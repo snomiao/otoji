@@ -1,51 +1,63 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import type { VoiceGraph } from "../graph/model";
 import { voiceGraphToRgui } from "../graph/rgui-adapter";
+import type { PortRef } from "@snomiao/rgui";
 
-// Experimental opt-in renderer: draws the voice graph with @snomiao/rgui
-// (readable-grid, semantic-zoom LOD, Canvas 2D) instead of React Flow. Enabled
-// with `?renderer=rgui`. Read-only for now — editing stays in the React Flow
-// renderer; this is a parallel view to bring rgui to feature parity.
-//
-// The rgui lib is loaded via dynamic import so a build WITHOUT it resolvable
-// (CI / production) still succeeds: the vite alias points `@snomiao/rgui` at an
-// in-repo stub that throws, and we show a friendly notice instead of crashing.
+// Primary graph renderer: draws + edits the voice graph with @snomiao/rgui
+// (readable-grid, semantic-zoom LOD, Canvas 2D). rgui owns pan/zoom, grid-snap
+// drag and the ghost-wire; otoji owns the authoritative graph and re-maps it in.
+// All mutations flow back through the callbacks so they sync to the room.
 
-type RguiModule = typeof import("@snomiao/rgui");
-type RguiViewer = ReturnType<RguiModule["default"]>;
+export interface RguiHandlers {
+  /** a node finished dragging → persist + broadcast its new world position */
+  onNodeMoveEnd?: (nodeId: string, pos: { x: number; y: number }) => void;
+  /** gate a port→port drag (otoji type-check) */
+  isValidConnection?: (from: PortRef, to: PortRef) => boolean;
+  /** a valid port→port drag completed → create the edge */
+  onConnect?: (from: PortRef, to: PortRef) => void;
+  /** left-click a node (screen = canvas-relative px) */
+  onNodeClick?: (nodeId: string, screen: { x: number; y: number }) => void;
+  /** right-click a node */
+  onNodeContextMenu?: (nodeId: string, screen: { x: number; y: number }) => void;
+  /** something dropped on the canvas at a world position (palette / file / template) */
+  onCanvasDrop?: (world: { x: number; y: number }, dataTransfer: DataTransfer) => void;
+}
 
 export function RguiGraphView({
   graph,
   deviceName,
+  handlers,
 }: {
   graph: VoiceGraph;
   deviceName?: (deviceId: string | null) => string;
+  handlers?: RguiHandlers;
 }) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
-  const viewerRef = useRef<RguiViewer | null>(null);
+  const viewerRef = useRef<Awaited<ReturnType<typeof createViewer>> | null>(null);
   const [error, setError] = useState<string>("");
 
   const rgGraph = useMemo(() => voiceGraphToRgui(graph, { deviceName }), [graph, deviceName]);
-  // Keep the latest mapped graph for the async create below without re-running it.
   const rgGraphRef = useRef(rgGraph);
   rgGraphRef.current = rgGraph;
+
+  // Latest handlers behind a ref so the viewer (created once) never goes stale.
+  const hRef = useRef<RguiHandlers | undefined>(handlers);
+  hRef.current = handlers;
 
   // Create the viewer once the canvas is mounted; destroy on unmount.
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
     let disposed = false;
-    import("@snomiao/rgui")
-      .then((mod) => {
-        if (disposed) return;
-        viewerRef.current = mod.default(canvas, {
-          graph: rgGraphRef.current as any,
-          rule: { collapsePx: 56 },
-        });
+    createViewer(canvas, rgGraphRef, hRef)
+      .then((viewer) => {
+        if (disposed) viewer?.destroy();
+        else {
+          viewerRef.current = viewer;
+          if (import.meta.env.DEV) (window as any).__rgui = viewer; // e2e / debug handle
+        }
       })
-      .catch((e) => {
-        if (!disposed) setError(e?.message ?? String(e));
-      });
+      .catch((e) => !disposed && setError(e?.message ?? String(e)));
     return () => {
       disposed = true;
       viewerRef.current?.destroy();
@@ -58,8 +70,28 @@ export function RguiGraphView({
     viewerRef.current?.setGraph(rgGraph as any);
   }, [rgGraph]);
 
+  // Native drop (palette node / template / file) → world coords → host handler.
+  const onDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    const v = viewerRef.current;
+    if (!v) return;
+    const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+    const sx = e.clientX - rect.left;
+    const sy = e.clientY - rect.top;
+    const view = v.view;
+    const world = { x: (sx - view.x) / view.k, y: (sy - view.y) / view.k };
+    hRef.current?.onCanvasDrop?.(world, e.dataTransfer);
+  };
+
   return (
-    <div style={{ position: "absolute", inset: 0 }}>
+    <div
+      style={{ position: "absolute", inset: 0 }}
+      onDragOver={(e) => {
+        e.preventDefault();
+        e.dataTransfer.dropEffect = "copy";
+      }}
+      onDrop={onDrop}
+    >
       <canvas ref={canvasRef} style={{ width: "100%", height: "100%", display: "block" }} />
       {error && (
         <div
@@ -79,9 +111,29 @@ export function RguiGraphView({
         >
           rgui renderer unavailable: {error}
           <br />
-          <span style={{ opacity: 0.7 }}>Remove ?renderer=rgui to use the default renderer.</span>
+          <span style={{ opacity: 0.7 }}>Add ?renderer=rf to use the React Flow renderer.</span>
         </div>
       )}
     </div>
   );
+}
+
+// Dynamically import rgui (aliased to live source / submodule / stub) and wire
+// the interaction callbacks through the ref so they always call the latest host
+// handlers. Kept out of the component body so the import type stays local.
+async function createViewer(
+  canvas: HTMLCanvasElement,
+  graphRef: React.MutableRefObject<ReturnType<typeof voiceGraphToRgui>>,
+  hRef: React.MutableRefObject<RguiHandlers | undefined>,
+) {
+  const { default: createRgui } = await import("@snomiao/rgui");
+  return createRgui(canvas, {
+    graph: graphRef.current as any,
+    rule: { collapsePx: 56 },
+    onNodeMoveEnd: (id, pos) => hRef.current?.onNodeMoveEnd?.(id, pos),
+    isValidConnection: (from, to) => hRef.current?.isValidConnection?.(from, to) ?? true,
+    onConnect: (from, to) => hRef.current?.onConnect?.(from, to),
+    onNodeClick: (id, screen) => hRef.current?.onNodeClick?.(id, screen),
+    onNodeContextMenu: (id, screen) => hRef.current?.onNodeContextMenu?.(id, screen),
+  });
 }

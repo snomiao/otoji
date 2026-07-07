@@ -46,7 +46,7 @@ import { getDeviceId, getDeviceName, setDeviceName } from "../lib/device-id";
 import { getRole, setRole, detectCaps, type DeviceRole } from "../lib/device-role";
 import { NetworkView } from "./NetworkView";
 import { JoinGate } from "./JoinGate";
-import { RguiGraphView } from "./RguiGraphView";
+import { RguiGraphView, type RguiHandlers } from "./RguiGraphView";
 import { TimelineView } from "./TimelineView";
 import type { PortType } from "../graph/model";
 import {
@@ -679,9 +679,13 @@ function Editor({ initialRoom, local }: { initialRoom?: string; local?: boolean 
   const rf = useReactFlow();
 
   const addNode = useCallback(
-    (type: NodeType, screen?: { x: number; y: number }) => {
+    (type: NodeType, screen?: { x: number; y: number }, worldPos?: { x: number; y: number }) => {
       const id = `${type}-${Math.random().toString(36).slice(2, 8)}`;
-      const position = screen
+      // worldPos (from the rgui canvas) is already in flow/world coords; screen
+      // (from React Flow DnD) needs projecting; else a random spot.
+      const position = worldPos
+        ? worldPos
+        : screen
         ? rf.screenToFlowPosition(screen)
         : { x: 80 + Math.random() * 120, y: 80 + Math.random() * 160 };
       const n: Node = {
@@ -720,8 +724,8 @@ function Editor({ initialRoom, local }: { initialRoom?: string; local?: boolean 
   const allTemplates = useMemo(() => [...BUILTIN_TEMPLATES, ...userTemplates], [userTemplates]);
 
   const addTemplate = useCallback(
-    (tpl: GraphTemplate, screen?: { x: number; y: number }) => {
-      const base = screen ? rf.screenToFlowPosition(screen) : { x: 80 + Math.random() * 80, y: 80 + Math.random() * 80 };
+    (tpl: GraphTemplate, screen?: { x: number; y: number }, worldPos?: { x: number; y: number }) => {
+      const base = worldPos ?? (screen ? rf.screenToFlowPosition(screen) : { x: 80 + Math.random() * 80, y: 80 + Math.random() * 80 });
       const idOf = new Map<string, string>();
       const newNodes: Node[] = tpl.nodes.map((tn) => {
         const id = `${tn.type}-${Math.random().toString(36).slice(2, 8)}`;
@@ -875,12 +879,12 @@ function Editor({ initialRoom, local }: { initialRoom?: string; local?: boolean 
 
   // Drag-drop a media/text file onto the canvas -> create a file-source node here.
   const addFileNodeAt = useCallback(
-    (file: File, clientX: number, clientY: number) => {
+    (file: File, clientX: number, clientY: number, worldPos?: { x: number; y: number }) => {
       const kind = fileKindForName(file.name);
       if (!kind) return;
       const voiceType = kind === "audio" ? "file-audio" : "file-text";
       const id = `${voiceType}-${Math.random().toString(36).slice(2, 8)}`;
-      const position = rf.screenToFlowPosition({ x: clientX, y: clientY });
+      const position = worldPos ?? rf.screenToFlowPosition({ x: clientX, y: clientY });
       const n: Node = { id, type: "voice", position, data: { voiceType, device: myDeviceId, config: { file: file.name } } };
       fileStore.set(id, { kind, name: file.name, file });
       const next = [...nodesRef.current, n];
@@ -1216,13 +1220,57 @@ function Editor({ initialRoom, local }: { initialRoom?: string; local?: boolean 
 
   const currentGraph = useMemo(() => fromRF(nodes, edges, versionRef.current), [nodes, edges]);
 
-  // Experimental opt-in renderer: `?renderer=rgui` swaps the React Flow canvas
-  // for the @snomiao/rgui readable-grid view (read-only for now). Editing still
-  // happens via the default renderer.
-  const useRgui = useMemo(() => new URLSearchParams(location.search).get("renderer") === "rgui", []);
+  // rgui (@snomiao/rgui readable-grid canvas) is the DEFAULT renderer. React
+  // Flow stays reachable one more step via `?renderer=rf` while node config UI
+  // is relocated into an rgui-native inspector; after that it's removed.
+  const useRgui = useMemo(() => {
+    const r = new URLSearchParams(location.search).get("renderer");
+    return r !== "rf" && r !== "reactflow" && r !== "classic";
+  }, []);
   const deviceNameOf = useCallback(
     (id: string | null) => (id ? devices.find((d) => d.deviceId === id)?.name ?? id.slice(0, 6) : "unassigned"),
     [devices],
+  );
+
+  // Editing callbacks the rgui canvas drives back into otoji's authoritative
+  // graph (then broadcast to the room). Mirrors the React Flow handlers.
+  const rguiHandlers = useMemo<RguiHandlers>(
+    () => ({
+      onNodeMoveEnd: (id, pos) => {
+        const next = nodesRef.current.map((n) => (n.id === id ? { ...n, position: { x: pos.x, y: pos.y } } : n));
+        nodesRef.current = next;
+        setNodes(next);
+        broadcast(next, edgesRef.current);
+      },
+      isValidConnection: (from, to) =>
+        canConnect(fromRF(nodesRef.current, edgesRef.current, 0), from.node, from.port, to.node, to.port),
+      onConnect: (from, to) => {
+        const g = fromRF(nodesRef.current, edgesRef.current, versionRef.current);
+        if (!canConnect(g, from.node, from.port, to.node, to.port)) return;
+        const id = edgeId({ source: from.node, sourceHandle: from.port, target: to.node, targetHandle: to.port });
+        const next = [...edgesRef.current, { id, source: from.node, sourceHandle: from.port, target: to.node, targetHandle: to.port }];
+        edgesRef.current = next;
+        setEdges(next);
+        broadcast(nodesRef.current, next);
+      },
+      // No inline node UI on canvas yet: both click and right-click open the
+      // per-node menu (duplicate / replace / remove / visibility).
+      onNodeClick: (id, screen) => setNodeMenu({ nodeId: id, x: screen.x, y: screen.y }),
+      onNodeContextMenu: (id, screen) => setNodeMenu({ nodeId: id, x: screen.x, y: screen.y }),
+      onCanvasDrop: (world, dt) => {
+        const f = dt.files?.[0];
+        if (f) return addFileNodeAt(f, 0, 0, world);
+        const tplId = dt.getData("application/otoji-template");
+        if (tplId) {
+          const tpl = allTemplates.find((x) => x.id === tplId);
+          if (tpl) addTemplate(tpl, undefined, world);
+          return;
+        }
+        const t = dt.getData("application/otoji-node") as NodeType;
+        if (t && NODE_SPECS[t]) addNode(t, undefined, world);
+      },
+    }),
+    [setNodes, setEdges, broadcast, addNode, addTemplate, addFileNodeAt, allTemplates],
   );
 
   const openNodeMenu = useCallback((nodeId: string, x: number, y: number) => setNodeMenu({ nodeId, x, y }), []);
@@ -1268,7 +1316,7 @@ function Editor({ initialRoom, local }: { initialRoom?: string; local?: boolean 
         {/* full-bleed graph canvas — the whole background */}
         <div style={{ position: "absolute", inset: 0 }}>
           {useRgui ? (
-            <RguiGraphView graph={currentGraph} deviceName={deviceNameOf} />
+            <RguiGraphView graph={currentGraph} deviceName={deviceNameOf} handlers={rguiHandlers} />
           ) : (
           <ReactFlow
             nodes={nodes}
