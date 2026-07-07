@@ -1484,33 +1484,44 @@ function Editor({ initialRoom, local }: { initialRoom?: string; local?: boolean 
     (rgNodes: any[], info: any): SummaryContent | null => {
       if (info?.level === "pseudo") {
         const titles = rgNodes.map((n) => n.title);
-        // Wave superposition: when the merged block contains mic nodes, draw the
-        // COMBINED level envelope of all of them. The live store keeps RMS
-        // envelopes (not raw samples), and uncorrelated sources superpose in
-        // POWER, so per time window: rms = sqrt(Σ rmsᵢ²). (Raw-sample addition —
-        // true superposition — is what the Mix node's mixCluster does downstream.)
-        const micIds = rgNodes
-          .map((n) => n.id)
-          .filter((id) => {
-            const t = (nodesRef.current.find((x) => x.id === id)?.data as any)?.voiceType;
-            return t === "mic-vad" || t === "mic-raw";
-          });
-        if (micIds.length) {
-          const label = `${rgNodes.length} nodes · ${titles.slice(0, 3).join(" → ")}`;
-          return {
-            kind: "canvas",
-            height: 44,
-            draw: (ctx: CanvasRenderingContext2D, rect: { width: number; height: number }) => {
-              const live = liveRef.current;
-              ctx.font = "10px system-ui, sans-serif";
-              ctx.textAlign = "left";
-              ctx.textBaseline = "top";
-              ctx.fillStyle = "#8a94a6";
-              ctx.fillText(clipText(ctx, label, rect.width), 0, 0);
-              const waveTop = 13;
-              const waveH = rect.height - waveTop;
+        // The merged block shows its CHILDREN'S LIVE VALUES, space permitting:
+        // the superposed mic wave, then one line of latest text per text node
+        // (stt transcript, translation, sink output …) in signal-flow order.
+        // rgui hands the draw the actual available height, so rows adapt —
+        // tight blocks show the label + wave, roomy blocks show everything.
+        const vtOf = (id: string) => (nodesRef.current.find((x) => x.id === id)?.data as any)?.voiceType as NodeType | undefined;
+        const micIds = rgNodes.map((n) => n.id).filter((id) => { const t = vtOf(id); return t === "mic-vad" || t === "mic-raw"; });
+        // signal-flow display order for text-bearing nodes
+        const TEXT_ORDER: NodeType[] = ["stt", "web-speech", "vosk", "model", "paddle-ocr", "translate", "text-diff", "sink"];
+        const textMembers = rgNodes
+          .map((n) => ({ id: n.id as string, vt: vtOf(n.id) }))
+          .filter((m): m is { id: string; vt: NodeType } => !!m.vt && TEXT_ORDER.includes(m.vt))
+          .sort((a, b) => TEXT_ORDER.indexOf(a.vt) - TEXT_ORDER.indexOf(b.vt));
+        if (!micIds.length && !textMembers.length)
+          return { kind: "text", lines: [`${rgNodes.length} nodes`, titles.slice(0, 3).join(" → ")] };
+        const label = `${rgNodes.length} nodes · ${titles.slice(0, 3).join(" → ")}`;
+        const LABEL_H = 13, WAVE_H = 22, LINE_H = 14;
+        // ask for full height; rgui clamps to the space the block really has
+        const height = LABEL_H + (micIds.length ? WAVE_H : 0) + Math.min(textMembers.length, 4) * LINE_H;
+        return {
+          kind: "canvas",
+          height,
+          draw: (ctx: CanvasRenderingContext2D, rect: { width: number; height: number }) => {
+            const live = liveRef.current;
+            ctx.font = "10px system-ui, sans-serif";
+            ctx.textAlign = "left";
+            ctx.textBaseline = "top";
+            ctx.fillStyle = "#8a94a6";
+            ctx.fillText(clipText(ctx, label, rect.width), 0, 0);
+            let y = LABEL_H;
+            if (micIds.length && y + WAVE_H <= rect.height + 1) {
+              // wave superposition: the live store keeps RMS envelopes (not raw
+              // samples), and uncorrelated sources superpose in POWER, so per
+              // window rms = sqrt(Σ rmsᵢ²). (True raw-sample addition is what
+              // the Mix node's mixCluster does to the audio itself downstream.)
               const N = 48;
               const bw = rect.width / N;
+              const base = y + WAVE_H;
               ctx.fillStyle = "#dd6b20";
               for (let i = 0; i < N; i++) {
                 let p = 0;
@@ -1519,13 +1530,24 @@ function Editor({ initialRoom, local }: { initialRoom?: string; local?: boolean 
                   const lv = ls[ls.length - N + i];
                   if (lv) p += lv.rms * lv.rms;
                 }
-                const h = Math.min(waveH, Math.sqrt(p) * waveH * 4);
-                if (h > 0.5) ctx.fillRect(i * bw, rect.height - h, Math.max(1, bw - 1), h);
+                const h = Math.min(WAVE_H, Math.sqrt(p) * WAVE_H * 4);
+                if (h > 0.5) ctx.fillRect(i * bw, base - h, Math.max(1, bw - 1), h);
               }
-            },
-          };
-        }
-        return { kind: "text", lines: [`${rgNodes.length} nodes`, titles.slice(0, 3).join(" → ")] };
+              y += WAVE_H;
+            }
+            ctx.font = "11px system-ui, sans-serif";
+            for (const m of textMembers) {
+              if (y + LINE_H > rect.height + 1) break;
+              const txt = live.getTexts(m.id)[0];
+              const busy = live.getBusy(m.id);
+              if (!txt && !busy) continue;
+              // translations read blue (rgui's text-signal color); the rest light
+              ctx.fillStyle = m.vt === "translate" ? "#60a5fa" : "#cbd5e0";
+              ctx.fillText(clipText(ctx, busy && !txt ? "…" : `${txt}${busy ? " …" : ""}`, rect.width), 0, y + 1);
+              y += LINE_H;
+            }
+          },
+        };
       }
       const rg = rgNodes[0];
       if (!rg) return null;
