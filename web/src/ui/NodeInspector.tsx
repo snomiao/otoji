@@ -118,8 +118,11 @@ export function NodeInspector({ node, onClose }: { node: InspectorNode; onClose?
   const display = (t: string) => t.replace(/^https?:\/\//, "");
 
   // Positioned by rgui (glued to the node via setNodeOverlay); this is just the card.
+  // `rgui-node-cfg`: the card is click-through so dragging it drags the node;
+  // only the form controls capture pointer events (see index.html).
   return (
     <div
+      className="rgui-node-cfg"
       style={{
         width: 240,
         maxHeight: "70vh",

@@ -8,6 +8,11 @@
       /* Kill the default body margin so the full-bleed graph canvas (height:100vh)
          reaches every edge. Scrollable pages (classic app / lobby) keep normal flow. */
       html, body, #root { margin: 0; padding: 0; }
+      /* Node config overlays sit ON the node: the card itself is click-through
+         (so dragging it drags the node underneath), only real controls capture. */
+      .rgui-node-cfg, .rgui-node-cfg * { pointer-events: none; }
+      .rgui-node-cfg select, .rgui-node-cfg input, .rgui-node-cfg button,
+      .rgui-node-cfg textarea, .rgui-node-cfg a { pointer-events: auto; }
     </style>
   </head>
   <body>
