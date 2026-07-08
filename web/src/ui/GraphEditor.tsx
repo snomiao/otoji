@@ -373,7 +373,6 @@ function Editor({ initialRoom, local }: { initialRoom?: string; local?: boolean 
   const pendingSnapRef = useRef(false);
   // 3-D billboard gizmo: drag the mic handle to tilt the graph plane (yaw/pitch),
   // double-click to flatten it. Records the base orientation + grab point on down.
-  const gizmoDrag = useRef<{ x0: number; y0: number; base: { yaw: number; pitch: number; roll: number } } | null>(null);
   const sigRef = useRef<MultiSignalingClient | null>(null);
   const meshRef = useRef<PeerMesh | null>(null);
   const transportRef = useRef<PeerMeshTransport | null>(null);
@@ -1468,7 +1467,12 @@ function Editor({ initialRoom, local }: { initialRoom?: string; local?: boolean 
       ctx.fillStyle = "rgba(180,190,205,0.5)";
       ctx.fillText(paused ? "paused — press Resume to start" : "Run the graph to produce transcripts.", x, size.height - 14);
     }
-  }, [running, paused]);
+    // transient runtime status / error (used to live in the HTML toolbar)
+    if (runStatus) {
+      ctx.fillStyle = runStatus.startsWith("error") ? "#e53e3e" : "#8a94a6";
+      ctx.fillText(clipText(ctx, runStatus, 420), x, size.height - (running ? 50 : 32));
+    }
+  }, [running, paused, runStatus]);
 
   // Canvas-native palettes (rgui panels): a node palette per category + a
   // templates panel. Click adds at viewport center; drag drops at the world pos.
@@ -1505,6 +1509,76 @@ function Editor({ initialRoom, local }: { initialRoom?: string; local?: boolean 
     };
     return [...nodePanels, tplPanel];
   }, [allTemplates, addNode, addTemplate]);
+
+  // Canvas-native toolbar: the floating HTML toolbar as an rgui panel. Items
+  // are one-shot actions; live state shows as the row dot + label (active view,
+  // run state, peer-badge toggle). The memo rebuilds — and setPanels re-syncs —
+  // whenever displayed state changes. share/reportIssue are plain function
+  // declarations (new identity per render), so they route through a ref to keep
+  // this memo's deps to real state.
+  const tbActionsRef = useRef({ share, reportIssue });
+  tbActionsRef.current = { share, reportIssue };
+  const toolbarPanel = useMemo<Panel>(() => {
+    const dim = "#8b949e";
+    const items: Panel["items"] = [
+      local
+        ? { id: "room", label: "＋ create / join a room", color: "#9b34bf" }
+        : { id: "share", label: copied ? "✓ link copied" : "⧉ Share link", color: "#9b34bf" },
+      ...(["graph", "network", "timeline"] as const).map((v) => ({
+        id: `view-${v}`,
+        label: (view === v ? "▸ " : "") + v[0].toUpperCase() + v.slice(1),
+        color: view === v ? "#60a5fa" : dim,
+      })),
+      ...(view === "graph"
+        ? [
+            { id: "pipeline", label: "＋ Pipeline", color: "#48bb78" },
+            { id: "arrange", label: "⤢ Arrange", color: dim },
+            { id: "save-tpl", label: "★ Save template", color: dim },
+            { id: "zoom-in", label: "＋ Zoom in", color: dim },
+            { id: "zoom-out", label: "－ Zoom out", color: dim },
+            { id: "fit", label: "⤢ Fit view", color: dim },
+            { id: "tilt", label: "🎙 Tilt (toggle)", color: dim },
+          ]
+        : []),
+      { id: "peer-type", label: "🏷 Peer type", color: peerBadgeShown ? "#60a5fa" : dim },
+      { id: "run", label: running ? "⏸ Pause" : "▶ Resume", color: running ? "#48bb78" : "#a0aec0" },
+      { id: "report", label: lastError ? "🐞 Report error" : "🐞 Report bug", color: lastError ? "#e53e3e" : dim },
+    ];
+    return {
+      id: "toolbar",
+      title: `otoji · ${running ? "live" : paused ? "paused" : "idle"}`,
+      anchor: panelAnchorsRef.current["toolbar"] ?? { x: 210, y: 12 },
+      items,
+      onItemClick: (it) => {
+        const api = rguiApiRef.current;
+        switch (it.id) {
+          case "room": window.location.href = "/"; break;
+          case "share": tbActionsRef.current.share(); break;
+          case "view-graph": setView("graph"); break;
+          case "view-network": setView("network"); break;
+          case "view-timeline": setView("timeline"); break;
+          case "pipeline": addPipeline(); break;
+          case "arrange": autoArrange(); break;
+          case "save-tpl": saveSelectionAsTemplate(); break;
+          case "zoom-in": api?.zoomBy(1.25); break;
+          case "zoom-out": api?.zoomBy(0.8); break;
+          case "fit": api?.fitView(48); break;
+          case "tilt": {
+            // click toggles between flat and a readable preset tilt (the old
+            // HTML gizmo's free drag is gone with the HTML toolbar)
+            const r = api?.rotation3();
+            const flat = !r || (Math.abs(r.yaw) < 0.05 && Math.abs(r.pitch) < 0.05);
+            api?.setRotation3(flat ? { yaw: 0.55, pitch: 0.35 } : { yaw: 0, pitch: 0, roll: 0 }, { animate: true });
+            break;
+          }
+          case "peer-type": togglePeerBadgeShown(); break;
+          case "run": setPaused((v) => !v); break;
+          case "report": tbActionsRef.current.reportIssue(); break;
+        }
+      },
+    };
+  }, [local, view, paused, running, peerBadgeShown, lastError, copied, addPipeline, autoArrange, saveSelectionAsTemplate]);
+  const allPanels = useMemo<Panel[]>(() => [...rguiPanels, toolbarPanel], [rguiPanels, toolbarPanel]);
 
   // DEV-only QA handle (like window.__rgui): drive add/inspect/connect from e2e.
   useEffect(() => {
@@ -1654,98 +1728,12 @@ function Editor({ initialRoom, local }: { initialRoom?: string; local?: boolean 
       <div style={{ position: "relative", height: "100vh", overflow: "hidden", fontFamily: "system-ui, sans-serif" }}>
         {/* full-bleed graph canvas — the whole background */}
         <div style={{ position: "absolute", inset: 0 }}>
-          <RguiGraphView graph={currentGraph} deviceName={deviceNameOf} handlers={rguiHandlers} selection={selected} edgeMeta={edgeMeta} nodeBody={nodeBody} live={liveRef.current} panels={rguiPanels} onPanelMove={onPanelMove} renderNodeOverlay={renderNodeOverlay} summarize={summarize} hud={{ title: "otoji", subtitle: local ? "local · this device only" : `room ${room} · ${status} · ${role} · ${devices.length} device(s)` }} hudStatus={hudStatus} apiRef={rguiApiRef} />
+          <RguiGraphView graph={currentGraph} deviceName={deviceNameOf} handlers={rguiHandlers} selection={selected} edgeMeta={edgeMeta} nodeBody={nodeBody} live={liveRef.current} panels={allPanels} onPanelMove={onPanelMove} renderNodeOverlay={renderNodeOverlay} summarize={summarize} hud={{ title: "otoji", subtitle: local ? "local · this device only" : `room ${room} · ${status} · ${role} · ${devices.length} device(s)` }} hudStatus={hudStatus} apiRef={rguiApiRef} />
         </div>
 
-        {/* floating toolbar card (draggable). The "otoji" wordmark + status line
-            are drawn natively by rgui on the canvas (top-left); this card carries
-            only the interactive controls, sitting just below the canvas wordmark. */}
-        <DraggableCard pkey="toolbar2" defaultPos={{ x: 12, y: 54 }} zIndex={11}>
-        <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", padding: "2px 12px 8px", maxWidth: "calc(100vw - 48px)" }}>
-          {local ? (
-            <a href="/" style={{ fontSize: 12 }}>＋ create / join a room</a>
-          ) : (
-            <button onClick={share} style={{ fontSize: 12 }}>{copied ? "✓ link copied" : "Share link"}</button>
-          )}
-          <span style={{ display: "flex", gap: 4, marginLeft: 8 }}>
-            {(["graph", "network", "timeline"] as const).map((v) => (
-              <button
-                key={v}
-                onClick={() => setView(v)}
-                style={{ fontSize: 12, fontWeight: view === v ? 700 : 400, background: view === v ? "#ebf4ff" : undefined }}
-              >
-                {v[0].toUpperCase() + v.slice(1)}
-              </button>
-            ))}
-          </span>
-          {view === "graph" && (
-            <button onClick={addPipeline} style={{ fontSize: 12, fontWeight: 700 }}>+ Pipeline</button>
-          )}
-          {view === "graph" && (
-            <button onClick={autoArrange} style={{ fontSize: 12 }} title="Auto-arrange nodes (spring layout, no overlapping boxes)">⤢ Arrange</button>
-          )}
-          {view === "graph" && (
-            <button onClick={saveSelectionAsTemplate} style={{ fontSize: 12 }} title="Save the selected nodes as a reusable template">★ Save template</button>
-          )}
-          {view === "graph" && useRgui && (
-            <span style={{ display: "flex", gap: 2 }}>
-              <button onClick={() => rguiApiRef.current?.zoomBy(1.25)} style={{ fontSize: 12 }} title="Zoom in">＋</button>
-              <button onClick={() => rguiApiRef.current?.zoomBy(0.8)} style={{ fontSize: 12 }} title="Zoom out">－</button>
-              <button onClick={() => rguiApiRef.current?.fitView(48)} style={{ fontSize: 12 }} title="Fit graph to view">⤢ Fit</button>
-              <button
-                title="Drag to tilt the graph in 3-D · double-click to flatten"
-                style={{ fontSize: 12, cursor: "grab", touchAction: "none" }}
-                onPointerDown={(e) => {
-                  const api = rguiApiRef.current;
-                  if (!api) return;
-                  gizmoDrag.current = { x0: e.clientX, y0: e.clientY, base: api.rotation3() };
-                  e.currentTarget.setPointerCapture(e.pointerId);
-                  e.currentTarget.style.cursor = "grabbing";
-                }}
-                onPointerMove={(e) => {
-                  const d = gizmoDrag.current;
-                  if (!d) return;
-                  const S = 0.012; // rad per px — horizontal = yaw, vertical = pitch
-                  rguiApiRef.current?.setRotation3(
-                    { yaw: d.base.yaw + (e.clientX - d.x0) * S, pitch: d.base.pitch - (e.clientY - d.y0) * S },
-                    { animate: false },
-                  );
-                }}
-                onPointerUp={(e) => {
-                  gizmoDrag.current = null;
-                  e.currentTarget.style.cursor = "grab";
-                }}
-                onPointerCancel={(e) => {
-                  gizmoDrag.current = null;
-                  e.currentTarget.style.cursor = "grab";
-                }}
-                onDoubleClick={() => rguiApiRef.current?.setRotation3({ yaw: 0, pitch: 0, roll: 0 }, { animate: true })}
-              >
-                🎙 Tilt
-              </button>
-            </span>
-          )}
-          <button
-            onClick={togglePeerBadgeShown}
-            title="Show/hide each peer's connection-type badge ([wan] / [lan] / [browser])"
-            style={{ fontSize: 12, fontWeight: peerBadgeShown ? 700 : 400, background: peerBadgeShown ? "#ebf4ff" : undefined }}
-          >
-            🏷 Peer type
-          </button>
-          <span style={{ display: "flex", gap: 8, alignItems: "center", marginLeft: 8 }}>
-            {runStatus && <span style={{ fontSize: 12, color: runStatus.startsWith("error") ? "#e53e3e" : "#718096" }}>{runStatus}</span>}
-            <span style={{ fontSize: 12, color: running ? "#2f855a" : "#a0aec0" }}>{running ? "● live" : paused ? "paused" : "idle"}</span>
-            <button onClick={() => setPaused((v) => !v)} style={{ fontSize: 12 }}>{paused ? "Resume" : "Pause"}</button>
-            <button
-              onClick={reportIssue}
-              title="Open a pre-filled GitHub issue with the current error + graph context"
-              style={{ fontSize: 12, color: lastError ? "#e53e3e" : undefined, fontWeight: lastError ? 700 : 400 }}
-            >
-              🐞 {lastError ? "Report error" : "Report bug"}
-            </button>
-          </span>
-        </div>
-        </DraggableCard>
+        {/* The toolbar is an rgui canvas panel now (see toolbarPanel): the old
+            floating HTML card is gone. Network/timeline overlays carry their own
+            view tabs since they cover the canvas (and its panels). */}
 
         {/* Node palette + templates are drawn as rgui canvas panels (see
             rguiPanels). Click a palette item to add at center, or drag it onto
@@ -1755,15 +1743,20 @@ function Editor({ initialRoom, local }: { initialRoom?: string; local?: boolean 
             audio players) renders inside the sink's NodeInspector overlay, and the
             run-status HUD is drawn natively on the canvas — no floating card. */}
 
-        {/* network / timeline as floating overlay cards */}
-        {view === "network" && (
+        {/* network / timeline as floating overlay cards. They cover the canvas —
+            and the rgui toolbar panel with it — so each carries its own view tabs
+            to get back to the graph. */}
+        {view !== "graph" && (
           <div style={{ ...CARD, position: "absolute", left: 12, right: 12, top: 64, bottom: 12, overflow: "auto", padding: "12px", zIndex: 9 }}>
-            <NetworkView myId={myDeviceId} devices={devices} peerStates={peerStates} graph={currentGraph} stats={transportRef.current} />
-          </div>
-        )}
-        {view === "timeline" && (
-          <div style={{ ...CARD, position: "absolute", left: 12, right: 12, top: 64, bottom: 12, overflow: "auto", padding: "12px", zIndex: 9 }}>
-            <TimelineView recordings={sinkRecs} />
+            <div style={{ display: "flex", gap: 4, marginBottom: 10 }}>
+              {(["graph", "network", "timeline"] as const).map((v) => (
+                <button key={v} onClick={() => setView(v)} style={{ fontSize: 12, fontWeight: view === v ? 700 : 400, background: view === v ? "#ebf4ff" : undefined }}>
+                  {v[0].toUpperCase() + v.slice(1)}
+                </button>
+              ))}
+            </div>
+            {view === "network" && <NetworkView myId={myDeviceId} devices={devices} peerStates={peerStates} graph={currentGraph} stats={transportRef.current} />}
+            {view === "timeline" && <TimelineView recordings={sinkRecs} />}
           </div>
         )}
 
@@ -1859,84 +1852,6 @@ function ConnectMenu({
   );
 }
 
-// A floating card the user can reposition by its grip. Position + pin state
-// persist per key. Pinned (default): fixed to the screen, unaffected by pan/zoom.
-// Unpinned (📍): the card lives ON the graph — rendered inside the viewport so it
-// pans and zooms with the canvas like a node. The 📌 button toggles between them,
-// converting the stored position between screen and flow coordinates so the card
-// doesn't jump.
-function DraggableCard({
-  pkey,
-  defaultPos,
-  width,
-  maxHeight,
-  zIndex = 10,
-  children,
-}: {
-  pkey: string;
-  defaultPos: { x: number; y: number };
-  width?: number;
-  maxHeight?: string;
-  zIndex?: number;
-  children: React.ReactNode;
-}) {
-  // Panels are screen-fixed (the rgui graph canvas is the full-bleed background).
-  const [pos, setPos] = useState<{ x: number; y: number }>(() => {
-    try {
-      const s = localStorage.getItem("otoji.panel." + pkey);
-      if (s) {
-        const p = JSON.parse(s);
-        // Legacy graph-pinned positions stored flow coords — fall back to default.
-        if (p.pinned === false) return { ...defaultPos };
-        return { x: p.x ?? defaultPos.x, y: p.y ?? defaultPos.y };
-      }
-    } catch {
-      /* ignore */
-    }
-    return { ...defaultPos };
-  });
-  const { x, y } = pos;
-  const persist = (next: { x: number; y: number }) => {
-    try { localStorage.setItem("otoji.panel." + pkey, JSON.stringify({ ...next, pinned: true })); } catch { /* ignore */ }
-  };
-
-  const drag = useRef<{ px: number; py: number; ox: number; oy: number } | null>(null);
-  const onDown = (e: React.PointerEvent) => {
-    e.stopPropagation();
-    drag.current = { px: e.clientX, py: e.clientY, ox: x, oy: y };
-    (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
-  };
-  const onMove = (e: React.PointerEvent) => {
-    const d = drag.current;
-    if (!d) return;
-    setPos({ x: Math.max(0, d.ox + (e.clientX - d.px)), y: Math.max(0, d.oy + (e.clientY - d.py)) });
-  };
-  const onUp = () => {
-    if (!drag.current) return;
-    drag.current = null;
-    persist({ x, y });
-  };
-
-  return (
-    <div style={{ ...CARD, position: "fixed", left: x, top: y, width, maxHeight, overflow: maxHeight ? "auto" : undefined, zIndex }}>
-      <div style={{ display: "flex", alignItems: "center", padding: "3px 6px 5px" }}>
-        <div
-          onPointerDown={onDown}
-          onPointerMove={onMove}
-          onPointerUp={onUp}
-          title="drag to move this panel"
-          style={{ flex: 1, cursor: "grab", textAlign: "center", color: "#cbd5e0", fontSize: 11, lineHeight: "11px", userSelect: "none", touchAction: "none" }}
-        >
-          ⠿⠿⠿
-        </div>
-      </div>
-      {children}
-    </div>
-  );
-}
-
-// Right-click / long-press node menu: duplicate, replace (→ type list), toggle the
-// preview, or remove. A transparent backdrop closes it on an outside click.
 function NodeMenu({
   x,
   y,
