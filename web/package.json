@@ -8,6 +8,7 @@
     "typecheck": "tsgo --noEmit",
     "build": "tsgo --noEmit && vite build",
     "preview": "vite preview",
+    "preview:fresh": "pnpm build && vite preview --strictPort --port 5185",
     "test": "vitest run",
     "test:watch": "vitest",
     "test:e2e": "playwright test",
