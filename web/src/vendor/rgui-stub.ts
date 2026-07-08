@@ -106,6 +106,9 @@ export interface RguiOptions {
   ) => void;
   // v0.3.0 canvas-native palettes
   panels?: Panel[];
+  /** v2.10 a panel was header-dragged (fires on release); pass the anchor back
+   *  via Panel.anchor next run to restore its position */
+  onPanelMove?: (panel: Panel, anchor: { x: number; y: number }) => void;
 }
 
 export interface Rgui {

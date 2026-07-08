@@ -59,6 +59,7 @@ export function RguiGraphView({
   nodeBody,
   live,
   panels,
+  onPanelMove,
   renderNodeOverlay,
   summarize,
   hud,
@@ -78,6 +79,9 @@ export function RguiGraphView({
   live?: LiveStore;
   /** canvas-native palettes (node palette, templates) */
   panels?: Panel[];
+  /** a panel was header-dragged to a new screen anchor (fires on release) —
+   *  persist it and pass it back via Panel.anchor to restore across runs */
+  onPanelMove?: (panelId: string, anchor: { x: number; y: number }) => void;
   /** render the config controls overlay for a node — rgui glues one per node to
    *  its screen rect and auto-hides it when the node isn't readable-sized */
   renderNodeOverlay?: (nodeId: string) => React.ReactNode;
@@ -148,6 +152,8 @@ export function RguiGraphView({
   hRef.current = handlers;
   const panelsRef = useRef<Panel[] | undefined>(panels);
   panelsRef.current = panels;
+  const panelMoveRef = useRef(onPanelMove);
+  panelMoveRef.current = onPanelMove;
   const sumRef = useRef<SummarizeFn | undefined>(summarize);
   sumRef.current = summarize;
   const hudRef = useRef<{ title: string; subtitle: string } | undefined>(hud);
@@ -160,7 +166,7 @@ export function RguiGraphView({
     const canvas = canvasRef.current;
     if (!canvas) return;
     let disposed = false;
-    createViewer(canvas, rgGraphRef, hRef, panelsRef, sumRef, hudRef, hudStatusRef)
+    createViewer(canvas, rgGraphRef, hRef, panelsRef, panelMoveRef, sumRef, hudRef, hudStatusRef)
       .then((viewer) => {
         if (disposed) viewer?.destroy();
         else {
@@ -273,6 +279,7 @@ async function createViewer(
   graphRef: React.MutableRefObject<ReturnType<typeof voiceGraphToRgui>>,
   hRef: React.MutableRefObject<RguiHandlers | undefined>,
   panelsRef: React.MutableRefObject<Panel[] | undefined>,
+  panelMoveRef: React.MutableRefObject<((panelId: string, anchor: { x: number; y: number }) => void) | undefined>,
   sumRef: React.MutableRefObject<SummarizeFn | undefined>,
   hudRef: React.MutableRefObject<{ title: string; subtitle: string } | undefined>,
   hudStatusRef: React.MutableRefObject<((ctx: CanvasRenderingContext2D, size: { width: number; height: number }) => void) | undefined>,
@@ -285,6 +292,7 @@ async function createViewer(
     // lags on some machines. The 2D renderer is the stable baseline.
     renderer: "canvas2d",
     panels: panelsRef.current as any,
+    onPanelMove: (panel: Panel, anchor: { x: number; y: number }) => panelMoveRef.current?.(panel.id, anchor),
     summarize: (nodes: any, info: any) => sumRef.current?.(nodes, info) ?? null,
     onNodeMoveEnd: (id, pos) => hRef.current?.onNodeMoveEnd?.(id, pos),
     isValidConnection: (from, to) => hRef.current?.isValidConnection?.(from, to) ?? true,

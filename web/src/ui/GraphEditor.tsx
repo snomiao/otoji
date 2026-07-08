@@ -90,6 +90,16 @@ const PORT_COLOR: Record<PortType, string> = { segment: "#dd6b20", transcript: "
 /** localStorage key for the persisted local-mode graph (rooms use the DO). */
 const LOCAL_GRAPH_KEY = "otoji.local.graph";
 
+/** localStorage key for rgui panel positions (panelId -> dragged screen anchor). */
+const PANEL_ANCHORS_KEY = "otoji.rgui.panel-anchors";
+function loadPanelAnchors(): Record<string, { x: number; y: number }> {
+  try {
+    return JSON.parse(localStorage.getItem(PANEL_ANCHORS_KEY) ?? "{}");
+  } catch {
+    return {};
+  }
+}
+
 // Rows (22px world units each) the config-controls overlay needs per node type,
 // reserved in the node body ABOVE the live-preview strip so both are visible at
 // readable zoom. Rough fit of NodeInspector's per-type content; a low estimate
@@ -1456,16 +1466,25 @@ function Editor({ initialRoom, local }: { initialRoom?: string; local?: boolean 
 
   // Canvas-native palettes (rgui panels): a node palette per category + a
   // templates panel. Click adds at viewport center; drag drops at the world pos.
+  // Header-dragged positions persist across runs: the ref holds the anchors
+  // (rgui mutates its live Panel objects during a drag, so no re-render needed;
+  // the ref only matters when the memo rebuilds or the app restarts).
+  const panelAnchorsRef = useRef(loadPanelAnchors());
+  const onPanelMove = useCallback((panelId: string, anchor: { x: number; y: number }) => {
+    panelAnchorsRef.current[panelId] = anchor;
+    try { localStorage.setItem(PANEL_ANCHORS_KEY, JSON.stringify(panelAnchorsRef.current)); } catch { /* ignore */ }
+  }, []);
   const rguiPanels = useMemo<Panel[]>(() => {
     const kindColor = (t: NodeType) => {
       const spec = NODE_SPECS[t];
       const pt = spec.outputs[0]?.type ?? spec.inputs[0]?.type;
       return pt ? PORT_COLOR[pt] : "#a0aec0";
     };
+    const anchorOf = (id: string, edge: "left" | "right") => panelAnchorsRef.current[id] ?? edge;
     const nodePanels: Panel[] = NODE_CATEGORIES.map((cat) => ({
       id: `cat-${cat.id}`,
       title: cat.label,
-      anchor: "left" as const,
+      anchor: anchorOf(`cat-${cat.id}`, "left"),
       items: cat.types.map((t) => ({ id: t, label: NODE_SPECS[t].label, color: kindColor(t) })),
       onItemClick: (it) => addNode(it.id as NodeType),
       onItemDrop: (it, at) => addNode(it.id as NodeType, at.world),
@@ -1473,7 +1492,7 @@ function Editor({ initialRoom, local }: { initialRoom?: string; local?: boolean 
     const tplPanel: Panel = {
       id: "templates",
       title: "Templates",
-      anchor: "right",
+      anchor: anchorOf("templates", "right"),
       items: allTemplates.map((tpl) => ({ id: tpl.id, label: tpl.name })),
       onItemClick: (it) => { const tpl = allTemplates.find((x) => x.id === it.id); if (tpl) addTemplate(tpl); },
       onItemDrop: (it, at) => { const tpl = allTemplates.find((x) => x.id === it.id); if (tpl) addTemplate(tpl, undefined, at.world); },
@@ -1629,7 +1648,7 @@ function Editor({ initialRoom, local }: { initialRoom?: string; local?: boolean 
       <div style={{ position: "relative", height: "100vh", overflow: "hidden", fontFamily: "system-ui, sans-serif" }}>
         {/* full-bleed graph canvas — the whole background */}
         <div style={{ position: "absolute", inset: 0 }}>
-          <RguiGraphView graph={currentGraph} deviceName={deviceNameOf} handlers={rguiHandlers} selection={selected} edgeMeta={edgeMeta} nodeBody={nodeBody} live={liveRef.current} panels={rguiPanels} renderNodeOverlay={renderNodeOverlay} summarize={summarize} hud={{ title: "otoji", subtitle: local ? "local · this device only" : `room ${room} · ${status} · ${role} · ${devices.length} device(s)` }} hudStatus={hudStatus} apiRef={rguiApiRef} />
+          <RguiGraphView graph={currentGraph} deviceName={deviceNameOf} handlers={rguiHandlers} selection={selected} edgeMeta={edgeMeta} nodeBody={nodeBody} live={liveRef.current} panels={rguiPanels} onPanelMove={onPanelMove} renderNodeOverlay={renderNodeOverlay} summarize={summarize} hud={{ title: "otoji", subtitle: local ? "local · this device only" : `room ${room} · ${status} · ${role} · ${devices.length} device(s)` }} hudStatus={hudStatus} apiRef={rguiApiRef} />
         </div>
 
         {/* floating toolbar card (draggable). The "otoji" wordmark + status line
