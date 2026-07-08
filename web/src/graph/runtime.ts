@@ -77,6 +77,9 @@ export interface RuntimeHooks {
   onLevel?: (nodeId: string, level: SttLevel) => void;
   onSegment?: (nodeId: string) => void; // a mic node produced a VAD segment
   onImage?: (nodeId: string, bitmap: ImageBitmap) => void; // a camera/ocr node produced a frame (preview)
+  // A camera/screen node's live video stream started (or stopped: null) — for a
+  // compositor-rendered <video> preview at native fps, independent of grab rate.
+  onMedia?: (nodeId: string, stream: MediaStream | null) => void;
   onRecognized?: (nodeId: string, text: string) => void; // an STT node finished (text may be empty)
   onNodeBusy?: (nodeId: string, busy: boolean) => void; // node started/finished processing
   onQueue?: (nodeId: string, processing: string | null, queued: string[]) => void; // work queue state
@@ -1009,6 +1012,7 @@ export class GraphRuntime {
               },
               onError: (e) => this.hooks.onError?.(e),
             });
+            this.hooks.onMedia?.(id, handle.stream());
           } catch (e) {
             this.hooks.onError?.(e instanceof Error ? e : new Error(String(e)));
           }
@@ -1018,7 +1022,10 @@ export class GraphRuntime {
           if (c.pulse) handle?.grabNow(); // credit: one frame per "next"
           else if (typeof c.rate === "number") handle?.setRate(c.rate); // rate: free-run at fps
         },
-        stop: () => handle?.stop(),
+        stop: () => {
+          this.hooks.onMedia?.(id, null);
+          handle?.stop();
+        },
         dims: () => handle?.dims() ?? null,
       };
     }
@@ -1050,6 +1057,7 @@ export class GraphRuntime {
               onEnded: () => this.hooks.onStatus?.("screen share ended"),
               onError: (e) => this.hooks.onError?.(e),
             });
+            this.hooks.onMedia?.(id, handle.stream());
           } catch (e) {
             this.hooks.onError?.(e instanceof Error ? e : new Error(String(e)));
           }
@@ -1059,7 +1067,10 @@ export class GraphRuntime {
           if (c.pulse) handle?.grabNow();
           else if (typeof c.rate === "number") handle?.setRate(c.rate);
         },
-        stop: () => handle?.stop(),
+        stop: () => {
+          this.hooks.onMedia?.(id, null);
+          handle?.stop();
+        },
         dims: () => handle?.dims() ?? null,
       };
     }

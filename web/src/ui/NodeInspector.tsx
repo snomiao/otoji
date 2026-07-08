@@ -1,4 +1,4 @@
-import React, { useContext, useEffect, useState, useSyncExternalStore } from "react";
+import React, { useCallback, useContext, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { NODE_SPECS, type NodeType } from "../graph/model";
 import { normalizeTracker, dedupeTrackers } from "../lib/trackers";
 import { GraphContext } from "./graph-context";
@@ -250,16 +250,20 @@ export function NodeInspector({ node, onClose }: { node: InspectorNode; onClose?
                 onBlur={(e) => onConfig(id, { fps: Number(e.target.value) || DEFAULT_CAMERA_FPS })}
                 onKeyDown={(e) => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); }} style={{ fontSize: 12, width: 56 }} />
             </label>
+            <LiveVideo id={id} />
           </>
         )}
 
         {vt === "screen-share" && (
-          <label style={row}>fps:
-            <input type="number" min={0.2} max={30} step={0.5} defaultValue={(config?.fps as number) ?? DEFAULT_CAMERA_FPS}
-              onBlur={(e) => onConfig(id, { fps: Number(e.target.value) || DEFAULT_CAMERA_FPS })}
-              onKeyDown={(e) => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); }} style={{ fontSize: 12, width: 56 }} />
-            <span style={{ fontSize: 9, color: "#a0aec0" }}>audio→STT</span>
-          </label>
+          <>
+            <label style={row}>fps:
+              <input type="number" min={0.2} max={30} step={0.5} defaultValue={(config?.fps as number) ?? DEFAULT_CAMERA_FPS}
+                onBlur={(e) => onConfig(id, { fps: Number(e.target.value) || DEFAULT_CAMERA_FPS })}
+                onKeyDown={(e) => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); }} style={{ fontSize: 12, width: 56 }} />
+              <span style={{ fontSize: 9, color: "#a0aec0" }}>audio→STT</span>
+            </label>
+            <LiveVideo id={id} />
+          </>
         )}
 
         {vt === "vision-model" && (
@@ -441,8 +445,37 @@ export function NodeInspector({ node, onClose }: { node: InspectorNode; onClose?
         {!node.device && <div style={{ color: "#e53e3e", fontSize: 10, marginTop: 4 }}>unassigned</div>}
         {assigned && !assigned.online && <div style={{ color: "#c05621", fontSize: 10, marginTop: 4 }}>● {assigned.name} offline</div>}
         {/* Live preview (waveform / image / text) is drawn natively by rgui on
-            the node body — the inspector holds only the editable controls. */}
+            the node body — the inspector holds only the editable controls, plus
+            the <video> live feed for camera/screen nodes (see LiveVideo). */}
       </div>
     </div>
+  );
+}
+
+/** Live camera/screen preview: a <video> on the node's MediaStream. The
+ *  compositor renders it at the stream's native fps off the main thread, so
+ *  it stays smooth regardless of the pipeline's grab rate; the canvas body
+ *  draw skips its bitmap while this is visible. Sized to sit in the node's
+ *  bottom preview strip (4 body rows). */
+function LiveVideo({ id }: { id: string }) {
+  const { live } = useContext(GraphContext);
+  const stream = useSyncExternalStore(
+    useCallback((cb: () => void) => live.subscribe(id, cb), [live, id]),
+    () => live.getMedia(id) ?? null,
+  );
+  const ref = useRef<HTMLVideoElement | null>(null);
+  useEffect(() => {
+    const v = ref.current;
+    if (v && v.srcObject !== stream) v.srcObject = stream;
+  }, [stream]);
+  if (!stream) return null;
+  return (
+    <video
+      ref={ref}
+      autoPlay
+      muted
+      playsInline
+      style={{ display: "block", width: "100%", maxHeight: 88, objectFit: "contain", marginTop: 4, borderRadius: 4, background: "#1c2025" }}
+    />
   );
 }

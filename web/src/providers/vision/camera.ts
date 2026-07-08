@@ -18,6 +18,9 @@ export interface CameraHandle {
   setRate(fps: number): void; // free-run at fps (<=0 → pause, credit-only)
   grabNow(): void; // capture exactly one frame now (credit)
   dims(): { width: number; height: number }; // live stream size (0 until ready)
+  /** the underlying video MediaStream — for a compositor-rendered <video>
+   *  preview that runs at native fps, decoupled from the grab rate */
+  stream(): MediaStream;
 }
 
 export interface CameraOpts {
@@ -123,5 +126,6 @@ export async function createFrameSource(
     },
     grabNow: () => grabOnFrame(),
     dims: () => ({ width: video.videoWidth, height: video.videoHeight }),
+    stream: () => stream,
   };
 }

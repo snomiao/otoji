@@ -19,6 +19,7 @@ export class LiveStore {
   private busy = new Map<string, boolean>();
   private queues = new Map<string, QueueState>();
   private images = new Map<string, ImageBitmap>();
+  private media = new Map<string, MediaStream>();
   private listeners = new Map<string, Set<() => void>>();
 
   subscribe(nodeId: string, fn: () => void): () => void {
@@ -49,14 +50,30 @@ export class LiveStore {
     return this.levels.get(nodeId) ?? [];
   }
 
-  // Latest camera/OCR frame: high-rate, no emit (canvas reads via rAF). We don't
-  // close the old bitmap here — the same frame is shared with the OCR node's
-  // in-flight job, so closing would risk use-after-close; GC reclaims it.
+  // Latest camera/OCR frame. Emits so the canvas repaints per frame (the rgui
+  // viewer coalesces invalidates into one render per rAF, so a fast producer
+  // can't outpace the display). We don't close the old bitmap here — the same
+  // frame is shared with the OCR node's in-flight job, so closing would risk
+  // use-after-close; GC reclaims it.
   setImage(nodeId: string, bitmap: ImageBitmap): void {
     this.images.set(nodeId, bitmap);
+    this.emit(nodeId);
   }
   getImage(nodeId: string): ImageBitmap | undefined {
     return this.images.get(nodeId);
+  }
+
+  // Live camera/screen MediaStream for the node's <video> preview: the
+  // compositor renders it at native fps off the main thread, decoupled from
+  // the pipeline's grab rate. The runtime owns the stream's lifecycle; this
+  // only points at it (null/absent after stop).
+  setMedia(nodeId: string, stream: MediaStream | null): void {
+    if (stream) this.media.set(nodeId, stream);
+    else this.media.delete(nodeId);
+    this.emit(nodeId);
+  }
+  getMedia(nodeId: string): MediaStream | undefined {
+    return this.media.get(nodeId);
   }
 
   // Low-rate: replace array (new ref) so useSyncExternalStore detects the change.
@@ -93,6 +110,7 @@ export class LiveStore {
     this.queues.clear();
     for (const b of this.images.values()) b.close?.();
     this.images.clear();
+    this.media.clear(); // tracks are owned (and stopped) by the runtime
     for (const set of this.listeners.values()) set.forEach((f) => f());
   }
 }

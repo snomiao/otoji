@@ -1155,6 +1155,7 @@ function Editor({ initialRoom, local }: { initialRoom?: string; local?: boolean 
       onLevel: (id, l) => { micLevelRef.current = l.rms; live.pushLevel(id, l); pv?.onLocalPreview(id, "lvl", l); },
       onSegment: () => { activityRef.current.segments++; },
       onImage: (id, bitmap) => { live.setImage(id, bitmap); pv?.onLocalPreview(id, "img", bitmap); },
+      onMedia: (id, stream) => live.setMedia(id, stream), // local-only: a MediaStream can't cross devices
       onRecognized: (id, text) => { activityRef.current.stt++; if (isReadableTranscript(text)) { live.pushText(id, text); pv?.onLocalPreview(id, "txt", text); } },
       onNodeBusy: (id, b) => { live.setBusy(id, b); pv?.onLocalPreview(id, "busy", b); },
       onQueue: (id, processing, queued) => { live.setQueue(id, processing, queued); pv?.onLocalPreview(id, "queue", { processing, queued }); },
@@ -1394,6 +1395,11 @@ function Editor({ initialRoom, local }: { initialRoom?: string; local?: boolean 
             if (h > 0.5) ctx.fillRect(i * bw, rect.height - h, Math.max(1, bw - 1), h);
           }
         } else if (isImg) {
+          // At readable zoom a <video> overlay (compositor, native fps) shows the
+          // live feed in this strip's place — skip the grab-rate bitmap so the
+          // two previews don't double-draw. Zoomed out (overlay hidden) and for
+          // bitmap-only nodes (OCR/vision) the canvas draw is the preview.
+          if (k >= 0.5 && live.getMedia(id)) return;
           const img = live.getImage(id);
           if (img) {
             const s = Math.min(rect.width / img.width, availH / img.height);
