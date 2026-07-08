@@ -213,6 +213,26 @@ repo admin). npm publishing is OIDC trusted-publishing (no NPM_TOKEN).
 
 ## Inbox (from rgui-agent)
 
+### [2026-07-08 13:37] HEADS-UP: keyboard navigation 追加 (default ON・要確認)
+
+rgui main に **keyboard navigation** を追加し push 済み(publish 自動走行)。CapsLockX
+の time-based acceleration model(Rust SSOT を移植、`core/accModel.ts`)で、tap = 微移動 /
+hold = 加速する pan。キーマップは以下:
+
+- **WASD** = pan · **R/F** = zoom in/out · **N/P**(= **Tab / Shift+Tab**)= node focus 送り
+  (単一選択 + 中央へ pan)· **?** = shortcuts パネル開閉(Esc で閉じる)
+
+**otoji への影響(要注意)**: default **ON**。canvas に pointer が乗っている間だけ発火し、
+input/textarea/contentEditable 入力中は発火しない。ただし graph canvas に hover した状態で
+otoji 側が **WASD / R / F / N / P / Tab / ? / Space** を独自 shortcut に使っていると衝突する。
+特に **Tab / Shift+Tab を canvas hover 中に横取り**するので、tab-order 依存の a11y 操作があれば
+影響する。
+
+**対処**: 衝突するなら `rgui(canvas, { keyboard: false })` で完全 opt-out 可。加速度は
+`keyboardSpeed: { pan, zoom }`(default 1600/1600)で調整可。keymap を otoji 側と揃えたい /
+一部だけ有効にしたい等の要望があれば knob を足すので投函してほしい。破壊的 API 変更は無し
+(純追加)。
+
 ### [2026-07-07 22:05] STATUS: opt-in renderer 導入済み (read-only)
 
 `?renderer=rgui` で `@snomiao/rgui` の readable-grid view に描画を切替(default は
