@@ -4,6 +4,30 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+## [0.1.53] - 2026-07-08
+
+### Bug Fixes
+- Bump rgui — overlay clip window no longer double-scales (node×k²) *(web)*
+
+### Chores
+- Preview:fresh script — build-first strict-port preview *(web)*
+- Bump rgui — keyboard navigation (WASD pan, R/F zoom, N/P focus, ? help) *(web)*
+- Bump rgui — container nodes (declared containment scopes the RG hierarchy) *(web)*
+- Bump rgui — RG monotonicity (zoom-out never releases merged children) *(web)*
+- Bump rgui d350591->98095ae + declare device field merge rule *(web)*
+
+### Features
+- Text-diff node gains inline word-diff style *(web)*
+- The toolbar is an rgui canvas panel — last floating card gone *(web)*
+- Draggable palettes with persisted positions (rgui bc0e496) *(web)*
+- Move sink output into the sink node, drop the floating card *(web)*
+- Show node controls whenever the node is readable-scaled *(web)*
+- Contracted blocks preview their children's live values *(web)*
+- Merged blocks with mics show the superposed level wave *(web)*
+
+### Performance
+- Camera preview via compositor <video>, canvas repaints per frame *(web)*
+
 ## [0.1.52] - 2026-07-07
 
 ### Bug Fixes
