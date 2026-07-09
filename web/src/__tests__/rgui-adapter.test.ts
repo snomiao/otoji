@@ -55,6 +55,33 @@ describe("voiceGraphToRgui", () => {
     expect(rg.edges[0]).toEqual({ from: { node: "m", port: "out" }, to: { node: "s", port: "in" } });
   });
 
+  it("passes a persisted size/scale through and defaults the rest", () => {
+    const g = graph();
+    g.nodes["m"].size = { w: 320, h: 180 };
+    g.nodes["m"].scale = 2;
+    const rg = voiceGraphToRgui(g);
+    const byId = Object.fromEntries(rg.nodes.map((n) => [n.id, n]));
+    expect(byId["m"].w).toBe(320);
+    expect(byId["m"].h).toBe(180);
+    expect(byId["m"].scale).toBe(2);
+    // untouched nodes keep the default box: no h/scale keys at all
+    expect(byId["s"].w).toBe(200);
+    expect("h" in byId["s"]).toBe(false);
+    expect("scale" in byId["s"]).toBe(false);
+  });
+
+  it("normalizes out-of-range synced geometry (rgui setGraph does not validate)", () => {
+    const g = graph();
+    g.nodes["m"].size = { w: 10, h: 100 }; // below rgui's min width
+    g.nodes["m"].scale = 99; // above rgui's MAX_SCALE
+    g.nodes["s"].scale = 0.01; // below rgui's MIN_SCALE
+    const rg = voiceGraphToRgui(g);
+    const byId = Object.fromEntries(rg.nodes.map((n) => [n.id, n]));
+    expect(byId["m"].scale).toBe(8); // clamped to MAX_SCALE
+    expect(byId["m"].w).toBe(96 * 8); // floored to NODE_MIN_W * scale
+    expect(byId["s"].scale).toBe(0.25); // clamped to MIN_SCALE
+  });
+
   it("is deterministic", () => {
     expect(voiceGraphToRgui(graph())).toEqual(voiceGraphToRgui(graph()));
   });

@@ -11,11 +11,29 @@ import { NODE_SPECS, type NodeType, type PortType, type VoiceGraph } from "./mod
 
 // ---- rgui public Graph shape (mirror of @snomiao/rgui) --------------------
 export type RgSignalKind = "image" | "audio" | "text" | "ctl";
-export type RgNodeCategory = "source" | "model" | "sink";
+export type RgNodeCategory = "source" | "model" | "sink" | "note";
 export interface RgPort {
   id: string;
   label: string;
   kind: RgSignalKind;
+}
+/** node-anchored HTML overlay (mirror of rgui's GraphNode.overlay) */
+export interface RgNodeOverlay {
+  el: HTMLElement;
+  anchor?: "right" | "below" | "over";
+  offset?: { x: number; y: number };
+  interactive?: boolean;
+  /** "fixed" (screen-constant, default) | "zoom" (scales with view.k) |
+   * "fit" (scales to fill the node's screen area) */
+  scale?: "fixed" | "zoom" | "fit";
+  /** zoom/fit: hide once the applied scale drops below this (default 0.75) */
+  minScale?: number;
+  /** fit: cap on the applied scale (default 1 — never upscale past natural) */
+  maxScale?: number;
+  /** clip the overlay to the node rect / viewport / not at all */
+  clip?: "node" | "viewport" | "none";
+  overflow?: "hidden" | "auto";
+  destroy?: () => void;
 }
 export interface RgGraphNode {
   id: string;
@@ -24,6 +42,14 @@ export interface RgGraphNode {
   x: number;
   y: number;
   w: number;
+  /** explicit height — extra space flows into the live-body region */
+  h?: number;
+  /** content scale (default 1): magnifies the node like a lens (shift+grip) */
+  scale?: number;
+  /** annotation / sticky-card node (no header band / ports / field rows) */
+  note?: boolean;
+  /** node-anchored HTML overlay, glued to the node's screen rect */
+  overlay?: RgNodeOverlay;
   inputs: RgPort[];
   outputs: RgPort[];
   fields: [string, string][];
@@ -72,6 +98,14 @@ function categoryOf(type: NodeType): RgNodeCategory {
 
 const DEFAULT_W = 200;
 
+// Mirrors of rgui's grip clamps (grip.ts MIN_SCALE/MAX_SCALE, graph.ts
+// NODE_MIN_W). setGraph does NOT validate geometry — these invariants are only
+// enforced inside the grip gestures — so normalize persisted/synced values here
+// or an out-of-range peer value would render as a broken node.
+const MIN_SCALE = 0.25;
+const MAX_SCALE = 8;
+const NODE_MIN_W = 96;
+
 export interface RguiMeta {
   /** deviceId -> human label, for the node's `device` field row */
   deviceName?: (deviceId: string | null) => string;
@@ -96,13 +130,19 @@ export function voiceGraphToRgui(graph: VoiceGraph, meta: RguiMeta = {}): RgGrap
     const spec = NODE_SPECS[n.type];
     const fields: [string, string][] = [["device", nameOf(n.device)]];
     const body = meta.nodeBody?.({ id: n.id, type: n.type });
+    // user-resized box + content scale persist on the VoiceNode; the rgui
+    // corner grip reports them back via onNodeResizeEnd (see RguiGraphView)
+    const scale = Math.min(MAX_SCALE, Math.max(MIN_SCALE, n.scale ?? 1));
+    const w = Math.max(NODE_MIN_W * scale, n.size?.w ?? DEFAULT_W);
     return {
       id: n.id,
       title: spec.label,
       category: categoryOf(n.type),
       x: n.pos.x,
       y: n.pos.y,
-      w: DEFAULT_W,
+      w,
+      ...(n.size?.h != null ? { h: n.size.h } : {}),
+      ...(scale !== 1 ? { scale } : {}),
       inputs: spec.inputs.map((p) => ({ id: p.id, label: p.id, kind: KIND[p.type] })),
       outputs: spec.outputs.map((p) => ({ id: p.id, label: p.id, kind: KIND[p.type] })),
       fields,

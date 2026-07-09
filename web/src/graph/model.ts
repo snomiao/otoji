@@ -269,6 +269,10 @@ export interface VoiceNode {
   type: NodeType;
   device: string | null; // peerId the node runs on (null = unassigned)
   pos: { x: number; y: number };
+  /** user-resized world box (rgui corner grip); absent = renderer default */
+  size?: { w: number; h: number };
+  /** rgui content scale (shift+grip rescale magnifies the node); absent = 1 */
+  scale?: number;
   config?: Record<string, unknown>;
 }
 
