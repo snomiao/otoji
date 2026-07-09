@@ -74,6 +74,20 @@ function useVoices(): SpeechSynthesisVoice[] {
 const row: React.CSSProperties = { display: "flex", gap: 6, alignItems: "center", color: "#718096", marginTop: 6 };
 const sel: React.CSSProperties = { fontSize: 12, flex: 1, minWidth: 0 };
 
+// Full-bleed cards (textarea / screen-share): the overlay covers the whole
+// node, so the card paints its own title bar where rgui's canvas title sits
+// (same 26px header, same bold-13 source-orange), keeping the node readable
+// while the content runs edge to edge. The bar background is click-through —
+// rgui forwards it to the canvas, so it doubles as the drag handle it covers.
+const bar: React.CSSProperties = {
+  display: "flex", alignItems: "center", gap: 6, height: 26, flex: "0 0 auto",
+  padding: "0 8px 0 10px", boxSizing: "border-box", borderRadius: "8px 8px 0 0",
+};
+const barTitle: React.CSSProperties = {
+  color: "#e07a3f", fontWeight: 700, fontSize: 13,
+  whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", flex: "0 1 auto",
+};
+
 export interface InspectorNode {
   id: string;
   voiceType: NodeType;
@@ -119,6 +133,84 @@ export function NodeInspector({ node, onClose }: { node: InspectorNode; onClose?
   };
   const display = (t: string) => t.replace(/^https?:\/\//, "");
 
+  const deviceSel = (style: React.CSSProperties) => (
+    <select value={node.device ?? ""} onChange={(e) => onAssign(id, e.target.value || null)} style={style} title="run on device">
+      <option value="">(unassigned)</option>
+      {assigned && !devices.some((x) => x.deviceId === node.device) && <option value={node.device!}>offline device</option>}
+      {devices.map((x) => (
+        <option key={x.deviceId} value={x.deviceId}>{x.name}{x.me ? " (me)" : x.online ? "" : " (offline)"}</option>
+      ))}
+    </select>
+  );
+  const warn = !node.device ? "unassigned" : assigned && !assigned.online ? `● ${assigned.name} offline` : null;
+  const warnColor = !node.device ? "#e53e3e" : "#c05621";
+
+  // ---- full-bleed cards: content fills the node rect, no padding ----------
+  if (vt === "textarea") {
+    const text = (config?.text as string | undefined) ?? "";
+    return (
+      <div
+        className="rgui-node-cfg"
+        style={{ width: "100%", height: "100%", display: "flex", flexDirection: "column", fontSize: 12, fontFamily: "system-ui, sans-serif" }}
+      >
+        {/* opaque bar: the fixed-scale overlay can't track the zoomed canvas
+            title, so it replaces it instead of tinting it */}
+        <div style={{ ...bar, background: "#2b3036" }}>
+          <span style={barTitle}>{spec.label}</span>
+          {deviceSel({ fontSize: 11, flex: "0 1 130px", minWidth: 0, marginLeft: "auto" })}
+          <button
+            style={{ fontSize: 10, cursor: "pointer", flex: "0 0 auto" }}
+            title="Re-send the current text downstream"
+            onClick={() => onConfig(id, { seq: ((config?.seq as number) ?? 0) + 1 })}
+          >▶ resend</button>
+        </div>
+        <MonacoText
+          value={text}
+          onCommit={(t) => { if (t !== text) onConfig(id, { text: t }); }}
+          style={{ flex: 1, minHeight: 0, height: "auto", border: "none", borderRadius: 0 }}
+        />
+        {/* control-free strip: hint text, and it keeps the resize grip and a
+            drag area reachable under the editor */}
+        <div style={{ flex: "0 0 auto", height: 16, display: "flex", alignItems: "center", justifyContent: "space-between", padding: "0 10px", fontSize: 9, color: "#a0aec0", boxSizing: "border-box" }}>
+          <span>⌘/Ctrl+Enter or blur to send</span>
+          {warn && <span style={{ color: warnColor }}>{warn}</span>}
+        </div>
+      </div>
+    );
+  }
+
+  if (vt === "screen-share") {
+    return (
+      <div
+        className="rgui-node-cfg"
+        style={{ position: "relative", width: "100%", height: "100%", fontSize: 12, fontFamily: "system-ui, sans-serif" }}
+      >
+        <LiveVideo id={id} fill />
+        {/* translucent bar OVER the video; with no stream the card is
+            transparent and rgui's own title/fields/preview show through */}
+        <div style={{ ...bar, position: "absolute", top: 0, left: 0, right: 0, background: "rgba(28,32,37,0.55)" }}>
+          <span style={barTitle}>{spec.label}</span>
+          {deviceSel({ fontSize: 11, flex: "0 1 120px", minWidth: 0, marginLeft: "auto" })}
+          <label
+            style={{ display: "flex", alignItems: "center", gap: 3, color: "#a0aec0", fontSize: 10, flex: "0 0 auto" }}
+            title="frame grab rate — captured screen audio feeds STT"
+          >
+            fps
+            <input type="number" min={0.2} max={30} step={0.5} defaultValue={(config?.fps as number) ?? DEFAULT_CAMERA_FPS}
+              onBlur={(e) => onConfig(id, { fps: Number(e.target.value) || DEFAULT_CAMERA_FPS })}
+              onKeyDown={(e) => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); }}
+              style={{ fontSize: 11, width: 44 }} />
+          </label>
+        </div>
+        {warn && (
+          <div style={{ position: "absolute", left: 8, bottom: 4, fontSize: 10, color: warnColor, background: "rgba(28,32,37,0.55)", borderRadius: 4, padding: "1px 5px" }}>
+            {warn}
+          </div>
+        )}
+      </div>
+    );
+  }
+
   // Positioned by rgui (glued to the node via setNodeOverlay); this is just the card.
   // `rgui-node-cfg`: the card is click-through so dragging it drags the node;
   // only the form controls capture pointer events (see index.html).
@@ -128,18 +220,12 @@ export function NodeInspector({ node, onClose }: { node: InspectorNode; onClose?
   return (
     <div
       className="rgui-node-cfg"
-      style={{ width: vt === "textarea" ? 296 : 190, fontSize: 12, fontFamily: "system-ui, sans-serif" }}
+      style={{ width: 190, fontSize: 12, fontFamily: "system-ui, sans-serif" }}
     >
       <div style={{ padding: "2px 10px 6px" }}>
         <label style={row}>
           on:
-          <select value={node.device ?? ""} onChange={(e) => onAssign(id, e.target.value || null)} style={sel}>
-            <option value="">(unassigned)</option>
-            {assigned && !devices.some((x) => x.deviceId === node.device) && <option value={node.device!}>offline device</option>}
-            {devices.map((x) => (
-              <option key={x.deviceId} value={x.deviceId}>{x.name}{x.me ? " (me)" : x.online ? "" : " (offline)"}</option>
-            ))}
-          </select>
+          {deviceSel(sel)}
         </label>
 
         {vt === "stt" && (
@@ -255,18 +341,6 @@ export function NodeInspector({ node, onClose }: { node: InspectorNode; onClose?
           </>
         )}
 
-        {vt === "screen-share" && (
-          <>
-            <label style={row}>fps:
-              <input type="number" min={0.2} max={30} step={0.5} defaultValue={(config?.fps as number) ?? DEFAULT_CAMERA_FPS}
-                onBlur={(e) => onConfig(id, { fps: Number(e.target.value) || DEFAULT_CAMERA_FPS })}
-                onKeyDown={(e) => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); }} style={{ fontSize: 12, width: 56 }} />
-              <span style={{ fontSize: 9, color: "#a0aec0" }}>audio→STT</span>
-            </label>
-            <LiveVideo id={id} />
-          </>
-        )}
-
         {vt === "vision-model" && (
           <>
             <label style={row}>task:
@@ -350,23 +424,6 @@ export function NodeInspector({ node, onClose }: { node: InspectorNode; onClose?
                 <code style={{ flex: 1, minWidth: 0, fontSize: 9.5, background: "#f7fafc", border: "1px solid #e2e8f0", borderRadius: 4, padding: "3px 5px", overflowX: "auto", whiteSpace: "nowrap" }}>{cmd}</code>
                 <button onClick={() => { navigator.clipboard?.writeText(cmd); setCmdCopied(true); setTimeout(() => setCmdCopied(false), 1200); }}
                   style={{ fontSize: 10, border: "1px solid #cbd5e0", borderRadius: 4, background: "#fff", cursor: "pointer", padding: "0 6px" }}>{cmdCopied ? "✓" : "⧉"}</button>
-              </div>
-            </div>
-          );
-        })()}
-
-        {vt === "textarea" && (() => {
-          const text = (config?.text as string | undefined) ?? "";
-          return (
-            <div style={{ marginTop: 6 }}>
-              <MonacoText value={text} onCommit={(t) => { if (t !== text) onConfig(id, { text: t }); }} />
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 3 }}>
-                <span style={{ fontSize: 9, color: "#a0aec0" }}>⌘/Ctrl+Enter or blur to send</span>
-                <button
-                  style={{ fontSize: 10, cursor: "pointer" }}
-                  title="Re-send the current text downstream"
-                  onClick={() => onConfig(id, { seq: ((config?.seq as number) ?? 0) + 1 })}
-                >▶ resend</button>
               </div>
             </div>
           );
@@ -473,9 +530,10 @@ export function NodeInspector({ node, onClose }: { node: InspectorNode; onClose?
 /** Live camera/screen preview: a <video> on the node's MediaStream. The
  *  compositor renders it at the stream's native fps off the main thread, so
  *  it stays smooth regardless of the pipeline's grab rate; the canvas body
- *  draw skips its bitmap while this is visible. Sized to sit in the node's
- *  bottom preview strip (4 body rows). */
-function LiveVideo({ id }: { id: string }) {
+ *  draw skips its bitmap while this is visible. Inline (camera): sized to sit
+ *  in the node's bottom preview strip. `fill` (screen-share): covers the whole
+ *  node rect behind the card's title bar — the node IS the monitor. */
+function LiveVideo({ id, fill }: { id: string; fill?: boolean }) {
   const { live } = useContext(GraphContext);
   const stream = useSyncExternalStore(
     useCallback((cb: () => void) => live.subscribe(id, cb), [live, id]),
@@ -493,7 +551,13 @@ function LiveVideo({ id }: { id: string }) {
       autoPlay
       muted
       playsInline
-      style={{ display: "block", width: "100%", maxHeight: 88, objectFit: "contain", marginTop: 4, borderRadius: 4, background: "#1c2025" }}
+      style={
+        fill
+          ? // opaque letterbox: covers the canvas-drawn fields/labels beneath;
+            // radius matches the node's rounded corners (scales with the overlay)
+            { position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "contain", background: "#1c2025", borderRadius: 8 }
+          : { display: "block", width: "100%", maxHeight: 88, objectFit: "contain", marginTop: 4, borderRadius: 4, background: "#1c2025" }
+      }
     />
   );
 }

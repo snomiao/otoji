@@ -126,18 +126,27 @@ export function RguiGraphView({
       // click-through (dragging it drags the node) and only lets real form controls
       // capture — so no .rgui-node-cfg CSS hack is needed. offset past the rgui
       // header keeps the title visible.
-      for (const n of g.nodes)
+      // Full-bleed nodes (textarea / screen-share): the overlay IS the node
+      // content, covering the whole rect header included — the card draws its
+      // own translucent title bar, and rgui forwards background presses to the
+      // canvas so drag/select still work everywhere on the node.
+      for (const n of g.nodes) {
+        const vt = graph.nodes[n.id]?.type;
+        const full = vt === "textarea" || vt === "screen-share";
+        const host = hostFor(n.id);
+        host.style.height = full ? "100%" : "";
         n.overlay = {
-          el: hostFor(n.id),
+          el: host,
           anchor: "over",
-          offset: { x: 0, y: 28 },
+          offset: full ? { x: 0, y: 0 } : { x: 0, y: 28 },
           // textarea: Monaco mis-maps mouse→cursor under a CSS scale transform,
           // so its overlay stays screen-constant ("fixed") instead of zooming.
-          scale: graph.nodes[n.id]?.type === "textarea" ? "fixed" : "zoom",
+          scale: vt === "textarea" ? "fixed" : "zoom",
           minScale: 0.5,
           clip: "node",
-          overflow: "auto",
+          overflow: full ? "hidden" : "auto",
         };
+      }
     }
     return g;
   }, [graph, deviceName, edgeMeta, nodeBody, renderNodeOverlay]);

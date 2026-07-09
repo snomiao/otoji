@@ -108,7 +108,9 @@ function loadPanelAnchors(): Record<string, { x: number; y: number }> {
 const CONTROL_ROWS: Partial<Record<NodeType, number>> = {
   "mic-vad": 3, "mic-raw": 2, stt: 3, "web-speech": 3, vosk: 3, sherpa: 3,
   translate: 5, sink: 7, tts: 4, "tts-model": 5, model: 5, camera: 3,
-  "screen-share": 2, "paddle-ocr": 2, "vision-model": 4, "text-diff": 3,
+  // screen-share is full-bleed: its controls live in the overlay's title bar,
+  // so the whole body is preview
+  "screen-share": 0, "paddle-ocr": 2, "vision-model": 4, "text-diff": 3,
 };
 
 /** Truncate text with an ellipsis to fit `maxW` screen px in the given ctx. */
@@ -1415,8 +1417,9 @@ function Editor({ initialRoom, local }: { initialRoom?: string; local?: boolean 
       draw: (ctx: CanvasRenderingContext2D, rect: { width: number; height: number }, view?: { k: number }) => {
         const live = liveRef.current;
         const k = view?.k ?? 1;
-        // overlay (controls) visible above minScale 0.5 → keep to the bottom strip
-        const top = k >= 0.5 ? Math.max(0, rect.height - previewRows * 22 * k) : 0;
+        // overlay (controls) visible above minScale 0.5 → keep to the bottom
+        // strip; full-bleed screen-share has no control zone, use it all
+        const top = t === "screen-share" ? 0 : k >= 0.5 ? Math.max(0, rect.height - previewRows * 22 * k) : 0;
         const availH = rect.height - top;
         if (isMic) {
           const levels = live.getLevels(id);
@@ -1645,18 +1648,22 @@ function Editor({ initialRoom, local }: { initialRoom?: string; local?: boolean 
         // tight blocks show the label + wave, roomy blocks show everything.
         const vtOf = (id: string) => (nodesRef.current.find((x) => x.id === id)?.data as any)?.voiceType as NodeType | undefined;
         const micIds = rgNodes.map((n) => n.id).filter((id) => { const t = vtOf(id); return t === "mic-vad" || t === "mic-raw"; });
+        // image-preview members: their frames are the fast-changing part that
+        // says what the block is handling, so they survive the contraction
+        const IMG_TYPES: NodeType[] = ["camera", "screen-share", "paddle-ocr", "vision-model"];
+        const imgIds = rgNodes.map((n) => n.id).filter((id) => { const t = vtOf(id); return !!t && IMG_TYPES.includes(t); });
         // signal-flow display order for text-bearing nodes
         const TEXT_ORDER: NodeType[] = ["stt", "web-speech", "vosk", "model", "paddle-ocr", "translate", "text-diff", "sink"];
         const textMembers = rgNodes
           .map((n) => ({ id: n.id as string, vt: vtOf(n.id) }))
           .filter((m): m is { id: string; vt: NodeType } => !!m.vt && TEXT_ORDER.includes(m.vt))
           .sort((a, b) => TEXT_ORDER.indexOf(a.vt) - TEXT_ORDER.indexOf(b.vt));
-        if (!micIds.length && !textMembers.length)
+        if (!micIds.length && !imgIds.length && !textMembers.length)
           return { kind: "text", lines: [`${rgNodes.length} nodes`, titles.slice(0, 3).join(" → ")] };
         const label = `${rgNodes.length} nodes · ${titles.slice(0, 3).join(" → ")}`;
-        const LABEL_H = 13, WAVE_H = 22, LINE_H = 14;
+        const LABEL_H = 13, IMG_H = 44, WAVE_H = 22, LINE_H = 14;
         // ask for full height; rgui clamps to the space the block really has
-        const height = LABEL_H + (micIds.length ? WAVE_H : 0) + Math.min(textMembers.length, 4) * LINE_H;
+        const height = LABEL_H + (imgIds.length ? IMG_H : 0) + (micIds.length ? WAVE_H : 0) + Math.min(textMembers.length, 4) * LINE_H;
         return {
           kind: "canvas",
           height,
@@ -1668,6 +1675,21 @@ function Editor({ initialRoom, local }: { initialRoom?: string; local?: boolean 
             ctx.fillStyle = "#8a94a6";
             ctx.fillText(clipText(ctx, label, rect.width), 0, 0);
             let y = LABEL_H;
+            if (imgIds.length && y + IMG_H <= rect.height + 1) {
+              // latest frame per image node, tiled left→right — the live
+              // picture of what the merged block is processing
+              const cw = rect.width / imgIds.length;
+              let drew = false;
+              imgIds.forEach((mid, i) => {
+                const img = live.getImage(mid);
+                if (!img) return;
+                const s = Math.min(cw / img.width, IMG_H / img.height);
+                const w = img.width * s, h = img.height * s;
+                ctx.drawImage(img, i * cw + (cw - w) / 2, y + (IMG_H - h) / 2, w, h);
+                drew = true;
+              });
+              if (drew) y += IMG_H;
+            }
             if (micIds.length && y + WAVE_H <= rect.height + 1) {
               // wave superposition: the live store keeps RMS envelopes (not raw
               // samples), and uncorrelated sources superpose in POWER, so per
