@@ -169,16 +169,22 @@
 - [ ] **Per-edge throughput**: show bytes/sec on each connection (edge label),
   measured from cross-device frame traffic on that edge (mesh transport counters
   per source→target), updated ~1 Hz. Local (in-process) edges can show "local".
-- [ ] **Adopt rgui signal algebra** (once rgui `4fb6cdf` reaches main + submodule
-  bump): sync the adapter mirror (`measure?`/`ownership?`/`fanout?` on ports,
-  `Edge.weight?`, `Graph.fanout?`) and declare otoji ports —
-  transcript={extensive,copy,broadcast}, segment={extensive,clone,broadcast},
-  image/ctl={intensive,share,broadcast}. Then replace runtime.ts's image/ctl
-  remote silent-skip with EDIT-TIME validation: on device assignment, flag
-  aliasable-only edges (rgui `isAliasable`) that would cross a device boundary
-  ("this edge cannot cross devices") in the UI. Feed measured `onEdgeBytes`
-  into rgui's degree-annotated `cloned-fanout` warning (ties into per-edge
-  throughput above). Agreed with rgui-agent 2026-07-09 (rgui TODO.md
+- [x] **Adopt rgui signal algebra — otoji half** (shipped 2026-07-09):
+  `graph/signal.ts` declares per-port `measure`/`ownership` (transcript=
+  {extensive,copy}, segment={extensive,clone}, image/ctl={intensive,share})
+  with local `isDuplicable`/`isAliasable` predicates; the adapter mirror gained
+  the optional `measure?`/`ownership?`/`fanout?`/`weight?`/`Graph.fanout?`
+  fields and rides the declarations on every rgui port; `illegalCrossDeviceEdges`
+  flags share-signal edges whose endpoints resolve to different devices — the
+  editor draws them red-dashed with "⚠ can't cross devices" (verified live,
+  2-device room: camera→OCR image + OCR→camera control edges flag on
+  reassignment and clear on return). runtime.ts's silent skip stays as the
+  runtime backstop.
+- [ ] **Adopt rgui signal algebra — after rgui `4fb6cdf` reaches main** (+
+  submodule bump): swap `signal.ts`'s local predicates for the rgui
+  `isDuplicable`/`isAliasable`/`resolveSignal` exports, and feed measured
+  `onEdgeBytes` into rgui's degree-annotated `cloned-fanout` warning (ties into
+  per-edge throughput above). Agreed with rgui-agent 2026-07-09 (rgui TODO.md
   `[2026-07-09 20:55]` + Inbox reply `[21:05]` below).
 
 ## Open questions / risks

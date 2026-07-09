@@ -25,6 +25,7 @@ import { PeerMesh } from "../net/peers";
 import { type DeviceOpt } from "./device-opt";
 import { GraphContext } from "./graph-context";
 import { GraphRuntime, nodeOwner, type TranscriptMsg } from "../graph/runtime";
+import { illegalCrossDeviceEdges } from "../graph/signal";
 import { HEAVY_NODE_TYPES, offloadType } from "../graph/model-lifecycle";
 import {
   BUILTIN_TEMPLATES,
@@ -1363,19 +1364,34 @@ function Editor({ initialRoom, local }: { initialRoom?: string; local?: boolean 
     [setNodes, setEdges, broadcast, addNode, addTemplate, addFileNodeAt, allTemplates, removeEdge],
   );
 
+  // Edges whose signal is in-process-only (image/control: share, no wire
+  // format) but whose endpoints resolve to different devices — the runtime
+  // silently drops those frames, so flag them while wiring/assigning instead.
+  // Local mode runs everything in-process (delivery by reference): never flag.
+  const illegalEdges = useMemo(
+    () => (local ? new Set<string>() : illegalCrossDeviceEdges(currentGraph, (n) => nodeOwner(n, onlineDeviceIds))),
+    [local, currentGraph, onlineDeviceIds],
+  );
+
   // Per-edge visuals for the rgui canvas: highlight the selected edge, animate
-  // (dashed) while the runtime is running, and label cross-device edges with rate.
+  // (dashed) while the runtime is running, label cross-device edges with rate,
+  // and mark share-signal edges that can't cross their device boundary.
   const edgeMeta = useCallback(
     (e: { id: string; source: string; target: string }) => {
       const selected = e.id === selectedEdge;
+      const illegal = illegalEdges.has(e.id);
       const rate = edgeRates[e.id];
       return {
         dashed: running || undefined,
-        style: selected ? { color: "#1a202c", width: 4 } : undefined,
-        label: rate ? formatRate(rate) : undefined,
+        style: selected
+          ? { color: "#1a202c", width: 4 }
+          : illegal
+            ? { color: "#e53e3e", width: 3, dash: [6, 4] }
+            : undefined,
+        label: illegal ? "⚠ can't cross devices" : rate ? formatRate(rate) : undefined,
       };
     },
-    [selectedEdge, edgeRates, running],
+    [selectedEdge, illegalEdges, edgeRates, running],
   );
 
   // Live node body drawn on the rgui canvas (screen-space, clipped to the body
@@ -1605,13 +1621,15 @@ function Editor({ initialRoom, local }: { initialRoom?: string; local?: boolean 
       (window as any).__otoji = {
         addNode,
         addTemplate,
+        connect: (from: { node: string; port: string }, to: { node: string; port: string }) =>
+          rguiHandlers.onConnect?.({ ...from, side: "out" as const }, { ...to, side: "in" as const }),
         select: (ids: string[]) => setSelected(ids),
         nodes: () => nodesRef.current,
         edges: () => edgesRef.current,
         live: liveRef.current,
       };
     }
-  }, [addNode, addTemplate]);
+  }, [addNode, addTemplate, rguiHandlers]);
 
   // Compact summary rgui renders when a node is too small for its config, or when
   // nodes merge into a pseudo-node. The host knows what each node means, so it
