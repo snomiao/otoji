@@ -15,7 +15,6 @@ export function clampFps(fps: number): number {
 
 export interface CameraHandle {
   stop(): void;
-  setRate(fps: number): void; // free-run at fps (<=0 → pause, credit-only)
   grabNow(): void; // capture exactly one frame now (credit)
   dims(): { width: number; height: number }; // live stream size (0 until ready)
   /** the underlying video MediaStream — for a compositor-rendered <video>
@@ -27,6 +26,9 @@ export interface CameraOpts {
   deviceId?: string;
   fps: number;
   demand?: boolean; // start in credit mode (wait for grabNow), after priming one frame
+  /** stop() releases the video tracks (default). false = the caller owns the
+   *  tracks' lifetime (e.g. a display stream cached across runtime restarts). */
+  stopTracks?: boolean;
   onFrame: (bitmap: ImageBitmap, width: number, height: number) => void;
   onError?: (e: Error) => void;
 }
@@ -41,8 +43,9 @@ export async function startCamera(opts: CameraOpts): Promise<CameraHandle> {
 
 /**
  * Build a frame source over an existing video MediaStream (webcam *or* a screen
- * share from getDisplayMedia). Owns the `<video>` element and the stream's video
- * tracks; stop() releases them. Frames emit free-running at `fps` or per credit.
+ * share from getDisplayMedia). Owns the `<video>` element and — unless
+ * `stopTracks: false` — the stream's video tracks; stop() releases them. Frames
+ * emit free-running at `fps` or per credit.
  */
 export async function createFrameSource(
   stream: MediaStream,
@@ -113,16 +116,8 @@ export async function createFrameSource(
     stop: () => {
       stopped = true;
       if (timer) clearInterval(timer);
-      stream.getVideoTracks().forEach((t) => t.stop()); // audio (if any) is owned elsewhere
+      if (opts.stopTracks !== false) stream.getVideoTracks().forEach((t) => t.stop()); // audio (if any) is owned elsewhere
       video.srcObject = null;
-    },
-    setRate: (fps: number) => {
-      if (stopped) return;
-      if (fps > 0) startTimer(fps);
-      else if (timer) {
-        clearInterval(timer);
-        timer = null;
-      }
     },
     grabNow: () => grabOnFrame(),
     dims: () => ({ width: video.videoWidth, height: video.videoHeight }),
