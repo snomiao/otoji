@@ -24,7 +24,7 @@ export default defineConfig({
   webServer: [
     {
       // Local signaling Worker (Durable Object) on :8787.
-      command: "pnpm -C ../signal exec wrangler dev --port 8787",
+      command: "bun --cwd ../signal run wrangler dev --port 8787",
       port: 8787,
       reuseExistingServer: !process.env.CI,
       timeout: 120_000,
@@ -33,7 +33,7 @@ export default defineConfig({
     },
     {
       // Vite dev server pointed at the local signaling Worker.
-      command: 'echo VITE_SIGNAL_BASE=ws://localhost:8787/signal > .env.development.local && pnpm dev',
+      command: 'echo VITE_SIGNAL_BASE=ws://localhost:8787/signal > .env.development.local && bun run dev',
       url: "http://localhost:5173",
       reuseExistingServer: !process.env.CI,
       timeout: 120_000,

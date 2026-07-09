@@ -80,10 +80,12 @@ export class PeerMesh {
     };
     pc.ondatachannel = (ev) => this.bindChannel(remoteId, ev.channel);
 
-    if (initiator) {
-      const ch = pc.createDataChannel(DEFAULT_LABEL);
-      this.bindChannel(remoteId, ch);
-    }
+    // Create an outbound channel on both sides. Perfect negotiation below
+    // handles simultaneous negotiation; this avoids a stale/rejoined pair where
+    // the elected initiator never opens a channel and both peers get stuck with
+    // ICE connected but no data path.
+    const ch = pc.createDataChannel(DEFAULT_LABEL);
+    this.bindChannel(remoteId, ch);
     return p;
   }
 
@@ -145,6 +147,20 @@ export class PeerMesh {
 
   connectedPeers(): string[] {
     return [...this.peers.entries()].filter(([, p]) => p.pc.connectionState === "connected").map(([id]) => id);
+  }
+
+  debugState(): Record<string, { connection: RTCPeerConnectionState; ice: RTCIceConnectionState; signaling: RTCSignalingState; channels: Record<string, RTCDataChannelState> }> {
+    return Object.fromEntries(
+      [...this.peers.entries()].map(([id, p]) => [
+        id,
+        {
+          connection: p.pc.connectionState,
+          ice: p.pc.iceConnectionState,
+          signaling: p.pc.signalingState,
+          channels: Object.fromEntries([...p.channels.entries()].map(([label, ch]) => [label, ch.readyState])),
+        },
+      ]),
+    );
   }
 
   private remove(remoteId: string): void {

@@ -108,6 +108,15 @@ export interface RguiOptions {
     from: PortRef,
     at: { screen: { x: number; y: number }; world: { x: number; y: number } },
   ) => void;
+  /** right-button drag from a node body, resolved by the host app. */
+  onSmartLinkEnd?: (
+    fromNodeId: string,
+    at: {
+      screen: { x: number; y: number };
+      world: { x: number; y: number };
+      targetNodeId?: string;
+    },
+  ) => void;
   // v0.3.0 canvas-native palettes
   panels?: Panel[];
   /** v2.10 a panel was header-dragged (fires on release); pass the anchor back
@@ -127,6 +136,7 @@ export interface Rgui {
   /** v0.3.0: programmatic viewport control */
   setView(view: ViewTransform): void;
   fitView(paddingPx?: number): void;
+  fitNode(nodeId: string, paddingPx?: number): void;
   /** snap every node to the current-scale main grid; fires onNodeMoveEnd per moved
    *  node (normal broadcast path) unless {silent:true} */
   snapGraph(opts?: { silent?: boolean }): void;

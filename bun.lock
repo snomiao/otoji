@@ -1,0 +1,32 @@
+{
+  "lockfileVersion": 1,
+  "configVersion": 0,
+  "workspaces": {
+    "": {
+      "name": "@otoji/core",
+      "devDependencies": {
+        "@napi-rs/cli": "^2.18.4",
+      },
+      "optionalDependencies": {
+        "@otoji/core-darwin-arm64": "0.1.3",
+        "@otoji/core-darwin-x64": "0.1.3",
+        "@otoji/core-linux-arm64-gnu": "0.1.3",
+        "@otoji/core-linux-x64-gnu": "0.1.3",
+        "@otoji/core-win32-x64-msvc": "0.1.3",
+      },
+    },
+  },
+  "packages": {
+    "@napi-rs/cli": ["@napi-rs/cli@2.18.4", "", { "bin": { "napi": "scripts/index.js" } }, "sha512-SgJeA4df9DE2iAEpr3M2H0OKl/yjtg1BnRI5/JyowS71tUWhrfSu2LT0V3vlHET+g1hBVlrO60PmEXwUEKp8Mg=="],
+
+    "@otoji/core-darwin-arm64": ["@otoji/core-darwin-arm64@file:node_modules/@otoji/core-darwin-arm64", {}],
+
+    "@otoji/core-darwin-x64": ["@otoji/core-darwin-x64@file:node_modules/@otoji/core-darwin-x64", {}],
+
+    "@otoji/core-linux-arm64-gnu": ["@otoji/core-linux-arm64-gnu@file:node_modules/@otoji/core-linux-arm64-gnu", {}],
+
+    "@otoji/core-linux-x64-gnu": ["@otoji/core-linux-x64-gnu@file:node_modules/@otoji/core-linux-x64-gnu", {}],
+
+    "@otoji/core-win32-x64-msvc": ["@otoji/core-win32-x64-msvc@file:node_modules/@otoji/core-win32-x64-msvc", {}],
+  }
+}

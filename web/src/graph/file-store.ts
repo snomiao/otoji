@@ -4,7 +4,7 @@
 // file node runs only on the device that holds its file here.
 
 export interface FileEntry {
-  kind: "audio" | "text";
+  kind: "audio" | "text" | "video" | "image";
   name: string;
   file?: File; // raw dropped file (audio decoded lazily at runtime)
   text?: string; // for text files, read eagerly
@@ -37,8 +37,10 @@ class FileStore {
 // or the synced graph.
 export const fileStore = new FileStore();
 
-export function fileKindForName(name: string): "audio" | "text" | null {
+export function fileKindForName(name: string): "audio" | "text" | "video" | "image" | null {
   const ext = name.toLowerCase().split(".").pop() ?? "";
+  if (["png", "jpg", "jpeg", "webp", "gif", "bmp", "avif"].includes(ext)) return "image";
+  if (["mp4", "mov", "mkv", "avi"].includes(ext)) return "video";
   if (["mp3", "wav", "m4a", "ogg", "webm", "flac", "aac"].includes(ext)) return "audio";
   if (["md", "txt", "srt", "vtt", "text"].includes(ext)) return "text";
   return null;

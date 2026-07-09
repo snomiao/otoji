@@ -21,7 +21,6 @@ test_1.md
 index.js
 index.d.ts
 npm/
-bun.lock
 
 # wrangler local state
 .wrangler/

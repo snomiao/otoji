@@ -29,9 +29,11 @@ describe("fileKindForName", () => {
   it("maps extensions to audio/text/null", () => {
     expect(fileKindForName("a.mp3")).toBe("audio");
     expect(fileKindForName("a.WAV")).toBe("audio");
+    expect(fileKindForName("frame.png")).toBe("image");
+    expect(fileKindForName("clip.mp4")).toBe("video");
     expect(fileKindForName("notes.md")).toBe("text");
     expect(fileKindForName("subs.srt")).toBe("text");
-    expect(fileKindForName("image.png")).toBeNull();
+    expect(fileKindForName("archive.zip")).toBeNull();
   });
 });
 

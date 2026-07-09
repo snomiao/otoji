@@ -16,6 +16,7 @@ export const MODEL_TASKS = [
   { id: "asr", name: "Speech → Text (ASR)", tfjs: "automatic-speech-recognition" },
   { id: "translation", name: "Translate", tfjs: "translation" },
   { id: "text2text", name: "Text → Text", tfjs: "text2text-generation" },
+  { id: "text-generation", name: "Text generation", tfjs: "text-generation" },
   { id: "tts", name: "Text → Speech (TTS)", tfjs: "text-to-speech" },
 ] as const;
 
@@ -25,6 +26,7 @@ const TFJS_TASK: Record<ModelTask, string> = {
   asr: "automatic-speech-recognition",
   translation: "translation",
   text2text: "text2text-generation",
+  "text-generation": "text-generation",
   tts: "text-to-speech",
 };
 
@@ -80,7 +82,7 @@ export async function runAsr(model: string, samples: Float32Array, dtype?: strin
   return (Array.isArray(out) ? out[0]?.text : out?.text) ?? "";
 }
 
-/** translation / text2text-generation: text -> text. */
+/** translation / text2text-generation / text-generation: text -> text. */
 export async function runText(task: ModelTask, model: string, text: string, dtype?: string): Promise<string> {
   const pipe = await getPipe(task, model, dtype);
   const out = await pipe(text);

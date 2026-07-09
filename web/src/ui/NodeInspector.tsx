@@ -18,8 +18,10 @@ import { VOSK_MODELS, DEFAULT_VOSK_MODEL } from "../providers/stt/vosk";
 import { DEFAULT_SHERPA_SERVER_URL } from "../providers/stt/sherpa_native";
 import { useNodeLive } from "./useNodeLive";
 import { RecordingPlayer } from "./RecordingPlayer";
+import { VideoClipPlayer } from "./VideoClipPlayer";
 import { DIFF_STYLES, DEFAULT_DIFF_STYLE } from "../lib/textdiff";
 import { DEFAULT_CAMERA_FPS } from "../providers/vision/camera";
+import { releaseScreenShare } from "../providers/vision/screen";
 import { DETECT_MODELS, DEFAULT_DETECT_MODEL } from "../providers/vision/detect";
 import { isPreviewShown, setPreviewShown, subscribePrefs } from "../lib/prefs";
 import { samplesToWavBlob, concatSamples } from "../lib/peaks";
@@ -88,6 +90,97 @@ const barTitle: React.CSSProperties = {
   whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", flex: "0 1 auto",
 };
 
+const DEFAULT_LLM_AGENT_MODEL = "Xenova/flan-t5-small";
+const TEXT2TEXT_MODEL_OPTIONS = [
+  { id: "Xenova/flan-t5-small", label: "FLAN-T5 small · default / light" },
+  { id: "Xenova/flan-t5-base", label: "FLAN-T5 base · better, heavier" },
+  { id: "Xenova/t5-small", label: "T5 small · compact text2text" },
+  { id: "Xenova/t5-base", label: "T5 base · heavier text2text" },
+  { id: "Xenova/mt5-small", label: "mT5 small · multilingual" },
+] as const;
+const MODEL_OPTIONS: Partial<Record<string, readonly { id: string; label: string }[]>> = {
+  text2text: TEXT2TEXT_MODEL_OPTIONS,
+  "text-generation": [
+    { id: "onnx-community/gemma-3-1b-it-ONNX", label: "Gemma 3 1B IT ONNX · browser text-generation" },
+    { id: "onnx-community/gemma-3-1b-it-ONNX-GQA", label: "Gemma 3 1B IT GQA ONNX · smaller KV cache" },
+    { id: "huggingworld/gemma-3-270m-it-ONNX", label: "Gemma 3 270M IT ONNX · tiny" },
+    { id: "onnx-community/gemma-2-2b-jpn-it", label: "Gemma 2 2B Japanese IT · heavier" },
+    { id: "HuggingFaceTB/SmolLM2-135M-Instruct", label: "SmolLM2 135M Instruct · very light" },
+    { id: "HuggingFaceTB/SmolLM2-360M-Instruct", label: "SmolLM2 360M Instruct · light" },
+    { id: "HuggingFaceTB/SmolLM2-1.7B-Instruct", label: "SmolLM2 1.7B Instruct · heavier" },
+    { id: "onnx-community/Qwen2.5-0.5B-Instruct", label: "Qwen2.5 0.5B Instruct ONNX" },
+    { id: "onnx-community/Llama-3.2-1B-Instruct-ONNX", label: "Llama 3.2 1B Instruct ONNX" },
+    { id: "onnx-community/tiny-gpt2-ONNX", label: "tiny GPT-2 ONNX · smoke test" },
+  ],
+  asr: [
+    { id: "Xenova/whisper-tiny", label: "Whisper tiny · light" },
+    { id: "Xenova/whisper-tiny.en", label: "Whisper tiny.en · English light" },
+    { id: "Xenova/whisper-base", label: "Whisper base · heavier" },
+    { id: "distil-whisper/distil-large-v3.5-ONNX", label: "Distil Whisper large v3.5 ONNX · heavy" },
+    { id: "onnx-community/kotoba-whisper-v2.2-ONNX", label: "Kotoba Whisper v2.2 ONNX · Japanese" },
+  ],
+  translation: [
+    { id: "Xenova/nllb-200-distilled-600M", label: "NLLB 200 distilled 600M · multilingual" },
+    { id: "Xenova/opus-mt-ja-en", label: "OPUS MT ja-en" },
+    { id: "Xenova/opus-mt-en-jap", label: "OPUS MT en-ja" },
+  ],
+  tts: [
+    { id: "Xenova/speecht5_tts", label: "SpeechT5 TTS" },
+    { id: "onnx-community/Kokoro-82M-v1.0-ONNX", label: "Kokoro 82M ONNX · popular" },
+    { id: "onnx-community/Supertonic-TTS-ONNX", label: "Supertonic TTS ONNX" },
+  ],
+};
+const DEFAULT_LLM_AGENT_INSTRUCTION =
+  "You are an assistant watching a shared screen and listening to its audio. Summarize what changed, answer any spoken request, and keep the response concise.";
+const DEFAULT_OCR_FILTER_INSTRUCTION =
+  "Clean noisy OCR into human-readable text in stable top-to-bottom reading order. Keep meaningful visible content and important numbers/names. Remove duplicated lines, OCR gibberish, browser/navigation clutter, and random fragments. Do not summarize or add commentary. Output plain text only.";
+
+type DisplayMode = "full-bleed" | "fit" | "stack";
+function displayModeOf(config: Record<string, unknown> | undefined): DisplayMode {
+  const mode = config?.displayMode;
+  return mode === "fit" || mode === "stack" || mode === "full-bleed" ? mode : "full-bleed";
+}
+
+function modelOptionsFor(task: string | undefined) {
+  return MODEL_OPTIONS[task ?? "text2text"] ?? TEXT2TEXT_MODEL_OPTIONS;
+}
+
+function defaultModelForTask(task: string | undefined) {
+  return modelOptionsFor(task)[0]?.id ?? DEFAULT_LLM_AGENT_MODEL;
+}
+
+function ModelRepoInput({
+  value,
+  listId,
+  placeholder = DEFAULT_LLM_AGENT_MODEL,
+  task = "text2text",
+  onCommit,
+}: {
+  value: string | undefined;
+  listId: string;
+  placeholder?: string;
+  task?: string;
+  onCommit: (model: string | undefined) => void;
+}) {
+  return (
+    <>
+      <input
+        type="text"
+        list={listId}
+        defaultValue={value ?? DEFAULT_LLM_AGENT_MODEL}
+        placeholder={placeholder}
+        spellCheck={false}
+        onBlur={(e) => onCommit(e.target.value.trim() || undefined)}
+        onKeyDown={(e) => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); }}
+        style={{ fontSize: 12, width: "100%", marginTop: 2, boxSizing: "border-box" }}
+      />
+      <datalist id={listId}>
+        {modelOptionsFor(task).map((m) => <option key={m.id} value={m.id} label={m.label} />)}
+      </datalist>
+    </>
+  );
+}
+
 export interface InspectorNode {
   id: string;
   voiceType: NodeType;
@@ -95,8 +188,8 @@ export interface InspectorNode {
   config?: Record<string, unknown>;
 }
 
-export function NodeInspector({ node, onClose }: { node: InspectorNode; onClose?: () => void }) {
-  const { devices, myDeviceId, onAssign, onConfig, onDelete, getRecords, clearRecords, setFile, counts, live, trackerState } =
+export function NodeInspector({ node, controls = true, onClose }: { node: InspectorNode; controls?: boolean; onClose?: () => void }) {
+  const { devices, myDeviceId, onAssign, onConfig, onDelete, getRecords, getVideoClips, getVideoClip, spawnVideoClipNode, clearRecords, clearVideoClips, setFile, counts, live, trackerState } =
     useContext(GraphContext);
   const id = node.id;
   const vt = node.voiceType;
@@ -113,12 +206,14 @@ export function NodeInspector({ node, onClose }: { node: InspectorNode; onClose?
   const onlineIds = devices.filter((x) => x.online).map((x) => x.deviceId);
   const owner = node.device || (onlineIds.length ? [...onlineIds].sort()[0] : null);
   const ownedHere = owner == null || owner === myDeviceId;
-  const shown = useSyncExternalStore(subscribePrefs, () => isPreviewShown(id, ownedHere));
+  const shown = useSyncExternalStore(subscribePrefs, () => isPreviewShown(id, true));
   const [cmdCopied, setCmdCopied] = useState(false);
   const [trackerErr, setTrackerErr] = useState<string | null>(null);
 
   const provider = (config?.provider as string | undefined) ?? DEFAULT_TRANSLATE_PROVIDER;
   const task = (config?.task as string | undefined) ?? "detect";
+  const displayMode = displayModeOf(config);
+  const text2textModelListId = `text2text-models-${id}`;
 
   const trackerActive = trackerState?.active ?? [];
   const trackerPending = trackerState?.pending ?? [];
@@ -179,29 +274,114 @@ export function NodeInspector({ node, onClose }: { node: InspectorNode; onClose?
     );
   }
 
-  if (vt === "screen-share") {
+  if (vt === "url") {
+    const url = (config?.url as string | undefined) ?? "";
+    const advanced = (config?.advancedRender as boolean | undefined) ?? false;
+    return (
+      <div className="rgui-node-cfg" style={{ position: "relative", width: "100%", height: "100%", display: "flex", flexDirection: "column", fontSize: 12, fontFamily: "system-ui, sans-serif", background: "#1c2025", borderRadius: 8, overflow: "hidden" }}>
+        <div style={{ ...bar, background: "rgba(28,32,37,0.92)" }}>
+          <span style={barTitle}>{spec.label}</span>
+          {advanced && (
+            <>
+              <button type="button" title="Back" onClick={() => { try { (document.getElementById(`url-frame-${id}`) as HTMLIFrameElement | null)?.contentWindow?.history.back(); } catch {} }} style={{ fontSize: 10 }}>‹</button>
+              <button type="button" title="Forward" onClick={() => { try { (document.getElementById(`url-frame-${id}`) as HTMLIFrameElement | null)?.contentWindow?.history.forward(); } catch {} }} style={{ fontSize: 10 }}>›</button>
+              <button type="button" title="Refresh" onClick={() => { const f = document.getElementById(`url-frame-${id}`) as HTMLIFrameElement | null; if (f) f.src = f.src; }} style={{ fontSize: 10 }}>↻</button>
+            </>
+          )}
+          <input
+            type="url"
+            defaultValue={url}
+            placeholder="https://..."
+            onBlur={(e) => onConfig(id, { url: e.target.value.trim() || undefined })}
+            onKeyDown={(e) => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); }}
+            style={{ flex: 1, minWidth: 0, fontSize: 11, border: "1px solid rgba(203,213,224,0.45)", borderRadius: 4, background: "rgba(255,255,255,0.95)", color: "#1a202c", padding: "2px 5px" }}
+          />
+          {deviceSel({ fontSize: 11, flex: "0 1 110px", minWidth: 0 })}
+        </div>
+        {url ? (
+          <iframe
+            id={`url-frame-${id}`}
+            src={url}
+            title={url}
+            sandbox="allow-scripts allow-same-origin allow-forms allow-popups"
+            style={{ flex: 1, width: "100%", border: 0, background: "#fff" }}
+          />
+        ) : (
+          <div style={{ flex: 1, display: "grid", placeItems: "center", color: "#a0aec0", fontSize: 12 }}>drop or paste a URL</div>
+        )}
+        {warn && <div style={{ position: "absolute", left: 8, bottom: 4, fontSize: 10, color: warnColor, background: "rgba(28,32,37,0.55)", borderRadius: 4, padding: "1px 5px" }}>{warn}</div>}
+      </div>
+    );
+  }
+
+  if (vt === "screen-share" || vt === "camera" || vt === "vision-model") {
+    const stacked = displayMode === "stack";
     return (
       <div
         className="rgui-node-cfg"
         style={{ position: "relative", width: "100%", height: "100%", fontSize: 12, fontFamily: "system-ui, sans-serif" }}
       >
-        <LiveVideo id={id} fill />
-        {/* translucent bar OVER the video; with no stream the card is
-            transparent and rgui's own title/fields/preview show through */}
-        <div style={{ ...bar, position: "absolute", top: 0, left: 0, right: 0, background: "rgba(28,32,37,0.55)" }}>
-          <span style={barTitle}>{spec.label}</span>
-          {deviceSel({ fontSize: 11, flex: "0 1 120px", minWidth: 0, marginLeft: "auto" })}
-          <label
-            style={{ display: "flex", alignItems: "center", gap: 3, color: "#a0aec0", fontSize: 10, flex: "0 0 auto" }}
-            title="frame grab rate — captured screen audio feeds STT"
-          >
-            fps
-            <input type="number" min={0.2} max={30} step={0.5} defaultValue={(config?.fps as number) ?? DEFAULT_CAMERA_FPS}
-              onBlur={(e) => onConfig(id, { fps: Number(e.target.value) || DEFAULT_CAMERA_FPS })}
-              onKeyDown={(e) => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); }}
-              style={{ fontSize: 11, width: 44 }} />
-          </label>
-        </div>
+        <LiveImageFill id={id} mode={displayMode} />
+        {vt !== "vision-model" && <LiveVideo id={id} mode={displayMode} />}
+        {controls && (
+          <div style={{ ...bar, position: "absolute", top: 0, left: 0, right: 0, background: stacked ? "#2b3036" : "rgba(28,32,37,0.68)" }}>
+            <span style={barTitle}>{spec.label}</span>
+            {deviceSel({ fontSize: 11, flex: "0 1 120px", minWidth: 0, marginLeft: "auto" })}
+            {(vt === "screen-share" || vt === "camera") && (
+              <label
+                style={{ display: "flex", alignItems: "center", gap: 3, color: "#a0aec0", fontSize: 10, flex: "0 0 auto" }}
+                title={vt === "screen-share" ? "frame grab rate — captured screen audio feeds STT" : "frame grab rate"}
+              >
+                fps
+                <input type="number" min={0.2} max={30} step={0.5} defaultValue={(config?.fps as number) ?? DEFAULT_CAMERA_FPS}
+                  onBlur={(e) => onConfig(id, { fps: Number(e.target.value) || DEFAULT_CAMERA_FPS })}
+                  onKeyDown={(e) => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); }}
+                  style={{ fontSize: 11, width: 44 }} />
+              </label>
+            )}
+            {vt === "screen-share" && (
+              <button
+                type="button"
+                title="Choose a different screen, window, or tab"
+                onClick={() => {
+                  releaseScreenShare(id);
+                  onConfig(id, { reselectionSeq: Date.now() });
+                }}
+                style={{ fontSize: 11, border: "1px solid rgba(203,213,224,0.55)", borderRadius: 4, background: "rgba(255,255,255,0.12)", color: "#e6e9ec", cursor: "pointer", padding: "2px 6px", flex: "0 0 auto" }}
+              >
+                Change
+              </button>
+            )}
+            {vt === "camera" && (
+              <select value={(config?.cameraId as string) ?? ""} onChange={(e) => onConfig(id, { cameraId: e.target.value || undefined })} style={{ fontSize: 11, flex: "0 1 120px", minWidth: 0 }} title="camera device">
+                <option value="">(default camera)</option>
+                {cameraDevices.map((dev) => <option key={dev.deviceId} value={dev.deviceId}>{dev.label || `camera ${dev.deviceId.slice(0, 8)}`}</option>)}
+              </select>
+            )}
+            {vt === "vision-model" && (
+              <>
+                <select value={task} onChange={(e) => onConfig(id, { task: e.target.value })} style={{ fontSize: 11, flex: "0 1 120px", minWidth: 0 }} title="vision task">
+                  <option value="detect">Object detection</option>
+                  <option value="depth">Depth map</option>
+                  <option value="pose">Pose</option>
+                  <option value="hand">Hand</option>
+                </select>
+                {task === "detect" && (
+                  <>
+                    <select value={(config?.model as string) ?? DEFAULT_DETECT_MODEL} onChange={(e) => onConfig(id, { model: e.target.value })} style={{ fontSize: 11, flex: "0 1 130px", minWidth: 0 }} title="vision model">
+                      {DETECT_MODELS.map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
+                    </select>
+                    <input type="number" min={0.05} max={0.95} step={0.05} defaultValue={(config?.threshold as number) ?? 0.5}
+                      title="minimum score"
+                      onBlur={(e) => onConfig(id, { threshold: Math.min(0.95, Math.max(0.05, Number(e.target.value) || 0.5)) })}
+                      onKeyDown={(e) => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); }}
+                      style={{ fontSize: 11, width: 44 }} />
+                  </>
+                )}
+              </>
+            )}
+          </div>
+        )}
         {warn && (
           <div style={{ position: "absolute", left: 8, bottom: 4, fontSize: 10, color: warnColor, background: "rgba(28,32,37,0.55)", borderRadius: 4, padding: "1px 5px" }}>
             {warn}
@@ -236,19 +416,21 @@ export function NodeInspector({ node, onClose }: { node: InspectorNode; onClose?
           </label>
         )}
 
-        {vt === "translate" && (
+        {(vt === "translate" || vt === "browser-translate-api") && (
           <>
             <label style={row}>to:
               <select value={(config?.lang as string) ?? DEFAULT_TRANSLATE_LANG} onChange={(e) => onConfig(id, { lang: e.target.value })} style={sel}>
                 {TRANSLATE_LANGUAGES.map((l) => <option key={l} value={l}>{l}</option>)}
               </select>
             </label>
-            <label style={row}>via:
-              <select value={provider} onChange={(e) => onConfig(id, { provider: e.target.value })} style={sel}>
-                {TRANSLATE_PROVIDERS.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
-              </select>
-            </label>
-            {provider === "llm" && (
+            {vt === "translate" && (
+              <label style={row}>via:
+                <select value={provider} onChange={(e) => onConfig(id, { provider: e.target.value })} style={sel}>
+                  {TRANSLATE_PROVIDERS.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+                </select>
+              </label>
+            )}
+            {vt === "translate" && provider === "llm" && (
               <label style={row}>model:
                 <select value={(config?.model as string) ?? DEFAULT_TRANSLATE_MODEL} onChange={(e) => onConfig(id, { model: e.target.value })} style={sel}>
                   {TRANSLATE_MODELS.map((m) => <option key={m.id} value={m.id}>{m.name} · {m.size}</option>)}
@@ -324,56 +506,87 @@ export function NodeInspector({ node, onClose }: { node: InspectorNode; onClose?
           </label>
         )}
 
-        {vt === "camera" && (
-          <>
-            <label style={row}>cam:
-              <select value={(config?.cameraId as string) ?? ""} onChange={(e) => onConfig(id, { cameraId: e.target.value || undefined })} style={sel}>
-                <option value="">(default camera)</option>
-                {cameraDevices.map((dev) => <option key={dev.deviceId} value={dev.deviceId}>{dev.label || `camera ${dev.deviceId.slice(0, 8)}`}</option>)}
-              </select>
-            </label>
-            <label style={row}>fps:
-              <input type="number" min={0.2} max={30} step={0.5} defaultValue={(config?.fps as number) ?? DEFAULT_CAMERA_FPS}
-                onBlur={(e) => onConfig(id, { fps: Number(e.target.value) || DEFAULT_CAMERA_FPS })}
-                onKeyDown={(e) => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); }} style={{ fontSize: 12, width: 56 }} />
-            </label>
-            <LiveVideo id={id} />
-          </>
-        )}
-
-        {vt === "vision-model" && (
-          <>
-            <label style={row}>task:
-              <select value={task} onChange={(e) => onConfig(id, { task: e.target.value })} style={sel}>
-                <option value="detect">Object detection</option>
-                <option value="depth">Depth map</option>
-                <option value="pose">Pose (MediaPipe)</option>
-                <option value="hand">Hand (MediaPipe)</option>
-              </select>
-            </label>
-            {task === "detect" && (
-              <>
-                <label style={row}>model:
-                  <select value={(config?.model as string) ?? DEFAULT_DETECT_MODEL} onChange={(e) => onConfig(id, { model: e.target.value })} style={sel}>
-                    {DETECT_MODELS.map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
-                  </select>
-                </label>
-                <label style={row}>min score:
-                  <input type="number" min={0.05} max={0.95} step={0.05} defaultValue={(config?.threshold as number) ?? 0.5}
-                    onBlur={(e) => onConfig(id, { threshold: Math.min(0.95, Math.max(0.05, Number(e.target.value) || 0.5)) })}
-                    onKeyDown={(e) => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); }} style={{ fontSize: 12, width: 56 }} />
-                </label>
-              </>
-            )}
-          </>
-        )}
-
         {vt === "text-diff" && (
           <label style={row}>style:
             <select value={(config?.style as string) ?? DEFAULT_DIFF_STYLE} onChange={(e) => onConfig(id, { style: e.target.value })} style={sel}>
               {DIFF_STYLES.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
             </select>
           </label>
+        )}
+
+        {vt === "text-normalize" && (
+          <>
+            <label style={row}>mode:
+              <select value={(config?.mode as string) ?? "ocr-stable"} onChange={(e) => onConfig(id, { mode: e.target.value })} style={sel}>
+                <option value="ocr-stable">OCR stable lines</option>
+                <option value="light">Light cleanup</option>
+                <option value="llm-filter">Small LLM filter</option>
+              </select>
+            </label>
+            {config?.mode === "llm-filter" && (
+              <>
+                <label style={{ display: "block", color: "#718096", marginTop: 6 }}>model:
+                  <ModelRepoInput
+                    value={config?.model as string | undefined}
+                    listId={`${text2textModelListId}-normalize`}
+                    task="text2text"
+                    onCommit={(model) => onConfig(id, { model })}
+                  />
+                </label>
+                <label style={row}>dtype:
+                  <select value={(config?.dtype as string) ?? DEFAULT_MODEL_DTYPE} onChange={(e) => onConfig(id, { dtype: e.target.value })} style={sel}>
+                    {MODEL_DTYPES.map((dt) => <option key={dt} value={dt}>{dt}</option>)}
+                  </select>
+                </label>
+                <label style={{ display: "block", color: "#718096", marginTop: 6 }}>filter prompt:
+                  <textarea defaultValue={(config?.instruction as string) ?? ""} placeholder={DEFAULT_OCR_FILTER_INSTRUCTION}
+                    onBlur={(e) => onConfig(id, { instruction: e.target.value.trim() || undefined })}
+                    style={{ fontSize: 12, width: "100%", minHeight: 74, marginTop: 2, boxSizing: "border-box", resize: "vertical", fontFamily: "system-ui, sans-serif" }} />
+                </label>
+              </>
+            )}
+          </>
+        )}
+
+        {vt === "text-filter" && (
+          <>
+            <label style={row}>mode:
+              <select value={(config?.mode as string) ?? "diff-added"} onChange={(e) => onConfig(id, { mode: e.target.value })} style={sel}>
+                <option value="diff-added">diff added only (A)</option>
+                <option value="diff-removed">diff removed only (D)</option>
+                <option value="regex-keep">regex keep lines</option>
+                <option value="regex-drop">regex drop lines</option>
+                <option value="regex-replace">regex replace</option>
+              </select>
+            </label>
+            {String(config?.mode ?? "diff-added").startsWith("diff-") && (
+              <label style={{ ...row, justifyContent: "flex-start", gap: 6 }}>
+                <input type="checkbox" checked={(config?.stripPrefix as boolean | undefined) ?? false} onChange={(e) => onConfig(id, { stripPrefix: e.target.checked })} />
+                strip +/- prefix
+              </label>
+            )}
+            {String(config?.mode ?? "").startsWith("regex-") && (
+              <>
+                <label style={{ display: "block", color: "#718096", marginTop: 6 }}>pattern:
+                  <input type="text" defaultValue={(config?.pattern as string) ?? ""} placeholder="regex"
+                    onBlur={(e) => onConfig(id, { pattern: e.target.value })}
+                    onKeyDown={(e) => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); }} style={{ fontSize: 12, width: "100%", marginTop: 2, boxSizing: "border-box" }} />
+                </label>
+                <label style={row}>flags:
+                  <input type="text" defaultValue={(config?.flags as string) ?? "i"} placeholder="i"
+                    onBlur={(e) => onConfig(id, { flags: e.target.value || undefined })}
+                    onKeyDown={(e) => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); }} style={sel} />
+                </label>
+                {config?.mode === "regex-replace" && (
+                  <label style={{ display: "block", color: "#718096", marginTop: 6 }}>replace:
+                    <input type="text" defaultValue={(config?.replace as string) ?? ""}
+                      onBlur={(e) => onConfig(id, { replace: e.target.value })}
+                      onKeyDown={(e) => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); }} style={{ fontSize: 12, width: "100%", marginTop: 2, boxSizing: "border-box" }} />
+                  </label>
+                )}
+              </>
+            )}
+          </>
         )}
 
         {vt === "vosk" && (
@@ -396,20 +609,85 @@ export function NodeInspector({ node, onClose }: { node: InspectorNode; onClose?
 
         {vt === "model" && (
           <>
+            {(() => {
+              const modelTask = (config?.task as string | undefined) ?? "asr";
+              return (
+                <>
             <label style={row}>task:
-              <select value={(config?.task as string) ?? "asr"} onChange={(e) => onConfig(id, { task: e.target.value })} style={sel}>
+              <select
+                value={modelTask}
+                onChange={(e) => {
+                  const nextTask = e.target.value;
+                  const current = (config?.model as string | undefined)?.trim();
+                  onConfig(id, { task: nextTask, model: current || defaultModelForTask(nextTask) });
+                }}
+                style={sel}
+              >
                 {MODEL_TASKS.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
               </select>
             </label>
             <label style={{ display: "block", color: "#718096", marginTop: 6 }}>model (HF repo id or URL):
-              <input type="text" defaultValue={(config?.model as string) ?? ""} placeholder="e.g. Xenova/whisper-tiny.en"
-                onBlur={(e) => onConfig(id, { model: e.target.value.trim() })}
-                onKeyDown={(e) => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); }} style={{ fontSize: 12, width: "100%", marginTop: 2, boxSizing: "border-box" }} />
+              <ModelRepoInput
+                value={config?.model as string | undefined}
+                listId={`${text2textModelListId}-generic`}
+                task={modelTask}
+                placeholder={defaultModelForTask(modelTask)}
+                onCommit={(model) => onConfig(id, { model })}
+              />
             </label>
+                </>
+              );
+            })()}
             <label style={row}>dtype:
               <select value={(config?.dtype as string) ?? DEFAULT_MODEL_DTYPE} onChange={(e) => onConfig(id, { dtype: e.target.value })} style={sel}>
                 {MODEL_DTYPES.map((dt) => <option key={dt} value={dt}>{dt}</option>)}
               </select>
+            </label>
+          </>
+        )}
+
+        {vt === "llm-agent" && (
+          <>
+            {(() => {
+              const agentTask = ((config?.task as string | undefined) === "text-generation" ? "text-generation" : "text2text");
+              return (
+                <>
+                  <label style={row}>task:
+                    <select
+                      value={agentTask}
+                      onChange={(e) => {
+                        const nextTask = e.target.value;
+                        const current = (config?.model as string | undefined)?.trim();
+                        const wasDefaultish = !current || TEXT2TEXT_MODEL_OPTIONS.some((m) => m.id === current) || modelOptionsFor("text-generation").some((m) => m.id === current);
+                        onConfig(id, { task: nextTask, model: wasDefaultish ? defaultModelForTask(nextTask) : current });
+                      }}
+                      style={sel}
+                    >
+                      <option value="text2text">Text → Text</option>
+                      <option value="text-generation">Text generation (Gemma/SmolLM/Qwen)</option>
+                    </select>
+                  </label>
+                  <label style={{ display: "block", color: "#718096", marginTop: 6 }}>model (HF repo id or URL):
+                    <ModelRepoInput
+                      value={config?.model as string | undefined}
+                      listId={`${text2textModelListId}-agent`}
+                      task={agentTask}
+                      placeholder={defaultModelForTask(agentTask)}
+                      onCommit={(model) => onConfig(id, { model })}
+                    />
+                  </label>
+                </>
+              );
+            })()}
+            <label style={row}>dtype:
+              <select value={(config?.dtype as string) ?? DEFAULT_MODEL_DTYPE} onChange={(e) => onConfig(id, { dtype: e.target.value })} style={sel}>
+                {MODEL_DTYPES.map((dt) => <option key={dt} value={dt}>{dt}</option>)}
+              </select>
+            </label>
+            <label style={{ display: "block", color: "#718096", marginTop: 6 }}>system prompt:
+              <textarea defaultValue={(config?.instruction as string) ?? ""} placeholder={DEFAULT_LLM_AGENT_INSTRUCTION}
+                onBlur={(e) => onConfig(id, { instruction: e.target.value.trim() || undefined })}
+                style={{ fontSize: 12, width: "100%", minHeight: 74, marginTop: 2, boxSizing: "border-box", resize: "vertical", fontFamily: "system-ui, sans-serif" }} />
             </label>
           </>
         )}
@@ -473,6 +751,85 @@ export function NodeInspector({ node, onClose }: { node: InspectorNode; onClose?
             }}>⬇ download audio ({getRecords(id).length})</button>
         )}
 
+        {vt === "video-recorder" && (() => {
+          const clips = getVideoClips(id);
+          const shownClips = clips.slice(-6).reverse();
+          const recording = (config?.recording as boolean | undefined) ?? false;
+          return (
+            <div style={{ marginTop: 6 }}>
+              <div style={{ display: "flex", gap: 6, alignItems: "center", marginBottom: 6 }}>
+                <button
+                  type="button"
+                  onClick={() => onConfig(id, { recording: !recording })}
+                  style={{
+                    fontSize: 11,
+                    border: "1px solid #cbd5e0",
+                    borderRadius: 4,
+                    background: recording ? "#fed7d7" : "#fff",
+                    color: recording ? "#9b2c2c" : "#2d3748",
+                    cursor: "pointer",
+                    padding: "3px 8px",
+                  }}
+                >
+                  {recording ? "Stop" : "Record"}
+                </button>
+                <label style={{ ...row, margin: 0, flex: 1 }}>fps:
+                  <input type="number" min={1} max={30} step={1} defaultValue={(config?.fps as number) ?? DEFAULT_CAMERA_FPS}
+                    onBlur={(e) => onConfig(id, { fps: Number(e.target.value) || DEFAULT_CAMERA_FPS })}
+                    onKeyDown={(e) => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); }} style={{ fontSize: 11, width: 48 }} />
+                </label>
+              </div>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: 11, color: "#718096" }}>
+                <span>clips ({clips.length})</span>
+                {clips.length > 0 && <button style={{ fontSize: 10 }} onClick={() => clearVideoClips?.(id)}>Clear</button>}
+              </div>
+              {clips.length === 0 ? (
+                <div style={{ color: "#a0aec0", fontSize: 11 }}>Pipe image + audio here, then record a clip.</div>
+              ) : (
+                shownClips.map((clip, i) => (
+                  <VideoClipPlayer
+                    key={clip.id}
+                    clip={clip}
+                    index={clips.length - 1 - i}
+                    onSpawn={(c) => spawnVideoClipNode?.(id, c)}
+                  />
+                ))
+              )}
+            </div>
+          );
+        })()}
+
+        {vt === "video-clip" && (() => {
+          const clipId = config?.clipId as string | undefined;
+          const clip = getVideoClip(clipId);
+          return (
+            <div style={{ marginTop: 6 }}>
+              <div style={{ fontSize: 11, color: "#718096", marginBottom: 4 }}>generated clip source</div>
+              {clip ? (
+                <VideoClipPlayer clip={clip} index={0} />
+              ) : (
+                <div style={{ color: "#a0aec0", fontSize: 11 }}>clip missing on this device</div>
+              )}
+              <button
+                type="button"
+                disabled={!clipId}
+                onClick={() => onConfig(id, { playSeq: Date.now() })}
+                style={{ fontSize: 11, marginTop: 6, border: "1px solid #cbd5e0", borderRadius: 4, background: "#fff", cursor: clipId ? "pointer" : "default" }}
+              >
+                replay to outputs
+              </button>
+              <label style={{ ...row, justifyContent: "flex-start", gap: 6 }}>
+                <input
+                  type="checkbox"
+                  checked={(config?.loop as boolean | undefined) ?? false}
+                  onChange={(e) => onConfig(id, { loop: e.target.checked })}
+                />
+                loop output
+              </label>
+            </div>
+          );
+        })()}
+
         {vt === "srt-out" && (
           <button style={{ fontSize: 11, marginTop: 6 }} disabled={getRecords(id).length === 0}
             onClick={() => {
@@ -533,7 +890,7 @@ export function NodeInspector({ node, onClose }: { node: InspectorNode; onClose?
  *  draw skips its bitmap while this is visible. Inline (camera): sized to sit
  *  in the node's bottom preview strip. `fill` (screen-share): covers the whole
  *  node rect behind the card's title bar — the node IS the monitor. */
-function LiveVideo({ id, fill }: { id: string; fill?: boolean }) {
+function LiveVideo({ id, mode }: { id: string; mode: DisplayMode }) {
   const { live } = useContext(GraphContext);
   const stream = useSyncExternalStore(
     useCallback((cb: () => void) => live.subscribe(id, cb), [live, id]),
@@ -545,19 +902,59 @@ function LiveVideo({ id, fill }: { id: string; fill?: boolean }) {
     if (v && v.srcObject !== stream) v.srcObject = stream;
   }, [stream]);
   if (!stream) return null;
+  const style: React.CSSProperties =
+    mode === "stack"
+      ? { position: "absolute", left: 0, right: 0, top: 26, bottom: 0, width: "100%", height: "calc(100% - 26px)", objectFit: "contain", background: "#1c2025", borderRadius: "0 0 8px 8px" }
+      : { position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: mode === "fit" ? "contain" : "cover", background: "#1c2025", borderRadius: 8 };
   return (
     <video
       ref={ref}
       autoPlay
       muted
       playsInline
-      style={
-        fill
-          ? // opaque letterbox: covers the canvas-drawn fields/labels beneath;
-            // radius matches the node's rounded corners (scales with the overlay)
-            { position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "contain", background: "#1c2025", borderRadius: 8 }
-          : { display: "block", width: "100%", maxHeight: 88, objectFit: "contain", marginTop: 4, borderRadius: 4, background: "#1c2025" }
-      }
+      style={style}
     />
   );
+}
+
+function LiveImageFill({ id, mode }: { id: string; mode: DisplayMode }) {
+  const { live } = useContext(GraphContext);
+  const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    let raf = 0;
+    const draw = () => {
+      const dpr = window.devicePixelRatio || 1;
+      const w = Math.max(1, canvas.clientWidth);
+      const h = Math.max(1, canvas.clientHeight);
+      if (canvas.width !== Math.round(w * dpr) || canvas.height !== Math.round(h * dpr)) {
+        canvas.width = Math.round(w * dpr);
+        canvas.height = Math.round(h * dpr);
+      }
+      const ctx = canvas.getContext("2d");
+      if (ctx) {
+        ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+        ctx.fillStyle = "#1c2025";
+        ctx.fillRect(0, 0, w, h);
+        const img = live.getImage(id);
+        if (img?.width && img.height) {
+          const top = mode === "stack" ? 26 : 0;
+          const availH = Math.max(1, h - top);
+          const s = mode === "full-bleed" ? Math.max(w / img.width, availH / img.height) : Math.min(w / img.width, availH / img.height);
+          const dw = img.width * s;
+          const dh = img.height * s;
+          try {
+            ctx.drawImage(img, (w - dw) / 2, top + (availH - dh) / 2, dw, dh);
+          } catch {
+            /* bitmap was closed between get and draw */
+          }
+        }
+      }
+      raf = requestAnimationFrame(draw);
+    };
+    raf = requestAnimationFrame(draw);
+    return () => cancelAnimationFrame(raf);
+  }, [live, id, mode]);
+  return <canvas ref={canvasRef} style={{ position: "absolute", inset: 0, width: "100%", height: "100%", display: "block", background: "#1c2025", borderRadius: 8 }} />;
 }

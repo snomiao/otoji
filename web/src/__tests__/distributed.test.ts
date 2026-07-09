@@ -1,7 +1,8 @@
 import { describe, it, expect } from "vitest";
 import { nodeOwner } from "../graph/runtime";
 import { buildSegmentFrame, buildTranscriptFrame, frameToMessage } from "../graph/frames";
-import type { VoiceNode } from "../graph/model";
+import { edgeId, type VoiceGraph, type VoiceNode } from "../graph/model";
+import { illegalCrossDeviceEdges } from "../graph/signal";
 
 const node = (device: string | null): VoiceNode => ({ id: "n", type: "stt", device, pos: { x: 0, y: 0 } });
 
@@ -39,5 +40,23 @@ describe("edge frames", () => {
     const msg = frameToMessage(f) as { text: string; audio: { samples: Float32Array } };
     expect(msg.text).toBe("你好");
     expect(Array.from(msg.audio.samples)).toEqual(Array.from(samples));
+  });
+});
+
+describe("cross-device graph signals", () => {
+  it("allows image and control edges to cross devices", () => {
+    const graph: VoiceGraph = {
+      version: 1,
+      nodes: {
+        screen: { id: "screen", type: "screen-share", device: "dev-a", pos: { x: 0, y: 0 } },
+        ocr: { id: "ocr", type: "paddle-ocr", device: "dev-b", pos: { x: 1, y: 0 } },
+      },
+      edges: [
+        { id: edgeId({ source: "screen", sourceHandle: "out", target: "ocr", targetHandle: "in" }), source: "screen", sourceHandle: "out", target: "ocr", targetHandle: "in" },
+        { id: edgeId({ source: "ocr", sourceHandle: "rate", target: "screen", targetHandle: "rate" }), source: "ocr", sourceHandle: "rate", target: "screen", targetHandle: "rate" },
+      ],
+    };
+    const illegal = illegalCrossDeviceEdges(graph, (n) => n.device);
+    expect(illegal.size).toBe(0);
   });
 });

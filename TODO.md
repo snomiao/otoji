@@ -91,7 +91,7 @@
 - [x] Create/move/connect/delete; type-checked edges (`canConnect`); assign node → device (per-node selector).
 - [x] Bind graph to DO: load on join (hello/graph-get), edit → `patchGraph` → broadcast → re-render. `ui/GraphEditor.tsx` (`?graph=1`)
 - [x] Verified live: 3 nodes added + device-assigned, persisted to DO (probe read back version 3, 3 nodes).
-- [x] Codex review: committed valid `web/pnpm-workspace.yaml` (allowBuilds) so pnpm build/test don't break.
+- [x] Codex review: migrated web/signal package management to Bun locks.
 - [ ] (deferred) dedicated network view of devices + inter-device links (per-device grouping shown via node device labels for now).
 
 ### M3 — Node runtime (local execution) ✅ DONE
@@ -506,7 +506,7 @@ snomiao の指示で、otoji.org の graph rendering を `@snomiao/rgui`
 **lib の場所とリンク方法** (repo: `~/ws/snomiao/rgui/tree/main`, `bun link` 登録済み)
 
 ```jsonc
-// web/package.json — pnpm の場合
+// web/package.json — local link
 "dependencies": { "@snomiao/rgui": "link:/Users/sno/ws/snomiao/rgui/tree/main" }
 ```
 

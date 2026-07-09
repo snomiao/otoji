@@ -2,13 +2,14 @@
   "name": "otoji-web",
   "private": true,
   "version": "0.0.0",
+  "packageManager": "bun@1.3.13",
   "type": "module",
   "scripts": {
     "dev": "vite",
     "typecheck": "tsgo --noEmit",
     "build": "tsgo --noEmit && vite build",
     "preview": "vite preview",
-    "preview:fresh": "pnpm build && vite preview --strictPort --port 5185",
+    "preview:fresh": "bun run build && vite preview --strictPort --port 5185",
     "test": "vitest run",
     "test:watch": "vitest",
     "test:e2e": "playwright test",
@@ -38,7 +39,6 @@
     "esbuild": "^0.23.0",
     "jsdom": "^24.1.0",
     "tsx": "^4.16.0",
-    "typescript": "^5.5.3",
     "vite": "^5.3.3",
     "vitest": "^2.0.2"
   }
