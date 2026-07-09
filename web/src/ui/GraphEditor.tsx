@@ -140,7 +140,7 @@ function toRF(g: VoiceGraph): { nodes: Node[]; edges: Edge[] } {
     id: n.id,
     type: "voice",
     position: n.pos,
-    data: { voiceType: n.type, device: n.device, config: n.config ?? {} },
+    data: { voiceType: n.type, device: n.device, config: n.config ?? {}, size: n.size, scale: n.scale },
   }));
   const edges = g.edges.map((e) => ({
     id: e.id,
@@ -161,6 +161,8 @@ function fromRF(nodes: Node[], edges: Edge[], version: number): VoiceGraph {
       type: (n.data as any).voiceType as NodeType,
       device: ((n.data as any).device ?? null) as string | null,
       pos: { x: n.position.x, y: n.position.y },
+      size: (n.data as any).size ?? undefined,
+      scale: (n.data as any).scale ?? undefined,
       config: (n.data as any).config ?? undefined,
     };
   }
@@ -400,8 +402,12 @@ function Editor({ initialRoom, local }: { initialRoom?: string; local?: boolean 
 
   // After a graph-generation commit, snap every node to rgui's main grid. Runs
   // AFTER RguiGraphView's setGraph effect (child effects flush before parent), so
-  // the viewer already holds the new nodes. snapGraph fires onNodeMoveEnd per moved
-  // node (otoji's normal broadcast path); it's idempotent so it can't loop.
+  // the viewer already holds the new nodes. snapGraph fires onNodeMoveEnd /
+  // onNodeResizeEnd per changed node (otoji's normal broadcast path); it's
+  // idempotent so it can't loop. NOTE: rgui's snapGraph re-snaps HEIGHTS but
+  // leaves `scale` alone, so it skews the aspect of a shift-rescaled node
+  // (scale≠1) — only run it on freshly GENERATED graphs (all scale-1), never
+  // as a blanket tidy over user-rescaled nodes.
   useEffect(() => {
     if (!pendingSnapRef.current) return;
     pendingSnapRef.current = false;
@@ -1280,6 +1286,19 @@ function Editor({ initialRoom, local }: { initialRoom?: string; local?: boolean 
     () => ({
       onNodeMoveEnd: (id, pos) => {
         const next = nodesRef.current.map((n) => (n.id === id ? { ...n, position: { x: pos.x, y: pos.y } } : n));
+        nodesRef.current = next;
+        setNodes(next);
+        broadcast(next, edgesRef.current);
+      },
+      // Corner-grip resize (plain drag) / rescale (shift toggles mid-drag).
+      // rgui hands back the grid-snapped {w,h,scale}; persist verbatim so the
+      // box survives re-maps and syncs to the room like a move does.
+      onNodeResizeEnd: (id, size) => {
+        const next = nodesRef.current.map((n) =>
+          n.id === id
+            ? { ...n, data: { ...n.data, size: { w: size.w, h: size.h }, scale: size.scale === 1 ? undefined : size.scale } }
+            : n,
+        );
         nodesRef.current = next;
         setNodes(next);
         broadcast(next, edgesRef.current);

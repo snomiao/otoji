@@ -91,6 +91,10 @@ export interface RguiOptions {
   // v0.2.0 interaction callbacks (host-app state sync)
   onNodeMove?: (nodeId: string, pos: { x: number; y: number }) => void;
   onNodeMoveEnd?: (nodeId: string, pos: { x: number; y: number }) => void;
+  // v2.10 corner-grip resize ⇄ rescale (shift toggles mid-drag); values are
+  // grid-snapped/clamped — `scale` is the content scale (rescale mode only)
+  onNodeResize?: (nodeId: string, size: { w: number; h: number; scale: number }) => void;
+  onNodeResizeEnd?: (nodeId: string, size: { w: number; h: number; scale: number }) => void;
   isValidConnection?: (from: PortRef, to: PortRef) => boolean;
   onConnect?: (from: PortRef, to: PortRef) => void;
   onNodeClick?: (nodeId: string, screen: { x: number; y: number }) => void;
@@ -134,6 +138,12 @@ export interface Rgui {
   setPanels(panels: Panel[]): void;
   /** v0.3.0: attach/replace/remove a node-anchored HTML overlay */
   setNodeOverlay(nodeId: string, overlay: HTMLElement | NodeHtmlOverlay | null): void;
+  /** v2.10: programmatic rescale — magnify the node about its top-left corner
+   *  (the shift+grip drag's endpoint, reachable from code) */
+  rescaleNode(nodeId: string, scale: number): void;
+  /** v2.10: change rg-rule fields live (radix, sizeLaw, thresholds…); call
+   *  snapGraph() afterwards to re-seat the graph on the new lattice */
+  setRule(rule: Partial<RgRule>): void;
   invalidate(): void;
   destroy(): void;
 }
@@ -142,10 +152,13 @@ export interface NodeHtmlOverlay {
   el: HTMLElement;
   anchor?: "right" | "below" | "over";
   offset?: { x: number; y: number };
-  /** "zoom" scales with view.k (laid out for k=1); "fit" measures to node body */
-  scale?: "zoom" | "fit";
+  /** "fixed" screen-constant (default); "zoom" scales with view.k (laid out for
+   * k=1); "fit" scales to fill the node's screen area */
+  scale?: "fixed" | "zoom" | "fit";
   /** hide the overlay when the effective scale drops below this */
   minScale?: number;
+  /** fit: cap on the applied scale (default 1 — never upscale past natural) */
+  maxScale?: number;
   /** "node" bounds the overlay to the node screen rect (default "viewport") */
   clip?: "node" | "viewport" | "none";
   /** how overflow past the clip box is handled (default "auto") */

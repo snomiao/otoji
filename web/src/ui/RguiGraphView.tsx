@@ -13,6 +13,9 @@ import { snap, gridLevels, type PortRef, type Panel, type SummarizeFn } from "@s
 export interface RguiHandlers {
   /** a node finished dragging → persist + broadcast its new world position */
   onNodeMoveEnd?: (nodeId: string, pos: { x: number; y: number }) => void;
+  /** a corner-grip resize/rescale ended → persist the grid-snapped box.
+   *  `scale` is the content scale (moves only in the shift-drag rescale mode) */
+  onNodeResizeEnd?: (nodeId: string, size: { w: number; h: number; scale: number }) => void;
   /** gate a port→port drag (otoji type-check) */
   isValidConnection?: (from: PortRef, to: PortRef) => boolean;
   /** a valid port→port drag completed → create the edge */
@@ -124,7 +127,7 @@ export function RguiGraphView({
       // capture — so no .rgui-node-cfg CSS hack is needed. offset past the rgui
       // header keeps the title visible.
       for (const n of g.nodes)
-        (n as any).overlay = {
+        n.overlay = {
           el: hostFor(n.id),
           anchor: "over",
           offset: { x: 0, y: 28 },
@@ -161,6 +164,14 @@ export function RguiGraphView({
   const hudStatusRef = useRef(hudStatus);
   hudStatusRef.current = hudStatus;
 
+  // setGraph mid-gesture orphans rgui's drag state (it captures node OBJECT
+  // references: the on-screen drag freezes and the node can end up clamped
+  // against its own replacement). Remote re-maps that land while the pointer
+  // is down are parked here and applied on release; local mutations only
+  // commit at gesture end, so they are never parked.
+  const draggingRef = useRef(false);
+  const pendingGraphRef = useRef<ReturnType<typeof voiceGraphToRgui> | null>(null);
+
   // Create the viewer once the canvas is mounted; destroy on unmount.
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -176,16 +187,41 @@ export function RguiGraphView({
         }
       })
       .catch((e) => !disposed && setError(e?.message ?? String(e)));
+    // rgui pointer-captures the canvas on pointerdown, so up/cancel always
+    // retarget back here even when released off-canvas. These run AFTER rgui's
+    // own handlers (attach order), i.e. the drag is already finalized.
+    const gestureStart = () => {
+      draggingRef.current = true;
+    };
+    const gestureEnd = () => {
+      draggingRef.current = false;
+      const g = pendingGraphRef.current;
+      if (g) {
+        pendingGraphRef.current = null;
+        viewerRef.current?.setGraph(g as any);
+      }
+    };
+    canvas.addEventListener("pointerdown", gestureStart);
+    canvas.addEventListener("pointerup", gestureEnd);
+    canvas.addEventListener("pointercancel", gestureEnd);
     return () => {
       disposed = true;
+      canvas.removeEventListener("pointerdown", gestureStart);
+      canvas.removeEventListener("pointerup", gestureEnd);
+      canvas.removeEventListener("pointercancel", gestureEnd);
       viewerRef.current?.destroy();
       viewerRef.current = null;
       if (apiRef) apiRef.current = null;
     };
   }, []);
 
-  // Push graph updates into the live viewer.
+  // Push graph updates into the live viewer (deferred while a gesture is live).
   useEffect(() => {
+    if (draggingRef.current) {
+      pendingGraphRef.current = rgGraph;
+      return;
+    }
+    pendingGraphRef.current = null;
     viewerRef.current?.setGraph(rgGraph as any);
   }, [rgGraph]);
 
@@ -295,6 +331,8 @@ async function createViewer(
     onPanelMove: (panel: Panel, anchor: { x: number; y: number }) => panelMoveRef.current?.(panel.id, anchor),
     summarize: (nodes: any, info: any) => sumRef.current?.(nodes, info) ?? null,
     onNodeMoveEnd: (id, pos) => hRef.current?.onNodeMoveEnd?.(id, pos),
+    onNodeResizeEnd: (id: string, size: { w: number; h: number; scale: number }) =>
+      hRef.current?.onNodeResizeEnd?.(id, size),
     isValidConnection: (from, to) => hRef.current?.isValidConnection?.(from, to) ?? true,
     onConnect: (from, to) => hRef.current?.onConnect?.(from, to),
     onNodeClick: (id, screen) => hRef.current?.onNodeClick?.(id, screen),
