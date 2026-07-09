@@ -693,6 +693,25 @@ export class GraphRuntime {
       };
     }
 
+    if (type === "textarea") {
+      // The Monaco editor's committed text. A commit changes config, config is
+      // part of the auto-run signature, so the runtime restarts and start()
+      // re-emits — the editor never has to reach into a live runtime.
+      const text = ((this.graph.nodes[id]?.config?.text as string | undefined) ?? "").trim();
+      return {
+        start: () => {
+          if (!text) return;
+          for (const para of text.split(/\n\s*\n/).map((s) => s.trim()).filter(Boolean)) {
+            this.hooks.onRecognized?.(id, para);
+            this.emit(id, "out", {
+              text: para,
+              audio: { samples: new Float32Array(0), sampleRate: MIC_VAD_SR, durationMs: 0 },
+            } as TranscriptMsg);
+          }
+        },
+      };
+    }
+
     if (type === "stt") {
       const q = this.makeQueue(id);
       const modelId = (this.graph.nodes[id]?.config?.model as string | undefined) ?? this.hooks.modelId;

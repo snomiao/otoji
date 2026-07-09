@@ -82,6 +82,18 @@ describe("voiceGraphToRgui", () => {
     expect(byId["s"].scale).toBe(0.25); // clamped to MIN_SCALE
   });
 
+  it("gives textarea nodes an editor-sized default box, explicit size wins", () => {
+    const g = emptyGraph();
+    g.nodes["t"] = { id: "t", type: "textarea", device: null, pos: { x: 0, y: 0 } };
+    const rg = voiceGraphToRgui(g);
+    expect(rg.nodes[0].w).toBe(320);
+    expect(rg.nodes[0].h).toBe(232);
+    g.nodes["t"].size = { w: 400, h: 300 };
+    const rg2 = voiceGraphToRgui(g);
+    expect(rg2.nodes[0].w).toBe(400);
+    expect(rg2.nodes[0].h).toBe(300);
+  });
+
   it("is deterministic", () => {
     expect(voiceGraphToRgui(graph())).toEqual(voiceGraphToRgui(graph()));
   });
