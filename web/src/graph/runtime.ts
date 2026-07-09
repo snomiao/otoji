@@ -50,10 +50,9 @@ export interface ImageMsg {
   height: number;
   ts: number; // capture time (ms epoch)
 }
-/** A feedback signal on a "control" edge: a credit pulse and/or a target rate. */
+/** A feedback signal on a "control" edge: a "next" credit pulse. */
 export interface ControlMsg {
   pulse?: boolean; // "next": produce one frame (credit-based backpressure)
-  rate?: number; // set/report a target or achieved FPS
   ts: number;
 }
 
@@ -1037,9 +1036,7 @@ export class GraphRuntime {
           }
         },
         input: (_port, msg) => {
-          const c = msg as ControlMsg;
-          if (c.pulse) handle?.grabNow(); // credit: one frame per "next"
-          else if (typeof c.rate === "number") handle?.setRate(c.rate); // rate: free-run at fps
+          if ((msg as ControlMsg).pulse) handle?.grabNow(); // credit: one frame per "next"
         },
         stop: () => {
           this.hooks.onMedia?.(id, null);
@@ -1063,6 +1060,10 @@ export class GraphRuntime {
             handle = await startScreenShare({
               fps,
               demand,
+              // Reuse the live display stream across auto-run restarts — every
+              // getDisplayMedia call re-prompts the browser picker, and the
+              // editor restarts the runtime on any structural graph edit.
+              cacheKey: id,
               onFrame: (bitmap, width, height) => {
                 this.hooks.onImage?.(id, bitmap);
                 this.emit(id, "out", { bitmap, width, height, ts: Date.now() } as ImageMsg);
@@ -1082,9 +1083,7 @@ export class GraphRuntime {
           }
         },
         input: (_port, msg) => {
-          const c = msg as ControlMsg;
-          if (c.pulse) handle?.grabNow();
-          else if (typeof c.rate === "number") handle?.setRate(c.rate);
+          if ((msg as ControlMsg).pulse) handle?.grabNow();
         },
         stop: () => {
           this.hooks.onMedia?.(id, null);
@@ -1098,9 +1097,6 @@ export class GraphRuntime {
       const w = this.makeLatest(id);
       const cfg = this.graph.nodes[id]?.config ?? {};
       const modelsBase = (cfg.modelsBase as string | undefined) ?? undefined;
-      // Achieved-FPS estimate (EMA of inter-completion interval) reported on `rate`.
-      let lastDone = 0;
-      let emaMs = 0;
       return {
         input: (_port, msg) => {
           const img = msg as ImageMsg;
@@ -1116,13 +1112,9 @@ export class GraphRuntime {
               text,
               audio: { samples: new Float32Array(0), sampleRate: MIC_VAD_SR, durationMs: 0 },
             } as TranscriptMsg);
-            // Feedback: a "next" credit pulse + the measured throughput, so a
-            // connected Camera can pace itself to exactly our OCR rate.
-            const now = Date.now();
-            if (lastDone) emaMs = emaMs ? emaMs * 0.7 + (now - lastDone) * 0.3 : now - lastDone;
-            lastDone = now;
-            const rate = emaMs > 0 ? Math.round((1000 / emaMs) * 10) / 10 : undefined;
-            this.emit(id, "rate", { pulse: true, rate, ts: now } as ControlMsg);
+            // Feedback: a "next" credit pulse so a connected Camera paces
+            // itself to exactly our OCR rate.
+            this.emit(id, "rate", { pulse: true, ts: Date.now() } as ControlMsg);
           });
         },
       };
@@ -1135,8 +1127,6 @@ export class GraphRuntime {
       const model = cfg.model as string | undefined;
       const threshold = typeof cfg.threshold === "number" ? (cfg.threshold as number) : 0.5;
       const emptyAudio = () => ({ samples: new Float32Array(0), sampleRate: MIC_VAD_SR, durationMs: 0 });
-      let lastDone = 0;
-      let emaMs = 0;
       return {
         input: (_port, msg) => {
           const img = msg as ImageMsg;
@@ -1181,12 +1171,8 @@ export class GraphRuntime {
               this.emit(id, "labels", { text: labels, audio: emptyAudio() } as TranscriptMsg);
             }
             if (wantJson && json) this.emit(id, "json", { text: json, audio: emptyAudio() } as TranscriptMsg);
-            // Credit pulse + measured FPS so a connected Camera can self-pace.
-            const now = Date.now();
-            if (lastDone) emaMs = emaMs ? emaMs * 0.7 + (now - lastDone) * 0.3 : now - lastDone;
-            lastDone = now;
-            const rate = emaMs > 0 ? Math.round((1000 / emaMs) * 10) / 10 : undefined;
-            this.emit(id, "rate", { pulse: true, rate, ts: now } as ControlMsg);
+            // Credit pulse so a connected Camera can self-pace.
+            this.emit(id, "rate", { pulse: true, ts: Date.now() } as ControlMsg);
           });
         },
       };

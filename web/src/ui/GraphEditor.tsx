@@ -41,6 +41,7 @@ import { PeerMeshTransport } from "../graph/mesh-transport";
 import { PreviewSync } from "../graph/preview-sync";
 import { p2pModelCache } from "../providers/model/p2p-cache";
 import { DEFAULT_CAMERA_FPS } from "../providers/vision/camera";
+import { releaseScreenShares } from "../providers/vision/screen";
 import { togglePreviewShown, isPreviewShown, shownRemoteNodes, isPeerBadgeShown, togglePeerBadgeShown, subscribePrefs } from "../lib/prefs";
 import { type Recording } from "./RecordingPlayer";
 import { computePeaks } from "../lib/peaks";
@@ -1236,16 +1237,24 @@ function Editor({ initialRoom, local }: { initialRoom?: string; local?: boolean 
   useEffect(() => {
     if (!joined || paused) {
       stopRuntime();
+      // Leaving the room ends screen captures; a mere pause keeps them alive so
+      // resume doesn't re-prompt the browser's share picker.
+      if (!joined) releaseScreenShares();
       return;
     }
     const t = setTimeout(async () => {
       await stopRuntime();
+      // Screen captures survive the restart (getDisplayMedia would re-prompt on
+      // every structural edit otherwise) — but drop deleted nodes' captures.
+      releaseScreenShares(
+        nodesRef.current.filter((n) => (n.data as any).voiceType === "screen-share").map((n) => n.id),
+      );
       await startRuntime();
     }, 600);
     return () => clearTimeout(t);
   }, [joined, paused, runtimeSig, startRuntime, stopRuntime]);
 
-  useEffect(() => () => { runtimeRef.current?.stop(); }, []);
+  useEffect(() => () => { runtimeRef.current?.stop(); releaseScreenShares(); }, []);
 
 
   // Per-node record counts from the uncapped export buffer (sink transcripts AND
