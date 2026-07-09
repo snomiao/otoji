@@ -10,6 +10,7 @@ export type NodeType =
   | "mic-raw"
   | "file-audio"
   | "file-text"
+  | "textarea"
   | "stt"
   | "web-speech"
   | "vosk"
@@ -71,6 +72,15 @@ export const NODE_SPECS: Record<NodeType, NodeSpec> = {
   "file-text": {
     type: "file-text",
     label: "Text file (in)",
+    inputs: [],
+    outputs: [{ id: "out", type: "transcript" }],
+  },
+  textarea: {
+    type: "textarea",
+    label: "Text editor (in)",
+    // Type text on the canvas (Monaco), commit to `config.text`, and the source
+    // re-emits it paragraph-by-paragraph (same wire shape as file-text). A
+    // `config.seq` bump re-sends unchanged text (auto-run restarts on config).
     inputs: [],
     outputs: [{ id: "out", type: "transcript" }],
   },
@@ -252,7 +262,7 @@ export const NODE_SPECS: Record<NodeType, NodeSpec> = {
 
 /** Palette grouping for the node types. */
 export const NODE_CATEGORIES: { id: string; label: string; types: NodeType[] }[] = [
-  { id: "input", label: "Input", types: ["mic-vad", "mic-raw", "audio-mix", "file-audio", "file-text"] },
+  { id: "input", label: "Input", types: ["mic-vad", "mic-raw", "audio-mix", "file-audio", "file-text", "textarea"] },
   { id: "stt", label: "Speech → Text", types: ["stt", "web-speech", "vosk", "sherpa"] },
   { id: "translate", label: "Text → Text", types: ["translate"] },
   { id: "tts", label: "Text → Speech", types: ["tts", "tts-model"] },

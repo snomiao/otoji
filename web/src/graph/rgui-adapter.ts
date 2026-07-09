@@ -149,7 +149,10 @@ export function voiceGraphToRgui(graph: VoiceGraph, meta: RguiMeta = {}): RgGrap
     // user-resized box + content scale persist on the VoiceNode; the rgui
     // corner grip reports them back via onNodeResizeEnd (see RguiGraphView)
     const scale = Math.min(MAX_SCALE, Math.max(MIN_SCALE, n.scale ?? 1));
-    const w = Math.max(NODE_MIN_W * scale, n.size?.w ?? DEFAULT_W);
+    // textarea nodes host a Monaco overlay — give them an editor-sized default box
+    const defW = n.type === "textarea" ? 320 : DEFAULT_W;
+    const w = Math.max(NODE_MIN_W * scale, n.size?.w ?? defW);
+    const defH = n.type === "textarea" && n.size?.h == null ? { h: 232 } : {};
     return {
       id: n.id,
       title: spec.label,
@@ -157,7 +160,7 @@ export function voiceGraphToRgui(graph: VoiceGraph, meta: RguiMeta = {}): RgGrap
       x: n.pos.x,
       y: n.pos.y,
       w,
-      ...(n.size?.h != null ? { h: n.size.h } : {}),
+      ...(n.size?.h != null ? { h: n.size.h } : defH),
       ...(scale !== 1 ? { scale } : {}),
       // Signal-algebra declarations ride along on every port (fanout stays the
       // "broadcast" default). rgui versions before 4fb6cdf simply ignore them.

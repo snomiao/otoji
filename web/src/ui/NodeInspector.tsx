@@ -24,6 +24,7 @@ import { DETECT_MODELS, DEFAULT_DETECT_MODEL } from "../providers/vision/detect"
 import { isPreviewShown, setPreviewShown, subscribePrefs } from "../lib/prefs";
 import { samplesToWavBlob, concatSamples } from "../lib/peaks";
 import { buildSrt } from "../lib/srt";
+import { MonacoText } from "./MonacoText";
 
 // Node inspector: the config surface for the currently-selected node, replacing
 // the inline controls React Flow's VoiceNode rendered. rgui draws nodes on a
@@ -127,7 +128,7 @@ export function NodeInspector({ node, onClose }: { node: InspectorNode; onClose?
   return (
     <div
       className="rgui-node-cfg"
-      style={{ width: 190, fontSize: 12, fontFamily: "system-ui, sans-serif" }}
+      style={{ width: vt === "textarea" ? 296 : 190, fontSize: 12, fontFamily: "system-ui, sans-serif" }}
     >
       <div style={{ padding: "2px 10px 6px" }}>
         <label style={row}>
@@ -349,6 +350,23 @@ export function NodeInspector({ node, onClose }: { node: InspectorNode; onClose?
                 <code style={{ flex: 1, minWidth: 0, fontSize: 9.5, background: "#f7fafc", border: "1px solid #e2e8f0", borderRadius: 4, padding: "3px 5px", overflowX: "auto", whiteSpace: "nowrap" }}>{cmd}</code>
                 <button onClick={() => { navigator.clipboard?.writeText(cmd); setCmdCopied(true); setTimeout(() => setCmdCopied(false), 1200); }}
                   style={{ fontSize: 10, border: "1px solid #cbd5e0", borderRadius: 4, background: "#fff", cursor: "pointer", padding: "0 6px" }}>{cmdCopied ? "✓" : "⧉"}</button>
+              </div>
+            </div>
+          );
+        })()}
+
+        {vt === "textarea" && (() => {
+          const text = (config?.text as string | undefined) ?? "";
+          return (
+            <div style={{ marginTop: 6 }}>
+              <MonacoText value={text} onCommit={(t) => { if (t !== text) onConfig(id, { text: t }); }} />
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 3 }}>
+                <span style={{ fontSize: 9, color: "#a0aec0" }}>⌘/Ctrl+Enter or blur to send</span>
+                <button
+                  style={{ fontSize: 10, cursor: "pointer" }}
+                  title="Re-send the current text downstream"
+                  onClick={() => onConfig(id, { seq: ((config?.seq as number) ?? 0) + 1 })}
+                >▶ resend</button>
               </div>
             </div>
           );

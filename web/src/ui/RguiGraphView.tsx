@@ -131,7 +131,9 @@ export function RguiGraphView({
           el: hostFor(n.id),
           anchor: "over",
           offset: { x: 0, y: 28 },
-          scale: "zoom",
+          // textarea: Monaco mis-maps mouse→cursor under a CSS scale transform,
+          // so its overlay stays screen-constant ("fixed") instead of zooming.
+          scale: graph.nodes[n.id]?.type === "textarea" ? "fixed" : "zoom",
           minScale: 0.5,
           clip: "node",
           overflow: "auto",
