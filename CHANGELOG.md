@@ -4,6 +4,23 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+## [0.1.54] - 2026-07-09
+
+### Bug Fixes
+- Screen-share survives runtime restarts — no re-prompt on graph edits ([#99](https://github.com/snomiao/otoji/pull/99)) *(web)*
+
+### Chores
+- Bump rgui — overlay options survive re-map; live drag survives setGraph *(web)*
+
+### Documentation
+- Signal-algebra agreement with rgui — ownership 4-valued, adoption backlog *(todo)*
+
+### Features
+- Full-bleed textarea/screen-share nodes; previews survive merged blocks ([#98](https://github.com/snomiao/otoji/pull/98)) *(web)*
+- Textarea node — Monaco-backed text source ([#97](https://github.com/snomiao/otoji/pull/97)) *(web)*
+- Signal-algebra edit-time validation — flag share-signal edges that cross devices ([#96](https://github.com/snomiao/otoji/pull/96)) *(web)*
+- Adopt rgui resize ⇄ rescale — persist node w/h/scale, typed overlay ([#94](https://github.com/snomiao/otoji/pull/94)) *(web)*
+
 ## [0.1.53] - 2026-07-08
 
 ### Bug Fixes
