@@ -8,14 +8,26 @@
 // with rgui; if they drift, the adapter is the single place to fix.
 
 import { NODE_SPECS, type NodeType, type PortType, type VoiceGraph } from "./model";
+import { SIGNAL } from "./signal";
 
 // ---- rgui public Graph shape (mirror of @snomiao/rgui) --------------------
 export type RgSignalKind = "image" | "audio" | "text" | "ctl";
 export type RgNodeCategory = "source" | "model" | "sink" | "note";
+// rgui signal algebra (commit 4fb6cdf): all optional; unset = the default
+// {intensive, copy, broadcast} = pre-algebra behavior.
+export type RgMeasure = "extensive" | "intensive";
+export type RgOwnership = "copy" | "clone" | "share" | "move";
+export type RgFanout = "broadcast" | "split" | "route";
 export interface RgPort {
   id: string;
   label: string;
   kind: RgSignalKind;
+  /** does `+` mean anything across parallel sources? */
+  measure?: RgMeasure;
+  /** may the signal be duplicated (copy/clone) or only aliased (share)? */
+  ownership?: RgOwnership;
+  /** default fan-out policy at this port */
+  fanout?: RgFanout;
 }
 /** node-anchored HTML overlay (mirror of rgui's GraphNode.overlay) */
 export interface RgNodeOverlay {
@@ -72,10 +84,14 @@ export interface RgEdge {
   dashed?: boolean;
   style?: RgEdgeStyle;
   label?: string;
+  /** split fan-out: this edge's proportional take */
+  weight?: number;
 }
 export interface RgGraph {
   nodes: RgGraphNode[];
   edges: RgEdge[];
+  /** per-group fan-out policy overrides, keyed "nodeId.portId" */
+  fanout?: Record<string, RgFanout>;
 }
 
 // ---- mapping --------------------------------------------------------------
@@ -143,8 +159,10 @@ export function voiceGraphToRgui(graph: VoiceGraph, meta: RguiMeta = {}): RgGrap
       w,
       ...(n.size?.h != null ? { h: n.size.h } : {}),
       ...(scale !== 1 ? { scale } : {}),
-      inputs: spec.inputs.map((p) => ({ id: p.id, label: p.id, kind: KIND[p.type] })),
-      outputs: spec.outputs.map((p) => ({ id: p.id, label: p.id, kind: KIND[p.type] })),
+      // Signal-algebra declarations ride along on every port (fanout stays the
+      // "broadcast" default). rgui versions before 4fb6cdf simply ignore them.
+      inputs: spec.inputs.map((p) => ({ id: p.id, label: p.id, kind: KIND[p.type], ...SIGNAL[p.type] })),
+      outputs: spec.outputs.map((p) => ({ id: p.id, label: p.id, kind: KIND[p.type], ...SIGNAL[p.type] })),
       fields,
       // when a chain contracts, show the SET of distinct devices in the block
       // (otoji is multi-device; "set" beats the "mode" fallback here)
