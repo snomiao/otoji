@@ -32,10 +32,14 @@ export function MonacoText({
   value,
   onCommit,
   height = 140,
+  style,
 }: {
   value: string;
   onCommit: (text: string) => void;
   height?: number;
+  /** merged over the host box — e.g. `{flex: 1, height: "auto"}` to fill a
+   *  full-bleed card (automaticLayout tracks the resulting size) */
+  style?: React.CSSProperties;
 }) {
   const hostRef = useRef<HTMLDivElement | null>(null);
   const editorRef = useRef<import("monaco-editor").editor.IStandaloneCodeEditor | null>(null);
@@ -94,7 +98,7 @@ export function MonacoText({
         onBlur={(e) => commitRef.current(e.target.value)}
         onKeyDown={(e) => { if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) (e.target as HTMLTextAreaElement).blur(); }}
         spellCheck={false}
-        style={{ width: "100%", height, boxSizing: "border-box", fontSize: 12, fontFamily: "ui-monospace, monospace", resize: "none" }}
+        style={{ width: "100%", height, boxSizing: "border-box", fontSize: 12, fontFamily: "ui-monospace, monospace", resize: "none", ...style }}
       />
     );
   }
@@ -105,7 +109,7 @@ export function MonacoText({
     <div
       ref={hostRef}
       data-rgui-interactive
-      style={{ width: "100%", height, border: "1px solid #2d3748", borderRadius: 4, overflow: "hidden" }}
+      style={{ width: "100%", height, border: "1px solid #2d3748", borderRadius: 4, overflow: "hidden", ...style }}
     />
   );
 }

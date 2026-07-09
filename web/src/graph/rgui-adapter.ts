@@ -18,6 +18,11 @@ export type RgNodeCategory = "source" | "model" | "sink" | "note";
 export type RgMeasure = "extensive" | "intensive";
 export type RgOwnership = "copy" | "clone" | "share" | "move";
 export type RgFanout = "broadcast" | "split" | "route";
+export type RgGrain = "continuous" | "atom";
+export type RgMergeRule =
+  | "max" | "min" | "sum" | "concat" | "mean" | "range" | "mode" | "set"
+  | "median" | "same" | "any" | "all" | "first" | "last" | "count"
+  | ((values: string[]) => string);
 export interface RgPort {
   id: string;
   label: string;
@@ -28,6 +33,12 @@ export interface RgPort {
   ownership?: RgOwnership;
   /** default fan-out policy at this port */
   fanout?: RgFanout;
+  /** split only: where cuts are legal */
+  grain?: RgGrain;
+  /** grain "atom" only: the boundary's name — "line" | "frame" | … */
+  atom?: string;
+  /** fan-in rule when several edges converge here */
+  merge?: RgMergeRule;
 }
 /** node-anchored HTML overlay (mirror of rgui's GraphNode.overlay) */
 export interface RgNodeOverlay {
@@ -149,8 +160,9 @@ export function voiceGraphToRgui(graph: VoiceGraph, meta: RguiMeta = {}): RgGrap
     // user-resized box + content scale persist on the VoiceNode; the rgui
     // corner grip reports them back via onNodeResizeEnd (see RguiGraphView)
     const scale = Math.min(MAX_SCALE, Math.max(MIN_SCALE, n.scale ?? 1));
-    // textarea nodes host a Monaco overlay — give them an editor-sized default box
-    const defW = n.type === "textarea" ? 320 : DEFAULT_W;
+    // full-bleed content nodes (Monaco editor / screen-share video) get a
+    // content-sized default box
+    const defW = n.type === "textarea" || n.type === "screen-share" ? 320 : DEFAULT_W;
     const w = Math.max(NODE_MIN_W * scale, n.size?.w ?? defW);
     const defH = n.type === "textarea" && n.size?.h == null ? { h: 232 } : {};
     return {
