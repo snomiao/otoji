@@ -105,9 +105,9 @@ status, and [`docs/`](./docs/README.md) for the deeper architecture/benchmark no
 
 ```bash
 # Web app
-cd web && pnpm install && pnpm dev          # http://localhost:5173
-pnpm test                                   # vitest
-pnpm test:e2e                               # playwright
+cd web && bun install && bun run dev        # http://localhost:5173
+bun run test                                # vitest
+bun run test:e2e                            # playwright
 
 # Rust core / desktop CLI
 cargo build --release

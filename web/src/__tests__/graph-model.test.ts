@@ -15,6 +15,12 @@ function graph(): VoiceGraph {
     mdl: { id: "mdl", type: "model", device: null, pos: { x: 0, y: 0 } },
     pipe: { id: "pipe", type: "pipe", device: null, pos: { x: 0, y: 0 } },
     vosk: { id: "vosk", type: "vosk", device: null, pos: { x: 0, y: 0 } },
+    screen: { id: "screen", type: "screen-share", device: null, pos: { x: 0, y: 0 } },
+    cam: { id: "cam", type: "camera", device: null, pos: { x: 0, y: 0 } },
+    img: { id: "img", type: "file-image", device: null, pos: { x: 0, y: 0 } },
+    vrec: { id: "vrec", type: "video-recorder", device: null, pos: { x: 0, y: 0 } },
+    vclip: { id: "vclip", type: "video-clip", device: null, pos: { x: 0, y: 0 } },
+    env: { id: "env", type: "environment", device: null, pos: { x: 0, y: 0 } },
   };
   return g;
 }
@@ -32,6 +38,13 @@ describe("canConnect", () => {
   it("rejects audio feeding straight into translate", () => {
     const g = graph();
     expect(canConnect(g, "mic", "out", "translate", "in")).toBe(false); // segment->transcript
+  });
+
+  it("connects environment metadata only to env inputs", () => {
+    const g = graph();
+    expect(canConnect(g, "env", "env", "stt", "env")).toBe(true);
+    expect(canConnect(g, "env", "env", "cam", "rate")).toBe(false);
+    expect(canConnect(g, "stt", "out", "env", "env")).toBe(false);
   });
 
   it("rejects mismatched port types", () => {
@@ -99,6 +112,19 @@ describe("canConnect", () => {
     expect(canConnect(g, "mic", "out", "vosk", "in")).toBe(true); // segment → in
     expect(canConnect(g, "vosk", "out", "sink", "in")).toBe(true); // transcript out → sink
     expect(canConnect(g, "stt", "out", "vosk", "in")).toBe(false); // transcript → segment
+  });
+
+  it("video-recorder accepts image frames plus audio segments", () => {
+    const g = graph();
+    expect(canConnect(g, "screen", "out", "vrec", "video")).toBe(true);
+    expect(canConnect(g, "cam", "out", "vrec", "video")).toBe(true);
+    expect(canConnect(g, "img", "out", "vrec", "video")).toBe(true);
+    expect(canConnect(g, "screen", "audio", "vrec", "audio")).toBe(true);
+    expect(canConnect(g, "mic", "out", "vrec", "audio")).toBe(true);
+    expect(canConnect(g, "vclip", "video", "vrec", "video")).toBe(true);
+    expect(canConnect(g, "vclip", "audio", "vrec", "audio")).toBe(true);
+    expect(canConnect(g, "stt", "out", "vrec", "audio")).toBe(false);
+    expect(canConnect(g, "mic", "out", "vrec", "video")).toBe(false);
   });
 
   it("rejects a second edge into an occupied input", () => {

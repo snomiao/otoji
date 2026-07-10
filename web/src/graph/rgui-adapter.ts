@@ -79,6 +79,10 @@ export interface RgGraphNode {
   /** how each field merges when this node renormalizes into a contracted block
    *  (rgui aggregate rule; unlisted keys fall back to "mode") */
   fieldRules?: Record<string, "max" | "min" | "sum" | "mean" | "range" | "mode" | "set" | "median" | "same" | "any" | "all" | "first" | "last" | "count">;
+  /** draw an animated processing outline; may be a live getter. */
+  busy?: boolean | (() => boolean);
+  /** draw a friend/remote-device outline; may be a live getter. */
+  remote?: boolean | (() => boolean);
   /** reserved live-body rows (rgui draws `body` inside them) */
   bodyRows?: number;
   /** live-body draw hook — screen-space ctx clipped to the body region */
@@ -113,17 +117,19 @@ const KIND: Record<PortType, RgSignalKind> = {
   transcript: "text",
   image: "image",
   control: "ctl",
+  environment: "ctl",
 };
 
 /** A node with no inputs is a source, none-outputs is a sink, else a model. */
 function categoryOf(type: NodeType): RgNodeCategory {
   const spec = NODE_SPECS[type];
-  if (spec.inputs.length === 0) return "source";
+  if (spec.inputs.filter((p) => p.id !== "env").length === 0) return "source";
   if (spec.outputs.length === 0) return "sink";
   return "model";
 }
 
 const DEFAULT_W = 200;
+const TEXT_PREVIEW_TYPES = new Set<NodeType>(["environment", "stt", "web-speech", "vosk", "sherpa", "translate", "browser-translate-api", "text-aggregate", "text-normalize", "text-filter", "llm-agent", "model", "tts", "tts-model", "sink", "paddle-ocr", "text-diff"]);
 
 // Mirrors of rgui's grip clamps (grip.ts MIN_SCALE/MAX_SCALE, graph.ts
 // NODE_MIN_W). setGraph does NOT validate geometry — these invariants are only
@@ -144,6 +150,10 @@ export interface RguiMeta {
   } | undefined;
   /** live-body draw hook per node (waveform / partial text / image / busy) */
   nodeBody?: (node: { id: string; type: NodeType }) => { rows: number; draw: RgGraphNode["body"] } | undefined;
+  /** live processing state per node, used for canvas chrome independent of body. */
+  nodeBusy?: (node: { id: string; type: NodeType }) => boolean;
+  /** remote/friend node state per node, used for canvas chrome. */
+  nodeRemote?: (node: { id: string; type: NodeType }) => boolean;
 }
 
 /**
@@ -160,11 +170,20 @@ export function voiceGraphToRgui(graph: VoiceGraph, meta: RguiMeta = {}): RgGrap
     // user-resized box + content scale persist on the VoiceNode; the rgui
     // corner grip reports them back via onNodeResizeEnd (see RguiGraphView)
     const scale = Math.min(MAX_SCALE, Math.max(MIN_SCALE, n.scale ?? 1));
-    // full-bleed content nodes (Monaco editor / screen-share video) get a
+    // full-bleed content nodes (Monaco editor / visual previews) get a
     // content-sized default box
-    const defW = n.type === "textarea" || n.type === "screen-share" ? 320 : DEFAULT_W;
+    const fullBleed = n.type === "textarea" || n.type === "screen-share" || n.type === "camera" || n.type === "vision-model";
+    const textPreview = TEXT_PREVIEW_TYPES.has(n.type);
+    const defW = fullBleed ? 320 : textPreview ? 260 : DEFAULT_W;
     const w = Math.max(NODE_MIN_W * scale, n.size?.w ?? defW);
-    const defH = n.type === "textarea" && n.size?.h == null ? { h: 232 } : {};
+    const rawH =
+      n.size?.h ??
+      (n.type === "textarea" ? 232 : fullBleed ? 190 : textPreview ? 150 : undefined);
+    const h = textPreview && rawH != null ? Math.max(w / 2, Math.min(w * 2, rawH)) : rawH;
+    const defH =
+      h == null
+        ? {}
+        : { h };
     return {
       id: n.id,
       title: spec.label,
@@ -172,7 +191,7 @@ export function voiceGraphToRgui(graph: VoiceGraph, meta: RguiMeta = {}): RgGrap
       x: n.pos.x,
       y: n.pos.y,
       w,
-      ...(n.size?.h != null ? { h: n.size.h } : defH),
+      ...defH,
       ...(scale !== 1 ? { scale } : {}),
       // Signal-algebra declarations ride along on every port (fanout stays the
       // "broadcast" default). rgui versions before 4fb6cdf simply ignore them.
@@ -182,6 +201,8 @@ export function voiceGraphToRgui(graph: VoiceGraph, meta: RguiMeta = {}): RgGrap
       // when a chain contracts, show the SET of distinct devices in the block
       // (otoji is multi-device; "set" beats the "mode" fallback here)
       fieldRules: { device: "set" },
+      ...(meta.nodeBusy ? { busy: () => meta.nodeBusy!({ id: n.id, type: n.type }) } : {}),
+      ...(meta.nodeRemote ? { remote: () => meta.nodeRemote!({ id: n.id, type: n.type }) } : {}),
       ...(body ? { bodyRows: body.rows, body: body.draw } : {}),
     };
   });

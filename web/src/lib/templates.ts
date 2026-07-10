@@ -44,7 +44,6 @@ export const BUILTIN_TEMPLATES: GraphTemplate[] = [
     ],
     edges: [
       { from: "cam", fromHandle: "out", to: "yolo", toHandle: "in" },
-      { from: "yolo", fromHandle: "rate", to: "cam", toHandle: "rate" }, // backpressure
       { from: "yolo", fromHandle: "labels", to: "sink", toHandle: "in" },
     ],
   },
@@ -60,7 +59,6 @@ export const BUILTIN_TEMPLATES: GraphTemplate[] = [
     ],
     edges: [
       { from: "cam", fromHandle: "out", to: "yolo", toHandle: "in" },
-      { from: "yolo", fromHandle: "rate", to: "cam", toHandle: "rate" },
       { from: "yolo", fromHandle: "labels", to: "tts", toHandle: "in" },
     ],
   },
@@ -142,7 +140,6 @@ export const BUILTIN_TEMPLATES: GraphTemplate[] = [
     ],
     edges: [
       { from: "screen", fromHandle: "out", to: "yolo", toHandle: "in" },
-      { from: "yolo", fromHandle: "rate", to: "screen", toHandle: "rate" }, // backpressure
       { from: "yolo", fromHandle: "labels", to: "sink", toHandle: "in" },
     ],
   },
@@ -157,7 +154,34 @@ export const BUILTIN_TEMPLATES: GraphTemplate[] = [
     ],
     edges: [
       { from: "screen", fromHandle: "out", to: "depth", toHandle: "in" },
-      { from: "depth", fromHandle: "rate", to: "screen", toHandle: "rate" },
+    ],
+  },
+  {
+    id: "screen-ocr-diff-tts",
+    name: "Screen + voice agent → TTS",
+    desc: "Screen share → OCR → normalize → diff, plus screen-audio STT → context aggregate → LLM agent → spoken output",
+    builtin: true,
+    nodes: [
+      { key: "screen", type: "screen-share", dx: 0, dy: 0 },
+      { key: "ocr", type: "paddle-ocr", dx: COL, dy: 0 },
+      { key: "stt", type: "stt", dx: COL, dy: ROW },
+      { key: "norm", type: "text-normalize", dx: COL * 2, dy: 0 },
+      { key: "diff", type: "text-diff", dx: COL * 3, dy: 0 },
+      { key: "filter", type: "text-filter", dx: COL * 4, dy: 0, config: { mode: "diff-added", stripPrefix: false } },
+      { key: "agg", type: "text-aggregate", dx: COL * 5, dy: ROW / 2 },
+      { key: "agent", type: "llm-agent", dx: COL * 6, dy: ROW / 2 },
+      { key: "tts", type: "tts", dx: COL * 7, dy: ROW / 2 },
+    ],
+    edges: [
+      { from: "screen", fromHandle: "out", to: "ocr", toHandle: "in" },
+      { from: "screen", fromHandle: "audio", to: "stt", toHandle: "in" },
+      { from: "ocr", fromHandle: "out", to: "norm", toHandle: "in" },
+      { from: "norm", fromHandle: "out", to: "diff", toHandle: "in" },
+      { from: "diff", fromHandle: "out", to: "filter", toHandle: "in" },
+      { from: "filter", fromHandle: "out", to: "agg", toHandle: "ocr" },
+      { from: "stt", fromHandle: "out", to: "agg", toHandle: "voice" },
+      { from: "agg", fromHandle: "out", to: "agent", toHandle: "in" },
+      { from: "agent", fromHandle: "out", to: "tts", toHandle: "in" },
     ],
   },
   {
@@ -171,7 +195,6 @@ export const BUILTIN_TEMPLATES: GraphTemplate[] = [
     ],
     edges: [
       { from: "cam", fromHandle: "out", to: "depth", toHandle: "in" },
-      { from: "depth", fromHandle: "rate", to: "cam", toHandle: "rate" },
     ],
   },
   {
@@ -185,7 +208,6 @@ export const BUILTIN_TEMPLATES: GraphTemplate[] = [
     ],
     edges: [
       { from: "cam", fromHandle: "out", to: "pose", toHandle: "in" },
-      { from: "pose", fromHandle: "rate", to: "cam", toHandle: "rate" },
     ],
   },
   {
@@ -199,7 +221,6 @@ export const BUILTIN_TEMPLATES: GraphTemplate[] = [
     ],
     edges: [
       { from: "cam", fromHandle: "out", to: "hand", toHandle: "in" },
-      { from: "hand", fromHandle: "rate", to: "cam", toHandle: "rate" },
     ],
   },
   {
@@ -219,7 +240,6 @@ export const BUILTIN_TEMPLATES: GraphTemplate[] = [
       { from: "mic", fromHandle: "out", to: "stt", toHandle: "in" },
       { from: "stt", fromHandle: "out", to: "vsink", toHandle: "in" },
       { from: "cam", fromHandle: "out", to: "yolo", toHandle: "in" },
-      { from: "yolo", fromHandle: "rate", to: "cam", toHandle: "rate" },
       { from: "yolo", fromHandle: "labels", to: "osink", toHandle: "in" },
     ],
   },

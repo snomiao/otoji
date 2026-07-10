@@ -1,9 +1,8 @@
 // Per-device, local-only UI preference: which node previews this device shows.
 // NOT synced to the shared graph. Stored as explicit OVERRIDES; the default
-// (when there's no override) is supplied by the caller — a node previews by
-// default only on the device that OWNS it, so a non-owner stays off until the
-// user opts in. Opting in on a non-owner streams the preview from the owner over
-// the mesh (see graph/preview-sync.ts).
+// (when there's no override) is supplied by the caller. Otoji defaults previews
+// to visible for every device so the room shares the same visual state; a
+// non-owner streams the preview from the owner over the mesh.
 
 const KEY = "otoji.preview.override"; // nodeId -> explicit shown (true) / hidden (false)
 
@@ -51,12 +50,10 @@ export function togglePreviewShown(nodeId: string, defaultShown = true): void {
   setPreviewShown(nodeId, !isPreviewShown(nodeId, defaultShown), defaultShown);
 }
 
-/** Nodes this device wants streamed from a remote owner: preview explicitly
- *  turned on AND not owned here. `ownedIds` = node ids this device owns. */
-export function shownRemoteNodes(ownedIds: Set<string>): string[] {
-  const out: string[] = [];
-  for (const [id, shown] of load()) if (shown && !ownedIds.has(id)) out.push(id);
-  return out;
+/** Nodes this device wants streamed from a remote owner: every non-owned node
+ *  that is not explicitly hidden. `ownedIds` = node ids this device owns. */
+export function shownRemoteNodes(ownedIds: Set<string>, allIds: string[]): string[] {
+  return allIds.filter((id) => !ownedIds.has(id) && isPreviewShown(id, true));
 }
 
 // --- Peer connection-type badge ([wan]/[lan]/[browser]) visibility ----------

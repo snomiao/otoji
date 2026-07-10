@@ -25,7 +25,82 @@ import { formatLabels, formatJsonl, type Detection } from "../lib/detect-format"
 import { diffText, type DiffStyle, DEFAULT_DIFF_STYLE } from "../lib/textdiff";
 import { isPreviewShown } from "../lib/prefs";
 import type { SttLevel } from "../providers/types";
-import { buildSegmentFrame, buildTranscriptFrame, frameToMessage, type EdgeFrame } from "./frames";
+import { buildControlFrame, buildImageFrame, buildSegmentFrame, buildTranscriptFrame, frameToMessage, type EdgeFrame } from "./frames";
+import { videoClipsDB, type VideoClip } from "../lib/video-clips-db";
+
+const DEFAULT_LLM_AGENT_MODEL = "Xenova/flan-t5-small";
+const DEFAULT_LLM_AGENT_TEXT_GENERATION_MODEL = "onnx-community/gemma-3-1b-it-ONNX";
+const DEFAULT_LLM_AGENT_INSTRUCTION =
+  "You are an assistant watching a shared screen and listening to its audio. Summarize what changed, answer any spoken request, and keep the response concise.";
+
+function llmAgentTask(task: unknown): "text2text" | "text-generation" {
+  return task === "text-generation" ? "text-generation" : "text2text";
+}
+
+function defaultLlmAgentModel(task: "text2text" | "text-generation"): string {
+  return task === "text-generation" ? DEFAULT_LLM_AGENT_TEXT_GENERATION_MODEL : DEFAULT_LLM_AGENT_MODEL;
+}
+
+type TextNormalizeMode = "light" | "ocr-stable" | "llm-filter";
+
+function normalizeLineKey(line: string): string {
+  return line
+    .toLocaleLowerCase()
+    .replace(/[^\p{L}\p{N}\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}]+/gu, "");
+}
+
+function normalizeTranscriptText(text: string, mode: TextNormalizeMode = "ocr-stable", prevKeys?: Set<string>): { text: string; keys: Set<string> } {
+  const lines = text
+    .replace(/\r\n?/g, "\n")
+    .split("\n")
+    .map((line) => line.replace(/[ \t\f\v]+/g, " ").trim())
+    .map((line) => line.normalize("NFKC"))
+    .filter(Boolean);
+  if (mode === "light") {
+    const keys = new Set(lines.map(normalizeLineKey).filter(Boolean));
+    return { text: lines.join("\n").replace(/\n{3,}/g, "\n\n").trim(), keys };
+  }
+  const out: string[] = [];
+  const keys = new Set<string>();
+  for (const line of lines) {
+    const key = normalizeLineKey(line);
+    if (!key || keys.has(key)) continue;
+    // Drop very short OCR specks and symbol-heavy rows; keep CJK rows a little
+    // shorter because each character carries more information.
+    const cjk = /[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}]/u.test(line);
+    const minLen = cjk ? 3 : 5;
+    if (key.length < minLen) continue;
+    const signalChars = [...line].filter((ch) => /[\p{L}\p{N}\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}]/u.test(ch)).length;
+    if (signalChars / Math.max(1, [...line].length) < 0.45) continue;
+    // After the first frame, prefer lines that persist across adjacent OCR
+    // frames. This suppresses frame-to-frame OCR hallucinations before diffing.
+    if (prevKeys && prevKeys.size && !prevKeys.has(key) && key.length < 18) continue;
+    keys.add(key);
+    out.push(line);
+  }
+  return { text: out.join("\n").trim(), keys };
+}
+
+type TextFilterMode = "diff-added" | "diff-removed" | "regex-keep" | "regex-drop" | "regex-replace";
+
+function filterTranscriptText(text: string, cfg: Record<string, unknown>): string {
+  const mode = ((cfg.mode as string | undefined) ?? "diff-added") as TextFilterMode;
+  const lines = text.split("\n");
+  const strip = (cfg.stripPrefix as boolean | undefined) ?? false;
+  if (mode === "diff-added") return lines.filter((l) => l.startsWith("+")).map((l) => strip ? l.slice(1) : l).join("\n").trim();
+  if (mode === "diff-removed") return lines.filter((l) => l.startsWith("-")).map((l) => strip ? l.slice(1) : l).join("\n").trim();
+  const pattern = String(cfg.pattern ?? "").trim();
+  if (!pattern) return text;
+  let re: RegExp;
+  try {
+    re = new RegExp(pattern, String(cfg.flags ?? "i"));
+  } catch {
+    return text;
+  }
+  if (mode === "regex-keep") return lines.filter((l) => re.test(l)).join("\n").trim();
+  if (mode === "regex-drop") return lines.filter((l) => !re.test(l)).join("\n").trim();
+  return text.replace(re, String(cfg.replace ?? "")).trim();
+}
 
 export interface SegmentMsg {
   samples: Float32Array;
@@ -87,6 +162,7 @@ export interface RuntimeHooks {
   hasPreviewConsumer?: (nodeId: string) => boolean;
   onSink?: (nodeId: string, tr: TranscriptMsg) => void;
   onAudio?: (nodeId: string, audio: SegmentMsg) => void; // raw audio collected at audio-out
+  onVideoClip?: (nodeId: string, clip: VideoClip) => void; // encoded video+audio collected at video-recorder
   onPipeOut?: (nodeId: string, text: string) => void; // pipe node input -> external CLI stdout
   onEdgeBytes?: (edgeId: string, bytes: number) => void; // payload bytes sent over a cross-device edge
   onStatus?: (s: string) => void;
@@ -159,29 +235,33 @@ export class GraphRuntime {
       if (this.isLocal(t.node)) {
         this.nodes.get(t.node)?.input?.(t.port, msg);
       } else if (this.hooks.self) {
-        const owner = nodeOwner(this.graph.nodes[t.node], this.hooks.self.deviceIds);
-        if (!owner) continue;
-        const m = msg as Partial<TranscriptMsg> & Partial<SegmentMsg>;
-        // Only audio/text frames have a cross-device wire format. Image/control
-        // edges (camera/OCR feedback) are single-device — skip remote delivery.
-        if (m.text === undefined && !(m.samples instanceof Float32Array)) continue;
-        const frame =
-          m.text !== undefined
-            ? buildTranscriptFrame(t.node, t.port, m as TranscriptMsg)
-            : buildSegmentFrame(t.node, t.port, m as SegmentMsg);
-        const ok = this.hooks.self.transport.send(owner, frame);
-        // Per-edge throughput: count payload bytes only for frames actually sent.
-        if (ok) {
-          const bytes = (frame.samplesB64?.length ?? 0) + (frame.text?.length ?? 0) + 80;
-          this.hooks.onEdgeBytes?.(`${nodeId}:${port}->${t.node}:${t.port}`, bytes);
-        }
+        void this.sendRemote(nodeId, port, t, msg);
       }
     }
   }
 
-  private onFrame(frame: EdgeFrame): void {
+  private async sendRemote(nodeId: string, port: string, target: { node: string; port: string }, msg: unknown): Promise<void> {
+    const self = this.hooks.self;
+    if (!self) return;
+    const owner = nodeOwner(this.graph.nodes[target.node], self.deviceIds);
+    if (!owner) return;
+    const m = msg as Partial<TranscriptMsg> & Partial<SegmentMsg> & Partial<ImageMsg> & Partial<ControlMsg>;
+    let frame: EdgeFrame | null = null;
+    if (m.text !== undefined) frame = buildTranscriptFrame(target.node, target.port, m as TranscriptMsg);
+    else if (m.samples instanceof Float32Array) frame = buildSegmentFrame(target.node, target.port, m as SegmentMsg);
+    else if (m.bitmap instanceof ImageBitmap) frame = await buildImageFrame(target.node, target.port, m as ImageMsg);
+    else if (m.pulse !== undefined || m.ts !== undefined) frame = buildControlFrame(target.node, target.port, m as ControlMsg);
+    if (!frame) return;
+    const ok = self.transport.send(owner, frame);
+    if (ok) {
+      const bytes = (frame.samplesB64?.length ?? 0) + (frame.imageDataUrl?.length ?? 0) + (frame.text?.length ?? 0) + 80;
+      this.hooks.onEdgeBytes?.(`${nodeId}:${port}->${target.node}:${target.port}`, bytes);
+    }
+  }
+
+  private async onFrame(frame: EdgeFrame): Promise<void> {
     if (!this.isLocal(frame.target)) return;
-    this.nodes.get(frame.target)?.input?.(frame.port, frameToMessage(frame));
+    this.nodes.get(frame.target)?.input?.(frame.port, await frameToMessage(frame));
   }
 
   async start(): Promise<void> {
@@ -204,14 +284,10 @@ export class GraphRuntime {
       try {
         await Promise.all([...sttModels].map((m) => warmSenseVoice(m)));
       } catch (e) {
-        // Required model failed to load — abort instead of capturing audio that
-        // every STT segment would then fail on.
+        // STT is one branch in a multimodal graph. A missing/broken worker should
+        // disable that branch, not prevent screen/OCR/vision nodes from running.
         this.hooks.onError?.(e instanceof Error ? e : new Error(String(e)));
-        this.hooks.onStatus?.("model load failed");
-        this.running = false;
-        this.nodes.clear();
-        this.adj.clear();
-        return;
+        this.hooks.onStatus?.("STT model load failed");
       }
     }
 
@@ -256,7 +332,10 @@ export class GraphRuntime {
     // to start a pack download, which would otherwise fail on first transcript).
     const browserTargets = new Set<string>();
     for (const n of Object.values(this.graph.nodes)) {
-      if (n.type === "translate" && this.isLocal(n.id) && n.config?.provider === "browser")
+      if (
+        this.isLocal(n.id) &&
+        (n.type === "browser-translate-api" || (n.type === "translate" && n.config?.provider === "browser"))
+      )
         browserTargets.add((n.config?.lang as string | undefined) ?? DEFAULT_TRANSLATE_LANG);
     }
     if (browserTargets.size) {
@@ -330,10 +409,14 @@ export class GraphRuntime {
     // Generic "Custom model" nodes — preload their transformers.js pipelines.
     const customModels: { task: ModelTask; model: string; dtype?: string }[] = [];
     for (const n of Object.values(this.graph.nodes)) {
-      if (n.type === "model" && this.isLocal(n.id)) {
-        const m = (n.config?.model as string | undefined)?.trim();
-        if (m) customModels.push({ task: (n.config?.task as ModelTask | undefined) ?? "asr", model: m, dtype: n.config?.dtype as string | undefined });
+      if (!this.isLocal(n.id)) continue;
+      const m = (n.config?.model as string | undefined)?.trim();
+      if (n.type === "llm-agent") {
+        const task = llmAgentTask(n.config?.task);
+        customModels.push({ task, model: m || defaultLlmAgentModel(task), dtype: n.config?.dtype as string | undefined });
       }
+      else if (n.type === "text-normalize" && n.config?.mode === "llm-filter") customModels.push({ task: "text2text", model: m || DEFAULT_LLM_AGENT_MODEL, dtype: n.config?.dtype as string | undefined });
+      else if (n.type === "model" && m) customModels.push({ task: (n.config?.task as ModelTask | undefined) ?? "asr", model: m, dtype: n.config?.dtype as string | undefined });
     }
     if (customModels.length) {
       this.hooks.onStatus?.("loading custom model…");
@@ -392,6 +475,71 @@ export class GraphRuntime {
       await new Promise((r) => setTimeout(r, 50));
     }
     return null;
+  }
+
+  private async emitVideoClip(nodeId: string, clip: VideoClip, fps = DEFAULT_CAMERA_FPS): Promise<void> {
+    this.hooks.onNodeBusy?.(nodeId, true);
+    this.hooks.onRecognized?.(nodeId, `playing clip ${(clip.durationMs / 1000).toFixed(1)}s`);
+    const url = URL.createObjectURL(clip.blob);
+    try {
+      // Emit audio once as a segment. Downstream STT/audio-out can consume it
+      // while image frames stream separately from the video element below.
+      try {
+        const AudioCtor: typeof AudioContext = (window as any).AudioContext || (window as any).webkitAudioContext;
+        const audioCtx = new AudioCtor();
+        const decoded = await audioCtx.decodeAudioData(await clip.blob.arrayBuffer());
+        const mono = new Float32Array(decoded.length);
+        for (let ch = 0; ch < decoded.numberOfChannels; ch++) {
+          const data = decoded.getChannelData(ch);
+          for (let i = 0; i < data.length; i++) mono[i] += data[i]! / decoded.numberOfChannels;
+        }
+        await audioCtx.close().catch(() => {});
+        if (mono.length) {
+          this.emit(nodeId, "audio", {
+            samples: mono,
+            sampleRate: decoded.sampleRate,
+            durationMs: (mono.length / decoded.sampleRate) * 1000,
+            ts: Date.now(),
+          } as SegmentMsg);
+        }
+      } catch (e) {
+        this.hooks.onError?.(e instanceof Error ? e : new Error(`video clip audio decode failed: ${String(e)}`));
+      }
+
+      const video = document.createElement("video");
+      video.src = url;
+      video.muted = true;
+      video.playsInline = true;
+      video.preload = "auto";
+      await new Promise<void>((resolve, reject) => {
+        video.onloadedmetadata = () => resolve();
+        video.onerror = () => reject(new Error("video clip failed to load"));
+      });
+      const canvas = document.createElement("canvas");
+      canvas.width = Math.max(2, video.videoWidth || 1280);
+      canvas.height = Math.max(2, video.videoHeight || 720);
+      const ctx = canvas.getContext("2d");
+      if (!ctx) return;
+      let timer: ReturnType<typeof setInterval> | null = null;
+      const emitFrame = async () => {
+        if (video.readyState < 2) return;
+        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+        const bitmap = await createImageBitmap(canvas);
+        this.hooks.onImage?.(nodeId, bitmap);
+        this.emit(nodeId, "video", { bitmap, width: bitmap.width, height: bitmap.height, ts: Date.now() } as ImageMsg);
+      };
+      const ended = new Promise<void>((resolve) => {
+        video.onended = () => resolve();
+      });
+      await video.play().catch(() => undefined);
+      await emitFrame();
+      timer = setInterval(() => void emitFrame(), 1000 / clampFps(fps));
+      await ended;
+      if (timer) clearInterval(timer);
+    } finally {
+      URL.revokeObjectURL(url);
+      this.hooks.onNodeBusy?.(nodeId, false);
+    }
   }
 
   /**
@@ -471,6 +619,26 @@ export class GraphRuntime {
   }
 
   private build(id: string, type: NodeType): RuntimeNode {
+    if (type === "environment") {
+      const cfg = this.graph.nodes[id]?.config ?? {};
+      return {
+        start: () => {
+          const label = (cfg.label as string | undefined)?.trim() || "Browser environment";
+          const runtime = (cfg.runtime as string | undefined)?.trim() || "browser";
+          const scope = (cfg.scope as string | undefined)?.trim() || "device";
+          const caps = [
+            cfg.mic === false ? null : "mic",
+            cfg.camera === false ? null : "camera",
+            cfg.screen === false ? null : "screen",
+            cfg.webgpu === false ? null : "webgpu",
+            cfg.storage === false ? null : "storage",
+            cfg.network === false ? null : "network",
+          ].filter(Boolean).join(", ");
+          this.hooks.onRecognized?.(id, `${label}\n${scope} · ${runtime}\n${caps || "no declared capabilities"}`);
+        },
+      };
+    }
+
     if (type === "mic-vad") {
       let handle: MicVadHandle | null = null;
       const inputDeviceId = this.graph.nodes[id]?.config?.inputDeviceId as string | undefined;
@@ -559,27 +727,27 @@ export class GraphRuntime {
       // Native sherpa-onnx STT bridged over a WebSocket to a local
       // `otoji server`. Same streaming shape as Vosk: feed audio frames,
       // partials → live preview, finals → downstream transcript.
+      //
+      // The stream is created at build time (synchronously) rather than in an
+      // async start(): a file source emits its whole buffer during start(), and
+      // if this node's WebSocket were still opening then, those segments would
+      // be dropped. Creating it now means the provider's pre-open buffer catches
+      // them; the socket connects in the background.
       const url = (this.graph.nodes[id]?.config?.serverUrl as string | undefined)?.trim() || DEFAULT_SHERPA_SERVER_URL;
-      let stream: SherpaNativeStream | null = null;
-      return {
-        start: async () => {
-          try {
-            stream = await createSherpaNativeStream(
-              url,
-              (partial) => this.hooks.onRecognized?.(id, partial),
-              (text) => {
-                this.hooks.onRecognized?.(id, text);
-                this.emit(id, "out", { text, audio: { samples: new Float32Array(0), sampleRate: MIC_VAD_SR, durationMs: 0 } } as TranscriptMsg);
-              },
-            );
-          } catch (e) {
-            // Non-fatal: an unreachable server only disables this node. Point the
-            // user at the one command that fixes it.
-            this.hooks.onError?.(new Error(`sherpa: ${e instanceof Error ? e.message : e}. Start it with:  otoji server`));
-          }
+      const stream: SherpaNativeStream = createSherpaNativeStream(
+        url,
+        (partial) => this.hooks.onRecognized?.(id, partial),
+        (text) => {
+          this.hooks.onRecognized?.(id, text);
+          this.emit(id, "out", { text, audio: { samples: new Float32Array(0), sampleRate: MIC_VAD_SR, durationMs: 0 } } as TranscriptMsg);
         },
-        input: (_port, msg) => stream?.accept((msg as SegmentMsg).samples),
-        stop: async () => { stream?.free(); stream = null; },
+        // Non-fatal: an unreachable server only disables this node. Point the
+        // user at the one command that fixes it.
+        (e) => this.hooks.onError?.(new Error(`sherpa: ${e.message}. Start it with:  otoji server`)),
+      );
+      return {
+        input: (_port, msg) => stream.accept((msg as SegmentMsg).samples),
+        stop: async () => stream.free(),
       };
     }
 
@@ -669,6 +837,24 @@ export class GraphRuntime {
       };
     }
 
+    if (type === "file-image") {
+      const url = (this.graph.nodes[id]?.config?.url as string | undefined)?.trim();
+      return {
+        start: async () => {
+          const entry = fileStore.get(id);
+          if (!entry?.file && !url) return;
+          try {
+            const blob = entry?.file ?? await (await fetch(url!)).blob();
+            const bitmap = await createImageBitmap(blob);
+            this.hooks.onImage?.(id, bitmap);
+            this.emit(id, "out", { bitmap, width: bitmap.width, height: bitmap.height, ts: Date.now() } as ImageMsg);
+          } catch (e) {
+            this.hooks.onError?.(e instanceof Error ? e : new Error(String(e)));
+          }
+        },
+      };
+    }
+
     if (type === "file-text") {
       const url = (this.graph.nodes[id]?.config?.url as string | undefined)?.trim();
       return {
@@ -688,6 +874,31 @@ export class GraphRuntime {
             // Non-fatal: a failed URL fetch only disables this node, not the graph.
             this.hooks.onError?.(e instanceof Error ? e : new Error(String(e)));
           }
+        },
+      };
+    }
+
+    if (type === "url") {
+      const url = (this.graph.nodes[id]?.config?.url as string | undefined)?.trim();
+      const empty = { samples: new Float32Array(0), sampleRate: MIC_VAD_SR, durationMs: 0 };
+      return {
+        start: async () => {
+          if (!url) return;
+          let text = url;
+          try {
+            const res = await fetch(url);
+            const ct = res.headers.get("content-type") ?? "";
+            if (ct.includes("text/html") || ct.startsWith("text/") || ct.includes("json")) {
+              const raw = await res.text();
+              text = ct.includes("text/html")
+                ? raw.replace(/<script[\s\S]*?<\/script>/gi, " ").replace(/<style[\s\S]*?<\/style>/gi, " ").replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim().slice(0, 12000)
+                : raw.slice(0, 12000);
+            }
+          } catch {
+            // CORS/no-cors failures still leave the iframe preview useful.
+          }
+          this.hooks.onRecognized?.(id, text);
+          this.emit(id, "out", { text, audio: empty } as TranscriptMsg);
         },
       };
     }
@@ -748,12 +959,12 @@ export class GraphRuntime {
       };
     }
 
-    if (type === "translate") {
+    if (type === "translate" || type === "browser-translate-api") {
       const q = this.makeQueue(id);
       const cfg = this.graph.nodes[id]?.config ?? {};
       const modelId = (cfg.model as string | undefined) ?? DEFAULT_TRANSLATE_MODEL;
       const targetLang = (cfg.lang as string | undefined) ?? DEFAULT_TRANSLATE_LANG;
-      const provider = (cfg.provider as string | undefined) === "browser" ? browserTranslate : webllmTranslate;
+      const provider = type === "browser-translate-api" || (cfg.provider as string | undefined) === "browser" ? browserTranslate : webllmTranslate;
       return {
         input: (_port, msg) => {
           const tr = msg as TranscriptMsg;
@@ -800,6 +1011,179 @@ export class GraphRuntime {
               ? { samples: m.samples, sampleRate: m.sampleRate ?? MIC_VAD_SR, durationMs: m.durationMs ?? 0 }
               : null;
           if (audio && audio.samples.length) this.hooks.onAudio?.(id, audio);
+        },
+      };
+    }
+
+    if (type === "video-recorder") {
+      const cfg = this.graph.nodes[id]?.config ?? {};
+      const recording = (cfg.recording as boolean | undefined) ?? false;
+      const fps = clampFps((cfg.fps as number | undefined) ?? DEFAULT_CAMERA_FPS);
+      const mimeTypes = [
+        "video/webm;codecs=vp9,opus",
+        "video/webm;codecs=vp8,opus",
+        "video/webm",
+      ];
+      const mimeType = typeof MediaRecorder !== "undefined"
+        ? mimeTypes.find((m) => MediaRecorder.isTypeSupported(m)) ?? ""
+        : "";
+      let canvas: HTMLCanvasElement | null = null;
+      let ctx: CanvasRenderingContext2D | null = null;
+      let audioCtx: AudioContext | null = null;
+      let audioDest: MediaStreamAudioDestinationNode | null = null;
+      let recorder: MediaRecorder | null = null;
+      let chunks: Blob[] = [];
+      let startedAt = 0;
+      let startPromise: Promise<void> | null = null;
+      let stopPromise: Promise<void> | null = null;
+
+      const ensureCanvas = (width: number, height: number) => {
+        if (!canvas) {
+          canvas = document.createElement("canvas");
+          ctx = canvas.getContext("2d");
+        }
+        const w = Math.max(2, Math.round(width || 1280));
+        const h = Math.max(2, Math.round(height || 720));
+        if (canvas.width !== w || canvas.height !== h) {
+          canvas.width = w;
+          canvas.height = h;
+        }
+        ctx!.fillStyle = "#1c2025";
+        ctx!.fillRect(0, 0, canvas.width, canvas.height);
+      };
+
+      const ensureRecorder = async (img?: ImageMsg) => {
+        if (!recording || recorder || startPromise) return startPromise;
+        startPromise = (async () => {
+          if (typeof MediaRecorder === "undefined") throw new Error("MediaRecorder is not available in this browser.");
+          ensureCanvas(img?.width ?? 1280, img?.height ?? 720);
+          const stream = canvas!.captureStream(fps);
+          const AudioCtor: typeof AudioContext = (window as any).AudioContext || (window as any).webkitAudioContext;
+          audioCtx = new AudioCtor();
+          audioDest = audioCtx.createMediaStreamDestination();
+          for (const track of audioDest.stream.getAudioTracks()) stream.addTrack(track);
+          chunks = [];
+          startedAt = Date.now();
+          recorder = new MediaRecorder(stream, mimeType ? { mimeType } : undefined);
+          recorder.ondataavailable = (e) => { if (e.data.size) chunks.push(e.data); };
+          recorder.start(1000);
+          this.hooks.onNodeBusy?.(id, true);
+          this.hooks.onRecognized?.(id, "recording video...");
+        })().catch((e) => {
+          this.hooks.onError?.(e instanceof Error ? e : new Error(String(e)));
+        }).finally(() => {
+          startPromise = null;
+        });
+        return startPromise;
+      };
+
+      const stopRecorder = async () => {
+        if (stopPromise) return stopPromise;
+        stopPromise = (async () => {
+          await startPromise?.catch(() => {});
+          const rec = recorder;
+          if (!rec) return;
+          const done = new Promise<void>((resolve) => {
+            rec.onstop = () => resolve();
+          });
+          if (rec.state !== "inactive") rec.stop();
+          await done;
+          const blob = new Blob(chunks, { type: rec.mimeType || mimeType || "video/webm" });
+          const durationMs = Date.now() - startedAt;
+          if (blob.size > 0) {
+            const clip: VideoClip = {
+              id: `v-${startedAt}-${Math.random().toString(36).slice(2, 8)}`,
+              nodeId: id,
+              at: startedAt,
+              durationMs,
+              mimeType: blob.type || "video/webm",
+              blob,
+            };
+            this.hooks.onVideoClip?.(id, clip);
+            this.hooks.onRecognized?.(id, `saved video ${(durationMs / 1000).toFixed(1)}s`);
+          }
+          recorder = null;
+          chunks = [];
+          this.hooks.onNodeBusy?.(id, false);
+        })().finally(async () => {
+          stopPromise = null;
+          await audioCtx?.close().catch(() => {});
+          audioCtx = null;
+          audioDest = null;
+        });
+        return stopPromise;
+      };
+
+      return {
+        start: async () => {
+          const clipId = cfg.playClipId as string | undefined;
+          if (!clipId) return;
+          const clip = await videoClipsDB.get(clipId).catch(() => undefined);
+          if (clip) await this.emitVideoClip(id, clip, fps);
+        },
+        input: (port, msg) => {
+          if (port === "video") {
+            const img = msg as ImageMsg;
+            ensureCanvas(img.width, img.height);
+            try {
+              ctx?.drawImage(img.bitmap, 0, 0, canvas!.width, canvas!.height);
+            } catch {
+              /* bitmap may have been closed by the sender */
+            }
+            this.hooks.onImage?.(id, img.bitmap);
+            void ensureRecorder(img);
+            return;
+          }
+          if (port === "audio") {
+            const audio = msg as SegmentMsg;
+            if (!recording || !audio.samples?.length) return;
+            void ensureRecorder().then(() => {
+              if (!audioCtx || !audioDest) return;
+              const buf = audioCtx.createBuffer(1, audio.samples.length, audio.sampleRate || MIC_VAD_SR);
+              buf.copyToChannel(audio.samples as Float32Array<ArrayBuffer>, 0);
+              const src = audioCtx.createBufferSource();
+              src.buffer = buf;
+              src.connect(audioDest);
+              src.start();
+            });
+          }
+        },
+        stop: () => stopRecorder(),
+      };
+    }
+
+    if (type === "video-clip") {
+      const cfg = this.graph.nodes[id]?.config ?? {};
+      const clipId = cfg.clipId as string | undefined;
+      const url = (cfg.url as string | undefined)?.trim();
+      const fps = clampFps((cfg.fps as number | undefined) ?? DEFAULT_CAMERA_FPS);
+      const loop = (cfg.loop as boolean | undefined) ?? false;
+      let stopped = false;
+      return {
+        start: async () => {
+          if (!clipId && !url) return;
+          const clip = clipId
+            ? await videoClipsDB.get(clipId).catch(() => undefined)
+            : url
+              ? {
+                  id: `url-${url}`,
+                  nodeId: id,
+                  at: Date.now(),
+                  durationMs: 0,
+                  mimeType: "video/webm",
+                  blob: await (await fetch(url)).blob(),
+                } satisfies VideoClip
+              : undefined;
+          if (!clip) {
+            this.hooks.onError?.(new Error(`video clip not found: ${clipId}`));
+            return;
+          }
+          do {
+            await this.emitVideoClip(id, clip, fps);
+          } while (loop && !stopped);
+        },
+        stop: () => {
+          stopped = true;
         },
       };
     }
@@ -953,6 +1337,105 @@ export class GraphRuntime {
       };
     }
 
+    if (type === "text-aggregate") {
+      const latest: Partial<Record<"ocr" | "voice", string>> = {};
+      const empty = { samples: new Float32Array(0), sampleRate: MIC_VAD_SR, durationMs: 0 };
+      return {
+        input: (port, msg) => {
+          const text = (msg as TranscriptMsg).text?.trim();
+          if (!text || (port !== "ocr" && port !== "voice")) return;
+          latest[port] = text;
+          const parts = [
+            latest.ocr ? `Screen OCR:\n${latest.ocr}` : "",
+            latest.voice ? `Voice transcript:\n${latest.voice}` : "",
+          ].filter(Boolean);
+          const out = parts.join("\n\n");
+          if (!out) return;
+          this.hooks.onRecognized?.(id, out);
+          this.emit(id, "out", { text: out, audio: empty } as TranscriptMsg);
+        },
+      };
+    }
+
+    if (type === "text-normalize") {
+      const cfg = this.graph.nodes[id]?.config ?? {};
+      const rawMode = (cfg.mode as string | undefined) ?? "ocr-stable";
+      const mode = (rawMode === "light" || rawMode === "llm-filter" ? rawMode : "ocr-stable") as TextNormalizeMode;
+      const model = ((cfg.model as string | undefined)?.trim() || DEFAULT_LLM_AGENT_MODEL);
+      const dtype = cfg.dtype as string | undefined;
+      const instruction = ((cfg.instruction as string | undefined)?.trim() ||
+        "Clean noisy OCR into human-readable text in stable top-to-bottom reading order. Keep meaningful visible content and important numbers/names. Remove duplicated lines, OCR gibberish, browser/navigation clutter, and random fragments. Do not summarize or add commentary. Output plain text only.");
+      const q = this.makeQueue(id);
+      let prevKeys: Set<string> | undefined;
+      return {
+        input: (_port, msg) => {
+          const tr = msg as TranscriptMsg;
+          const normalized = normalizeTranscriptText(tr.text ?? "", mode, prevKeys);
+          prevKeys = normalized.keys;
+          const text = normalized.text;
+          if (!text) return;
+          if (mode !== "llm-filter") {
+            this.hooks.onRecognized?.(id, text);
+            this.emit(id, "out", { ...tr, text } as TranscriptMsg);
+            return;
+          }
+          q.run(snippet(text), async () => {
+            try {
+              const out = (await runText("text2text", model, `${instruction}\n\nOCR:\n${text}\n\nClean text:`, dtype)).trim();
+              const finalText = out || text;
+              this.hooks.onRecognized?.(id, finalText);
+              this.emit(id, "out", { ...tr, text: finalText } as TranscriptMsg);
+            } catch (e) {
+              this.hooks.onError?.(e instanceof Error ? e : new Error(String(e)));
+              this.hooks.onRecognized?.(id, text);
+              this.emit(id, "out", { ...tr, text } as TranscriptMsg);
+            }
+          });
+        },
+        stop: () => q.drain(),
+      };
+    }
+
+    if (type === "text-filter") {
+      const cfg = this.graph.nodes[id]?.config ?? {};
+      return {
+        input: (_port, msg) => {
+          const tr = msg as TranscriptMsg;
+          const text = filterTranscriptText(tr.text ?? "", cfg);
+          if (!text) return;
+          this.hooks.onRecognized?.(id, text);
+          this.emit(id, "out", { ...tr, text } as TranscriptMsg);
+        },
+      };
+    }
+
+    if (type === "llm-agent") {
+      const cfg = this.graph.nodes[id]?.config ?? {};
+      const task = llmAgentTask(cfg.task);
+      const model = ((cfg.model as string | undefined)?.trim() || defaultLlmAgentModel(task));
+      const dtype = cfg.dtype as string | undefined;
+      const instruction = ((cfg.instruction as string | undefined)?.trim() || DEFAULT_LLM_AGENT_INSTRUCTION);
+      const q = this.makeQueue(id);
+      const empty = { samples: new Float32Array(0), sampleRate: MIC_VAD_SR, durationMs: 0 };
+      return {
+        input: (_port, msg) => {
+          const text = (msg as TranscriptMsg).text?.trim();
+          if (!text) return;
+          const prompt = `${instruction}\n\nInput:\n${text}\n\nOutput:`;
+          q.run(snippet(text), async () => {
+            try {
+              const out = await runText(task, model, prompt, dtype);
+              this.hooks.onRecognized?.(id, out);
+              this.emit(id, "out", { text: out, audio: empty } as TranscriptMsg);
+            } catch (e) {
+              this.hooks.onError?.(e instanceof Error ? e : new Error(String(e)));
+            }
+          });
+        },
+        stop: () => q.drain(),
+      };
+    }
+
     if (type === "model") {
       // Generic transformers.js node — the configured task decides the I/O shape.
       const cfg = this.graph.nodes[id]?.config ?? {};
@@ -1013,9 +1496,7 @@ export class GraphRuntime {
       const cfg = this.graph.nodes[id]?.config ?? {};
       const deviceId = cfg.cameraId as string | undefined;
       const fps = clampFps((cfg.fps as number) ?? DEFAULT_CAMERA_FPS);
-      // Credit mode iff something feeds our `rate` input: wait for "next" pulses
-      // instead of free-running, so a downstream OCR can pace us (backpressure).
-      const demand = this.hasIncoming(id, "rate");
+      const demand = this.hasIncoming(id, "rate"); // backpressure when a rate edge feeds us
       let handle: CameraHandle | null = null;
       return {
         start: async () => {
@@ -1212,7 +1693,7 @@ export class GraphRuntime {
     this.running = false;
     // Stop continuous sources first so their final emissions flush into the
     // pipeline, then drain processing nodes (STT/translate/tts chains) before clearing.
-    const SOURCES = new Set<NodeType>(["mic-vad", "mic-raw", "web-speech", "camera"]);
+    const SOURCES = new Set<NodeType>(["mic-vad", "mic-raw", "web-speech", "camera", "screen-share"]);
     for (const [id, node] of this.nodes) if (SOURCES.has(this.graph.nodes[id]?.type)) await node.stop?.();
     for (const [id, node] of this.nodes) if (!SOURCES.has(this.graph.nodes[id]?.type)) await node.stop?.();
     this.nodes.clear();

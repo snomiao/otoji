@@ -45,6 +45,7 @@ import { releaseScreenShares } from "../providers/vision/screen";
 import { togglePreviewShown, isPreviewShown, shownRemoteNodes, isPeerBadgeShown, togglePeerBadgeShown, subscribePrefs } from "../lib/prefs";
 import { type Recording } from "./RecordingPlayer";
 import { computePeaks } from "../lib/peaks";
+import { videoClipsDB, type VideoClip } from "../lib/video-clips-db";
 import { isReadableTranscript } from "../lib/text";
 import { isRoomCode, joinUrl } from "../lib/roomcode";
 import { getDeviceId, getDeviceName, setDeviceName } from "../lib/device-id";
@@ -53,6 +54,7 @@ import { NetworkView } from "./NetworkView";
 import { JoinGate } from "./JoinGate";
 import { RguiGraphView, type RguiHandlers, type RguiApi } from "./RguiGraphView";
 import { NodeInspector } from "./NodeInspector";
+import { FEDERATION_DEMO_IDS, agentYesMirrorForOtojiDemo, fetchFederatedGraph, hydrateAgentFromFeeds, voiceGraphToFederatedGraph, type FederatedGraphEnvelope } from "../graph/federation";
 import type { Panel, SummaryContent } from "@snomiao/rgui";
 import { TimelineView } from "./TimelineView";
 import type { PortType } from "../graph/model";
@@ -87,7 +89,7 @@ function activeTrackers(approved: string[]): string[] {
 }
 
 /** Port/signal-type accent colors (palette dots, etc.). */
-const PORT_COLOR: Record<PortType, string> = { segment: "#dd6b20", transcript: "#2b6cb0", image: "#319795", control: "#d69e2e" };
+const PORT_COLOR: Record<PortType, string> = { segment: "#dd6b20", transcript: "#2b6cb0", image: "#319795", control: "#d69e2e", environment: "#805ad5" };
 
 /** localStorage key for the persisted local-mode graph (rooms use the DO). */
 const LOCAL_GRAPH_KEY = "otoji.local.graph";
@@ -107,12 +109,35 @@ function loadPanelAnchors(): Record<string, { x: number; y: number }> {
 // readable zoom. Rough fit of NodeInspector's per-type content; a low estimate
 // scrolls (overlay is clip:"node" + overflow:"auto"), it never covers the preview.
 const CONTROL_ROWS: Partial<Record<NodeType, number>> = {
+  environment: 7,
   "mic-vad": 3, "mic-raw": 2, stt: 3, "web-speech": 3, vosk: 3, sherpa: 3,
-  translate: 5, sink: 7, tts: 4, "tts-model": 5, model: 5, camera: 3,
-  // screen-share is full-bleed: its controls live in the overlay's title bar,
-  // so the whole body is preview
-  "screen-share": 0, "paddle-ocr": 2, "vision-model": 4, "text-diff": 3,
+  translate: 5, "browser-translate-api": 3, "text-aggregate": 3, "text-normalize": 8, "text-filter": 7, "llm-agent": 8, sink: 7, "video-recorder": 8, "video-clip": 6, url: 0, tts: 4, "tts-model": 5, model: 5,
+  // Visual nodes are full-bleed: controls live in the overlay's title bar, so
+  // the whole body is preview.
+  camera: 0, "screen-share": 0, "vision-model": 0, "paddle-ocr": 2, "text-diff": 3,
 };
+
+type DisplayMode = "full-bleed" | "fit" | "stack";
+const DISPLAY_MODES: DisplayMode[] = ["full-bleed", "fit", "stack"];
+const VISUAL_DISPLAY_NODES = new Set<NodeType>(["camera", "screen-share", "vision-model", "file-image", "video-recorder", "video-clip", "url"]);
+const TEXT_DISPLAY_NODES = new Set<NodeType>(["environment", "stt", "web-speech", "vosk", "sherpa", "translate", "browser-translate-api", "text-aggregate", "text-normalize", "text-filter", "llm-agent", "model", "tts", "tts-model", "sink", "paddle-ocr", "text-diff"]);
+
+type SmartLinkOption = {
+  id: string;
+  label: string;
+  detail: string;
+  source: string;
+  sourceHandle: string;
+  target?: string;
+  targetHandle: string;
+  createType?: NodeType;
+  world?: { x: number; y: number };
+};
+
+function displayModeOf(config: Record<string, unknown> | undefined): DisplayMode {
+  const mode = config?.displayMode;
+  return DISPLAY_MODES.includes(mode as DisplayMode) ? mode as DisplayMode : "full-bleed";
+}
 
 /** Truncate text with an ellipsis to fit `maxW` screen px in the given ctx. */
 function clipText(ctx: CanvasRenderingContext2D, text: string, maxW: number): string {
@@ -120,6 +145,48 @@ function clipText(ctx: CanvasRenderingContext2D, text: string, maxW: number): st
   let s = text;
   while (s.length > 1 && ctx.measureText(s + "…").width > maxW) s = s.slice(0, -1);
   return s + "…";
+}
+
+function wrapTextLines(ctx: CanvasRenderingContext2D, text: string, maxW: number, maxLines: number): string[] {
+  const clean = text.replace(/\s+/g, " ").trim();
+  if (!clean || maxW <= 0 || maxLines <= 0) return [];
+  const words = clean.split(" ");
+  const lines: string[] = [];
+  let line = "";
+  const pushLong = (word: string) => {
+    let chunk = "";
+    for (const ch of word) {
+      if (chunk && ctx.measureText(chunk + ch).width > maxW) {
+        lines.push(chunk);
+        chunk = ch;
+        if (lines.length >= maxLines) return;
+      } else {
+        chunk += ch;
+      }
+    }
+    line = chunk;
+  };
+  for (const word of words) {
+    const next = line ? `${line} ${word}` : word;
+    if (ctx.measureText(next).width <= maxW) {
+      line = next;
+      continue;
+    }
+    if (line) lines.push(line);
+    if (lines.length >= maxLines) break;
+    if (ctx.measureText(word).width > maxW) pushLong(word);
+    else line = word;
+    if (lines.length >= maxLines) break;
+  }
+  if (line && lines.length < maxLines) lines.push(line);
+  if (lines.length === maxLines && lines[lines.length - 1]) lines[lines.length - 1] = clipText(ctx, lines[lines.length - 1], maxW);
+  return lines;
+}
+
+function wrapTextTailLines(ctx: CanvasRenderingContext2D, text: string, maxW: number, maxLines: number): string[] {
+  if (maxLines <= 0) return [];
+  const lines = wrapTextLines(ctx, text, maxW, 1000);
+  return lines.length > maxLines ? lines.slice(-maxLines) : lines;
 }
 
 /** Human-readable throughput, e.g. 1536 -> "1.5 KB/s". */
@@ -322,7 +389,38 @@ function autoLayout(
   return out;
 }
 
-function Editor({ initialRoom, local }: { initialRoom?: string; local?: boolean }) {
+// Poll remote federation feeds (org.rgui.graph.v1 envelopes over HTTP) and keep
+// the last good envelope per URL. Revision-gated: an unchanged `revision` does
+// not re-render; an unreachable feed keeps serving its last good copy (the
+// mirror goes stale rather than vanishing mid-outage).
+const FEED_POLL_MS = 5000;
+function useFederatedFeeds(urls: string[]): FederatedGraphEnvelope[] {
+  const [feeds, setFeeds] = useState<Record<string, FederatedGraphEnvelope>>({});
+  useEffect(() => {
+    if (!urls.length) return;
+    let stopped = false;
+    const revisions = new Map<string, string | number>();
+    const poll = () => {
+      for (const url of urls) {
+        void fetchFederatedGraph(url).then((env) => {
+          if (stopped || !env) return;
+          if (revisions.get(url) === env.revision) return;
+          revisions.set(url, env.revision);
+          setFeeds((prev) => ({ ...prev, [url]: env }));
+        });
+      }
+    };
+    poll();
+    const timer = setInterval(poll, FEED_POLL_MS);
+    return () => {
+      stopped = true;
+      clearInterval(timer);
+    };
+  }, [urls]);
+  return useMemo(() => urls.map((u) => feeds[u]).filter((e): e is FederatedGraphEnvelope => !!e), [urls, feeds]);
+}
+
+function Editor({ initialRoom, local, federationDemo }: { initialRoom?: string; local?: boolean; federationDemo?: boolean }) {
   const [room, setRoom] = useState(initialRoom ?? "");
   const [name, setName] = useState(getDeviceName());
   const [copied, setCopied] = useState(false);
@@ -359,8 +457,10 @@ function Editor({ initialRoom, local }: { initialRoom?: string; local?: boolean 
         world?: { x: number; y: number }; // rgui: drop point in world coords
       }
   >(null);
+  const [smartLinkMenu, setSmartLinkMenu] = useState<null | { x: number; y: number; options: SmartLinkOption[]; placeholder?: string }>(null);
   // Per-node context menu (right-click / long-press): duplicate/replace/remove/visibility.
   const [nodeMenu, setNodeMenu] = useState<null | { x: number; y: number; nodeId: string }>(null);
+  const [controlNodeId, setControlNodeId] = useState<string | null>(null);
   // rgui-owned selection (click / shift-drag box). Mirrored to the canvas and
   // used by Ctrl/Cmd+A and Delete when rgui is the renderer.
   const [selected, setSelected] = useState<string[]>([]);
@@ -374,6 +474,7 @@ function Editor({ initialRoom, local }: { initialRoom?: string; local?: boolean 
   const useRgui = true;
 
   const rguiApiRef = useRef<RguiApi | null>(null); // imperative viewport (fitView/zoom)
+  const nodeFitReturnViewRef = useRef<ReturnType<RguiApi["getView"]> | null>(null);
   // set by graph-generation paths (default pipeline / template expand / arrange) so
   // the next commit snaps the whole graph to rgui's main grid (see the effect below).
   const pendingSnapRef = useRef(false);
@@ -391,6 +492,7 @@ function Editor({ initialRoom, local }: { initialRoom?: string; local?: boolean 
   const previewSyncRef = useRef<PreviewSync | null>(null);
   if (!previewSyncRef.current) previewSyncRef.current = new PreviewSync(liveRef.current);
   const recordsByNodeRef = useRef(new Map<string, Recording[]>()); // uncapped, for file export
+  const videoClipsByNodeRef = useRef(new Map<string, VideoClip[]>());
   const edgeBytesRef = useRef(new Map<string, number>()); // per-edge bytes accumulated this second
   const [edgeRates, setEdgeRates] = useState<Record<string, number>>({}); // per-edge bytes/sec
   const [lastError, setLastError] = useState<string>(""); // most recent runtime error, for bug reports
@@ -417,6 +519,20 @@ function Editor({ initialRoom, local }: { initialRoom?: string; local?: boolean 
     pendingSnapRef.current = false;
     rguiApiRef.current?.snapGraph();
   }, [nodes]);
+
+  useEffect(() => {
+    if (!videoClipsDB.available()) return;
+    videoClipsDB.all().then((clips) => {
+      videoClipsByNodeRef.current.clear();
+      for (const clip of clips) {
+        if (!clip.nodeId) continue;
+        const arr = videoClipsByNodeRef.current.get(clip.nodeId) ?? [];
+        arr.push(clip);
+        videoClipsByNodeRef.current.set(clip.nodeId, arr);
+      }
+      setTick((x) => x + 1);
+    }).catch(() => {});
+  }, []);
 
   // --- Federation trust: which signaling servers (trackers) THIS browser will
   // connect to. active = trusted env defaults + locally-approved. Proposals from
@@ -496,15 +612,15 @@ function Editor({ initialRoom, local }: { initialRoom?: string; local?: boolean 
     [myDeviceId],
   );
 
-  // Tell the room which non-owned node previews we want streamed to us. Recompute
-  // on graph/presence changes (ownership) and when the user toggles a preview.
+  // Tell the room which non-owned node previews we want streamed to us. By
+  // default every device views every node; explicit local hides opt out.
   useEffect(() => {
     const recompute = () => {
       const ps = previewSyncRef.current;
       if (!ps) return;
       const owned = new Set<string>();
       for (const n of nodesRef.current) if (ownsNodeHere(n.id)) owned.add(n.id);
-      ps.setSubscriptions(shownRemoteNodes(owned));
+      ps.setSubscriptions(shownRemoteNodes(owned, nodesRef.current.map((n) => n.id)));
     };
     recompute();
     return subscribePrefs(recompute);
@@ -530,17 +646,18 @@ function Editor({ initialRoom, local }: { initialRoom?: string; local?: boolean 
     return () => clearInterval(t);
   }, [joined]);
 
-  // Local "try it" mode: seed a runnable demo pipeline (mic → STT → translate →
-  // sink = live captions + translation). Safe: no audio output, no feedback loop.
+  // Local "try it" mode: seed a runnable demo pipeline, or the read-only
+  // cross-app federation chain when ?federationDemo is present.
   useEffect(() => {
     if (!local) return;
     // No signaling in local mode — register this device as present so its nodes
     // aren't shown offline / treated as unassigned.
     setPresent({ [myDeviceId]: { peerId: myDeviceId, name, role, hasMic: caps.hasMic, runtime: "browser" } });
     // Remember the local layout across refreshes: restore a saved graph if any,
-    // otherwise seed the runnable demo pipeline (mic → STT → translate → sink).
+    // otherwise seed a demo. Federation demo intentionally bypasses saved local
+    // state so the requested chain is reproducible.
     try {
-      const saved = localStorage.getItem(LOCAL_GRAPH_KEY);
+      const saved = federationDemo ? null : localStorage.getItem(LOCAL_GRAPH_KEY);
       if (saved) {
         const g = JSON.parse(saved) as VoiceGraph;
         if (g?.nodes && Object.keys(g.nodes).length) {
@@ -554,6 +671,36 @@ function Editor({ initialRoom, local }: { initialRoom?: string; local?: boolean 
       }
     } catch {
       /* ignore corrupt storage → fall through to the demo seed */
+    }
+    if (federationDemo) {
+      const ids = FEDERATION_DEMO_IDS;
+      const mk = (id: string, vt: NodeType, x: number, y: number, config: Record<string, unknown> = {}): Node => ({
+        id,
+        type: "voice",
+        position: { x, y },
+        data: { voiceType: vt, device: myDeviceId, config },
+      });
+      const ns = [
+        mk(ids.plain, "textarea", 40, 130, {
+          text: "The quick brown fox edits shared text.\n\nAgent-yes should rewrite this, then Otoji diffs only the additions.",
+          displayMode: "full-bleed",
+        }),
+        mk(ids.diff, "text-diff", 600, 130, { style: "gitdiff" }),
+        mk(ids.filter, "text-filter", 860, 130, { mode: "diff-added", stripPrefix: true }),
+        mk(ids.translate, "browser-translate-api", 1120, 130, { lang: "ja", sourceLang: "en" }),
+        mk(ids.tts, "tts", 1380, 130, {}),
+      ];
+      const mkE = (s: string, sh: string, t: string, th: string): Edge => ({ id: `${s}->${t}`, source: s, sourceHandle: sh, target: t, targetHandle: th });
+      const es = [
+        mkE(ids.diff, "out", ids.filter, "in"),
+        mkE(ids.filter, "out", ids.translate, "in"),
+        mkE(ids.translate, "out", ids.tts, "in"),
+      ];
+      nodesRef.current = ns;
+      edgesRef.current = es;
+      setNodes(ns);
+      setEdges(es);
+      return;
     }
     const mk = (id: string, vt: NodeType, x: number): Node => ({
       id,
@@ -569,14 +716,14 @@ function Editor({ initialRoom, local }: { initialRoom?: string; local?: boolean 
     setNodes(ns);
     setEdges(es);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [local]);
+  }, [local, federationDemo]);
 
   // Persist the local layout on every change (local mode only; rooms sync to the
   // DO instead). Skip empty graphs so the initial mount doesn't clobber a save.
   useEffect(() => {
-    if (!local || nodes.length === 0) return;
+    if (!local || federationDemo || nodes.length === 0) return;
     try { localStorage.setItem(LOCAL_GRAPH_KEY, JSON.stringify(fromRF(nodes, edges, versionRef.current))); } catch { /* ignore */ }
-  }, [local, nodes, edges]);
+  }, [local, federationDemo, nodes, edges]);
 
   // Frame the graph once when it first loads (demo seed / restored local layout /
   // room graph) so a saved layout is never stranded off-screen.
@@ -653,6 +800,7 @@ function Editor({ initialRoom, local }: { initialRoom?: string; local?: boolean 
           if (st === "connected") previewSyncRef.current?.resync();
           else if (st === "disconnected" || st === "failed" || st === "closed") previewSyncRef.current?.dropPeer(id);
         },
+        onChannelOpen: () => previewSyncRef.current?.resync(),
       });
       meshRef.current = mesh;
       if (!transportRef.current) transportRef.current = new PeerMeshTransport(mesh);
@@ -790,6 +938,28 @@ function Editor({ initialRoom, local }: { initialRoom?: string; local?: boolean 
   // land aligned to the visible grid (and connected template nodes snap flush).
   const snapWorld = useCallback((p: { x: number; y: number }) => rguiApiRef.current?.snapWorld(p) ?? p, []);
 
+  const defaultConfigFor = useCallback((type: NodeType): Record<string, unknown> => {
+    if (type !== "environment") return {};
+    const nav = typeof navigator !== "undefined" ? navigator : undefined;
+    return {
+      label: name.trim() || getDeviceName(),
+      scope: "browser-tab",
+      runtime: "browser",
+      deviceId: myDeviceId,
+      room: local ? "local" : room.trim(),
+      url: typeof location !== "undefined" ? location.href : "",
+      userAgent: nav?.userAgent ?? "",
+      language: nav?.language ?? "",
+      mic: caps.hasMic,
+      camera: !!nav?.mediaDevices?.getUserMedia,
+      screen: !!nav?.mediaDevices?.getDisplayMedia,
+      webgpu: typeof navigator !== "undefined" && "gpu" in navigator,
+      storage: typeof indexedDB !== "undefined",
+      network: typeof RTCPeerConnection !== "undefined",
+      role,
+    };
+  }, [caps.hasMic, local, myDeviceId, name, role, room]);
+
   const addNode = useCallback(
     (type: NodeType, worldPos?: { x: number; y: number }) => {
       const id = `${type}-${Math.random().toString(36).slice(2, 8)}`;
@@ -799,7 +969,7 @@ function Editor({ initialRoom, local }: { initialRoom?: string; local?: boolean 
         id,
         type: "voice",
         position,
-        data: { voiceType: type, device: myDeviceId, config: {} },
+        data: { voiceType: type, device: myDeviceId, config: defaultConfigFor(type) },
       };
       let nextNodes = [...nodesRef.current, n];
       let nextEdges = edgesRef.current;
@@ -823,7 +993,7 @@ function Editor({ initialRoom, local }: { initialRoom?: string; local?: boolean 
       setEdges(nextEdges);
       broadcast(nextNodes, nextEdges);
     },
-    [myDeviceId, setNodes, setEdges, broadcast],
+    [myDeviceId, setNodes, setEdges, broadcast, defaultConfigFor],
   );
 
   // --- Templates: drop a subgraph onto the canvas (fresh ids, auto-selected). ---
@@ -988,6 +1158,15 @@ function Editor({ initialRoom, local }: { initialRoom?: string; local?: boolean 
   // Records collected at a sink/output node (oldest first) for file export — from
   // the uncapped per-node buffer (sinkRecs is capped for the live panel only).
   const getRecords = useCallback((nodeId: string) => recordsByNodeRef.current.get(nodeId) ?? [], []);
+  const getVideoClips = useCallback((nodeId: string) => videoClipsByNodeRef.current.get(nodeId) ?? [], []);
+  const getVideoClip = useCallback((clipId: string | undefined) => {
+    if (!clipId) return undefined;
+    for (const clips of videoClipsByNodeRef.current.values()) {
+      const clip = clips.find((c) => c.id === clipId);
+      if (clip) return clip;
+    }
+    return undefined;
+  }, []);
 
   // Associate a local file with a file-source node, then bump config (with a
   // monotonic seq so re-picking the SAME filename still restarts the runtime).
@@ -1002,12 +1181,51 @@ function Editor({ initialRoom, local }: { initialRoom?: string; local?: boolean 
 
   // Drag-drop a media/text file onto the canvas -> create a file-source node here.
   const addFileNodeAt = useCallback(
-    (file: File, clientX: number, clientY: number, worldPos?: { x: number; y: number }) => {
-      const kind = fileKindForName(file.name);
+    async (file: File, clientX: number, clientY: number, worldPos?: { x: number; y: number }) => {
+      const kind = file.type.startsWith("video/") ? "video" : fileKindForName(file.name);
       if (!kind) return;
-      const voiceType = kind === "audio" ? "file-audio" : "file-text";
-      const id = `${voiceType}-${Math.random().toString(36).slice(2, 8)}`;
       const position = worldPos ? snapWorld(worldPos) : { x: 80 + Math.random() * 120, y: 80 + Math.random() * 120 };
+      if (kind === "video") {
+        const at = Date.now();
+        const durationMs = await new Promise<number>((resolve) => {
+          const url = URL.createObjectURL(file);
+          const v = document.createElement("video");
+          const done = (ms: number) => {
+            URL.revokeObjectURL(url);
+            resolve(ms);
+          };
+          v.onloadedmetadata = () => done(Number.isFinite(v.duration) ? v.duration * 1000 : 0);
+          v.onerror = () => done(0);
+          v.src = url;
+        });
+        const clip: VideoClip = {
+          id: `vf-${at}-${Math.random().toString(36).slice(2, 8)}`,
+          nodeId: "files",
+          at,
+          durationMs,
+          mimeType: file.type || "video/webm",
+          blob: file,
+        };
+        const arr = videoClipsByNodeRef.current.get("files") ?? [];
+        arr.push(clip);
+        videoClipsByNodeRef.current.set("files", arr);
+        if (videoClipsDB.available()) videoClipsDB.put(clip).catch((e) => setLastError(e instanceof Error ? e.message : String(e)));
+        const id = `video-clip-${Math.random().toString(36).slice(2, 8)}`;
+        const n: Node = {
+          id,
+          type: "voice",
+          position,
+          data: { voiceType: "video-clip", device: myDeviceId, config: { clipId: clip.id, file: file.name, generatedBy: "file-drop" } },
+        };
+        const next = [...nodesRef.current, n];
+        nodesRef.current = next;
+        setNodes(next);
+        setTick((x) => x + 1);
+        broadcast(next, edgesRef.current);
+        return;
+      }
+      const voiceType = kind === "audio" ? "file-audio" : kind === "image" ? "file-image" : "file-text";
+      const id = `${voiceType}-${Math.random().toString(36).slice(2, 8)}`;
       const n: Node = { id, type: "voice", position, data: { voiceType, device: myDeviceId, config: { file: file.name } } };
       fileStore.set(id, { kind, name: file.name, file });
       const next = [...nodesRef.current, n];
@@ -1015,8 +1233,32 @@ function Editor({ initialRoom, local }: { initialRoom?: string; local?: boolean 
       setNodes(next);
       broadcast(next, edgesRef.current);
     },
-    [myDeviceId, setNodes, broadcast],
+    [myDeviceId, setNodes, broadcast, snapWorld],
   );
+
+  const addTextNodeAt = useCallback((text: string, worldPos?: { x: number; y: number }) => {
+    const trimmed = text.trim();
+    if (!trimmed) return;
+    const id = `textarea-${Math.random().toString(36).slice(2, 8)}`;
+    const position = worldPos ? snapWorld(worldPos) : { x: 80 + Math.random() * 120, y: 80 + Math.random() * 120 };
+    const n: Node = { id, type: "voice", position, data: { voiceType: "textarea", device: myDeviceId, config: { text: trimmed, seq: Date.now() } } };
+    const next = [...nodesRef.current, n];
+    nodesRef.current = next;
+    setNodes(next);
+    broadcast(next, edgesRef.current);
+  }, [broadcast, myDeviceId, setNodes, snapWorld]);
+
+  const addUrlNodeAt = useCallback((url: string, worldPos?: { x: number; y: number }) => {
+    const clean = url.trim();
+    if (!/^https?:\/\//i.test(clean)) return addTextNodeAt(clean, worldPos);
+    const position = worldPos ? snapWorld(worldPos) : { x: 80 + Math.random() * 120, y: 80 + Math.random() * 120 };
+    const id = `url-${Math.random().toString(36).slice(2, 8)}`;
+    const n: Node = { id, type: "voice", position, data: { voiceType: "url", device: myDeviceId, config: { url: clean } } };
+    const next = [...nodesRef.current, n];
+    nodesRef.current = next;
+    setNodes(next);
+    broadcast(next, edgesRef.current);
+  }, [addTextNodeAt, broadcast, myDeviceId, setNodes, snapWorld]);
 
   // Keyboard: Ctrl/Cmd+A selects all nodes; Delete/Backspace removes the current
   // selection (nodes + edges). Ignored while typing in a field.
@@ -1024,11 +1266,32 @@ function Editor({ initialRoom, local }: { initialRoom?: string; local?: boolean 
     if (!joined) return;
     const onKey = (e: KeyboardEvent) => {
       const el = document.activeElement as HTMLElement | null;
-      if (el && /^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName)) return;
+      if (el && (/^(INPUT|TEXTAREA|SELECT|BUTTON)$/.test(el.tagName) || el.isContentEditable)) return;
       if ((e.ctrlKey || e.metaKey) && (e.key === "a" || e.key === "A")) {
         e.preventDefault();
         if (useRgui) setSelected(nodesRef.current.map((n) => n.id));
         else setNodes(nodesRef.current.map((n) => ({ ...n, selected: true })));
+        return;
+      }
+      if (e.key === "Enter" && !e.ctrlKey && !e.metaKey && !e.altKey) {
+        const api = rguiApiRef.current;
+        const nodeId = useRgui ? selectedRef.current[0] : nodesRef.current.find((n) => n.selected)?.id;
+        if (api && nodeId) {
+          e.preventDefault();
+          nodeFitReturnViewRef.current ??= api.getView();
+          api.fitNode(nodeId, 12);
+        }
+        return;
+      }
+      if (e.key === "Escape") {
+        const api = rguiApiRef.current;
+        if (api) {
+          e.preventDefault();
+          const prev = nodeFitReturnViewRef.current;
+          nodeFitReturnViewRef.current = null;
+          if (prev) api.setView(prev);
+          else api.zoomBy(0.8);
+        }
         return;
       }
       if (e.key === "Delete" || e.key === "Backspace") {
@@ -1106,7 +1369,7 @@ function Editor({ initialRoom, local }: { initialRoom?: string; local?: boolean 
     (type: NodeType, anchor: { nodeId: string; handleId: string; portType: PortType; dir: "source" | "target" }, worldPos?: { x: number; y: number }) => {
       const id = `${type}-${Math.random().toString(36).slice(2, 8)}`;
       const position = worldPos ? snapWorld(worldPos) : { x: 80 + Math.random() * 120, y: 80 + Math.random() * 120 };
-      const n: Node = { id, type: "voice", position, data: { voiceType: type, device: myDeviceId, config: {} } };
+      const n: Node = { id, type: "voice", position, data: { voiceType: type, device: myDeviceId, config: defaultConfigFor(type) } };
       let edge: Edge;
       if (anchor.dir === "source") {
         const targetHandle = NODE_SPECS[type].inputs.find((p) => p.type === anchor.portType)?.id ?? "in";
@@ -1126,8 +1389,129 @@ function Editor({ initialRoom, local }: { initialRoom?: string; local?: boolean 
       broadcast(nextNodes, nextEdges);
       setConnectMenu(null);
     },
-    [myDeviceId, setNodes, setEdges, broadcast],
+    [myDeviceId, setNodes, setEdges, broadcast, defaultConfigFor],
   );
+
+  const inputOccupied = useCallback((target: string, targetHandle: string) =>
+    edgesRef.current.some((e) => e.target === target && (e.targetHandle ?? "in") === targetHandle),
+  []);
+
+  const smartLinkPairs = useCallback((sourceId: string, targetId: string): SmartLinkOption[] => {
+    if (sourceId === targetId) return [];
+    const src = nodesRef.current.find((n) => n.id === sourceId);
+    const dst = nodesRef.current.find((n) => n.id === targetId);
+    if (!src || !dst) return [];
+    const srcType = (src.data as any).voiceType as NodeType;
+    const dstType = (dst.data as any).voiceType as NodeType;
+    const srcSpec = NODE_SPECS[srcType];
+    const dstSpec = NODE_SPECS[dstType];
+    const out: Array<SmartLinkOption & { score: number }> = [];
+    for (const sp of srcSpec.outputs) {
+      for (const tp of dstSpec.inputs) {
+        if (sp.type !== tp.type) continue;
+        if (inputOccupied(targetId, tp.id)) continue;
+        const id = edgeId({ source: sourceId, sourceHandle: sp.id, target: targetId, targetHandle: tp.id });
+        if (edgesRef.current.some((e) => e.id === id)) continue;
+        out.push({
+          id,
+          label: `${srcSpec.label} → ${dstSpec.label}`,
+          detail: `${sp.id} → ${tp.id} · ${sp.type}`,
+          source: sourceId,
+          sourceHandle: sp.id,
+          target: targetId,
+          targetHandle: tp.id,
+          score: sp.id === tp.id ? 0 : 1,
+        });
+      }
+    }
+    return out.sort((a, b) => a.score - b.score || a.detail.localeCompare(b.detail)).map(({ score: _score, ...x }) => x);
+  }, [inputOccupied]);
+
+  const smartLinkNodeOptions = useCallback((sourceId: string, world: { x: number; y: number }): SmartLinkOption[] => {
+    const src = nodesRef.current.find((n) => n.id === sourceId);
+    if (!src) return [];
+    const srcType = (src.data as any).voiceType as NodeType;
+    const srcSpec = NODE_SPECS[srcType];
+    const out: Array<SmartLinkOption & { score: number }> = [];
+    for (const type of Object.keys(NODE_SPECS) as NodeType[]) {
+      const dstSpec = NODE_SPECS[type];
+      let best: (SmartLinkOption & { score: number }) | null = null;
+      for (const sp of srcSpec.outputs) {
+        for (const tp of dstSpec.inputs) {
+          if (sp.type !== tp.type) continue;
+          const score = sp.id === tp.id ? 0 : 1;
+          const opt: SmartLinkOption & { score: number } = {
+            id: `${type}:${sp.id}->${tp.id}`,
+            label: dstSpec.label,
+            detail: `${sp.id} → ${tp.id} · ${sp.type}`,
+            source: sourceId,
+            sourceHandle: sp.id,
+            targetHandle: tp.id,
+            createType: type,
+            world,
+            score,
+          };
+          if (!best || opt.score < best.score || opt.detail.localeCompare(best.detail) < 0) best = opt;
+        }
+      }
+      if (best) out.push(best);
+    }
+    return out.sort((a, b) => a.score - b.score || a.label.localeCompare(b.label)).map(({ score: _score, ...x }) => x);
+  }, []);
+
+  const autoMatchEdges = useCallback((source: string, target: string, nodeList = nodesRef.current): Edge[] => {
+    const src = nodeList.find((n) => n.id === source);
+    const dst = nodeList.find((n) => n.id === target);
+    if (!src || !dst) return [];
+    const srcSpec = NODE_SPECS[(src.data as any).voiceType as NodeType];
+    const dstSpec = NODE_SPECS[(dst.data as any).voiceType as NodeType];
+    const usedInputs = new Set(edgesRef.current.filter((e) => e.target === target).map((e) => e.targetHandle ?? "in"));
+    const usedOutputs = new Set<string>();
+    const out: Edge[] = [];
+    for (const sp of srcSpec.outputs) {
+      const matches = dstSpec.inputs
+        .filter((tp) => tp.type === sp.type && !usedInputs.has(tp.id))
+        .sort((a, b) => (a.id === sp.id ? 0 : 1) - (b.id === sp.id ? 0 : 1) || a.id.localeCompare(b.id));
+      const tp = matches[0];
+      if (!tp || usedOutputs.has(sp.id)) continue;
+      const id = edgeId({ source, sourceHandle: sp.id, target, targetHandle: tp.id });
+      if (edgesRef.current.some((e) => e.id === id) || out.some((e) => e.id === id)) continue;
+      usedInputs.add(tp.id);
+      usedOutputs.add(sp.id);
+      out.push({ id, source, sourceHandle: sp.id, target, targetHandle: tp.id, selected: true });
+    }
+    return out;
+  }, []);
+
+  const applySmartLink = useCallback((opt: SmartLinkOption) => {
+    let nextNodes = nodesRef.current;
+    let target = opt.target;
+    const created = !target && !!opt.createType;
+    if (!target && opt.createType) {
+      target = `${opt.createType}-${Math.random().toString(36).slice(2, 8)}`;
+      const position = opt.world ? snapWorld(opt.world) : { x: 80 + Math.random() * 120, y: 80 + Math.random() * 120 };
+      const n: Node = { id: target, type: "voice", position, data: { voiceType: opt.createType, device: myDeviceId, config: defaultConfigFor(opt.createType) }, selected: true };
+      nextNodes = [...nodesRef.current.map((x) => ({ ...x, selected: false })), n];
+    }
+    if (!target) return;
+    const autoEdges = created ? autoMatchEdges(opt.source, target, nextNodes) : [];
+    let addEdges = autoEdges;
+    if (!addEdges.length) {
+      if (inputOccupied(target, opt.targetHandle)) return;
+      const id = edgeId({ source: opt.source, sourceHandle: opt.sourceHandle, target, targetHandle: opt.targetHandle });
+      if (edgesRef.current.some((e) => e.id === id)) return;
+      addEdges = [{ id, source: opt.source, sourceHandle: opt.sourceHandle, target, targetHandle: opt.targetHandle, selected: true }];
+    }
+    const nextEdges = [...edgesRef.current.map((e) => ({ ...e, selected: false })), ...addEdges];
+    nodesRef.current = nextNodes;
+    edgesRef.current = nextEdges;
+    setNodes(nextNodes);
+    setEdges(nextEdges);
+    setSelected([target]);
+    setSmartLinkMenu(null);
+    setConnectMenu(null);
+    broadcast(nextNodes, nextEdges);
+  }, [autoMatchEdges, broadcast, defaultConfigFor, inputOccupied, myDeviceId, setEdges, setNodes, snapWorld]);
 
   const stopRuntime = useCallback(async () => {
     const rt = runtimeRef.current;
@@ -1165,7 +1549,15 @@ function Editor({ initialRoom, local }: { initialRoom?: string; local?: boolean 
       onSegment: () => { activityRef.current.segments++; },
       onImage: (id, bitmap) => { live.setImage(id, bitmap); pv?.onLocalPreview(id, "img", bitmap); },
       onMedia: (id, stream) => live.setMedia(id, stream), // local-only: a MediaStream can't cross devices
-      onRecognized: (id, text) => { activityRef.current.stt++; if (isReadableTranscript(text)) { live.pushText(id, text); pv?.onLocalPreview(id, "txt", text); } },
+      onRecognized: (id, text) => {
+        activityRef.current.stt++;
+        const vt = (nodesRef.current.find((n) => n.id === id)?.data as any)?.voiceType as NodeType | undefined;
+        const previewText = vt === "paddle-ocr" ? (text.trim() || "(no OCR text)") : text;
+        if (vt === "paddle-ocr" || isReadableTranscript(text)) {
+          live.pushText(id, previewText);
+          pv?.onLocalPreview(id, "txt", previewText);
+        }
+      },
       onNodeBusy: (id, b) => { live.setBusy(id, b); pv?.onLocalPreview(id, "busy", b); },
       onQueue: (id, processing, queued) => { live.setQueue(id, processing, queued); pv?.onLocalPreview(id, "queue", { processing, queued }); },
       hasPreviewConsumer: (id) => isPreviewShown(id) || (pv?.hasSubscriber(id) ?? false),
@@ -1211,6 +1603,34 @@ function Editor({ initialRoom, local }: { initialRoom?: string; local?: boolean 
         recordsByNodeRef.current.set(nodeId, arr);
         setTick((x) => x + 1); // refresh counts so audio-out's label updates promptly
       },
+      onVideoClip: (nodeId, clip) => {
+        const arr = videoClipsByNodeRef.current.get(nodeId) ?? [];
+        arr.push(clip);
+        videoClipsByNodeRef.current.set(nodeId, arr);
+        setTick((x) => x + 1);
+        if (videoClipsDB.available()) videoClipsDB.put(clip).catch((e) => setLastError(e instanceof Error ? e.message : String(e)));
+        if (!nodesRef.current.some((n) => (n.data as any).voiceType === "video-clip" && (n.data as any).config?.clipId === clip.id)) {
+          const parent = nodesRef.current.find((n) => n.id === nodeId);
+          const id = `video-clip-${Math.random().toString(36).slice(2, 8)}`;
+          const base = parent?.position ?? { x: 80, y: 80 };
+          const n: Node = {
+            id,
+            type: "voice",
+            position: snapWorld({ x: base.x + 360, y: base.y }),
+            selected: true,
+            data: {
+              voiceType: "video-clip",
+              device: myDeviceId,
+              config: { clipId: clip.id, generatedBy: nodeId, title: `clip ${(clip.durationMs / 1000).toFixed(1)}s` },
+            },
+          };
+          const nextNodes = [...nodesRef.current.map((x) => ({ ...x, selected: false })), n];
+          nodesRef.current = nextNodes;
+          setNodes(nextNodes);
+          setSelected([id]);
+          broadcast(nextNodes, edgesRef.current);
+        }
+      },
     });
     runtimeRef.current = rt;
     setRunning(true);
@@ -1219,7 +1639,7 @@ function Editor({ initialRoom, local }: { initialRoom?: string; local?: boolean 
     } catch (e: any) {
       setRunStatus(`error: ${e?.message ?? e}`);
     }
-  }, [myDeviceId]);
+  }, [broadcast, local, myDeviceId, setNodes, snapWorld]);
 
   // Structural signature — changes when the runnable graph changes (NOT on
   // node drags), so we can auto-(re)start without thrashing on every edit.
@@ -1263,29 +1683,81 @@ function Editor({ initialRoom, local }: { initialRoom?: string; local?: boolean 
   const counts = useMemo(() => {
     const c: Record<string, number> = {};
     for (const [nodeId, recs] of recordsByNodeRef.current) c[nodeId] = recs.length;
+    for (const [nodeId, clips] of videoClipsByNodeRef.current) c[nodeId] = Math.max(c[nodeId] ?? 0, clips.length);
     return c;
   }, [tick, sinkRecs]);
 
   const currentGraph = useMemo(() => fromRF(nodes, edges, versionRef.current), [nodes, edges]);
+  // live federation feeds (?feed=<envelope-url>, repeatable) — polled and
+  // merged ahead of the baked demo so real remote nodes win over stubs.
+  const feedUrls = useMemo(
+    () => (typeof location === "undefined" ? [] : [...new Set(new URLSearchParams(location.search).getAll("feed"))]),
+    [],
+  );
+  const liveFeeds = useFederatedFeeds(feedUrls);
+  const federatedGraphs = useMemo(
+    () => (federationDemo ? [hydrateAgentFromFeeds(agentYesMirrorForOtojiDemo(), liveFeeds)] : liveFeeds),
+    [federationDemo, liveFeeds],
+  );
+
+  // Federation publish leg: while in a room, push the room's envelope to the
+  // signaling DO (debounced, revision-gated) so other rgui apps can mirror it
+  // at GET {tracker}/{room}/graph. The room code is the read capability.
+  const lastPublishedRef = useRef(-1);
+  useEffect(() => {
+    if (!joined || !roomRef.current) return;
+    if (versionRef.current === lastPublishedRef.current) return;
+    const t = setTimeout(() => {
+      const version = versionRef.current;
+      const env = voiceGraphToFederatedGraph(
+        fromRF(nodesRef.current, edgesRef.current, version),
+        {
+          app: "otoji",
+          origin: location.origin,
+          deviceId: myDeviceId,
+          workspace: roomRef.current,
+          label: `otoji room ${roomRef.current}`,
+        },
+        { namespace: `otoji://room/${roomRef.current}` },
+      );
+      sigRef.current?.publishFederatedGraph(env);
+      lastPublishedRef.current = version;
+    }, 2000);
+    return () => clearTimeout(t);
+  }, [joined, nodes, edges, myDeviceId]);
+
+  useEffect(() => {
+    if (!federationDemo || typeof window === "undefined") return;
+    (window as any).__otojiFederationDemo = {
+      local: () => voiceGraphToFederatedGraph(fromRF(nodesRef.current, edgesRef.current, versionRef.current), {
+        app: "otoji",
+        origin: location.origin,
+        deviceId: myDeviceId,
+        workspace: "snomiao/otoji",
+        label: name,
+      }),
+      remote: () => agentYesMirrorForOtojiDemo(),
+    };
+  }, [federationDemo, myDeviceId, name]);
 
   // rgui has no inline node widgets — every node gets a config-controls overlay
   // (device + per-type config) that rgui glues to the node and auto-hides when
   // the node isn't readable-sized. Stable identity; reads the latest node state.
   const renderNodeOverlay = useCallback((id: string) => {
-    // Semantic zoom: controls show whenever the node is READABLE-scaled (rgui's
-    // overlay minScale hides them below that), not only when selected. Zoomed in
-    // = edit mode (controls over the body); zoomed out past minScale = monitor
-    // mode (rgui's native live preview / summaries show instead).
     const n = nodesRef.current.find((x) => x.id === id);
     if (!n) return null;
+    const vt = (n.data as any).voiceType as NodeType;
+    const visual = vt === "camera" || vt === "screen-share" || vt === "vision-model" || vt === "url";
+    const controls = controlNodeId === id;
+    if (!visual && !controls) return null;
     const node = {
       id: n.id,
-      voiceType: (n.data as any).voiceType as NodeType,
+      voiceType: vt,
       device: ((n.data as any).device ?? null) as string | null,
       config: (n.data as any).config as Record<string, unknown> | undefined,
     };
-    return <NodeInspector node={node} />;
-  }, []);
+    return <NodeInspector node={node} controls={controls || !visual} />;
+  }, [controlNodeId]);
 
   const deviceNameOf = useCallback(
     (id: string | null) => (id ? devices.find((d) => d.deviceId === id)?.name ?? id.slice(0, 6) : "unassigned"),
@@ -1297,6 +1769,7 @@ function Editor({ initialRoom, local }: { initialRoom?: string; local?: boolean 
   const rguiHandlers = useMemo<RguiHandlers>(
     () => ({
       onNodeMoveEnd: (id, pos) => {
+        if (!nodesRef.current.some((n) => n.id === id)) return;
         const next = nodesRef.current.map((n) => (n.id === id ? { ...n, position: { x: pos.x, y: pos.y } } : n));
         nodesRef.current = next;
         setNodes(next);
@@ -1306,9 +1779,14 @@ function Editor({ initialRoom, local }: { initialRoom?: string; local?: boolean 
       // rgui hands back the grid-snapped {w,h,scale}; persist verbatim so the
       // box survives re-maps and syncs to the room like a move does.
       onNodeResizeEnd: (id, size) => {
+        if (!nodesRef.current.some((n) => n.id === id)) return;
         const next = nodesRef.current.map((n) =>
           n.id === id
-            ? { ...n, data: { ...n.data, size: { w: size.w, h: size.h }, scale: size.scale === 1 ? undefined : size.scale } }
+            ? {
+                ...n,
+                position: size.x != null && size.y != null ? { x: size.x, y: size.y } : n.position,
+                data: { ...n.data, size: { w: size.w, h: size.h }, scale: size.scale === 1 ? undefined : size.scale },
+              }
             : n,
         );
         nodesRef.current = next;
@@ -1326,15 +1804,27 @@ function Editor({ initialRoom, local }: { initialRoom?: string; local?: boolean 
         setEdges(next);
         broadcast(nodesRef.current, next);
       },
-      // Right-click opens the per-node menu (duplicate / replace / remove /
-      // visibility). Left-click selection is handled by rgui (onSelectionChange).
-      onNodeContextMenu: (id, screen) => setNodeMenu({ nodeId: id, x: screen.x, y: screen.y }),
-      onSelectionChange: (ids) => setSelected(ids),
+      // Right-click opens the node actions menu and reveals that node's inline
+      // controls (device assignment + per-type settings).
+      onNodeContextMenu: (id, screen) => {
+        if (!nodesRef.current.some((n) => n.id === id)) return;
+        setSelected([id]);
+        setControlNodeId(id);
+        setNodeMenu({ nodeId: id, x: screen.x, y: screen.y });
+      },
+      onSelectionChange: (ids) => {
+        const localIds = ids.filter((id) => nodesRef.current.some((n) => n.id === id));
+        setSelected(localIds);
+        if (localIds.length !== 1 || localIds[0] !== controlNodeId) setControlNodeId(null);
+      },
       // Edge: left-click selects (highlight; Delete removes), right-click removes.
       onEdgeClick: (edge) =>
         setSelectedEdge(edgeId({ source: edge.from.node, sourceHandle: edge.from.port, target: edge.to.node, targetHandle: edge.to.port })),
       onEdgeContextMenu: (edge) =>
-        removeEdge(edgeId({ source: edge.from.node, sourceHandle: edge.from.port, target: edge.to.node, targetHandle: edge.to.port })),
+        {
+          const id = edgeId({ source: edge.from.node, sourceHandle: edge.from.port, target: edge.to.node, targetHandle: edge.to.port });
+          if (edgesRef.current.some((e) => e.id === id)) removeEdge(id);
+        },
       // Port drag ended on empty canvas → create-and-wire omnibox of compatible
       // node types (downstream inputs from an output; upstream outputs from an input).
       onConnectEnd: (from, at) => {
@@ -1359,9 +1849,27 @@ function Editor({ initialRoom, local }: { initialRoom?: string; local?: boolean 
         if (!options.length) return;
         setConnectMenu({ x: at.screen.x, y: at.screen.y, anchor: { nodeId: from.node, handleId: from.port, portType, dir }, options, world: at.world });
       },
+      onSmartLinkEnd: (fromNodeId, at) => {
+        if (!nodesRef.current.some((n) => n.id === fromNodeId)) return;
+        setNodeMenu(null);
+        setConnectMenu(null);
+        if (at.targetNodeId) {
+          const options = smartLinkPairs(fromNodeId, at.targetNodeId);
+          if (options.length === 1) applySmartLink(options[0]!);
+          else if (options.length > 1) setSmartLinkMenu({ x: at.screen.x, y: at.screen.y, options, placeholder: "choose link…" });
+          return;
+        }
+        const options = smartLinkNodeOptions(fromNodeId, at.world);
+        if (options.length) setSmartLinkMenu({ x: at.screen.x, y: at.screen.y, options, placeholder: "smart-link to…" });
+      },
       onCanvasDrop: (world, dt) => {
         const f = dt.files?.[0];
         if (f) return addFileNodeAt(f, 0, 0, world);
+        const uri = dt.getData("text/uri-list")?.split("\n").find((x) => x && !x.startsWith("#"))?.trim();
+        if (uri) return addUrlNodeAt(uri, world);
+        const plain = dt.getData("text/plain")?.trim();
+        if (plain && /^https?:\/\//i.test(plain)) return addUrlNodeAt(plain, world);
+        if (plain) return addTextNodeAt(plain, world);
         const tplId = dt.getData("application/otoji-template");
         if (tplId) {
           const tpl = allTemplates.find((x) => x.id === tplId);
@@ -1372,13 +1880,12 @@ function Editor({ initialRoom, local }: { initialRoom?: string; local?: boolean 
         if (t && NODE_SPECS[t]) addNode(t, world);
       },
     }),
-    [setNodes, setEdges, broadcast, addNode, addTemplate, addFileNodeAt, allTemplates, removeEdge],
+    [setNodes, setEdges, broadcast, addNode, addTemplate, addFileNodeAt, addTextNodeAt, addUrlNodeAt, allTemplates, removeEdge, controlNodeId, smartLinkPairs, smartLinkNodeOptions, applySmartLink],
   );
 
-  // Edges whose signal is in-process-only (image/control: share, no wire
-  // format) but whose endpoints resolve to different devices — the runtime
-  // silently drops those frames, so flag them while wiring/assigning instead.
-  // Local mode runs everything in-process (delivery by reference): never flag.
+  // Edges whose signal lacks a duplicable wire format and crosses devices.
+  // All built-in port types currently have a wire format, but keep the guard
+  // for future share/move signal kinds.
   const illegalEdges = useMemo(
     () => (local ? new Set<string>() : illegalCrossDeviceEdges(currentGraph, (n) => nodeOwner(n, onlineDeviceIds))),
     [local, currentGraph, onlineDeviceIds],
@@ -1386,7 +1893,7 @@ function Editor({ initialRoom, local }: { initialRoom?: string; local?: boolean 
 
   // Per-edge visuals for the rgui canvas: highlight the selected edge, animate
   // (dashed) while the runtime is running, label cross-device edges with rate,
-  // and mark share-signal edges that can't cross their device boundary.
+  // and mark future share-signal edges that can't cross their device boundary.
   const edgeMeta = useCallback(
     (e: { id: string; source: string; target: string }) => {
       const selected = e.id === selectedEdge;
@@ -1411,8 +1918,8 @@ function Editor({ initialRoom, local }: { initialRoom?: string; local?: boolean 
   const nodeBody = useCallback((node: { id: string; type: NodeType }) => {
     const t = node.type;
     const isMic = t === "mic-vad" || t === "mic-raw";
-    const isImg = t === "camera" || t === "screen-share" || t === "paddle-ocr" || t === "vision-model";
-    const isText = t === "stt" || t === "translate" || t === "sink" || t === "web-speech" || t === "vosk" || t === "model" || t === "paddle-ocr" || t === "text-diff";
+    const isImg = t === "camera" || t === "screen-share" || t === "file-image" || t === "paddle-ocr" || t === "vision-model" || t === "video-recorder" || t === "video-clip";
+    const isText = TEXT_DISPLAY_NODES.has(t);
     if (!isMic && !isImg && !isText) return undefined;
     const id = node.id;
     // The body hosts BOTH the config-controls overlay (upper zone, HTML, shown
@@ -1426,9 +1933,19 @@ function Editor({ initialRoom, local }: { initialRoom?: string; local?: boolean 
       draw: (ctx: CanvasRenderingContext2D, rect: { width: number; height: number }, view?: { k: number }) => {
         const live = liveRef.current;
         const k = view?.k ?? 1;
+        const graphNode = nodesRef.current.find((n) => n.id === id);
+        const displayMode = displayModeOf((graphNode?.data as any)?.config);
         // overlay (controls) visible above minScale 0.5 → keep to the bottom
         // strip; full-bleed screen-share has no control zone, use it all
-        const top = t === "screen-share" ? 0 : k >= 0.5 ? Math.max(0, rect.height - previewRows * 22 * k) : 0;
+        const fullBleedVisual = t === "camera" || t === "screen-share" || t === "vision-model";
+        const stackTop = displayMode === "stack" ? Math.min(rect.height, (fullBleedVisual ? 26 : controlRows * 22) * k) : 0;
+        const top = fullBleedVisual
+          ? stackTop
+          : displayMode === "full-bleed"
+            ? 0
+            : k >= 0.5
+              ? Math.max(stackTop, rect.height - previewRows * 22 * k)
+              : stackTop;
         const availH = rect.height - top;
         if (isMic) {
           const levels = live.getLevels(id);
@@ -1441,16 +1958,62 @@ function Editor({ initialRoom, local }: { initialRoom?: string; local?: boolean 
             if (h > 0.5) ctx.fillRect(i * bw, rect.height - h, Math.max(1, bw - 1), h);
           }
         } else if (isImg) {
-          // At readable zoom a <video> overlay (compositor, native fps) shows the
-          // live feed in this strip's place — skip the grab-rate bitmap so the
-          // two previews don't double-draw. Zoomed out (overlay hidden) and for
-          // bitmap-only nodes (OCR/vision) the canvas draw is the preview.
-          if (k >= 0.5 && live.getMedia(id)) return;
+          // At readable zoom the HTML overlay shows visual nodes full-bleed:
+          // local sources via <video>, remote sources via the streamed ImageBitmap.
+          // Skip canvas fallback there so it doesn't look like a body-only stack.
+          if (k >= 0.5 && fullBleedVisual && (live.getMedia(id) || live.getImage(id))) return;
           const img = live.getImage(id);
           if (img) {
-            const s = Math.min(rect.width / img.width, availH / img.height);
+            const s = displayMode === "full-bleed" && fullBleedVisual
+              ? Math.max(rect.width / img.width, availH / img.height)
+              : Math.min(rect.width / img.width, availH / img.height);
             const w = img.width * s, h = img.height * s;
             ctx.drawImage(img, (rect.width - w) / 2, top + (availH - h) / 2, w, h);
+          } else if (t === "screen-share") {
+            const config = (graphNode?.data as any)?.config ?? {};
+            const pickState = config.screenPickState as string | undefined;
+            const pickError = (config.screenPickError as string | undefined) ?? "";
+            const needsFrontmostWindow = pickState === "error" && /invalid state/i.test(pickError);
+            const msg =
+              pickState === "opening"
+                ? "waiting for screen picker"
+                : pickState === "dismissed"
+                  ? "screen picker dismissed"
+                  : pickState === "error"
+                    ? needsFrontmostWindow ? "bring window to front and retry" : "screen picker failed"
+                    : "choose a screen";
+            ctx.font = "12px system-ui, sans-serif";
+            ctx.textAlign = "left";
+            ctx.textBaseline = "top";
+            ctx.fillStyle = pickState === "dismissed" || pickState === "error" ? "#f6ad55" : "#8a94a6";
+            const lines = wrapTextTailLines(ctx, msg, Math.max(1, rect.width), Math.max(1, Math.floor(availH / 15)));
+            const y = Math.max(top, rect.height - lines.length * 15);
+            lines.forEach((line, idx) => ctx.fillText(line, 0, y + idx * 15));
+          }
+          if (t === "paddle-ocr") {
+            const txt = live.getTexts(id)[0];
+            if (txt) {
+              const lineH = 15;
+              ctx.font = "12px system-ui, sans-serif";
+              ctx.textAlign = "left";
+              ctx.textBaseline = "top";
+              const maxW = Math.max(1, rect.width);
+              const maxLines = Math.max(1, Math.floor(Math.max(1, rect.height - top) / lineH));
+              const lines = wrapTextTailLines(ctx, txt, maxW, maxLines);
+              const y = Math.max(top, rect.height - lines.length * lineH);
+              ctx.fillStyle = "rgba(15, 23, 42, 0.72)";
+              ctx.fillRect(0, y, rect.width, rect.height - y);
+              ctx.fillStyle = "#e6e9ec";
+              lines.forEach((line, idx) => ctx.fillText(line, 0, y + idx * lineH));
+            } else {
+              const q = live.getQueue(id);
+              const msg = q.processing || (q.queued[0] ? `queued ${q.queued.length}` : "waiting for image");
+              ctx.font = "12px system-ui, sans-serif";
+              ctx.textAlign = "left";
+              ctx.textBaseline = "top";
+              ctx.fillStyle = "#8a94a6";
+              ctx.fillText(msg, 0, Math.max(top, rect.height - 15));
+            }
           }
         } else {
           const texts = live.getTexts(id);
@@ -1462,11 +2025,23 @@ function Editor({ initialRoom, local }: { initialRoom?: string; local?: boolean 
           // rgui nodes are dark (#2b3036); light text so transcripts are readable
           // (was #4a5568 — a light-theme leftover, invisible on the dark body).
           ctx.fillStyle = "#e6e9ec";
-          let y = top;
-          for (let i = 0; i < Math.min(texts.length, 2); i++) {
+          const pad = displayMode === "full-bleed" ? 0 : 6;
+          const maxW = Math.max(1, rect.width - pad * 2);
+          const bottom = rect.height - pad;
+          const maxLines = Math.max(1, Math.floor((bottom - (top + pad)) / 15));
+          const visible: { line: string; alpha: number }[] = [];
+          for (let i = 0; i < texts.length && visible.length < maxLines; i++) {
+            const room = maxLines - visible.length;
+            const lines = wrapTextTailLines(ctx, texts[i], maxW, room);
+            for (let j = lines.length - 1; j >= 0; j--) {
+              visible.unshift({ line: lines[j], alpha: i === 0 ? 1 : 0.55 });
+            }
+          }
+          let y = bottom - visible.length * 15;
+          for (const item of visible) {
             if (y + 14 > rect.height + 1) break;
-            ctx.globalAlpha = 1 - i * 0.45;
-            ctx.fillText(clipText(ctx, texts[i], rect.width), 0, y);
+            ctx.globalAlpha = item.alpha;
+            ctx.fillText(item.line, pad, y);
             y += 15;
           }
           ctx.globalAlpha = 1;
@@ -1480,6 +2055,14 @@ function Editor({ initialRoom, local }: { initialRoom?: string; local?: boolean 
       },
     };
   }, []);
+
+  const nodeBusy = useCallback((node: { id: string; type: NodeType }) => liveRef.current.getBusy(node.id), []);
+  const nodeRemote = useCallback((node: { id: string; type: NodeType }) => {
+    if (local) return false;
+    const n = currentGraph.nodes[node.id];
+    const owner = n ? nodeOwner(n, onlineDeviceIds) : null;
+    return !!owner && owner !== myDeviceId;
+  }, [local, currentGraph, onlineDeviceIds, myDeviceId]);
 
   // Screen-space run-status HUD, drawn natively by rgui on the canvas (bottom-left)
   // instead of in the HTML sink card: mic level + segment/recognition counts +
@@ -1639,9 +2222,20 @@ function Editor({ initialRoom, local }: { initialRoom?: string; local?: boolean 
         nodes: () => nodesRef.current,
         edges: () => edgesRef.current,
         live: liveRef.current,
+        debug: () => ({
+          myDeviceId,
+          present,
+          onlineDeviceIds,
+          peerStates,
+          mesh: meshRef.current?.debugState(),
+          preview: previewSyncRef.current?.debugState(),
+          transport: transportRef.current
+            ? { sent: transportRef.current.sent, recv: transportRef.current.recv, dropped: transportRef.current.dropped }
+            : null,
+        }),
       };
     }
-  }, [addNode, addTemplate, rguiHandlers]);
+  }, [addNode, addTemplate, rguiHandlers, myDeviceId, present, onlineDeviceIds, peerStates]);
 
   // Compact summary rgui renders when a node is too small for its config, or when
   // nodes merge into a pseudo-node. The host knows what each node means, so it
@@ -1662,7 +2256,7 @@ function Editor({ initialRoom, local }: { initialRoom?: string; local?: boolean 
         const IMG_TYPES: NodeType[] = ["camera", "screen-share", "paddle-ocr", "vision-model"];
         const imgIds = rgNodes.map((n) => n.id).filter((id) => { const t = vtOf(id); return !!t && IMG_TYPES.includes(t); });
         // signal-flow display order for text-bearing nodes
-        const TEXT_ORDER: NodeType[] = ["stt", "web-speech", "vosk", "model", "paddle-ocr", "translate", "text-diff", "sink"];
+        const TEXT_ORDER: NodeType[] = ["stt", "web-speech", "vosk", "paddle-ocr", "text-normalize", "text-diff", "text-filter", "text-aggregate", "llm-agent", "model", "translate", "browser-translate-api", "sink"];
         const textMembers = rgNodes
           .map((n) => ({ id: n.id as string, vt: vtOf(n.id) }))
           .filter((m): m is { id: string; vt: NodeType } => !!m.vt && TEXT_ORDER.includes(m.vt))
@@ -1741,8 +2335,8 @@ function Editor({ initialRoom, local }: { initialRoom?: string; local?: boolean 
       const cfg = ((n?.data as any)?.config ?? {}) as Record<string, any>;
       const rows: [string, string][] = [["on", deviceNameOf((n?.data as any)?.device ?? null)]];
       if (vt === "stt") rows.push(["model", String(cfg.model ?? "SenseVoice")]);
-      else if (vt === "translate") rows.push(["to", String(cfg.lang ?? "auto")]);
-      else if (vt === "vosk" || vt === "tts-model" || vt === "model") rows.push(["model", String(cfg.model ?? "")]);
+      else if (vt === "translate" || vt === "browser-translate-api") rows.push(["to", String(cfg.lang ?? "auto")]);
+      else if (vt === "vosk" || vt === "tts-model" || vt === "model" || vt === "llm-agent") rows.push(["model", String(cfg.model ?? "")]);
       else if (vt === "web-speech") rows.push(["lang", String(cfg.lang ?? "auto")]);
       else if (vt === "camera" || vt === "screen-share") rows.push(["fps", String(cfg.fps ?? DEFAULT_CAMERA_FPS)]);
       return { kind: "kv", rows };
@@ -1760,9 +2354,36 @@ function Editor({ initialRoom, local }: { initialRoom?: string; local?: boolean 
     recordsByNodeRef.current.delete(nodeId);
     setSinkRecs((prev) => prev.filter((r) => r.nodeId !== nodeId));
   }, []);
+  const clearVideoClips = useCallback((nodeId: string) => {
+    const clips = videoClipsByNodeRef.current.get(nodeId) ?? [];
+    videoClipsByNodeRef.current.delete(nodeId);
+    setTick((x) => x + 1);
+    if (videoClipsDB.available()) for (const clip of clips) videoClipsDB.delete(clip.id).catch(() => {});
+  }, []);
+  const spawnVideoClipNode = useCallback((recorderNodeId: string, clip: VideoClip) => {
+    const parent = nodesRef.current.find((n) => n.id === recorderNodeId);
+    const id = `video-clip-${Math.random().toString(36).slice(2, 8)}`;
+    const base = parent?.position ?? { x: 80, y: 80 };
+    const n: Node = {
+      id,
+      type: "voice",
+      position: snapWorld({ x: base.x + 360, y: base.y }),
+      selected: true,
+      data: {
+        voiceType: "video-clip",
+        device: myDeviceId,
+        config: { clipId: clip.id, generatedBy: recorderNodeId, title: `clip ${(clip.durationMs / 1000).toFixed(1)}s` },
+      },
+    };
+    const nextNodes = [...nodesRef.current.map((x) => ({ ...x, selected: false })), n];
+    nodesRef.current = nextNodes;
+    setNodes(nextNodes);
+    setSelected([id]);
+    broadcast(nextNodes, edgesRef.current);
+  }, [broadcast, myDeviceId, setNodes, snapWorld]);
   const ctx = useMemo(
-    () => ({ devices, myDeviceId, onAssign, onConfig, onDelete, getRecords, clearRecords, setFile, counts, live: liveRef.current, openNodeMenu, trackerState }),
-    [devices, myDeviceId, onAssign, onConfig, onDelete, getRecords, clearRecords, setFile, counts, openNodeMenu, trackerState],
+    () => ({ devices, myDeviceId, onAssign, onConfig, onDelete, getRecords, getVideoClips, getVideoClip, spawnVideoClipNode, clearRecords, clearVideoClips, setFile, counts, live: liveRef.current, openNodeMenu, trackerState }),
+    [devices, myDeviceId, onAssign, onConfig, onDelete, getRecords, getVideoClips, getVideoClip, spawnVideoClipNode, clearRecords, clearVideoClips, setFile, counts, openNodeMenu, trackerState],
   );
 
   if (!joined) {
@@ -1796,7 +2417,7 @@ function Editor({ initialRoom, local }: { initialRoom?: string; local?: boolean 
       <div style={{ position: "relative", height: "100vh", overflow: "hidden", fontFamily: "system-ui, sans-serif" }}>
         {/* full-bleed graph canvas — the whole background */}
         <div style={{ position: "absolute", inset: 0 }}>
-          <RguiGraphView graph={currentGraph} deviceName={deviceNameOf} handlers={rguiHandlers} selection={selected} edgeMeta={edgeMeta} nodeBody={nodeBody} live={liveRef.current} panels={allPanels} onPanelMove={onPanelMove} renderNodeOverlay={renderNodeOverlay} summarize={summarize} hud={{ title: "otoji", subtitle: local ? "local · this device only" : `room ${room} · ${status} · ${role} · ${devices.length} device(s)` }} hudStatus={hudStatus} apiRef={rguiApiRef} />
+          <RguiGraphView graph={currentGraph} federatedGraphs={federatedGraphs} deviceName={deviceNameOf} handlers={rguiHandlers} selection={selected} edgeMeta={edgeMeta} nodeBody={nodeBody} nodeBusy={nodeBusy} nodeRemote={nodeRemote} live={liveRef.current} panels={allPanels} onPanelMove={onPanelMove} renderNodeOverlay={renderNodeOverlay} summarize={summarize} hud={{ title: "otoji", subtitle: local ? "local · this device only" : `room ${room} · ${status} · ${role} · ${devices.length} device(s)` }} hudStatus={hudStatus} apiRef={rguiApiRef} />
         </div>
 
         {/* The toolbar is an rgui canvas panel now (see toolbarPanel): the old
@@ -1839,13 +2460,31 @@ function Editor({ initialRoom, local }: { initialRoom?: string; local?: boolean 
           />
         )}
 
+        {smartLinkMenu && (
+          <SmartLinkMenu
+            x={smartLinkMenu.x}
+            y={smartLinkMenu.y}
+            options={smartLinkMenu.options}
+            placeholder={smartLinkMenu.placeholder}
+            onPick={applySmartLink}
+            onClose={() => setSmartLinkMenu(null)}
+          />
+        )}
+
         {nodeMenu && (
           <NodeMenu
             x={nodeMenu.x}
             y={nodeMenu.y}
+            nodeType={(nodesRef.current.find((n) => n.id === nodeMenu.nodeId)?.data as any)?.voiceType as NodeType | undefined}
+            displayMode={displayModeOf((nodesRef.current.find((n) => n.id === nodeMenu.nodeId)?.data as any)?.config)}
+            loopEnabled={!!((nodesRef.current.find((n) => n.id === nodeMenu.nodeId)?.data as any)?.config?.loop)}
+            advancedRender={!!((nodesRef.current.find((n) => n.id === nodeMenu.nodeId)?.data as any)?.config?.advancedRender)}
             onDuplicate={() => { duplicateNode(nodeMenu.nodeId); setNodeMenu(null); }}
             onReplace={(type) => { replaceNode(nodeMenu.nodeId, type); setNodeMenu(null); }}
-            onToggleVis={() => { togglePreviewShown(nodeMenu.nodeId, ownsNodeHere(nodeMenu.nodeId)); setNodeMenu(null); }}
+            onDisplayMode={(mode) => { onConfig(nodeMenu.nodeId, { displayMode: mode }); setNodeMenu(null); }}
+            onToggleLoop={() => { onConfig(nodeMenu.nodeId, { loop: !((nodesRef.current.find((n) => n.id === nodeMenu.nodeId)?.data as any)?.config?.loop) }); setNodeMenu(null); }}
+            onToggleAdvancedRender={() => { onConfig(nodeMenu.nodeId, { advancedRender: !((nodesRef.current.find((n) => n.id === nodeMenu.nodeId)?.data as any)?.config?.advancedRender) }); setNodeMenu(null); }}
+            onToggleVis={() => { togglePreviewShown(nodeMenu.nodeId, true); setNodeMenu(null); }}
             onRemove={() => { onDelete(nodeMenu.nodeId); setNodeMenu(null); }}
             onClose={() => setNodeMenu(null)}
           />
@@ -1879,12 +2518,16 @@ function ConnectMenu({
     [q, options],
   );
   useEffect(() => { setActive(0); }, [q]);
-  const left = Math.min(x, (typeof window !== "undefined" ? window.innerWidth : x + 240) - 244);
-  const top = Math.min(y, (typeof window !== "undefined" ? window.innerHeight : y + 240) - 240);
+  const vw = typeof window !== "undefined" ? window.innerWidth : 960;
+  const vh = typeof window !== "undefined" ? window.innerHeight : 720;
+  const menuW = Math.max(320, Math.min(560, Math.floor(vw / 3)));
+  const menuH = Math.max(260, Math.min(520, Math.floor(vh / 3)));
+  const left = Math.max(8, Math.min(x, vw - menuW - 8));
+  const top = Math.max(8, Math.min(y, vh - menuH - 8));
   return (
     <div
       onMouseDown={(e) => e.stopPropagation()}
-      style={{ ...CARD, position: "fixed", left, top, width: 232, padding: 6, zIndex: 30 }}
+      style={{ ...CARD, position: "fixed", left, top, width: menuW, padding: 8, zIndex: 30 }}
     >
       <input
         autoFocus
@@ -1900,7 +2543,7 @@ function ConnectMenu({
         placeholder={placeholder}
         style={{ width: "100%", boxSizing: "border-box", fontSize: 13, padding: "5px 7px", border: "1px solid #cbd5e0", borderRadius: 6, outline: "none" }}
       />
-      <div style={{ marginTop: 4, maxHeight: 200, overflow: "auto" }}>
+      <div style={{ marginTop: 6, maxHeight: menuH - 52, overflow: "auto" }}>
         {filtered.length === 0 ? (
           <div style={{ fontSize: 12, color: "#a0aec0", padding: "6px 7px" }}>no compatible node</div>
         ) : (
@@ -1909,9 +2552,74 @@ function ConnectMenu({
               key={o.type}
               onMouseEnter={() => setActive(idx)}
               onMouseDown={(e) => { e.preventDefault(); onPick(o.type); }}
-              style={{ fontSize: 12, padding: "5px 7px", borderRadius: 5, cursor: "pointer", background: idx === active ? "#ebf4ff" : "transparent" }}
+              style={{ fontSize: 13, padding: "7px 8px", borderRadius: 5, cursor: "pointer", background: idx === active ? "#ebf4ff" : "transparent" }}
             >
               {o.label}
+            </div>
+          ))
+        )}
+      </div>
+    </div>
+  );
+}
+
+function SmartLinkMenu({
+  x,
+  y,
+  options,
+  placeholder = "smart-link…",
+  onPick,
+  onClose,
+}: {
+  x: number;
+  y: number;
+  options: SmartLinkOption[];
+  placeholder?: string;
+  onPick: (opt: SmartLinkOption) => void;
+  onClose: () => void;
+}) {
+  const [q, setQ] = useState("");
+  const [active, setActive] = useState(0);
+  const filtered = useMemo(() => {
+    const s = q.trim().toLowerCase();
+    return options.filter((o) => !s || o.label.toLowerCase().includes(s) || o.detail.toLowerCase().includes(s));
+  }, [q, options]);
+  useEffect(() => { setActive(0); }, [q]);
+  const vw = typeof window !== "undefined" ? window.innerWidth : 960;
+  const vh = typeof window !== "undefined" ? window.innerHeight : 720;
+  const menuW = Math.max(340, Math.min(620, Math.floor(vw / 3)));
+  const menuH = Math.max(280, Math.min(560, Math.floor(vh / 3)));
+  const left = Math.max(8, Math.min(x, vw - menuW - 8));
+  const top = Math.max(8, Math.min(y, vh - menuH - 8));
+  return (
+    <div onMouseDown={(e) => e.stopPropagation()} style={{ ...CARD, position: "fixed", left, top, width: menuW, padding: 8, zIndex: 31 }}>
+      <input
+        autoFocus
+        value={q}
+        onChange={(e) => setQ(e.target.value)}
+        onBlur={() => setTimeout(onClose, 120)}
+        onKeyDown={(e) => {
+          if (e.key === "ArrowDown") { e.preventDefault(); setActive((i) => Math.min(filtered.length - 1, i + 1)); }
+          else if (e.key === "ArrowUp") { e.preventDefault(); setActive((i) => Math.max(0, i - 1)); }
+          else if (e.key === "Enter") { e.preventDefault(); const sel = filtered[active]; if (sel) onPick(sel); }
+          else if (e.key === "Escape") { e.preventDefault(); onClose(); }
+        }}
+        placeholder={placeholder}
+        style={{ width: "100%", boxSizing: "border-box", fontSize: 13, padding: "5px 7px", border: "1px solid #cbd5e0", borderRadius: 6, outline: "none" }}
+      />
+      <div style={{ marginTop: 6, maxHeight: menuH - 52, overflow: "auto" }}>
+        {filtered.length === 0 ? (
+          <div style={{ fontSize: 12, color: "#a0aec0", padding: "6px 7px" }}>no compatible link</div>
+        ) : (
+          filtered.map((o, idx) => (
+            <div
+              key={o.id}
+              onMouseEnter={() => setActive(idx)}
+              onMouseDown={(e) => { e.preventDefault(); onPick(o); }}
+              style={{ padding: "8px 9px", borderRadius: 5, cursor: "pointer", background: idx === active ? "#ebf4ff" : "transparent" }}
+            >
+              <div style={{ fontSize: 12, color: "#1a202c", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{o.label}</div>
+              <div style={{ fontSize: 10, color: "#718096", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{o.detail}</div>
             </div>
           ))
         )}
@@ -1923,22 +2631,39 @@ function ConnectMenu({
 function NodeMenu({
   x,
   y,
+  nodeType,
+  displayMode,
+  loopEnabled,
+  advancedRender,
   onDuplicate,
   onReplace,
+  onDisplayMode,
+  onToggleLoop,
+  onToggleAdvancedRender,
   onToggleVis,
   onRemove,
   onClose,
 }: {
   x: number;
   y: number;
+  nodeType?: NodeType;
+  displayMode: DisplayMode;
+  loopEnabled?: boolean;
+  advancedRender?: boolean;
   onDuplicate: () => void;
   onReplace: (t: NodeType) => void;
+  onDisplayMode: (mode: DisplayMode) => void;
+  onToggleLoop?: () => void;
+  onToggleAdvancedRender?: () => void;
   onToggleVis: () => void;
   onRemove: () => void;
   onClose: () => void;
 }) {
-  const [mode, setMode] = useState<"actions" | "replace">("actions");
+  const [mode, setMode] = useState<"actions" | "replace" | "display">("actions");
   const [hover, setHover] = useState<string>("");
+  const canDisplayMode = !!nodeType && (VISUAL_DISPLAY_NODES.has(nodeType) || TEXT_DISPLAY_NODES.has(nodeType));
+  const canLoop = nodeType === "video-clip";
+  const canAdvancedRender = nodeType === "url";
   const left = Math.min(x, (typeof window !== "undefined" ? window.innerWidth : x + 200) - 200);
   const top = Math.min(y, (typeof window !== "undefined" ? window.innerHeight : y + 280) - 280);
   const Item = ({ k, label, onClick, color }: { k: string; label: string; onClick: () => void; color?: string }) => (
@@ -1958,14 +2683,24 @@ function NodeMenu({
           <>
             <Item k="dup" label="⧉ Duplicate" onClick={onDuplicate} />
             <Item k="rep" label="⇄ Replace…" onClick={() => setMode("replace")} />
+            {canDisplayMode && <Item k="display" label={`▣ Display: ${displayModeLabel(displayMode)}…`} onClick={() => setMode("display")} />}
+            {canLoop && onToggleLoop && <Item k="loop" label={`${loopEnabled ? "✓ " : ""}↻ Loop output`} onClick={onToggleLoop} />}
+            {canAdvancedRender && onToggleAdvancedRender && <Item k="adv" label={`${advancedRender ? "✓ " : ""}Advanced render`} onClick={onToggleAdvancedRender} />}
             <Item k="vis" label="👁 Toggle preview" onClick={onToggleVis} />
             <Item k="rm" label="✕ Remove" onClick={onRemove} color="#e53e3e" />
           </>
-        ) : (
+        ) : mode === "replace" ? (
           <div style={{ maxHeight: 260, overflow: "auto" }}>
             <div style={{ padding: "4px 10px", fontSize: 11, color: "#a0aec0" }}>replace with…</div>
             {(Object.keys(NODE_SPECS) as NodeType[]).map((t) => (
               <Item key={t} k={t} label={NODE_SPECS[t].label} onClick={() => onReplace(t)} />
+            ))}
+          </div>
+        ) : (
+          <div style={{ maxHeight: 260, overflow: "auto" }}>
+            <div style={{ padding: "4px 10px", fontSize: 11, color: "#a0aec0" }}>display mode</div>
+            {DISPLAY_MODES.map((m) => (
+              <Item key={m} k={m} label={`${m === displayMode ? "✓ " : ""}${displayModeLabel(m)}`} onClick={() => onDisplayMode(m)} />
             ))}
           </div>
         )}
@@ -1974,6 +2709,12 @@ function NodeMenu({
   );
 }
 
-export function GraphEditor({ initialRoom, local }: { initialRoom?: string; local?: boolean }) {
-  return <Editor initialRoom={initialRoom} local={local} />;
+function displayModeLabel(mode: DisplayMode): string {
+  if (mode === "full-bleed") return "Full bleed";
+  if (mode === "fit") return "Fit";
+  return "Stack";
+}
+
+export function GraphEditor({ initialRoom, local, federationDemo }: { initialRoom?: string; local?: boolean; federationDemo?: boolean }) {
+  return <Editor initialRoom={initialRoom} local={local} federationDemo={federationDemo} />;
 }

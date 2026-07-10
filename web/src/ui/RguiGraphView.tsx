@@ -2,8 +2,9 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import type { VoiceGraph } from "../graph/model";
 import { voiceGraphToRgui, type RguiMeta } from "../graph/rgui-adapter";
+import { federatedGraphToRguiMirror, type FederatedGraphEnvelope } from "../graph/federation";
 import type { LiveStore } from "../graph/live-store";
-import { snap, gridLevels, type PortRef, type Panel, type SummarizeFn } from "@snomiao/rgui";
+import { snap, gridLevels, type PortRef, type Panel, type SummarizeFn, type ViewTransform } from "@snomiao/rgui";
 
 // Primary graph renderer: draws + edits the voice graph with @snomiao/rgui
 // (readable-grid, semantic-zoom LOD, Canvas 2D). rgui owns pan/zoom, grid-snap
@@ -15,7 +16,7 @@ export interface RguiHandlers {
   onNodeMoveEnd?: (nodeId: string, pos: { x: number; y: number }) => void;
   /** a corner-grip resize/rescale ended → persist the grid-snapped box.
    *  `scale` is the content scale (moves only in the shift-drag rescale mode) */
-  onNodeResizeEnd?: (nodeId: string, size: { w: number; h: number; scale: number }) => void;
+  onNodeResizeEnd?: (nodeId: string, size: { w: number; h: number; scale: number; x?: number; y?: number }) => void;
   /** gate a port→port drag (otoji type-check) */
   isValidConnection?: (from: PortRef, to: PortRef) => boolean;
   /** a valid port→port drag completed → create the edge */
@@ -34,6 +35,11 @@ export interface RguiHandlers {
   onEdgeContextMenu?: (edge: RgEdgeRef, screen: { x: number; y: number }) => void;
   /** a port drag ended on empty canvas → open the create-and-wire omnibox */
   onConnectEnd?: (from: PortRef, at: { screen: { x: number; y: number }; world: { x: number; y: number } }) => void;
+  /** right-button drag from a node body → host smart-link resolver */
+  onSmartLinkEnd?: (
+    fromNodeId: string,
+    at: { screen: { x: number; y: number }; world: { x: number; y: number }; targetNodeId?: string },
+  ) => void;
 }
 
 /** rgui edge endpoints (subset of rgui's Edge) */
@@ -42,7 +48,10 @@ export type RgEdgeRef = { from: { node: string; port: string }; to: { node: stri
 /** imperative viewport controls exposed to the host */
 export interface RguiApi {
   fitView: (paddingPx?: number) => void;
+  fitNode: (nodeId: string, paddingPx?: number) => void;
   zoomBy: (factor: number) => void;
+  getView: () => ViewTransform;
+  setView: (view: ViewTransform) => void;
   /** snap a world position to the current readable grid (for tidy drops) */
   snapWorld: (pos: { x: number; y: number }) => { x: number; y: number };
   /** snap ALL nodes to the main grid (tidy a freshly generated/expanded graph) */
@@ -55,11 +64,14 @@ export interface RguiApi {
 
 export function RguiGraphView({
   graph,
+  federatedGraphs,
   deviceName,
   handlers,
   selection,
   edgeMeta,
   nodeBody,
+  nodeBusy,
+  nodeRemote,
   live,
   panels,
   onPanelMove,
@@ -70,6 +82,8 @@ export function RguiGraphView({
   apiRef,
 }: {
   graph: VoiceGraph;
+  /** Read-only remote/federated graphs rendered beside the authoritative Otoji graph. */
+  federatedGraphs?: FederatedGraphEnvelope[];
   deviceName?: (deviceId: string | null) => string;
   handlers?: RguiHandlers;
   /** host-owned selection to reflect into the canvas (e.g. select-all) */
@@ -78,6 +92,10 @@ export function RguiGraphView({
   edgeMeta?: RguiMeta["edgeMeta"];
   /** per-node live-body draw hook (waveform / text / image / busy) */
   nodeBody?: RguiMeta["nodeBody"];
+  /** per-node processing state; used for animated node chrome */
+  nodeBusy?: RguiMeta["nodeBusy"];
+  /** per-node remote/friend state; used for static node chrome */
+  nodeRemote?: RguiMeta["nodeRemote"];
   /** live store — subscribe to redraw the canvas when node previews update */
   live?: LiveStore;
   /** canvas-native palettes (node palette, templates) */
@@ -116,7 +134,13 @@ export function RguiGraphView({
   };
 
   const rgGraph = useMemo(() => {
-    const g = voiceGraphToRgui(graph, { deviceName, edgeMeta, nodeBody });
+    const g = voiceGraphToRgui(graph, { deviceName, edgeMeta, nodeBody, nodeBusy, nodeRemote });
+    const localNodeIds = new Set(g.nodes.map((n) => n.id));
+    for (const fg of federatedGraphs ?? []) {
+      const mirror = federatedGraphToRguiMirror(fg, { skipNodeIds: localNodeIds });
+      g.nodes.push(...mirror.nodes);
+      g.edges.push(...mirror.edges);
+    }
     if (renderNodeOverlay) {
       // scale:"zoom" — controls scale with view.k like part of the node (laid out
       // for k=1) and hide below minScale when zoomed out too small.
@@ -131,8 +155,9 @@ export function RguiGraphView({
       // own translucent title bar, and rgui forwards background presses to the
       // canvas so drag/select still work everywhere on the node.
       for (const n of g.nodes) {
+        if (n.overlay) continue; // federated mirrors may carry their own live-embed overlay
         const vt = graph.nodes[n.id]?.type;
-        const full = vt === "textarea" || vt === "screen-share";
+        const full = vt === "textarea" || vt === "url" || vt === "screen-share" || vt === "camera" || vt === "vision-model";
         const host = hostFor(n.id);
         host.style.height = full ? "100%" : "";
         n.overlay = {
@@ -149,7 +174,7 @@ export function RguiGraphView({
       }
     }
     return g;
-  }, [graph, deviceName, edgeMeta, nodeBody, renderNodeOverlay]);
+  }, [graph, federatedGraphs, deviceName, edgeMeta, nodeBody, nodeBusy, nodeRemote, renderNodeOverlay]);
   const nodeIdsKey = useMemo(() => rgGraph.nodes.map((n) => n.id).join(","), [rgGraph]);
 
   // Drop hosts for removed nodes (rgui detaches their overlays when the node
@@ -256,6 +281,32 @@ export function RguiGraphView({
     return () => unsubs.forEach((u) => u());
   }, [live, nodeIdsKey]);
 
+  // Processing outlines pulse while a node is busy. Only animate during active
+  // work; normal preview updates still repaint through the subscriptions above.
+  useEffect(() => {
+    if (!live) return;
+    const ids = nodeIdsKey ? nodeIdsKey.split(",") : [];
+    let raf = 0;
+    const anyBusy = () => ids.some((id) => live.getBusy(id));
+    const frame = () => {
+      if (!anyBusy()) {
+        raf = 0;
+        return;
+      }
+      viewerRef.current?.invalidate();
+      raf = requestAnimationFrame(frame);
+    };
+    const kick = () => {
+      if (!raf && anyBusy()) raf = requestAnimationFrame(frame);
+    };
+    const unsubs = ids.map((id) => live.subscribe(id, kick));
+    kick();
+    return () => {
+      if (raf) cancelAnimationFrame(raf);
+      unsubs.forEach((u) => u());
+    };
+  }, [live, nodeIdsKey]);
+
   // Reflect host-owned selection into the canvas (e.g. Ctrl/Cmd+A), skipping when
   // it already matches to avoid a setSelection→onSelectionChange feedback loop.
   useEffect(() => {
@@ -342,7 +393,7 @@ async function createViewer(
     onPanelMove: (panel: Panel, anchor: { x: number; y: number }) => panelMoveRef.current?.(panel.id, anchor),
     summarize: (nodes: any, info: any) => sumRef.current?.(nodes, info) ?? null,
     onNodeMoveEnd: (id, pos) => hRef.current?.onNodeMoveEnd?.(id, pos),
-    onNodeResizeEnd: (id: string, size: { w: number; h: number; scale: number }) =>
+    onNodeResizeEnd: (id: string, size: { w: number; h: number; scale: number; x?: number; y?: number }) =>
       hRef.current?.onNodeResizeEnd?.(id, size),
     isValidConnection: (from, to) => hRef.current?.isValidConnection?.(from, to) ?? true,
     onConnect: (from, to) => hRef.current?.onConnect?.(from, to),
@@ -352,6 +403,7 @@ async function createViewer(
     onEdgeClick: (edge, screen) => hRef.current?.onEdgeClick?.(edge, screen),
     onEdgeContextMenu: (edge, screen) => hRef.current?.onEdgeContextMenu?.(edge, screen),
     onConnectEnd: (from, at) => hRef.current?.onConnectEnd?.(from, at),
+    onSmartLinkEnd: (fromNodeId, at) => hRef.current?.onSmartLinkEnd?.(fromNodeId, at),
     // Screen-space chrome: rgui composites the title HUD (and the host status
     // HUD) last, on top of the graph, every frame (canvas keeps the last frame
     // while idle).
@@ -410,6 +462,7 @@ function drawHud(canvas: HTMLCanvasElement, hud?: { title: string; subtitle: str
 function makeApi(viewer: Awaited<ReturnType<typeof createViewer>>, canvas: HTMLCanvasElement): RguiApi {
   return {
     fitView: (paddingPx = 48) => viewer.fitView(paddingPx),
+    fitNode: (nodeId, paddingPx = 16) => viewer.fitNode(nodeId, paddingPx),
     zoomBy: (factor) => {
       const v = viewer.view;
       const cx = canvas.clientWidth / 2;
@@ -418,6 +471,8 @@ function makeApi(viewer: Awaited<ReturnType<typeof createViewer>>, canvas: HTMLC
       // keep the world point under the viewport center fixed
       viewer.setView({ k, x: cx - ((cx - v.x) / v.k) * k, y: cy - ((cy - v.y) / v.k) * k });
     },
+    getView: () => ({ ...viewer.view }),
+    setView: (view) => viewer.setView(view),
     snapWorld: (pos) => {
       // Snap to the minor readable-grid step (same step rgui snaps node drags to),
       // so dropped nodes/workflows land aligned to the visible grid.

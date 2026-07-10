@@ -4,15 +4,15 @@
 // future bandwidth optimization; it decodes to 48 kHz and would need a resample.)
 
 import { bytesToBase64, base64ToBytes } from "../lib/base64";
-import type { SegmentMsg, TranscriptMsg } from "./runtime";
+import type { ControlMsg, ImageMsg, SegmentMsg, TranscriptMsg } from "./runtime";
 
 export interface EdgeFrame {
   kind: "edge";
   target: string; // node id
   port: string; // target input handle
-  mtype: "segment" | "transcript";
-  sampleRate: number;
-  durationMs: number;
+  mtype: "segment" | "transcript" | "image" | "control";
+  sampleRate?: number;
+  durationMs?: number;
   offsetMs?: number; // segment offset in source timeline
   text?: string;
   lang?: string; // detected source language (transcript)
@@ -20,8 +20,18 @@ export interface EdgeFrame {
   event?: string; // AED tag (transcript)
   tStartMs?: number; // CTC speech start (transcript, absolute)
   tEndMs?: number; // CTC speech end (transcript, absolute)
-  samplesB64: string; // Float32 PCM bytes, base64
+  samplesB64?: string; // Float32 PCM bytes, base64
+  imageDataUrl?: string; // compressed image frame
+  width?: number;
+  height?: number;
+  ts?: number;
+  pulse?: boolean;
 }
+
+export type SegmentFrame = EdgeFrame & { mtype: "segment"; sampleRate: number; durationMs: number; samplesB64: string };
+export type TranscriptFrame = EdgeFrame & { mtype: "transcript"; sampleRate: number; durationMs: number; samplesB64: string; text?: string };
+export type ImageFrame = EdgeFrame & { mtype: "image"; imageDataUrl: string; width: number; height: number; ts: number };
+export type ControlFrame = EdgeFrame & { mtype: "control"; ts: number };
 
 function encodeSamples(samples: Float32Array): string {
   return bytesToBase64(new Uint8Array(samples.buffer, samples.byteOffset, samples.byteLength));
@@ -32,7 +42,7 @@ function decodeSamples(b64: string): Float32Array {
   return new Float32Array(bytes.buffer, bytes.byteOffset, Math.floor(bytes.byteLength / 4));
 }
 
-export function buildSegmentFrame(target: string, port: string, seg: SegmentMsg): EdgeFrame {
+export function buildSegmentFrame(target: string, port: string, seg: SegmentMsg): SegmentFrame {
   return {
     kind: "edge",
     target,
@@ -45,7 +55,7 @@ export function buildSegmentFrame(target: string, port: string, seg: SegmentMsg)
   };
 }
 
-export function buildTranscriptFrame(target: string, port: string, tr: TranscriptMsg): EdgeFrame {
+export function buildTranscriptFrame(target: string, port: string, tr: TranscriptMsg): TranscriptFrame {
   return {
     kind: "edge",
     target,
@@ -64,9 +74,48 @@ export function buildTranscriptFrame(target: string, port: string, tr: Transcrip
   };
 }
 
-export function frameToMessage(f: EdgeFrame): SegmentMsg | TranscriptMsg {
-  const samples = decodeSamples(f.samplesB64);
-  const seg: SegmentMsg = { samples, sampleRate: f.sampleRate, durationMs: f.durationMs, offsetMs: f.offsetMs };
+export async function buildImageFrame(target: string, port: string, img: ImageMsg): Promise<ImageFrame> {
+  const canvas = new OffscreenCanvas(img.width, img.height);
+  const ctx = canvas.getContext("2d");
+  if (!ctx) throw new Error("cannot encode image frame");
+  ctx.drawImage(img.bitmap, 0, 0, img.width, img.height);
+  const blob = await canvas.convertToBlob({ type: "image/jpeg", quality: 0.72 });
+  const imageDataUrl = await new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result ?? ""));
+    reader.onerror = () => reject(reader.error ?? new Error("image encode failed"));
+    reader.readAsDataURL(blob);
+  });
+  return { kind: "edge", target, port, mtype: "image", width: img.width, height: img.height, ts: img.ts, imageDataUrl };
+}
+
+export function buildControlFrame(target: string, port: string, ctl: ControlMsg): ControlFrame {
+  return { kind: "edge", target, port, mtype: "control", pulse: ctl.pulse, ts: ctl.ts };
+}
+
+async function dataUrlToImageBitmap(dataUrl: string): Promise<ImageBitmap> {
+  const res = await fetch(dataUrl);
+  const blob = await res.blob();
+  return createImageBitmap(blob);
+}
+
+export function frameToMessage(f: SegmentFrame): SegmentMsg;
+export function frameToMessage(f: TranscriptFrame): TranscriptMsg;
+export function frameToMessage(f: ControlFrame): ControlMsg;
+export function frameToMessage(f: ImageFrame): Promise<ImageMsg>;
+export function frameToMessage(f: EdgeFrame): SegmentMsg | TranscriptMsg | ControlMsg | Promise<ImageMsg>;
+export function frameToMessage(f: EdgeFrame): SegmentMsg | TranscriptMsg | ControlMsg | Promise<ImageMsg> {
+  if (f.mtype === "image") {
+    return dataUrlToImageBitmap(f.imageDataUrl ?? "").then((bitmap) => ({
+      bitmap,
+      width: f.width ?? bitmap.width,
+      height: f.height ?? bitmap.height,
+      ts: f.ts ?? Date.now(),
+    }));
+  }
+  if (f.mtype === "control") return { pulse: f.pulse, ts: f.ts ?? Date.now() };
+  const samples = decodeSamples(f.samplesB64 ?? "");
+  const seg: SegmentMsg = { samples, sampleRate: f.sampleRate ?? 16000, durationMs: f.durationMs ?? 0, offsetMs: f.offsetMs };
   if (f.mtype === "transcript")
     return { text: f.text ?? "", audio: seg, lang: f.lang, emotion: f.emotion, event: f.event, tStartMs: f.tStartMs, tEndMs: f.tEndMs };
   return seg;

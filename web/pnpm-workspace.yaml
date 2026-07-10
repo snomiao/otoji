@@ -1,9 +1,0 @@
-# Approve build scripts for these deps so pnpm v11 doesn't emit
-# ERR_PNPM_IGNORED_BUILDS (and stop auto-recreating a placeholder stub).
-allowBuilds:
-  esbuild: true
-  protobufjs: true
-  # wrangler pulls in workerd at deploy time (wrangler-action runs `pnpm add
-  # wrangler`); without this, that install aborts with ERR_PNPM_IGNORED_BUILDS
-  # and deploy-web fails before it can publish.
-  workerd: true

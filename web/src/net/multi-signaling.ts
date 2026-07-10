@@ -192,6 +192,9 @@ export class MultiSignalingClient implements Signaling {
   patchGraph(graph: unknown): void {
     for (const c of this.conns.values()) c.client.patchGraph(graph);
   }
+  publishFederatedGraph(env: unknown): void {
+    for (const c of this.conns.values()) c.client.publishFederatedGraph(env);
+  }
   getGraph(): void {
     this.conns.values().next().value?.client.getGraph();
   }

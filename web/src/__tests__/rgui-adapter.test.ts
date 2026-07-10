@@ -64,9 +64,9 @@ describe("voiceGraphToRgui", () => {
     expect(byId["m"].w).toBe(320);
     expect(byId["m"].h).toBe(180);
     expect(byId["m"].scale).toBe(2);
-    // untouched nodes keep the default box: no h/scale keys at all
-    expect(byId["s"].w).toBe(200);
-    expect("h" in byId["s"]).toBe(false);
+    // untouched text-preview nodes get the readable preview default box
+    expect(byId["s"].w).toBe(260);
+    expect(byId["s"].h).toBe(150);
     expect("scale" in byId["s"]).toBe(false);
   });
 

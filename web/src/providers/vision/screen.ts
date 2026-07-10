@@ -38,6 +38,15 @@ export function releaseScreenShares(keep: Iterable<string> = []): void {
   }
 }
 
+/** Stop and forget ONE node's cached display stream (forces a fresh picker on
+ *  the next start) without touching other nodes' captures. */
+export function releaseScreenShare(key: string): void {
+  const stream = cachedStreams.get(key);
+  if (!stream) return;
+  stream.getTracks().forEach((t) => t.stop());
+  cachedStreams.delete(key);
+}
+
 export async function startScreenShare(opts: ScreenOpts): Promise<ScreenHandle> {
   let stream = opts.cacheKey ? cachedStreams.get(opts.cacheKey) : undefined;
   // A cached stream is reusable only while its video track is live (the user may

@@ -4,10 +4,8 @@
 // Each port type declares an `ownership` saying whether its signal can be
 // DUPLICATED (serialized onto a wire: copy/clone) or only ALIASED in-process
 // (share) or neither (move). Cross-device delivery IS duplication, so edges
-// carrying a share/move signal cannot cross a device boundary — the runtime
-// already skips them at emit time (runtime.ts emit(): "no cross-device wire
-// format"); `illegalCrossDeviceEdges` surfaces the same fact at EDIT time so
-// the editor can flag the edge while the user is still wiring/assigning.
+// carrying a share/move signal cannot cross a device boundary; all built-in
+// port types currently have a wire format.
 //
 // Types mirror rgui's signal module. Once rgui 4fb6cdf reaches main and the
 // submodule is bumped, swap isDuplicable/isAliasable for the rgui exports —
@@ -25,10 +23,12 @@ export const SIGNAL: Record<PortType, { measure: Measure; ownership: Ownership }
   transcript: { measure: "extensive", ownership: "copy" },
   // PCM is duplicable but costly: remote fan-out = N serializations + N sends.
   segment: { measure: "extensive", ownership: "clone" },
-  // A frame handle (canvas/bitmap) is shared in-process, never serialized.
-  image: { measure: "intensive", ownership: "share" },
-  // Feedback pulses target a live in-process producer (camera pacing).
-  control: { measure: "intensive", ownership: "share" },
+  // ImageBitmap handles are cloned by encoding the frame for transport.
+  image: { measure: "intensive", ownership: "clone" },
+  // Feedback pulses are tiny JSON messages and can cross device boundaries.
+  control: { measure: "intensive", ownership: "copy" },
+  // Environment links are metadata/capability references, not media payloads.
+  environment: { measure: "intensive", ownership: "copy" },
 };
 
 /** Can the signal be turned into a wire frame? (copy/clone) */

@@ -7,9 +7,11 @@
 //! ```rust,no_run
 //! use otoji::session::ListenSession;
 //!
-//! let mut session = ListenSession::new(Default::default())?;
+//! fn main() -> anyhow::Result<()> {
+//! let session = ListenSession::new(Default::default())?;
 //! // Push 16kHz mono f32 audio chunks:
-//! session.push(&samples);
+//! let samples = vec![0.0_f32; 1600];
+//! session.push(&samples)?;
 //! // Collect events:
 //! for event in session.drain_events() {
 //!     match event {
@@ -19,7 +21,9 @@
 //!     }
 //! }
 //! // On end of audio:
-//! session.flush();
+//! let _events = session.finish();
+//! Ok(())
+//! }
 //! ```
 
 use crate::asr::sensevoice::{SenseVoice, SenseVoiceConfig};

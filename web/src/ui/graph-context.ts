@@ -1,6 +1,7 @@
 import { createContext } from "react";
 import type { DeviceOpt } from "./device-opt";
 import type { Recording } from "./RecordingPlayer";
+import type { VideoClip } from "../lib/video-clips-db";
 import { LiveStore } from "../graph/live-store";
 
 export interface GraphCtx {
@@ -14,8 +15,16 @@ export interface GraphCtx {
   onDelete: (nodeId: string) => void;
   /** Records collected at a sink/output node (oldest first), for file export. */
   getRecords: (nodeId: string) => Recording[];
+  /** Video clips collected at a video-recorder node (oldest first). */
+  getVideoClips: (nodeId: string) => VideoClip[];
+  /** Lookup one stored video clip by id. */
+  getVideoClip: (clipId: string | undefined) => VideoClip | undefined;
+  /** Spawn a source node from a stored clip. */
+  spawnVideoClipNode?: (recorderNodeId: string, clip: VideoClip) => void;
   /** Drop the records collected at one node (the sink inspector's Clear). */
   clearRecords?: (nodeId: string) => void;
+  /** Drop video clips collected at one node. */
+  clearVideoClips?: (nodeId: string) => void;
   /** Associate a local file with a file-source node (audio decoded at runtime). */
   setFile: (nodeId: string, file: File) => void;
   /** Stored-data count per node id (badge), e.g. sink transcript/recording count. */
@@ -41,6 +50,8 @@ export const GraphContext = createContext<GraphCtx>({
   onConfig: () => {},
   onDelete: () => {},
   getRecords: () => [],
+  getVideoClips: () => [],
+  getVideoClip: () => undefined,
   setFile: () => {},
   counts: {},
   live: new LiveStore(),

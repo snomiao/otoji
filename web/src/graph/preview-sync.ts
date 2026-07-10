@@ -6,9 +6,9 @@
 // encodes that node's preview and sends it (pv) to the subscribers, who write it
 // into their own LiveStore so the existing preview widgets render it unchanged.
 //
-// Default-local, bandwidth-light: nothing is sent unless someone has explicitly
-// opted in, levels are batched, and images are downscaled to a small JPEG that
-// fits one data-channel message.
+// Default-local, bandwidth-light: levels are batched, and images are downscaled
+// to a JPEG preview. Screen-share needs enough pixels to remain readable, so the
+// image budget is larger than the old tiny thumbnail path.
 
 import type { LiveStore } from "./live-store";
 import type { SttLevel } from "../providers/types";
@@ -24,10 +24,10 @@ export type PreviewKind = "lvl" | "txt" | "busy" | "queue" | "img";
 
 const MAX_SUB_NODES = 256; // cap a peer's subscription list (a graph has ≪ this)
 const MAX_ID_LEN = 128; // ignore absurd node ids from a misbehaving peer
-const IMG_MAX_EDGE = 200; // thumbnail long-edge px (UI shows it at 150×84)
-const IMG_QUALITY = 0.5; // JPEG quality
-const IMG_MAX_B64 = 14000; // skip frames that don't fit the ~15KB channel floor
-const IMG_MIN_INTERVAL_MS = 200; // ≤5 preview frames/sec
+const IMG_MAX_EDGE = 720; // readable remote screen-share long-edge px
+const IMG_QUALITY = 0.72; // JPEG quality
+const IMG_MAX_B64 = 120000; // keep frames below typical data-channel limits
+const IMG_MIN_INTERVAL_MS = 100; // ≤10 preview frames/sec
 const LVL_FLUSH_MS = 80; // batch waveform levels (~12 messages/sec)
 const LVL_MAX_BATCH = 64;
 
@@ -94,6 +94,13 @@ export class PreviewSync {
 
   hasSubscriber(nodeId: string): boolean {
     return (this.subscribers.get(nodeId)?.size ?? 0) > 0;
+  }
+
+  debugState(): { myNodes: string[]; subscribers: Record<string, string[]> } {
+    return {
+      myNodes: [...this.myNodes],
+      subscribers: Object.fromEntries([...this.subscribers].map(([id, peers]) => [id, [...peers]])),
+    };
   }
 
   /** A local node produced preview data — forward to subscribers (no-op if none). */

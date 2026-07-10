@@ -9,11 +9,10 @@ build/release/publish machinery without rediscovering them each time.
 
 This repo uses **bun** for local install/build, **not npm**.
 - `bun install`, `bun run build` — never `npm install` locally.
-- Do **not** commit `package-lock.json` changes; if an npm command dirties it,
-  revert with `git checkout package-lock.json`.
+- Do **not** create or commit `package-lock.json`; use `bun.lock`.
 - `npm` is acceptable ONLY for the actual registry publish (`npm publish
   --provenance`), since OIDC trusted-publishing/provenance is npm-specific.
-- Subdirs `web/` and `signal/` use **pnpm** (`pnpm-lock.yaml`).
+- Subdirs `web/` and `signal/` use **bun** (`bun.lock`).
 
 ## Layout
 
@@ -63,7 +62,7 @@ Every `@otoji/core*` package on npmjs.com must have a **Trusted Publisher**
 publish"). The publish job uses `--provenance --ignore-scripts`.
 
 - `--ignore-scripts` is **required** for the umbrella: its `prepublishOnly`
-  (`napi prepublish && npm run build:release`) would otherwise re-publish the
+  (`napi prepublish && bun run build:release`) would otherwise re-publish the
   platform packages (403) and rebuild on the publish-only runner — this froze
   `@otoji/core` at 0.1.1 for a long time.
 - The publish loop is resilient: an already-published version (403) is treated as
