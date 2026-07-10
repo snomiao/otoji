@@ -299,8 +299,10 @@ const RAW_NODE_SPECS: Record<NodeType, NodeSpec> = {
   camera: {
     type: "camera",
     label: "Camera",
-    // Captures frames from a webcam at a configurable FPS.
-    inputs: [],
+    // Captures frames from a webcam at a configurable FPS. The optional `rate`
+    // control input enables backpressure: a "next" pulse makes it grab exactly
+    // one frame (credit). Unwired = free-run.
+    inputs: [{ id: "rate", type: "control" }],
     outputs: [{ id: "out", type: "image" }],
   },
   "screen-share": {
@@ -320,7 +322,8 @@ const RAW_NODE_SPECS: Record<NodeType, NodeSpec> = {
     type: "paddle-ocr",
     label: "OCR (PaddleOCR)",
     // image → recognized text. Latest-only: while busy it keeps just the newest
-    // frame and drops the rest (never queues).
+    // frame and drops the rest (never queues). `rate` emits a credit pulse
+    // after each frame, to feed back into a Camera's rate input.
     inputs: [{ id: "in", type: "image" }],
     outputs: [{ id: "out", type: "transcript" }],
   },

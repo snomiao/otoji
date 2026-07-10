@@ -1496,6 +1496,7 @@ export class GraphRuntime {
       const cfg = this.graph.nodes[id]?.config ?? {};
       const deviceId = cfg.cameraId as string | undefined;
       const fps = clampFps((cfg.fps as number) ?? DEFAULT_CAMERA_FPS);
+      const demand = this.hasIncoming(id, "rate"); // backpressure when a rate edge feeds us
       let handle: CameraHandle | null = null;
       return {
         start: async () => {
@@ -1503,7 +1504,7 @@ export class GraphRuntime {
             handle = await startCamera({
               deviceId,
               fps,
-              demand: false,
+              demand,
               onFrame: (bitmap, width, height) => {
                 this.hooks.onImage?.(id, bitmap);
                 this.emit(id, "out", { bitmap, width, height, ts: Date.now() } as ImageMsg);
@@ -1514,6 +1515,9 @@ export class GraphRuntime {
           } catch (e) {
             this.hooks.onError?.(e instanceof Error ? e : new Error(String(e)));
           }
+        },
+        input: (_port, msg) => {
+          if ((msg as ControlMsg).pulse) handle?.grabNow(); // credit: one frame per "next"
         },
         stop: () => {
           this.hooks.onMedia?.(id, null);
@@ -1526,6 +1530,7 @@ export class GraphRuntime {
     if (type === "screen-share") {
       const cfg = this.graph.nodes[id]?.config ?? {};
       const fps = clampFps((cfg.fps as number) ?? DEFAULT_CAMERA_FPS);
+      const demand = this.hasIncoming(id, "rate"); // backpressure when a rate edge feeds us
       let handle: ScreenHandle | null = null;
       return {
         start: async () => {
@@ -1535,7 +1540,7 @@ export class GraphRuntime {
           try {
             handle = await startScreenShare({
               fps,
-              demand: false,
+              demand,
               // Reuse the live display stream across auto-run restarts — every
               // getDisplayMedia call re-prompts the browser picker, and the
               // editor restarts the runtime on any structural graph edit.
@@ -1557,6 +1562,9 @@ export class GraphRuntime {
           } catch (e) {
             this.hooks.onError?.(e instanceof Error ? e : new Error(String(e)));
           }
+        },
+        input: (_port, msg) => {
+          if ((msg as ControlMsg).pulse) handle?.grabNow();
         },
         stop: () => {
           this.hooks.onMedia?.(id, null);
@@ -1585,6 +1593,9 @@ export class GraphRuntime {
               text,
               audio: { samples: new Float32Array(0), sampleRate: MIC_VAD_SR, durationMs: 0 },
             } as TranscriptMsg);
+            // Feedback: a "next" credit pulse so a connected Camera paces
+            // itself to exactly our OCR rate.
+            this.emit(id, "rate", { pulse: true, ts: Date.now() } as ControlMsg);
           });
         },
       };
@@ -1641,6 +1652,8 @@ export class GraphRuntime {
               this.emit(id, "labels", { text: labels, audio: emptyAudio() } as TranscriptMsg);
             }
             if (wantJson && json) this.emit(id, "json", { text: json, audio: emptyAudio() } as TranscriptMsg);
+            // Credit pulse so a connected Camera can self-pace.
+            this.emit(id, "rate", { pulse: true, ts: Date.now() } as ControlMsg);
           });
         },
       };

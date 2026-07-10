@@ -38,7 +38,8 @@ export function releaseScreenShares(keep: Iterable<string> = []): void {
   }
 }
 
-/** Stop and forget one cached display stream so the next start reopens the picker. */
+/** Stop and forget ONE node's cached display stream (forces a fresh picker on
+ *  the next start) without touching other nodes' captures. */
 export function releaseScreenShare(key: string): void {
   const stream = cachedStreams.get(key);
   if (!stream) return;
