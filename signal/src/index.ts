@@ -6,10 +6,17 @@
  *   - The DO tracks peer presence, relays WebRTC signaling (SDP/ICE) between
  *     peers, and holds the authoritative shared graph JSON (broadcast on edit).
  *
+ * Route: otoji.org/signal/{room}/graph  (federation feed)
+ *   - GET returns the room's last published org.rgui.graph.v1 envelope with
+ *     open CORS, so other rgui apps (agent-yes viewer etc.) can mirror the
+ *     room. Knowing the room code IS the read capability — the same code
+ *     already lets anyone join the room over WS.
+ *
  * Protocol (JSON over WS):
  *   server->peer: hello{peerId,peers[],graph}, peer-joined{peer}, peer-left{peerId},
  *                 signal{from,data}, graph{graph,by?}, pong
- *   peer->server: signal{to,data}, graph-patch{graph}, graph-get, ping
+ *   peer->server: signal{to,data}, graph-patch{graph}, graph-get, ping,
+ *                 fed-graph{graph} (publish the room's federation envelope)
  */
 
 export interface Env {
@@ -31,7 +38,7 @@ export default {
       return Response.json({ ok: true, service: "otoji-signal", usage: "/signal/{room} (WebSocket)" }, { headers: CORS });
     }
 
-    const m = url.pathname.match(/^\/signal\/([^/]+)\/?$/);
+    const m = url.pathname.match(/^\/signal\/([^/]+)(\/graph)?\/?$/);
     if (!m) return new Response("not found", { status: 404, headers: CORS });
 
     const room = decodeURIComponent(m[1]);
@@ -75,6 +82,14 @@ export class RoomDurableObject {
 
   async fetch(req: Request): Promise<Response> {
     const url = new URL(req.url);
+
+    // Federation feed: the last envelope a room peer published via fed-graph.
+    if (/\/graph\/?$/.test(url.pathname)) {
+      if (req.method !== "GET") return new Response("method not allowed", { status: 405, headers: CORS });
+      const env = await this.state.storage.get("fedgraph");
+      if (env == null) return new Response("no federated graph published", { status: 404, headers: CORS });
+      return Response.json(env, { headers: { ...CORS, "Cache-Control": "no-store" } });
+    }
 
     if (req.headers.get("Upgrade") !== "websocket") {
       return Response.json({ ok: true, peers: this.peers().length }, { headers: CORS });
@@ -183,6 +198,18 @@ export class RoomDurableObject {
       }
       case "graph-get": {
         ws.send(JSON.stringify({ type: "graph", graph: await this.getGraph() }));
+        break;
+      }
+      case "fed-graph": {
+        // A peer publishes the room's federation envelope (org.rgui.graph.v1),
+        // served read-only at GET /signal/{room}/graph. Same bounds as
+        // graph-patch; a light shape check keeps arbitrary blobs out.
+        const env = msg.graph;
+        if (byteLen > MAX_GRAPH_BYTES) break;
+        if (!env || typeof env !== "object" || env.kind !== "rgui-federated-graph" || !env.graph) break;
+        const nodes = Array.isArray(env.graph.nodes) ? env.graph.nodes.length : Infinity;
+        if (nodes > MAX_GRAPH_NODES) break;
+        await this.state.storage.put("fedgraph", env);
         break;
       }
       case "ping": {
