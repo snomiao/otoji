@@ -20,6 +20,7 @@ function graph(): VoiceGraph {
     img: { id: "img", type: "file-image", device: null, pos: { x: 0, y: 0 } },
     vrec: { id: "vrec", type: "video-recorder", device: null, pos: { x: 0, y: 0 } },
     vclip: { id: "vclip", type: "video-clip", device: null, pos: { x: 0, y: 0 } },
+    env: { id: "env", type: "environment", device: null, pos: { x: 0, y: 0 } },
   };
   return g;
 }
@@ -37,6 +38,13 @@ describe("canConnect", () => {
   it("rejects audio feeding straight into translate", () => {
     const g = graph();
     expect(canConnect(g, "mic", "out", "translate", "in")).toBe(false); // segment->transcript
+  });
+
+  it("connects environment metadata only to env inputs", () => {
+    const g = graph();
+    expect(canConnect(g, "env", "env", "stt", "env")).toBe(true);
+    expect(canConnect(g, "env", "env", "cam", "rate")).toBe(false);
+    expect(canConnect(g, "stt", "out", "env", "env")).toBe(false);
   });
 
   it("rejects mismatched port types", () => {

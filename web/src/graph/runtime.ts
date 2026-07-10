@@ -284,21 +284,10 @@ export class GraphRuntime {
       try {
         await Promise.all([...sttModels].map((m) => warmSenseVoice(m)));
       } catch (e) {
-        // Required model failed to load — abort instead of capturing audio that
-        // every STT segment would then fail on.
+        // STT is one branch in a multimodal graph. A missing/broken worker should
+        // disable that branch, not prevent screen/OCR/vision nodes from running.
         this.hooks.onError?.(e instanceof Error ? e : new Error(String(e)));
-        this.hooks.onStatus?.("model load failed");
-        for (const node of this.nodes.values()) {
-          try {
-            await node.stop?.();
-          } catch {
-            /* best-effort cleanup */
-          }
-        }
-        this.running = false;
-        this.nodes.clear();
-        this.adj.clear();
-        return;
+        this.hooks.onStatus?.("STT model load failed");
       }
     }
 
@@ -630,6 +619,26 @@ export class GraphRuntime {
   }
 
   private build(id: string, type: NodeType): RuntimeNode {
+    if (type === "environment") {
+      const cfg = this.graph.nodes[id]?.config ?? {};
+      return {
+        start: () => {
+          const label = (cfg.label as string | undefined)?.trim() || "Browser environment";
+          const runtime = (cfg.runtime as string | undefined)?.trim() || "browser";
+          const scope = (cfg.scope as string | undefined)?.trim() || "device";
+          const caps = [
+            cfg.mic === false ? null : "mic",
+            cfg.camera === false ? null : "camera",
+            cfg.screen === false ? null : "screen",
+            cfg.webgpu === false ? null : "webgpu",
+            cfg.storage === false ? null : "storage",
+            cfg.network === false ? null : "network",
+          ].filter(Boolean).join(", ");
+          this.hooks.onRecognized?.(id, `${label}\n${scope} · ${runtime}\n${caps || "no declared capabilities"}`);
+        },
+      };
+    }
+
     if (type === "mic-vad") {
       let handle: MicVadHandle | null = null;
       const inputDeviceId = this.graph.nodes[id]?.config?.inputDeviceId as string | undefined;
@@ -1487,9 +1496,6 @@ export class GraphRuntime {
       const cfg = this.graph.nodes[id]?.config ?? {};
       const deviceId = cfg.cameraId as string | undefined;
       const fps = clampFps((cfg.fps as number) ?? DEFAULT_CAMERA_FPS);
-      // Credit mode iff something feeds our `rate` input: wait for "next" pulses
-      // instead of free-running, so a downstream OCR can pace us (backpressure).
-      const demand = this.hasIncoming(id, "rate");
       let handle: CameraHandle | null = null;
       return {
         start: async () => {
@@ -1497,7 +1503,7 @@ export class GraphRuntime {
             handle = await startCamera({
               deviceId,
               fps,
-              demand,
+              demand: false,
               onFrame: (bitmap, width, height) => {
                 this.hooks.onImage?.(id, bitmap);
                 this.emit(id, "out", { bitmap, width, height, ts: Date.now() } as ImageMsg);
@@ -1508,9 +1514,6 @@ export class GraphRuntime {
           } catch (e) {
             this.hooks.onError?.(e instanceof Error ? e : new Error(String(e)));
           }
-        },
-        input: (_port, msg) => {
-          if ((msg as ControlMsg).pulse) handle?.grabNow(); // credit: one frame per "next"
         },
         stop: () => {
           this.hooks.onMedia?.(id, null);
@@ -1523,7 +1526,6 @@ export class GraphRuntime {
     if (type === "screen-share") {
       const cfg = this.graph.nodes[id]?.config ?? {};
       const fps = clampFps((cfg.fps as number) ?? DEFAULT_CAMERA_FPS);
-      const demand = this.hasIncoming(id, "rate"); // backpressure when a rate edge feeds us
       let handle: ScreenHandle | null = null;
       return {
         start: async () => {
@@ -1533,7 +1535,7 @@ export class GraphRuntime {
           try {
             handle = await startScreenShare({
               fps,
-              demand,
+              demand: false,
               // Reuse the live display stream across auto-run restarts — every
               // getDisplayMedia call re-prompts the browser picker, and the
               // editor restarts the runtime on any structural graph edit.
@@ -1555,9 +1557,6 @@ export class GraphRuntime {
           } catch (e) {
             this.hooks.onError?.(e instanceof Error ? e : new Error(String(e)));
           }
-        },
-        input: (_port, msg) => {
-          if ((msg as ControlMsg).pulse) handle?.grabNow();
         },
         stop: () => {
           this.hooks.onMedia?.(id, null);
@@ -1586,9 +1585,6 @@ export class GraphRuntime {
               text,
               audio: { samples: new Float32Array(0), sampleRate: MIC_VAD_SR, durationMs: 0 },
             } as TranscriptMsg);
-            // Feedback: a "next" credit pulse so a connected Camera paces
-            // itself to exactly our OCR rate.
-            this.emit(id, "rate", { pulse: true, ts: Date.now() } as ControlMsg);
           });
         },
       };
@@ -1645,8 +1641,6 @@ export class GraphRuntime {
               this.emit(id, "labels", { text: labels, audio: emptyAudio() } as TranscriptMsg);
             }
             if (wantJson && json) this.emit(id, "json", { text: json, audio: emptyAudio() } as TranscriptMsg);
-            // Credit pulse so a connected Camera can self-pace.
-            this.emit(id, "rate", { pulse: true, ts: Date.now() } as ControlMsg);
           });
         },
       };

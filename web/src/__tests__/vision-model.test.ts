@@ -28,7 +28,6 @@ describe("templateFromSelection", () => {
     ];
     const edges = [
       { source: "a1", sourceHandle: "out", target: "b2", targetHandle: "in" },
-      { source: "b2", sourceHandle: "rate", target: "zz", targetHandle: "rate" }, // outside selection → dropped
     ];
     const t = templateFromSelection("my", sel, edges, "abc");
     expect(t.id).toBe("user-abc");
@@ -74,7 +73,6 @@ describe("builtin templates", () => {
     expect(t?.nodes.map((n) => n.type)).toEqual(["screen-share", "paddle-ocr", "stt", "text-normalize", "text-diff", "text-filter", "text-aggregate", "llm-agent", "tts"]);
     expect(t?.edges).toEqual([
       { from: "screen", fromHandle: "out", to: "ocr", toHandle: "in" },
-      { from: "ocr", fromHandle: "rate", to: "screen", toHandle: "rate" },
       { from: "screen", fromHandle: "audio", to: "stt", toHandle: "in" },
       { from: "ocr", fromHandle: "out", to: "norm", toHandle: "in" },
       { from: "norm", fromHandle: "out", to: "diff", toHandle: "in" },

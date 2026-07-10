@@ -8,7 +8,7 @@ import { emptyGraph, type VoiceGraph } from "../graph/model";
 const ownerWith = (online: string[]) => (n: { device: string | null }) =>
   n.device ?? ([...online].sort()[0] ?? null);
 
-/** camera → OCR (image edge) + camera → vision (image) + OCR → sink (text). */
+/** camera → OCR (image edge) + OCR → sink (text). */
 function visionGraph(): VoiceGraph {
   const g = emptyGraph();
   g.nodes["cam"] = { id: "cam", type: "camera", device: "a", pos: { x: 0, y: 0 } };
@@ -17,7 +17,6 @@ function visionGraph(): VoiceGraph {
   g.edges = [
     { id: "img", source: "cam", sourceHandle: "out", target: "ocr", targetHandle: "in" },
     { id: "txt", source: "ocr", sourceHandle: "out", target: "k", targetHandle: "in" },
-    { id: "ctl", source: "ocr", sourceHandle: "rate", target: "cam", targetHandle: "rate" },
   ];
   return g;
 }
@@ -28,6 +27,7 @@ describe("signal declarations", () => {
     expect(SIGNAL.segment.ownership).toBe("clone");
     expect(SIGNAL.image.ownership).toBe("clone");
     expect(SIGNAL.control.ownership).toBe("copy");
+    expect(SIGNAL.environment.ownership).toBe("copy");
   });
 
   it("copy/clone are duplicable, share is aliasable-only, move is neither", () => {
@@ -43,20 +43,19 @@ describe("signal declarations", () => {
     const g = visionGraph();
     expect(edgeSignalType(g, g.edges[0])).toBe("image");
     expect(edgeSignalType(g, g.edges[1])).toBe("transcript");
-    expect(edgeSignalType(g, g.edges[2])).toBe("control");
     expect(edgeSignalType(g, { source: "ghost", sourceHandle: "out" })).toBe(null);
   });
 });
 
 describe("illegalCrossDeviceEdges", () => {
   it("is empty while every share-signal edge stays on one device", () => {
-    // image + control edges are both a↔a; the text edge crosses but is copy.
+    // image stays a↔a; the text edge crosses but is copy.
     expect(illegalCrossDeviceEdges(visionGraph(), ownerWith(["a", "b"]))).toEqual(new Set());
   });
 
-  it("allows image and control edges that resolve to different devices", () => {
+  it("allows image edges that resolve to different devices", () => {
     const g = visionGraph();
-    g.nodes["ocr"].device = "b"; // now cam(a)→ocr(b) image AND ocr(b)→cam(a) ctl cross
+    g.nodes["ocr"].device = "b"; // now cam(a)→ocr(b) image crosses
     expect(illegalCrossDeviceEdges(g, ownerWith(["a", "b"]))).toEqual(new Set());
   });
 

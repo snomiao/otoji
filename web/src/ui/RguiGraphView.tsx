@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import type { VoiceGraph } from "../graph/model";
 import { voiceGraphToRgui, type RguiMeta } from "../graph/rgui-adapter";
+import { federatedGraphToRguiMirror, type FederatedGraphEnvelope } from "../graph/federation";
 import type { LiveStore } from "../graph/live-store";
 import { snap, gridLevels, type PortRef, type Panel, type SummarizeFn, type ViewTransform } from "@snomiao/rgui";
 
@@ -15,7 +16,7 @@ export interface RguiHandlers {
   onNodeMoveEnd?: (nodeId: string, pos: { x: number; y: number }) => void;
   /** a corner-grip resize/rescale ended → persist the grid-snapped box.
    *  `scale` is the content scale (moves only in the shift-drag rescale mode) */
-  onNodeResizeEnd?: (nodeId: string, size: { w: number; h: number; scale: number }) => void;
+  onNodeResizeEnd?: (nodeId: string, size: { w: number; h: number; scale: number; x?: number; y?: number }) => void;
   /** gate a port→port drag (otoji type-check) */
   isValidConnection?: (from: PortRef, to: PortRef) => boolean;
   /** a valid port→port drag completed → create the edge */
@@ -63,6 +64,7 @@ export interface RguiApi {
 
 export function RguiGraphView({
   graph,
+  federatedGraphs,
   deviceName,
   handlers,
   selection,
@@ -80,6 +82,8 @@ export function RguiGraphView({
   apiRef,
 }: {
   graph: VoiceGraph;
+  /** Read-only remote/federated graphs rendered beside the authoritative Otoji graph. */
+  federatedGraphs?: FederatedGraphEnvelope[];
   deviceName?: (deviceId: string | null) => string;
   handlers?: RguiHandlers;
   /** host-owned selection to reflect into the canvas (e.g. select-all) */
@@ -131,6 +135,12 @@ export function RguiGraphView({
 
   const rgGraph = useMemo(() => {
     const g = voiceGraphToRgui(graph, { deviceName, edgeMeta, nodeBody, nodeBusy, nodeRemote });
+    const localNodeIds = new Set(g.nodes.map((n) => n.id));
+    for (const fg of federatedGraphs ?? []) {
+      const mirror = federatedGraphToRguiMirror(fg, { skipNodeIds: localNodeIds });
+      g.nodes.push(...mirror.nodes);
+      g.edges.push(...mirror.edges);
+    }
     if (renderNodeOverlay) {
       // scale:"zoom" — controls scale with view.k like part of the node (laid out
       // for k=1) and hide below minScale when zoomed out too small.
@@ -145,6 +155,7 @@ export function RguiGraphView({
       // own translucent title bar, and rgui forwards background presses to the
       // canvas so drag/select still work everywhere on the node.
       for (const n of g.nodes) {
+        if (n.overlay) continue; // federated mirrors may carry their own live-embed overlay
         const vt = graph.nodes[n.id]?.type;
         const full = vt === "textarea" || vt === "url" || vt === "screen-share" || vt === "camera" || vt === "vision-model";
         const host = hostFor(n.id);
@@ -163,7 +174,7 @@ export function RguiGraphView({
       }
     }
     return g;
-  }, [graph, deviceName, edgeMeta, nodeBody, nodeBusy, nodeRemote, renderNodeOverlay]);
+  }, [graph, federatedGraphs, deviceName, edgeMeta, nodeBody, nodeBusy, nodeRemote, renderNodeOverlay]);
   const nodeIdsKey = useMemo(() => rgGraph.nodes.map((n) => n.id).join(","), [rgGraph]);
 
   // Drop hosts for removed nodes (rgui detaches their overlays when the node
@@ -382,7 +393,7 @@ async function createViewer(
     onPanelMove: (panel: Panel, anchor: { x: number; y: number }) => panelMoveRef.current?.(panel.id, anchor),
     summarize: (nodes: any, info: any) => sumRef.current?.(nodes, info) ?? null,
     onNodeMoveEnd: (id, pos) => hRef.current?.onNodeMoveEnd?.(id, pos),
-    onNodeResizeEnd: (id: string, size: { w: number; h: number; scale: number }) =>
+    onNodeResizeEnd: (id: string, size: { w: number; h: number; scale: number; x?: number; y?: number }) =>
       hRef.current?.onNodeResizeEnd?.(id, size),
     isValidConnection: (from, to) => hRef.current?.isValidConnection?.(from, to) ?? true,
     onConnect: (from, to) => hRef.current?.onConnect?.(from, to),

@@ -44,7 +44,6 @@ export const BUILTIN_TEMPLATES: GraphTemplate[] = [
     ],
     edges: [
       { from: "cam", fromHandle: "out", to: "yolo", toHandle: "in" },
-      { from: "yolo", fromHandle: "rate", to: "cam", toHandle: "rate" }, // backpressure
       { from: "yolo", fromHandle: "labels", to: "sink", toHandle: "in" },
     ],
   },
@@ -60,7 +59,6 @@ export const BUILTIN_TEMPLATES: GraphTemplate[] = [
     ],
     edges: [
       { from: "cam", fromHandle: "out", to: "yolo", toHandle: "in" },
-      { from: "yolo", fromHandle: "rate", to: "cam", toHandle: "rate" },
       { from: "yolo", fromHandle: "labels", to: "tts", toHandle: "in" },
     ],
   },
@@ -142,7 +140,6 @@ export const BUILTIN_TEMPLATES: GraphTemplate[] = [
     ],
     edges: [
       { from: "screen", fromHandle: "out", to: "yolo", toHandle: "in" },
-      { from: "yolo", fromHandle: "rate", to: "screen", toHandle: "rate" }, // backpressure
       { from: "yolo", fromHandle: "labels", to: "sink", toHandle: "in" },
     ],
   },
@@ -157,7 +154,6 @@ export const BUILTIN_TEMPLATES: GraphTemplate[] = [
     ],
     edges: [
       { from: "screen", fromHandle: "out", to: "depth", toHandle: "in" },
-      { from: "depth", fromHandle: "rate", to: "screen", toHandle: "rate" },
     ],
   },
   {
@@ -178,7 +174,6 @@ export const BUILTIN_TEMPLATES: GraphTemplate[] = [
     ],
     edges: [
       { from: "screen", fromHandle: "out", to: "ocr", toHandle: "in" },
-      { from: "ocr", fromHandle: "rate", to: "screen", toHandle: "rate" },
       { from: "screen", fromHandle: "audio", to: "stt", toHandle: "in" },
       { from: "ocr", fromHandle: "out", to: "norm", toHandle: "in" },
       { from: "norm", fromHandle: "out", to: "diff", toHandle: "in" },
@@ -200,7 +195,6 @@ export const BUILTIN_TEMPLATES: GraphTemplate[] = [
     ],
     edges: [
       { from: "cam", fromHandle: "out", to: "depth", toHandle: "in" },
-      { from: "depth", fromHandle: "rate", to: "cam", toHandle: "rate" },
     ],
   },
   {
@@ -214,7 +208,6 @@ export const BUILTIN_TEMPLATES: GraphTemplate[] = [
     ],
     edges: [
       { from: "cam", fromHandle: "out", to: "pose", toHandle: "in" },
-      { from: "pose", fromHandle: "rate", to: "cam", toHandle: "rate" },
     ],
   },
   {
@@ -228,7 +221,6 @@ export const BUILTIN_TEMPLATES: GraphTemplate[] = [
     ],
     edges: [
       { from: "cam", fromHandle: "out", to: "hand", toHandle: "in" },
-      { from: "hand", fromHandle: "rate", to: "cam", toHandle: "rate" },
     ],
   },
   {
@@ -248,7 +240,6 @@ export const BUILTIN_TEMPLATES: GraphTemplate[] = [
       { from: "mic", fromHandle: "out", to: "stt", toHandle: "in" },
       { from: "stt", fromHandle: "out", to: "vsink", toHandle: "in" },
       { from: "cam", fromHandle: "out", to: "yolo", toHandle: "in" },
-      { from: "yolo", fromHandle: "rate", to: "cam", toHandle: "rate" },
       { from: "yolo", fromHandle: "labels", to: "osink", toHandle: "in" },
     ],
   },

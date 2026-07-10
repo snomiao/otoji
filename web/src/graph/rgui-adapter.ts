@@ -117,18 +117,19 @@ const KIND: Record<PortType, RgSignalKind> = {
   transcript: "text",
   image: "image",
   control: "ctl",
+  environment: "ctl",
 };
 
 /** A node with no inputs is a source, none-outputs is a sink, else a model. */
 function categoryOf(type: NodeType): RgNodeCategory {
   const spec = NODE_SPECS[type];
-  if (spec.inputs.length === 0) return "source";
+  if (spec.inputs.filter((p) => p.id !== "env").length === 0) return "source";
   if (spec.outputs.length === 0) return "sink";
   return "model";
 }
 
 const DEFAULT_W = 200;
-const TEXT_PREVIEW_TYPES = new Set<NodeType>(["stt", "web-speech", "vosk", "sherpa", "translate", "browser-translate-api", "text-aggregate", "text-normalize", "text-filter", "llm-agent", "model", "tts", "tts-model", "sink", "paddle-ocr", "text-diff"]);
+const TEXT_PREVIEW_TYPES = new Set<NodeType>(["environment", "stt", "web-speech", "vosk", "sherpa", "translate", "browser-translate-api", "text-aggregate", "text-normalize", "text-filter", "llm-agent", "model", "tts", "tts-model", "sink", "paddle-ocr", "text-diff"]);
 
 // Mirrors of rgui's grip clamps (grip.ts MIN_SCALE/MAX_SCALE, graph.ts
 // NODE_MIN_W). setGraph does NOT validate geometry — these invariants are only

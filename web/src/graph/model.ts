@@ -3,9 +3,11 @@
 // authoritative state synced via the Durable Object (see signaling graph-patch).
 
 // segment = audio PCM, transcript = text, image = a captured frame,
-// control = a feedback signal (a "next"/credit pulse or a target rate number).
-export type PortType = "segment" | "transcript" | "image" | "control";
+// control = a feedback signal (a "next"/credit pulse or a target rate number),
+// environment = runtime/capability metadata link from an Environment node.
+export type PortType = "segment" | "transcript" | "image" | "control" | "environment";
 export type NodeType =
+  | "environment"
   | "mic-vad"
   | "mic-raw"
   | "file-audio"
@@ -48,7 +50,15 @@ export interface NodeSpec {
   outputs: { id: string; type: PortType }[];
 }
 
-export const NODE_SPECS: Record<NodeType, NodeSpec> = {
+const RAW_NODE_SPECS: Record<NodeType, NodeSpec> = {
+  environment: {
+    type: "environment",
+    label: "Environment",
+    // A browser/device/tab capability provider. First draft: metadata only;
+    // connected nodes can declare which environment they intend to use.
+    inputs: [],
+    outputs: [{ id: "env", type: "environment" }],
+  },
   "mic-vad": {
     type: "mic-vad",
     label: "Mic + VAD",
@@ -289,20 +299,18 @@ export const NODE_SPECS: Record<NodeType, NodeSpec> = {
   camera: {
     type: "camera",
     label: "Camera",
-    // Captures frames from a webcam at a configurable FPS. The optional `rate`
-    // control input enables backpressure: a "next" pulse makes it grab exactly
-    // one frame (credit). Unwired = free-run.
-    inputs: [{ id: "rate", type: "control" }],
+    // Captures frames from a webcam at a configurable FPS.
+    inputs: [],
     outputs: [{ id: "out", type: "image" }],
   },
   "screen-share": {
     type: "screen-share",
     label: "Screen share",
     // getDisplayMedia: screen/window/tab frames + (where granted) system audio.
-    // `out` mirrors the Camera node (image frames; the `rate` input enables
-    // backpressure). `audio` carries VAD-segmented system audio for STT — only
-    // when the browser provides an audio track (often tab-share only).
-    inputs: [{ id: "rate", type: "control" }],
+    // `out` mirrors the Camera node (image frames). `audio` carries
+    // VAD-segmented system audio for STT — only when the browser provides an
+    // audio track (often tab-share only).
+    inputs: [],
     outputs: [
       { id: "out", type: "image" },
       { id: "audio", type: "segment" },
@@ -312,13 +320,9 @@ export const NODE_SPECS: Record<NodeType, NodeSpec> = {
     type: "paddle-ocr",
     label: "OCR (PaddleOCR)",
     // image → recognized text. Latest-only: while busy it keeps just the newest
-    // frame and drops the rest (never queues). `rate` emits a credit pulse
-    // after each frame, to feed back into a Camera's rate input.
+    // frame and drops the rest (never queues).
     inputs: [{ id: "in", type: "image" }],
-    outputs: [
-      { id: "out", type: "transcript" },
-      { id: "rate", type: "control" },
-    ],
+    outputs: [{ id: "out", type: "transcript" }],
   },
   "text-diff": {
     type: "text-diff",
@@ -332,18 +336,31 @@ export const NODE_SPECS: Record<NodeType, NodeSpec> = {
     type: "vision-model",
     label: "Vision model",
     // image → results via transformers.js (object-detection now; depth/segment
-    // later). Latest-only + a `rate` credit pulse pace the camera. Outputs are
-    // LAZY: each is produced only when connected. `out` = annotated overlay,
-    // `labels` = readable summary (for TTS/diff), `json` = structured detections.
+    // later). Latest-only. Outputs are LAZY: each is produced only when
+    // connected. `out` = annotated overlay, `labels` = readable summary
+    // (for TTS/diff), `json` = structured detections.
     inputs: [{ id: "in", type: "image" }],
     outputs: [
       { id: "out", type: "image" },
       { id: "labels", type: "transcript" },
       { id: "json", type: "transcript" },
-      { id: "rate", type: "control" },
     ],
   },
 };
+
+const ENV_INPUT: NodeSpec["inputs"][number] = { id: "env", type: "environment" };
+const ENV_TARGET_TYPES = new Set<NodeType>(
+  (Object.keys(RAW_NODE_SPECS) as NodeType[]).filter((t) => t !== "environment" && t !== "tracker"),
+);
+
+export const NODE_SPECS: Record<NodeType, NodeSpec> = Object.fromEntries(
+  (Object.entries(RAW_NODE_SPECS) as [NodeType, NodeSpec][]).map(([type, spec]) => [
+    type,
+    ENV_TARGET_TYPES.has(type) && !spec.inputs.some((p) => p.id === ENV_INPUT.id)
+      ? { ...spec, inputs: [...spec.inputs, ENV_INPUT] }
+      : spec,
+  ]),
+) as Record<NodeType, NodeSpec>;
 
 /** Palette grouping for the node types. */
 export const NODE_CATEGORIES: { id: string; label: string; types: NodeType[] }[] = [
@@ -356,7 +373,7 @@ export const NODE_CATEGORIES: { id: string; label: string; types: NodeType[] }[]
   { id: "pipe", label: "Pipe (CLI)", types: ["pipe"] },
   { id: "vision", label: "Vision", types: ["camera", "screen-share", "paddle-ocr", "vision-model"] },
   { id: "text", label: "Text", types: ["text-diff"] },
-  { id: "net", label: "Network", types: ["tracker"] },
+  { id: "net", label: "Network", types: ["environment", "tracker"] },
 ];
 
 export interface VoiceNode {

@@ -54,6 +54,7 @@ import { NetworkView } from "./NetworkView";
 import { JoinGate } from "./JoinGate";
 import { RguiGraphView, type RguiHandlers, type RguiApi } from "./RguiGraphView";
 import { NodeInspector } from "./NodeInspector";
+import { FEDERATION_DEMO_IDS, agentYesMirrorForOtojiDemo, fetchFederatedGraph, hydrateAgentFromFeeds, voiceGraphToFederatedGraph, type FederatedGraphEnvelope } from "../graph/federation";
 import type { Panel, SummaryContent } from "@snomiao/rgui";
 import { TimelineView } from "./TimelineView";
 import type { PortType } from "../graph/model";
@@ -88,7 +89,7 @@ function activeTrackers(approved: string[]): string[] {
 }
 
 /** Port/signal-type accent colors (palette dots, etc.). */
-const PORT_COLOR: Record<PortType, string> = { segment: "#dd6b20", transcript: "#2b6cb0", image: "#319795", control: "#d69e2e" };
+const PORT_COLOR: Record<PortType, string> = { segment: "#dd6b20", transcript: "#2b6cb0", image: "#319795", control: "#d69e2e", environment: "#805ad5" };
 
 /** localStorage key for the persisted local-mode graph (rooms use the DO). */
 const LOCAL_GRAPH_KEY = "otoji.local.graph";
@@ -108,6 +109,7 @@ function loadPanelAnchors(): Record<string, { x: number; y: number }> {
 // readable zoom. Rough fit of NodeInspector's per-type content; a low estimate
 // scrolls (overlay is clip:"node" + overflow:"auto"), it never covers the preview.
 const CONTROL_ROWS: Partial<Record<NodeType, number>> = {
+  environment: 7,
   "mic-vad": 3, "mic-raw": 2, stt: 3, "web-speech": 3, vosk: 3, sherpa: 3,
   translate: 5, "browser-translate-api": 3, "text-aggregate": 3, "text-normalize": 8, "text-filter": 7, "llm-agent": 8, sink: 7, "video-recorder": 8, "video-clip": 6, url: 0, tts: 4, "tts-model": 5, model: 5,
   // Visual nodes are full-bleed: controls live in the overlay's title bar, so
@@ -118,7 +120,7 @@ const CONTROL_ROWS: Partial<Record<NodeType, number>> = {
 type DisplayMode = "full-bleed" | "fit" | "stack";
 const DISPLAY_MODES: DisplayMode[] = ["full-bleed", "fit", "stack"];
 const VISUAL_DISPLAY_NODES = new Set<NodeType>(["camera", "screen-share", "vision-model", "file-image", "video-recorder", "video-clip", "url"]);
-const TEXT_DISPLAY_NODES = new Set<NodeType>(["stt", "web-speech", "vosk", "sherpa", "translate", "browser-translate-api", "text-aggregate", "text-normalize", "text-filter", "llm-agent", "model", "tts", "tts-model", "sink", "paddle-ocr", "text-diff"]);
+const TEXT_DISPLAY_NODES = new Set<NodeType>(["environment", "stt", "web-speech", "vosk", "sherpa", "translate", "browser-translate-api", "text-aggregate", "text-normalize", "text-filter", "llm-agent", "model", "tts", "tts-model", "sink", "paddle-ocr", "text-diff"]);
 
 type SmartLinkOption = {
   id: string;
@@ -179,6 +181,12 @@ function wrapTextLines(ctx: CanvasRenderingContext2D, text: string, maxW: number
   if (line && lines.length < maxLines) lines.push(line);
   if (lines.length === maxLines && lines[lines.length - 1]) lines[lines.length - 1] = clipText(ctx, lines[lines.length - 1], maxW);
   return lines;
+}
+
+function wrapTextTailLines(ctx: CanvasRenderingContext2D, text: string, maxW: number, maxLines: number): string[] {
+  if (maxLines <= 0) return [];
+  const lines = wrapTextLines(ctx, text, maxW, 1000);
+  return lines.length > maxLines ? lines.slice(-maxLines) : lines;
 }
 
 /** Human-readable throughput, e.g. 1536 -> "1.5 KB/s". */
@@ -381,7 +389,38 @@ function autoLayout(
   return out;
 }
 
-function Editor({ initialRoom, local }: { initialRoom?: string; local?: boolean }) {
+// Poll remote federation feeds (org.rgui.graph.v1 envelopes over HTTP) and keep
+// the last good envelope per URL. Revision-gated: an unchanged `revision` does
+// not re-render; an unreachable feed keeps serving its last good copy (the
+// mirror goes stale rather than vanishing mid-outage).
+const FEED_POLL_MS = 5000;
+function useFederatedFeeds(urls: string[]): FederatedGraphEnvelope[] {
+  const [feeds, setFeeds] = useState<Record<string, FederatedGraphEnvelope>>({});
+  useEffect(() => {
+    if (!urls.length) return;
+    let stopped = false;
+    const revisions = new Map<string, string | number>();
+    const poll = () => {
+      for (const url of urls) {
+        void fetchFederatedGraph(url).then((env) => {
+          if (stopped || !env) return;
+          if (revisions.get(url) === env.revision) return;
+          revisions.set(url, env.revision);
+          setFeeds((prev) => ({ ...prev, [url]: env }));
+        });
+      }
+    };
+    poll();
+    const timer = setInterval(poll, FEED_POLL_MS);
+    return () => {
+      stopped = true;
+      clearInterval(timer);
+    };
+  }, [urls]);
+  return useMemo(() => urls.map((u) => feeds[u]).filter((e): e is FederatedGraphEnvelope => !!e), [urls, feeds]);
+}
+
+function Editor({ initialRoom, local, federationDemo }: { initialRoom?: string; local?: boolean; federationDemo?: boolean }) {
   const [room, setRoom] = useState(initialRoom ?? "");
   const [name, setName] = useState(getDeviceName());
   const [copied, setCopied] = useState(false);
@@ -607,17 +646,18 @@ function Editor({ initialRoom, local }: { initialRoom?: string; local?: boolean 
     return () => clearInterval(t);
   }, [joined]);
 
-  // Local "try it" mode: seed a runnable demo pipeline (mic → STT → translate →
-  // sink = live captions + translation). Safe: no audio output, no feedback loop.
+  // Local "try it" mode: seed a runnable demo pipeline, or the read-only
+  // cross-app federation chain when ?federationDemo is present.
   useEffect(() => {
     if (!local) return;
     // No signaling in local mode — register this device as present so its nodes
     // aren't shown offline / treated as unassigned.
     setPresent({ [myDeviceId]: { peerId: myDeviceId, name, role, hasMic: caps.hasMic, runtime: "browser" } });
     // Remember the local layout across refreshes: restore a saved graph if any,
-    // otherwise seed the runnable demo pipeline (mic → STT → translate → sink).
+    // otherwise seed a demo. Federation demo intentionally bypasses saved local
+    // state so the requested chain is reproducible.
     try {
-      const saved = localStorage.getItem(LOCAL_GRAPH_KEY);
+      const saved = federationDemo ? null : localStorage.getItem(LOCAL_GRAPH_KEY);
       if (saved) {
         const g = JSON.parse(saved) as VoiceGraph;
         if (g?.nodes && Object.keys(g.nodes).length) {
@@ -631,6 +671,36 @@ function Editor({ initialRoom, local }: { initialRoom?: string; local?: boolean 
       }
     } catch {
       /* ignore corrupt storage → fall through to the demo seed */
+    }
+    if (federationDemo) {
+      const ids = FEDERATION_DEMO_IDS;
+      const mk = (id: string, vt: NodeType, x: number, y: number, config: Record<string, unknown> = {}): Node => ({
+        id,
+        type: "voice",
+        position: { x, y },
+        data: { voiceType: vt, device: myDeviceId, config },
+      });
+      const ns = [
+        mk(ids.plain, "textarea", 40, 130, {
+          text: "The quick brown fox edits shared text.\n\nAgent-yes should rewrite this, then Otoji diffs only the additions.",
+          displayMode: "full-bleed",
+        }),
+        mk(ids.diff, "text-diff", 600, 130, { style: "gitdiff" }),
+        mk(ids.filter, "text-filter", 860, 130, { mode: "diff-added", stripPrefix: true }),
+        mk(ids.translate, "browser-translate-api", 1120, 130, { lang: "ja", sourceLang: "en" }),
+        mk(ids.tts, "tts", 1380, 130, {}),
+      ];
+      const mkE = (s: string, sh: string, t: string, th: string): Edge => ({ id: `${s}->${t}`, source: s, sourceHandle: sh, target: t, targetHandle: th });
+      const es = [
+        mkE(ids.diff, "out", ids.filter, "in"),
+        mkE(ids.filter, "out", ids.translate, "in"),
+        mkE(ids.translate, "out", ids.tts, "in"),
+      ];
+      nodesRef.current = ns;
+      edgesRef.current = es;
+      setNodes(ns);
+      setEdges(es);
+      return;
     }
     const mk = (id: string, vt: NodeType, x: number): Node => ({
       id,
@@ -646,14 +716,14 @@ function Editor({ initialRoom, local }: { initialRoom?: string; local?: boolean 
     setNodes(ns);
     setEdges(es);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [local]);
+  }, [local, federationDemo]);
 
   // Persist the local layout on every change (local mode only; rooms sync to the
   // DO instead). Skip empty graphs so the initial mount doesn't clobber a save.
   useEffect(() => {
-    if (!local || nodes.length === 0) return;
+    if (!local || federationDemo || nodes.length === 0) return;
     try { localStorage.setItem(LOCAL_GRAPH_KEY, JSON.stringify(fromRF(nodes, edges, versionRef.current))); } catch { /* ignore */ }
-  }, [local, nodes, edges]);
+  }, [local, federationDemo, nodes, edges]);
 
   // Frame the graph once when it first loads (demo seed / restored local layout /
   // room graph) so a saved layout is never stranded off-screen.
@@ -868,6 +938,28 @@ function Editor({ initialRoom, local }: { initialRoom?: string; local?: boolean 
   // land aligned to the visible grid (and connected template nodes snap flush).
   const snapWorld = useCallback((p: { x: number; y: number }) => rguiApiRef.current?.snapWorld(p) ?? p, []);
 
+  const defaultConfigFor = useCallback((type: NodeType): Record<string, unknown> => {
+    if (type !== "environment") return {};
+    const nav = typeof navigator !== "undefined" ? navigator : undefined;
+    return {
+      label: name.trim() || getDeviceName(),
+      scope: "browser-tab",
+      runtime: "browser",
+      deviceId: myDeviceId,
+      room: local ? "local" : room.trim(),
+      url: typeof location !== "undefined" ? location.href : "",
+      userAgent: nav?.userAgent ?? "",
+      language: nav?.language ?? "",
+      mic: caps.hasMic,
+      camera: !!nav?.mediaDevices?.getUserMedia,
+      screen: !!nav?.mediaDevices?.getDisplayMedia,
+      webgpu: typeof navigator !== "undefined" && "gpu" in navigator,
+      storage: typeof indexedDB !== "undefined",
+      network: typeof RTCPeerConnection !== "undefined",
+      role,
+    };
+  }, [caps.hasMic, local, myDeviceId, name, role, room]);
+
   const addNode = useCallback(
     (type: NodeType, worldPos?: { x: number; y: number }) => {
       const id = `${type}-${Math.random().toString(36).slice(2, 8)}`;
@@ -877,7 +969,7 @@ function Editor({ initialRoom, local }: { initialRoom?: string; local?: boolean 
         id,
         type: "voice",
         position,
-        data: { voiceType: type, device: myDeviceId, config: {} },
+        data: { voiceType: type, device: myDeviceId, config: defaultConfigFor(type) },
       };
       let nextNodes = [...nodesRef.current, n];
       let nextEdges = edgesRef.current;
@@ -901,7 +993,7 @@ function Editor({ initialRoom, local }: { initialRoom?: string; local?: boolean 
       setEdges(nextEdges);
       broadcast(nextNodes, nextEdges);
     },
-    [myDeviceId, setNodes, setEdges, broadcast],
+    [myDeviceId, setNodes, setEdges, broadcast, defaultConfigFor],
   );
 
   // --- Templates: drop a subgraph onto the canvas (fresh ids, auto-selected). ---
@@ -1277,7 +1369,7 @@ function Editor({ initialRoom, local }: { initialRoom?: string; local?: boolean 
     (type: NodeType, anchor: { nodeId: string; handleId: string; portType: PortType; dir: "source" | "target" }, worldPos?: { x: number; y: number }) => {
       const id = `${type}-${Math.random().toString(36).slice(2, 8)}`;
       const position = worldPos ? snapWorld(worldPos) : { x: 80 + Math.random() * 120, y: 80 + Math.random() * 120 };
-      const n: Node = { id, type: "voice", position, data: { voiceType: type, device: myDeviceId, config: {} } };
+      const n: Node = { id, type: "voice", position, data: { voiceType: type, device: myDeviceId, config: defaultConfigFor(type) } };
       let edge: Edge;
       if (anchor.dir === "source") {
         const targetHandle = NODE_SPECS[type].inputs.find((p) => p.type === anchor.portType)?.id ?? "in";
@@ -1297,7 +1389,7 @@ function Editor({ initialRoom, local }: { initialRoom?: string; local?: boolean 
       broadcast(nextNodes, nextEdges);
       setConnectMenu(null);
     },
-    [myDeviceId, setNodes, setEdges, broadcast],
+    [myDeviceId, setNodes, setEdges, broadcast, defaultConfigFor],
   );
 
   const inputOccupied = useCallback((target: string, targetHandle: string) =>
@@ -1367,21 +1459,50 @@ function Editor({ initialRoom, local }: { initialRoom?: string; local?: boolean 
     return out.sort((a, b) => a.score - b.score || a.label.localeCompare(b.label)).map(({ score: _score, ...x }) => x);
   }, []);
 
+  const autoMatchEdges = useCallback((source: string, target: string, nodeList = nodesRef.current): Edge[] => {
+    const src = nodeList.find((n) => n.id === source);
+    const dst = nodeList.find((n) => n.id === target);
+    if (!src || !dst) return [];
+    const srcSpec = NODE_SPECS[(src.data as any).voiceType as NodeType];
+    const dstSpec = NODE_SPECS[(dst.data as any).voiceType as NodeType];
+    const usedInputs = new Set(edgesRef.current.filter((e) => e.target === target).map((e) => e.targetHandle ?? "in"));
+    const usedOutputs = new Set<string>();
+    const out: Edge[] = [];
+    for (const sp of srcSpec.outputs) {
+      const matches = dstSpec.inputs
+        .filter((tp) => tp.type === sp.type && !usedInputs.has(tp.id))
+        .sort((a, b) => (a.id === sp.id ? 0 : 1) - (b.id === sp.id ? 0 : 1) || a.id.localeCompare(b.id));
+      const tp = matches[0];
+      if (!tp || usedOutputs.has(sp.id)) continue;
+      const id = edgeId({ source, sourceHandle: sp.id, target, targetHandle: tp.id });
+      if (edgesRef.current.some((e) => e.id === id) || out.some((e) => e.id === id)) continue;
+      usedInputs.add(tp.id);
+      usedOutputs.add(sp.id);
+      out.push({ id, source, sourceHandle: sp.id, target, targetHandle: tp.id, selected: true });
+    }
+    return out;
+  }, []);
+
   const applySmartLink = useCallback((opt: SmartLinkOption) => {
     let nextNodes = nodesRef.current;
     let target = opt.target;
+    const created = !target && !!opt.createType;
     if (!target && opt.createType) {
       target = `${opt.createType}-${Math.random().toString(36).slice(2, 8)}`;
       const position = opt.world ? snapWorld(opt.world) : { x: 80 + Math.random() * 120, y: 80 + Math.random() * 120 };
-      const n: Node = { id: target, type: "voice", position, data: { voiceType: opt.createType, device: myDeviceId, config: {} }, selected: true };
+      const n: Node = { id: target, type: "voice", position, data: { voiceType: opt.createType, device: myDeviceId, config: defaultConfigFor(opt.createType) }, selected: true };
       nextNodes = [...nodesRef.current.map((x) => ({ ...x, selected: false })), n];
     }
     if (!target) return;
-    if (inputOccupied(target, opt.targetHandle)) return;
-    const id = edgeId({ source: opt.source, sourceHandle: opt.sourceHandle, target, targetHandle: opt.targetHandle });
-    if (edgesRef.current.some((e) => e.id === id)) return;
-    const edge: Edge = { id, source: opt.source, sourceHandle: opt.sourceHandle, target, targetHandle: opt.targetHandle, selected: true };
-    const nextEdges = [...edgesRef.current.map((e) => ({ ...e, selected: false })), edge];
+    const autoEdges = created ? autoMatchEdges(opt.source, target, nextNodes) : [];
+    let addEdges = autoEdges;
+    if (!addEdges.length) {
+      if (inputOccupied(target, opt.targetHandle)) return;
+      const id = edgeId({ source: opt.source, sourceHandle: opt.sourceHandle, target, targetHandle: opt.targetHandle });
+      if (edgesRef.current.some((e) => e.id === id)) return;
+      addEdges = [{ id, source: opt.source, sourceHandle: opt.sourceHandle, target, targetHandle: opt.targetHandle, selected: true }];
+    }
+    const nextEdges = [...edgesRef.current.map((e) => ({ ...e, selected: false })), ...addEdges];
     nodesRef.current = nextNodes;
     edgesRef.current = nextEdges;
     setNodes(nextNodes);
@@ -1390,7 +1511,7 @@ function Editor({ initialRoom, local }: { initialRoom?: string; local?: boolean 
     setSmartLinkMenu(null);
     setConnectMenu(null);
     broadcast(nextNodes, nextEdges);
-  }, [broadcast, inputOccupied, myDeviceId, setEdges, setNodes, snapWorld]);
+  }, [autoMatchEdges, broadcast, defaultConfigFor, inputOccupied, myDeviceId, setEdges, setNodes, snapWorld]);
 
   const stopRuntime = useCallback(async () => {
     const rt = runtimeRef.current;
@@ -1428,7 +1549,15 @@ function Editor({ initialRoom, local }: { initialRoom?: string; local?: boolean 
       onSegment: () => { activityRef.current.segments++; },
       onImage: (id, bitmap) => { live.setImage(id, bitmap); pv?.onLocalPreview(id, "img", bitmap); },
       onMedia: (id, stream) => live.setMedia(id, stream), // local-only: a MediaStream can't cross devices
-      onRecognized: (id, text) => { activityRef.current.stt++; if (isReadableTranscript(text)) { live.pushText(id, text); pv?.onLocalPreview(id, "txt", text); } },
+      onRecognized: (id, text) => {
+        activityRef.current.stt++;
+        const vt = (nodesRef.current.find((n) => n.id === id)?.data as any)?.voiceType as NodeType | undefined;
+        const previewText = vt === "paddle-ocr" ? (text.trim() || "(no OCR text)") : text;
+        if (vt === "paddle-ocr" || isReadableTranscript(text)) {
+          live.pushText(id, previewText);
+          pv?.onLocalPreview(id, "txt", previewText);
+        }
+      },
       onNodeBusy: (id, b) => { live.setBusy(id, b); pv?.onLocalPreview(id, "busy", b); },
       onQueue: (id, processing, queued) => { live.setQueue(id, processing, queued); pv?.onLocalPreview(id, "queue", { processing, queued }); },
       hasPreviewConsumer: (id) => isPreviewShown(id) || (pv?.hasSubscriber(id) ?? false),
@@ -1480,6 +1609,27 @@ function Editor({ initialRoom, local }: { initialRoom?: string; local?: boolean 
         videoClipsByNodeRef.current.set(nodeId, arr);
         setTick((x) => x + 1);
         if (videoClipsDB.available()) videoClipsDB.put(clip).catch((e) => setLastError(e instanceof Error ? e.message : String(e)));
+        if (!nodesRef.current.some((n) => (n.data as any).voiceType === "video-clip" && (n.data as any).config?.clipId === clip.id)) {
+          const parent = nodesRef.current.find((n) => n.id === nodeId);
+          const id = `video-clip-${Math.random().toString(36).slice(2, 8)}`;
+          const base = parent?.position ?? { x: 80, y: 80 };
+          const n: Node = {
+            id,
+            type: "voice",
+            position: snapWorld({ x: base.x + 360, y: base.y }),
+            selected: true,
+            data: {
+              voiceType: "video-clip",
+              device: myDeviceId,
+              config: { clipId: clip.id, generatedBy: nodeId, title: `clip ${(clip.durationMs / 1000).toFixed(1)}s` },
+            },
+          };
+          const nextNodes = [...nodesRef.current.map((x) => ({ ...x, selected: false })), n];
+          nodesRef.current = nextNodes;
+          setNodes(nextNodes);
+          setSelected([id]);
+          broadcast(nextNodes, edgesRef.current);
+        }
       },
     });
     runtimeRef.current = rt;
@@ -1489,7 +1639,7 @@ function Editor({ initialRoom, local }: { initialRoom?: string; local?: boolean 
     } catch (e: any) {
       setRunStatus(`error: ${e?.message ?? e}`);
     }
-  }, [myDeviceId]);
+  }, [broadcast, local, myDeviceId, setNodes, snapWorld]);
 
   // Structural signature — changes when the runnable graph changes (NOT on
   // node drags), so we can auto-(re)start without thrashing on every edit.
@@ -1538,6 +1688,57 @@ function Editor({ initialRoom, local }: { initialRoom?: string; local?: boolean 
   }, [tick, sinkRecs]);
 
   const currentGraph = useMemo(() => fromRF(nodes, edges, versionRef.current), [nodes, edges]);
+  // live federation feeds (?feed=<envelope-url>, repeatable) — polled and
+  // merged ahead of the baked demo so real remote nodes win over stubs.
+  const feedUrls = useMemo(
+    () => (typeof location === "undefined" ? [] : [...new Set(new URLSearchParams(location.search).getAll("feed"))]),
+    [],
+  );
+  const liveFeeds = useFederatedFeeds(feedUrls);
+  const federatedGraphs = useMemo(
+    () => (federationDemo ? [hydrateAgentFromFeeds(agentYesMirrorForOtojiDemo(), liveFeeds)] : liveFeeds),
+    [federationDemo, liveFeeds],
+  );
+
+  // Federation publish leg: while in a room, push the room's envelope to the
+  // signaling DO (debounced, revision-gated) so other rgui apps can mirror it
+  // at GET {tracker}/{room}/graph. The room code is the read capability.
+  const lastPublishedRef = useRef(-1);
+  useEffect(() => {
+    if (!joined || !roomRef.current) return;
+    if (versionRef.current === lastPublishedRef.current) return;
+    const t = setTimeout(() => {
+      const version = versionRef.current;
+      const env = voiceGraphToFederatedGraph(
+        fromRF(nodesRef.current, edgesRef.current, version),
+        {
+          app: "otoji",
+          origin: location.origin,
+          deviceId: myDeviceId,
+          workspace: roomRef.current,
+          label: `otoji room ${roomRef.current}`,
+        },
+        { namespace: `otoji://room/${roomRef.current}` },
+      );
+      sigRef.current?.publishFederatedGraph(env);
+      lastPublishedRef.current = version;
+    }, 2000);
+    return () => clearTimeout(t);
+  }, [joined, nodes, edges, myDeviceId]);
+
+  useEffect(() => {
+    if (!federationDemo || typeof window === "undefined") return;
+    (window as any).__otojiFederationDemo = {
+      local: () => voiceGraphToFederatedGraph(fromRF(nodesRef.current, edgesRef.current, versionRef.current), {
+        app: "otoji",
+        origin: location.origin,
+        deviceId: myDeviceId,
+        workspace: "snomiao/otoji",
+        label: name,
+      }),
+      remote: () => agentYesMirrorForOtojiDemo(),
+    };
+  }, [federationDemo, myDeviceId, name]);
 
   // rgui has no inline node widgets — every node gets a config-controls overlay
   // (device + per-type config) that rgui glues to the node and auto-hides when
@@ -1568,6 +1769,7 @@ function Editor({ initialRoom, local }: { initialRoom?: string; local?: boolean 
   const rguiHandlers = useMemo<RguiHandlers>(
     () => ({
       onNodeMoveEnd: (id, pos) => {
+        if (!nodesRef.current.some((n) => n.id === id)) return;
         const next = nodesRef.current.map((n) => (n.id === id ? { ...n, position: { x: pos.x, y: pos.y } } : n));
         nodesRef.current = next;
         setNodes(next);
@@ -1577,9 +1779,14 @@ function Editor({ initialRoom, local }: { initialRoom?: string; local?: boolean 
       // rgui hands back the grid-snapped {w,h,scale}; persist verbatim so the
       // box survives re-maps and syncs to the room like a move does.
       onNodeResizeEnd: (id, size) => {
+        if (!nodesRef.current.some((n) => n.id === id)) return;
         const next = nodesRef.current.map((n) =>
           n.id === id
-            ? { ...n, data: { ...n.data, size: { w: size.w, h: size.h }, scale: size.scale === 1 ? undefined : size.scale } }
+            ? {
+                ...n,
+                position: size.x != null && size.y != null ? { x: size.x, y: size.y } : n.position,
+                data: { ...n.data, size: { w: size.w, h: size.h }, scale: size.scale === 1 ? undefined : size.scale },
+              }
             : n,
         );
         nodesRef.current = next;
@@ -1600,19 +1807,24 @@ function Editor({ initialRoom, local }: { initialRoom?: string; local?: boolean 
       // Right-click opens the node actions menu and reveals that node's inline
       // controls (device assignment + per-type settings).
       onNodeContextMenu: (id, screen) => {
+        if (!nodesRef.current.some((n) => n.id === id)) return;
         setSelected([id]);
         setControlNodeId(id);
         setNodeMenu({ nodeId: id, x: screen.x, y: screen.y });
       },
       onSelectionChange: (ids) => {
-        setSelected(ids);
-        if (ids.length !== 1 || ids[0] !== controlNodeId) setControlNodeId(null);
+        const localIds = ids.filter((id) => nodesRef.current.some((n) => n.id === id));
+        setSelected(localIds);
+        if (localIds.length !== 1 || localIds[0] !== controlNodeId) setControlNodeId(null);
       },
       // Edge: left-click selects (highlight; Delete removes), right-click removes.
       onEdgeClick: (edge) =>
         setSelectedEdge(edgeId({ source: edge.from.node, sourceHandle: edge.from.port, target: edge.to.node, targetHandle: edge.to.port })),
       onEdgeContextMenu: (edge) =>
-        removeEdge(edgeId({ source: edge.from.node, sourceHandle: edge.from.port, target: edge.to.node, targetHandle: edge.to.port })),
+        {
+          const id = edgeId({ source: edge.from.node, sourceHandle: edge.from.port, target: edge.to.node, targetHandle: edge.to.port });
+          if (edgesRef.current.some((e) => e.id === id)) removeEdge(id);
+        },
       // Port drag ended on empty canvas → create-and-wire omnibox of compatible
       // node types (downstream inputs from an output; upstream outputs from an input).
       onConnectEnd: (from, at) => {
@@ -1638,6 +1850,7 @@ function Editor({ initialRoom, local }: { initialRoom?: string; local?: boolean 
         setConnectMenu({ x: at.screen.x, y: at.screen.y, anchor: { nodeId: from.node, handleId: from.port, portType, dir }, options, world: at.world });
       },
       onSmartLinkEnd: (fromNodeId, at) => {
+        if (!nodesRef.current.some((n) => n.id === fromNodeId)) return;
         setNodeMenu(null);
         setConnectMenu(null);
         if (at.targetNodeId) {
@@ -1706,7 +1919,7 @@ function Editor({ initialRoom, local }: { initialRoom?: string; local?: boolean 
     const t = node.type;
     const isMic = t === "mic-vad" || t === "mic-raw";
     const isImg = t === "camera" || t === "screen-share" || t === "file-image" || t === "paddle-ocr" || t === "vision-model" || t === "video-recorder" || t === "video-clip";
-    const isText = t === "stt" || t === "translate" || t === "browser-translate-api" || t === "text-aggregate" || t === "text-normalize" || t === "text-filter" || t === "llm-agent" || t === "sink" || t === "web-speech" || t === "vosk" || t === "model" || t === "paddle-ocr" || t === "text-diff";
+    const isText = TEXT_DISPLAY_NODES.has(t);
     if (!isMic && !isImg && !isText) return undefined;
     const id = node.id;
     // The body hosts BOTH the config-controls overlay (upper zone, HTML, shown
@@ -1756,19 +1969,50 @@ function Editor({ initialRoom, local }: { initialRoom?: string; local?: boolean 
               : Math.min(rect.width / img.width, availH / img.height);
             const w = img.width * s, h = img.height * s;
             ctx.drawImage(img, (rect.width - w) / 2, top + (availH - h) / 2, w, h);
+          } else if (t === "screen-share") {
+            const config = (graphNode?.data as any)?.config ?? {};
+            const pickState = config.screenPickState as string | undefined;
+            const pickError = (config.screenPickError as string | undefined) ?? "";
+            const needsFrontmostWindow = pickState === "error" && /invalid state/i.test(pickError);
+            const msg =
+              pickState === "opening"
+                ? "waiting for screen picker"
+                : pickState === "dismissed"
+                  ? "screen picker dismissed"
+                  : pickState === "error"
+                    ? needsFrontmostWindow ? "bring window to front and retry" : "screen picker failed"
+                    : "choose a screen";
+            ctx.font = "12px system-ui, sans-serif";
+            ctx.textAlign = "left";
+            ctx.textBaseline = "top";
+            ctx.fillStyle = pickState === "dismissed" || pickState === "error" ? "#f6ad55" : "#8a94a6";
+            const lines = wrapTextTailLines(ctx, msg, Math.max(1, rect.width), Math.max(1, Math.floor(availH / 15)));
+            const y = Math.max(top, rect.height - lines.length * 15);
+            lines.forEach((line, idx) => ctx.fillText(line, 0, y + idx * 15));
           }
           if (t === "paddle-ocr") {
             const txt = live.getTexts(id)[0];
             if (txt) {
               const lineH = 15;
-              const y = Math.max(top, rect.height - lineH - 3);
-              ctx.fillStyle = "rgba(15, 23, 42, 0.72)";
-              ctx.fillRect(0, y - 2, rect.width, lineH + 4);
               ctx.font = "12px system-ui, sans-serif";
               ctx.textAlign = "left";
               ctx.textBaseline = "top";
+              const maxW = Math.max(1, rect.width);
+              const maxLines = Math.max(1, Math.floor(Math.max(1, rect.height - top) / lineH));
+              const lines = wrapTextTailLines(ctx, txt, maxW, maxLines);
+              const y = Math.max(top, rect.height - lines.length * lineH);
+              ctx.fillStyle = "rgba(15, 23, 42, 0.72)";
+              ctx.fillRect(0, y, rect.width, rect.height - y);
               ctx.fillStyle = "#e6e9ec";
-              ctx.fillText(clipText(ctx, txt, rect.width - 4), 2, y);
+              lines.forEach((line, idx) => ctx.fillText(line, 0, y + idx * lineH));
+            } else {
+              const q = live.getQueue(id);
+              const msg = q.processing || (q.queued[0] ? `queued ${q.queued.length}` : "waiting for image");
+              ctx.font = "12px system-ui, sans-serif";
+              ctx.textAlign = "left";
+              ctx.textBaseline = "top";
+              ctx.fillStyle = "#8a94a6";
+              ctx.fillText(msg, 0, Math.max(top, rect.height - 15));
             }
           }
         } else {
@@ -1782,20 +2026,23 @@ function Editor({ initialRoom, local }: { initialRoom?: string; local?: boolean 
           // (was #4a5568 — a light-theme leftover, invisible on the dark body).
           ctx.fillStyle = "#e6e9ec";
           const pad = displayMode === "full-bleed" ? 0 : 6;
-          let y = top + pad;
           const maxW = Math.max(1, rect.width - pad * 2);
-          const maxLines = Math.max(1, Math.floor((rect.height - y - pad) / 15));
-          let drawn = 0;
-          for (let i = 0; i < texts.length && drawn < maxLines; i++) {
-            const lines = wrapTextLines(ctx, texts[i], maxW, maxLines - drawn);
-            for (const line of lines) {
-              if (y + 14 > rect.height + 1) break;
-              ctx.globalAlpha = i === 0 ? 1 : 0.55;
-              ctx.fillText(line, pad, y);
-              y += 15;
-              drawn++;
-              if (drawn >= maxLines) break;
+          const bottom = rect.height - pad;
+          const maxLines = Math.max(1, Math.floor((bottom - (top + pad)) / 15));
+          const visible: { line: string; alpha: number }[] = [];
+          for (let i = 0; i < texts.length && visible.length < maxLines; i++) {
+            const room = maxLines - visible.length;
+            const lines = wrapTextTailLines(ctx, texts[i], maxW, room);
+            for (let j = lines.length - 1; j >= 0; j--) {
+              visible.unshift({ line: lines[j], alpha: i === 0 ? 1 : 0.55 });
             }
+          }
+          let y = bottom - visible.length * 15;
+          for (const item of visible) {
+            if (y + 14 > rect.height + 1) break;
+            ctx.globalAlpha = item.alpha;
+            ctx.fillText(item.line, pad, y);
+            y += 15;
           }
           ctx.globalAlpha = 1;
         }
@@ -2170,7 +2417,7 @@ function Editor({ initialRoom, local }: { initialRoom?: string; local?: boolean 
       <div style={{ position: "relative", height: "100vh", overflow: "hidden", fontFamily: "system-ui, sans-serif" }}>
         {/* full-bleed graph canvas — the whole background */}
         <div style={{ position: "absolute", inset: 0 }}>
-          <RguiGraphView graph={currentGraph} deviceName={deviceNameOf} handlers={rguiHandlers} selection={selected} edgeMeta={edgeMeta} nodeBody={nodeBody} nodeBusy={nodeBusy} nodeRemote={nodeRemote} live={liveRef.current} panels={allPanels} onPanelMove={onPanelMove} renderNodeOverlay={renderNodeOverlay} summarize={summarize} hud={{ title: "otoji", subtitle: local ? "local · this device only" : `room ${room} · ${status} · ${role} · ${devices.length} device(s)` }} hudStatus={hudStatus} apiRef={rguiApiRef} />
+          <RguiGraphView graph={currentGraph} federatedGraphs={federatedGraphs} deviceName={deviceNameOf} handlers={rguiHandlers} selection={selected} edgeMeta={edgeMeta} nodeBody={nodeBody} nodeBusy={nodeBusy} nodeRemote={nodeRemote} live={liveRef.current} panels={allPanels} onPanelMove={onPanelMove} renderNodeOverlay={renderNodeOverlay} summarize={summarize} hud={{ title: "otoji", subtitle: local ? "local · this device only" : `room ${room} · ${status} · ${role} · ${devices.length} device(s)` }} hudStatus={hudStatus} apiRef={rguiApiRef} />
         </div>
 
         {/* The toolbar is an rgui canvas panel now (see toolbarPanel): the old
@@ -2271,12 +2518,16 @@ function ConnectMenu({
     [q, options],
   );
   useEffect(() => { setActive(0); }, [q]);
-  const left = Math.min(x, (typeof window !== "undefined" ? window.innerWidth : x + 240) - 244);
-  const top = Math.min(y, (typeof window !== "undefined" ? window.innerHeight : y + 240) - 240);
+  const vw = typeof window !== "undefined" ? window.innerWidth : 960;
+  const vh = typeof window !== "undefined" ? window.innerHeight : 720;
+  const menuW = Math.max(320, Math.min(560, Math.floor(vw / 3)));
+  const menuH = Math.max(260, Math.min(520, Math.floor(vh / 3)));
+  const left = Math.max(8, Math.min(x, vw - menuW - 8));
+  const top = Math.max(8, Math.min(y, vh - menuH - 8));
   return (
     <div
       onMouseDown={(e) => e.stopPropagation()}
-      style={{ ...CARD, position: "fixed", left, top, width: 232, padding: 6, zIndex: 30 }}
+      style={{ ...CARD, position: "fixed", left, top, width: menuW, padding: 8, zIndex: 30 }}
     >
       <input
         autoFocus
@@ -2292,7 +2543,7 @@ function ConnectMenu({
         placeholder={placeholder}
         style={{ width: "100%", boxSizing: "border-box", fontSize: 13, padding: "5px 7px", border: "1px solid #cbd5e0", borderRadius: 6, outline: "none" }}
       />
-      <div style={{ marginTop: 4, maxHeight: 200, overflow: "auto" }}>
+      <div style={{ marginTop: 6, maxHeight: menuH - 52, overflow: "auto" }}>
         {filtered.length === 0 ? (
           <div style={{ fontSize: 12, color: "#a0aec0", padding: "6px 7px" }}>no compatible node</div>
         ) : (
@@ -2301,7 +2552,7 @@ function ConnectMenu({
               key={o.type}
               onMouseEnter={() => setActive(idx)}
               onMouseDown={(e) => { e.preventDefault(); onPick(o.type); }}
-              style={{ fontSize: 12, padding: "5px 7px", borderRadius: 5, cursor: "pointer", background: idx === active ? "#ebf4ff" : "transparent" }}
+              style={{ fontSize: 13, padding: "7px 8px", borderRadius: 5, cursor: "pointer", background: idx === active ? "#ebf4ff" : "transparent" }}
             >
               {o.label}
             </div>
@@ -2334,10 +2585,14 @@ function SmartLinkMenu({
     return options.filter((o) => !s || o.label.toLowerCase().includes(s) || o.detail.toLowerCase().includes(s));
   }, [q, options]);
   useEffect(() => { setActive(0); }, [q]);
-  const left = Math.min(x, (typeof window !== "undefined" ? window.innerWidth : x + 280) - 284);
-  const top = Math.min(y, (typeof window !== "undefined" ? window.innerHeight : y + 260) - 260);
+  const vw = typeof window !== "undefined" ? window.innerWidth : 960;
+  const vh = typeof window !== "undefined" ? window.innerHeight : 720;
+  const menuW = Math.max(340, Math.min(620, Math.floor(vw / 3)));
+  const menuH = Math.max(280, Math.min(560, Math.floor(vh / 3)));
+  const left = Math.max(8, Math.min(x, vw - menuW - 8));
+  const top = Math.max(8, Math.min(y, vh - menuH - 8));
   return (
-    <div onMouseDown={(e) => e.stopPropagation()} style={{ ...CARD, position: "fixed", left, top, width: 272, padding: 6, zIndex: 31 }}>
+    <div onMouseDown={(e) => e.stopPropagation()} style={{ ...CARD, position: "fixed", left, top, width: menuW, padding: 8, zIndex: 31 }}>
       <input
         autoFocus
         value={q}
@@ -2352,7 +2607,7 @@ function SmartLinkMenu({
         placeholder={placeholder}
         style={{ width: "100%", boxSizing: "border-box", fontSize: 13, padding: "5px 7px", border: "1px solid #cbd5e0", borderRadius: 6, outline: "none" }}
       />
-      <div style={{ marginTop: 4, maxHeight: 216, overflow: "auto" }}>
+      <div style={{ marginTop: 6, maxHeight: menuH - 52, overflow: "auto" }}>
         {filtered.length === 0 ? (
           <div style={{ fontSize: 12, color: "#a0aec0", padding: "6px 7px" }}>no compatible link</div>
         ) : (
@@ -2361,7 +2616,7 @@ function SmartLinkMenu({
               key={o.id}
               onMouseEnter={() => setActive(idx)}
               onMouseDown={(e) => { e.preventDefault(); onPick(o); }}
-              style={{ padding: "6px 7px", borderRadius: 5, cursor: "pointer", background: idx === active ? "#ebf4ff" : "transparent" }}
+              style={{ padding: "8px 9px", borderRadius: 5, cursor: "pointer", background: idx === active ? "#ebf4ff" : "transparent" }}
             >
               <div style={{ fontSize: 12, color: "#1a202c", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{o.label}</div>
               <div style={{ fontSize: 10, color: "#718096", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{o.detail}</div>
@@ -2460,6 +2715,6 @@ function displayModeLabel(mode: DisplayMode): string {
   return "Stack";
 }
 
-export function GraphEditor({ initialRoom, local }: { initialRoom?: string; local?: boolean }) {
-  return <Editor initialRoom={initialRoom} local={local} />;
+export function GraphEditor({ initialRoom, local, federationDemo }: { initialRoom?: string; local?: boolean; federationDemo?: boolean }) {
+  return <Editor initialRoom={initialRoom} local={local} federationDemo={federationDemo} />;
 }

@@ -15,9 +15,9 @@ if (params.has("mesh")) {
   view = <MeshPanel />;
 } else if (params.has("local")) {
   // Single-device "try it" editor (no room/signaling), preloaded with a demo.
-  view = <GraphEditor local />;
+  view = <GraphEditor local federationDemo={params.has("federationDemo")} />;
 } else if (params.has("graph")) {
-  view = <GraphEditor initialRoom={params.get("room") ?? undefined} />;
+  view = <GraphEditor initialRoom={params.get("room") ?? undefined} federationDemo={params.has("federationDemo")} />;
 } else if (isRoomCode(path)) {
   // Shareable join URL: otoji.org/kru-dfmq-atg
   view = <GraphEditor initialRoom={path} />;

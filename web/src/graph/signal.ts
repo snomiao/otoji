@@ -27,6 +27,8 @@ export const SIGNAL: Record<PortType, { measure: Measure; ownership: Ownership }
   image: { measure: "intensive", ownership: "clone" },
   // Feedback pulses are tiny JSON messages and can cross device boundaries.
   control: { measure: "intensive", ownership: "copy" },
+  // Environment links are metadata/capability references, not media payloads.
+  environment: { measure: "intensive", ownership: "copy" },
 };
 
 /** Can the signal be turned into a wire frame? (copy/clone) */

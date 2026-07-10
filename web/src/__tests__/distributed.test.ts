@@ -44,7 +44,7 @@ describe("edge frames", () => {
 });
 
 describe("cross-device graph signals", () => {
-  it("allows image and control edges to cross devices", () => {
+  it("allows image edges to cross devices", () => {
     const graph: VoiceGraph = {
       version: 1,
       nodes: {
@@ -53,7 +53,6 @@ describe("cross-device graph signals", () => {
       },
       edges: [
         { id: edgeId({ source: "screen", sourceHandle: "out", target: "ocr", targetHandle: "in" }), source: "screen", sourceHandle: "out", target: "ocr", targetHandle: "in" },
-        { id: edgeId({ source: "ocr", sourceHandle: "rate", target: "screen", targetHandle: "rate" }), source: "ocr", sourceHandle: "rate", target: "screen", targetHandle: "rate" },
       ],
     };
     const illegal = illegalCrossDeviceEdges(graph, (n) => n.device);

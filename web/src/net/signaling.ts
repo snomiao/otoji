@@ -34,6 +34,8 @@ export interface Signaling {
   on(type: string, fn: Handler): () => void;
   signal(to: string, data: unknown): void;
   patchGraph(graph: unknown): void;
+  /** publish the room's org.rgui.graph.v1 envelope (served at GET {base}/{room}/graph) */
+  publishFederatedGraph(env: unknown): void;
   getGraph(): void;
   pipe(node: string, text: string, src: "node" | "cli"): void;
   connect(): void;
@@ -127,6 +129,9 @@ export class SignalingClient implements Signaling {
   }
   patchGraph(graph: unknown): void {
     this.send({ type: "graph-patch", graph });
+  }
+  publishFederatedGraph(env: unknown): void {
+    this.send({ type: "fed-graph", graph: env });
   }
   getGraph(): void {
     this.send({ type: "graph-get" });
