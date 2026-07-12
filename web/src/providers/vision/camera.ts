@@ -22,6 +22,13 @@ export interface CameraHandle {
   stream(): MediaStream;
 }
 
+export interface CameraCaptureInfo {
+  facingMode: string;
+  mirroredPreview: boolean;
+  inferenceMirrored: boolean;
+  deviceId?: string;
+}
+
 export interface CameraOpts {
   deviceId?: string;
   fps: number;
@@ -29,7 +36,7 @@ export interface CameraOpts {
   /** stop() releases the video tracks (default). false = the caller owns the
    *  tracks' lifetime (e.g. a display stream cached across runtime restarts). */
   stopTracks?: boolean;
-  onFrame: (bitmap: ImageBitmap, width: number, height: number) => void;
+  onFrame: (bitmap: ImageBitmap, width: number, height: number, capture: CameraCaptureInfo) => void;
   onError?: (e: Error) => void;
 }
 
@@ -71,7 +78,14 @@ export async function createFrameSource(
         bitmap.close();
         return;
       }
-      opts.onFrame(bitmap, video.videoWidth, video.videoHeight);
+      const settings = stream.getVideoTracks()[0]?.getSettings?.();
+      opts.onFrame(bitmap, video.videoWidth, video.videoHeight, {
+        facingMode: settings?.facingMode ?? "unknown",
+        deviceId: settings?.deviceId,
+        // The preview and inference bitmap are not CSS- or pixel-mirrored here.
+        mirroredPreview: false,
+        inferenceMirrored: false,
+      });
     } catch (e) {
       opts.onError?.(e instanceof Error ? e : new Error(String(e)));
     } finally {
