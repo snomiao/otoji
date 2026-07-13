@@ -21,7 +21,7 @@ import { RecordingPlayer } from "./RecordingPlayer";
 import { VideoClipPlayer } from "./VideoClipPlayer";
 import { DIFF_STYLES, DEFAULT_DIFF_STYLE } from "../lib/textdiff";
 import { DEFAULT_CAMERA_FPS } from "../providers/vision/camera";
-import { releaseScreenShare } from "../providers/vision/screen";
+import { preselectScreenShare, releaseScreenShare } from "../providers/vision/screen";
 import { DETECT_MODELS, DEFAULT_DETECT_MODEL } from "../providers/vision/detect";
 import { isPreviewShown, setPreviewShown, subscribePrefs } from "../lib/prefs";
 import { samplesToWavBlob, concatSamples } from "../lib/peaks";
@@ -314,15 +314,28 @@ export function NodeInspector({ node, controls = true, onClose }: { node: Inspec
     );
   }
 
-  if (vt === "screen-share" || vt === "camera" || vt === "vision-model") {
+  if (vt === "screen-share" || vt === "camera" || vt === "vision-model" || vt === "depth-field" || vt === "hand-space" || vt === "spatial-renderer" || vt === "image-match") {
     const stacked = displayMode === "stack";
+    const pickState = config?.screenPickState as string | undefined;
+    const pickError = (config?.screenPickError as string | undefined) ?? "";
+    const needsFrontmostWindow = pickState === "error" && /invalid state/i.test(pickError);
+    const pickMsg =
+      pickState === "opening"
+        ? "waiting for picker"
+        : pickState === "selected"
+          ? "screen selected"
+          : pickState === "dismissed"
+            ? "picker dismissed"
+            : pickState === "error"
+              ? needsFrontmostWindow ? "bring window front, retry" : "picker error"
+              : "";
     return (
       <div
         className="rgui-node-cfg"
         style={{ position: "relative", width: "100%", height: "100%", fontSize: 12, fontFamily: "system-ui, sans-serif" }}
       >
         <LiveImageFill id={id} mode={displayMode} />
-        {vt !== "vision-model" && <LiveVideo id={id} mode={displayMode} />}
+        {(vt === "screen-share" || vt === "camera") && <LiveVideo id={id} mode={displayMode} />}
         {controls && (
           <div style={{ ...bar, position: "absolute", top: 0, left: 0, right: 0, background: stacked ? "#2b3036" : "rgba(28,32,37,0.68)" }}>
             <span style={barTitle}>{spec.label}</span>
@@ -343,14 +356,31 @@ export function NodeInspector({ node, controls = true, onClose }: { node: Inspec
               <button
                 type="button"
                 title="Choose a different screen, window, or tab"
-                onClick={() => {
-                  releaseScreenShare(id);
-                  onConfig(id, { reselectionSeq: Date.now() });
+                onClick={async () => {
+                  onConfig(id, { screenPickState: "opening", screenPickError: undefined });
+                  try {
+                    await preselectScreenShare(id);
+                    onConfig(id, { screenPickState: "selected", screenPickError: undefined, reselectionSeq: Date.now() });
+                  } catch (e) {
+                    releaseScreenShare(id);
+                    const name = e instanceof DOMException ? e.name : "";
+                    const dismissed = name === "NotAllowedError" || name === "AbortError";
+                    onConfig(id, {
+                      screenPickState: dismissed ? "dismissed" : "error",
+                      screenPickError: e instanceof Error ? e.message : String(e),
+                      reselectionSeq: Date.now(),
+                    });
+                  }
                 }}
                 style={{ fontSize: 11, border: "1px solid rgba(203,213,224,0.55)", borderRadius: 4, background: "rgba(255,255,255,0.12)", color: "#e6e9ec", cursor: "pointer", padding: "2px 6px", flex: "0 0 auto" }}
               >
                 Change
               </button>
+            )}
+            {vt === "screen-share" && pickMsg && (
+              <span style={{ color: pickState === "dismissed" || pickState === "error" ? "#f6ad55" : "#a0aec0", fontSize: 10, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                {pickMsg}
+              </span>
             )}
             {vt === "camera" && (
               <select value={(config?.cameraId as string) ?? ""} onChange={(e) => onConfig(id, { cameraId: e.target.value || undefined })} style={{ fontSize: 11, flex: "0 1 120px", minWidth: 0 }} title="camera device">
@@ -365,6 +395,8 @@ export function NodeInspector({ node, controls = true, onClose }: { node: Inspec
                   <option value="depth">Depth map</option>
                   <option value="pose">Pose</option>
                   <option value="hand">Hand</option>
+                  <option value="gesture">Hand gesture</option>
+                  <option value="spatial-monkey">3D fingertip monkey</option>
                 </select>
                 {task === "detect" && (
                   <>
@@ -378,6 +410,24 @@ export function NodeInspector({ node, controls = true, onClose }: { node: Inspec
                       style={{ fontSize: 11, width: 44 }} />
                   </>
                 )}
+              </>
+            )}
+            {vt === "image-match" && (
+              <>
+                <label style={{ display: "flex", alignItems: "center", gap: 3, color: "#a0aec0", fontSize: 10, flex: "0 0 auto" }} title="minimum match score (0–1)">
+                  score
+                  <input type="number" min={0.5} max={0.99} step={0.05} defaultValue={(config?.threshold as number) ?? 0.8}
+                    onBlur={(e) => onConfig(id, { threshold: Math.min(0.99, Math.max(0.5, Number(e.target.value) || 0.8)) })}
+                    onKeyDown={(e) => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); }}
+                    style={{ fontSize: 11, width: 44 }} />
+                </label>
+                <label style={{ display: "flex", alignItems: "center", gap: 3, color: "#a0aec0", fontSize: 10, flex: "0 0 auto" }} title="max matches reported">
+                  max
+                  <input type="number" min={1} max={64} step={1} defaultValue={(config?.maxMatches as number) ?? 16}
+                    onBlur={(e) => onConfig(id, { maxMatches: Math.min(64, Math.max(1, Math.round(Number(e.target.value)) || 16)) })}
+                    onKeyDown={(e) => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); }}
+                    style={{ fontSize: 11, width: 40 }} />
+                </label>
               </>
             )}
           </div>
@@ -408,12 +458,110 @@ export function NodeInspector({ node, controls = true, onClose }: { node: Inspec
           {deviceSel(sel)}
         </label>
 
+        {vt === "environment" && (
+          <>
+            <label style={row}>label:
+              <input type="text" defaultValue={(config?.label as string) ?? ""}
+                placeholder={assigned?.name ?? "Browser environment"}
+                onBlur={(e) => onConfig(id, { label: e.target.value.trim() || undefined })}
+                onKeyDown={(e) => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); }} style={sel} />
+            </label>
+            <label style={row}>scope:
+              <select value={(config?.scope as string) ?? "browser-tab"} onChange={(e) => onConfig(id, { scope: e.target.value })} style={sel}>
+                <option value="browser-tab">Browser tab</option>
+                <option value="browser-device">Browser device</option>
+                <option value="native-device">Native device</option>
+                <option value="room">Room shared</option>
+              </select>
+            </label>
+            <label style={row}>runtime:
+              <select value={(config?.runtime as string) ?? "browser"} onChange={(e) => onConfig(id, { runtime: e.target.value })} style={sel}>
+                <option value="browser">Browser</option>
+                <option value="native">Native bridge</option>
+                <option value="worker">Worker</option>
+                <option value="cloud">Cloud</option>
+              </select>
+            </label>
+            <div style={{ marginTop: 6, display: "grid", gridTemplateColumns: "1fr 1fr", gap: 4, fontSize: 11, color: "#718096" }}>
+              {(["mic", "camera", "screen", "webgpu", "storage", "network"] as const).map((cap) => (
+                <label key={cap} style={{ display: "flex", alignItems: "center", gap: 4 }}>
+                  <input
+                    type="checkbox"
+                    checked={(config?.[cap] as boolean | undefined) ?? true}
+                    onChange={(e) => onConfig(id, { [cap]: e.target.checked })}
+                  />
+                  {cap}
+                </label>
+              ))}
+            </div>
+            <div style={{ marginTop: 6, fontSize: 10, color: "#a0aec0", lineHeight: 1.35 }}>
+              <div style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={(config?.deviceId as string | undefined) ?? node.device ?? ""}>device: {(config?.deviceId as string | undefined) ?? node.device ?? "unassigned"}</div>
+              <div style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={(config?.url as string | undefined) ?? ""}>url: {(config?.url as string | undefined) ?? "current tab"}</div>
+            </div>
+          </>
+        )}
+
         {vt === "stt" && (
           <label style={row}>model:
             <select value={(config?.model as string) ?? DEFAULT_SENSEVOICE_MODEL} onChange={(e) => onConfig(id, { model: e.target.value })} style={sel}>
               {SENSEVOICE_MODELS.map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
             </select>
           </label>
+        )}
+
+        {vt === "model-3d" && (
+          <>
+            <label style={row}>shape:
+              <select value={(config?.primitive as string) ?? "suzanne"} onChange={(e) => onConfig(id, { primitive: e.target.value, url: undefined })} style={sel}>
+                <option value="suzanne">Suzanne</option>
+                <option value="cube">Cube</option>
+                <option value="sphere">Sphere</option>
+              </select>
+            </label>
+            <label style={row}>GLB:
+              <input type="url" defaultValue={(config?.url as string) ?? ""} placeholder="https://…/model.glb"
+                onBlur={(e) => onConfig(id, { url: e.target.value.trim() || undefined })}
+                onKeyDown={(e) => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); }} style={sel} />
+            </label>
+            <label style={row}>scale:
+              <input type="number" min={0.05} max={10} step={0.05} defaultValue={(config?.scale as number) ?? 1}
+                onBlur={(e) => onConfig(id, { scale: Number(e.target.value) || 1 })} style={{ fontSize: 12, width: 60 }} />
+            </label>
+          </>
+        )}
+
+        {vt === "spatial-calibration" && (
+          <>
+            <label style={row}>near m:
+              <input type="number" min={0.05} max={5} step={0.05} defaultValue={(config?.nearMeters as number) ?? 0.2}
+                onBlur={(e) => onConfig(id, { nearMeters: Number(e.target.value) || 0.2 })} style={{ fontSize: 12, width: 60 }} />
+            </label>
+            <label style={row}>far m:
+              <input type="number" min={0.1} max={20} step={0.1} defaultValue={(config?.farMeters as number) ?? 2.5}
+                onBlur={(e) => onConfig(id, { farMeters: Number(e.target.value) || 2.5 })} style={{ fontSize: 12, width: 60 }} />
+            </label>
+            <label style={row}>FOV°:
+              <input type="number" min={20} max={140} step={1} defaultValue={(config?.fovDegrees as number) ?? 60}
+                onBlur={(e) => onConfig(id, { fovDegrees: Number(e.target.value) || 60 })} style={{ fontSize: 12, width: 60 }} />
+            </label>
+          </>
+        )}
+
+        {vt === "rgbd-point-cloud" && (
+          <>
+            <label style={row}>stride:
+              <input type="number" min={2} max={32} step={1} defaultValue={(config?.stride as number) ?? 8}
+                onBlur={(e) => onConfig(id, { stride: Math.max(2, Number(e.target.value) || 8) })} style={{ fontSize: 12, width: 60 }} />
+            </label>
+            <label style={row}>near m:
+              <input type="number" min={0.05} max={5} step={0.05} defaultValue={(config?.nearMeters as number) ?? 0.2}
+                onBlur={(e) => onConfig(id, { nearMeters: Number(e.target.value) || 0.2 })} style={{ fontSize: 12, width: 60 }} />
+            </label>
+            <label style={row}>far m:
+              <input type="number" min={0.1} max={20} step={0.1} defaultValue={(config?.farMeters as number) ?? 2.5}
+                onBlur={(e) => onConfig(id, { farMeters: Number(e.target.value) || 2.5 })} style={{ fontSize: 12, width: 60 }} />
+            </label>
+          </>
         )}
 
         {(vt === "translate" || vt === "browser-translate-api") && (

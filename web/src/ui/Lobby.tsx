@@ -29,12 +29,22 @@ export function Lobby() {
         <>
           <button
             onClick={() => { location.href = "/?local"; }}
-            style={{ width: "100%", marginTop: 8, fontSize: 13, padding: "8px", border: "1px solid #cbd5e0", borderRadius: 8, background: "#fff", color: "#2d3748", cursor: "pointer" }}
+            style={{
+              width: "100%",
+              marginTop: 8,
+              fontSize: 13,
+              padding: "8px",
+              border: "1px solid var(--otoji-gate-secondary-border)",
+              borderRadius: 8,
+              background: "var(--otoji-gate-secondary-bg)",
+              color: "var(--otoji-gate-secondary-text)",
+              cursor: "pointer",
+            }}
           >
             ▶ Try it here (no room)
           </button>
           <div style={{ marginTop: 14, fontSize: 12, color: "#a0aec0", textAlign: "center" }}>
-            <a href="/?simple" style={{ color: "#718096" }}>or simple transcription →</a>
+            <a href="/?simple" style={{ color: "var(--otoji-gate-muted)" }}>or simple transcription →</a>
           </div>
         </>
       }

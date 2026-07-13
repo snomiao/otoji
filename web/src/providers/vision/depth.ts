@@ -13,9 +13,9 @@ const pipes = new Map<string, Promise<any>>();
 function getPipe(model: string, onProgress?: (p: { progress?: number; text?: string }) => void): Promise<any> {
   let p = pipes.get(model);
   if (!p) {
-    // Depth-Anything builds on WebGPU but throws at inference, so keep it on the
-    // wasm worker (off the main thread; the camera rate feedback throttles fps).
-    p = buildPipeline("depth-estimation", model, onProgress, { webgpu: false }).catch((e) => {
+    // WebGPU inference verified working on transformers.js 4.2.0 (~360ms/frame
+    // vs multi-second wasm); buildPipeline still falls back to the wasm worker.
+    p = buildPipeline("depth-estimation", model, onProgress).catch((e) => {
       pipes.delete(model);
       throw e;
     });
@@ -43,8 +43,15 @@ function colorize(v: number): [number, number, number] {
   return [r, g, b];
 }
 
-/** Estimate depth and return a colorized depth-map ImageBitmap. */
-export async function estimateDepth(bitmap: ImageBitmap, model = DEFAULT_DEPTH_MODEL): Promise<ImageBitmap> {
+export interface DepthFieldResult {
+  width: number;
+  height: number;
+  values: number[];
+  preview: ImageBitmap;
+}
+
+/** Estimate depth and retain both normalized samples and a color preview. */
+export async function estimateDepthField(bitmap: ImageBitmap, model = DEFAULT_DEPTH_MODEL): Promise<DepthFieldResult> {
   const pipe = await getPipe(model);
   const src = document.createElement("canvas");
   src.width = bitmap.width;
@@ -62,5 +69,15 @@ export async function estimateDepth(bitmap: ImageBitmap, model = DEFAULT_DEPTH_M
     rgba[i * 4 + 2] = b;
     rgba[i * 4 + 3] = 255;
   }
-  return createImageBitmap(new ImageData(rgba, d.width, d.height));
+  return {
+    width: d.width,
+    height: d.height,
+    values: Array.from({ length: d.width * d.height }, (_, i) => d.data[i * ch]),
+    preview: await createImageBitmap(new ImageData(rgba, d.width, d.height)),
+  };
+}
+
+/** Estimate depth and return a colorized depth-map ImageBitmap. */
+export async function estimateDepth(bitmap: ImageBitmap, model = DEFAULT_DEPTH_MODEL): Promise<ImageBitmap> {
+  return (await estimateDepthField(bitmap, model)).preview;
 }

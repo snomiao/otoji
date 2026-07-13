@@ -28,6 +28,7 @@ describe("signal declarations", () => {
     expect(SIGNAL.image.ownership).toBe("clone");
     expect(SIGNAL.control.ownership).toBe("copy");
     expect(SIGNAL.environment.ownership).toBe("copy");
+    expect(SIGNAL.spatial.ownership).toBe("clone");
   });
 
   it("copy/clone are duplicable, share is aliasable-only, move is neither", () => {

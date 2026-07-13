@@ -13,11 +13,39 @@ export interface QueueState {
   queued: string[]; // labels waiting
 }
 
+export interface NodeMetricSample {
+  event: "start" | "stop" | "input" | "process" | "emit";
+  durationMs?: number;
+  port?: string;
+  label?: string;
+  ts?: number;
+}
+
+export interface NodeMetricState {
+  hz: number;
+  emitHz: number;
+  avgMs: number;
+  p95Ms: number;
+  lastMs: number;
+  events: number;
+  emits: number;
+  lastAt: number;
+}
+
+interface MutableMetricState extends NodeMetricState {
+  windowStart: number;
+  windowEvents: number;
+  windowEmits: number;
+  durations: number[];
+  lastNotify: number;
+}
+
 export class LiveStore {
   private levels = new Map<string, SttLevel[]>();
   private texts = new Map<string, string[]>();
   private busy = new Map<string, boolean>();
   private queues = new Map<string, QueueState>();
+  private metrics = new Map<string, MutableMetricState>();
   private images = new Map<string, ImageBitmap>();
   private media = new Map<string, MediaStream>();
   private listeners = new Map<string, Set<() => void>>();
@@ -103,11 +131,66 @@ export class LiveStore {
     return this.queues.get(nodeId) ?? EMPTY_QUEUE;
   }
 
+  recordMetric(nodeId: string, sample: NodeMetricSample): void {
+    const now = sample.ts ?? Date.now();
+    let m = this.metrics.get(nodeId);
+    if (!m) {
+      m = {
+        hz: 0,
+        emitHz: 0,
+        avgMs: 0,
+        p95Ms: 0,
+        lastMs: 0,
+        events: 0,
+        emits: 0,
+        lastAt: now,
+        windowStart: now,
+        windowEvents: 0,
+        windowEmits: 0,
+        durations: [],
+        lastNotify: 0,
+      };
+      this.metrics.set(nodeId, m);
+    }
+    m.events++;
+    m.windowEvents++;
+    m.lastAt = now;
+    if (sample.event === "emit") {
+      m.emits++;
+      m.windowEmits++;
+    }
+    if (typeof sample.durationMs === "number" && Number.isFinite(sample.durationMs)) {
+      m.lastMs = sample.durationMs;
+      m.durations.push(sample.durationMs);
+      if (m.durations.length > 80) m.durations.splice(0, m.durations.length - 80);
+      m.avgMs = m.durations.reduce((a, b) => a + b, 0) / m.durations.length;
+      const sorted = [...m.durations].sort((a, b) => a - b);
+      m.p95Ms = sorted[Math.min(sorted.length - 1, Math.floor((sorted.length - 1) * 0.95))] ?? 0;
+    }
+    const elapsed = now - m.windowStart;
+    if (elapsed >= 1000) {
+      m.hz = (m.windowEvents * 1000) / elapsed;
+      m.emitHz = (m.windowEmits * 1000) / elapsed;
+      m.windowStart = now;
+      m.windowEvents = 0;
+      m.windowEmits = 0;
+    }
+    if (now - m.lastNotify > 250) {
+      m.lastNotify = now;
+      this.emit(nodeId);
+    }
+  }
+
+  getMetric(nodeId: string): NodeMetricState | undefined {
+    return this.metrics.get(nodeId);
+  }
+
   reset(): void {
     this.levels.clear();
     this.texts.clear();
     this.busy.clear();
     this.queues.clear();
+    this.metrics.clear();
     for (const b of this.images.values()) b.close?.();
     this.images.clear();
     this.media.clear(); // tracks are owned (and stopped) by the runtime

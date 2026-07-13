@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useEffect, useState } from "react";
 import { generateRoomCode, isRoomCode } from "../lib/roomcode";
 import { generateDeviceName } from "../lib/device-id";
 import { ROLES, type DeviceRole } from "../lib/device-role";
@@ -15,10 +15,13 @@ const DEMO_BOXES: { label: string; color: string }[] = [
   { label: "🌐  Translate", color: "#2b6cb0" },
   { label: "🔊  Speaker", color: "#dd6b20" },
 ];
-function DecorPipeline() {
+function DecorPipeline({ dark }: { dark: boolean }) {
   const bw = 150, bh = 40, gap = 70, y = 0;
   const total = DEMO_BOXES.length * bw + (DEMO_BOXES.length - 1) * gap;
   const vh = bh + 20;
+  const boxFill = dark ? "#1f2732" : "#fff";
+  const textFill = dark ? "#d7dde7" : "#4a5568";
+  const lineStroke = dark ? "#516176" : "#94a3b8";
   return (
     <svg
       viewBox={`0 0 ${total} ${vh}`}
@@ -27,14 +30,14 @@ function DecorPipeline() {
     >
       {DEMO_BOXES.slice(0, -1).map((_, i) => {
         const x1 = i * (bw + gap) + bw;
-        return <line key={i} x1={x1} y1={y + bh / 2 + 10} x2={x1 + gap} y2={y + bh / 2 + 10} stroke="#94a3b8" strokeWidth={2} strokeDasharray="6 5" />;
+        return <line key={i} x1={x1} y1={y + bh / 2 + 10} x2={x1 + gap} y2={y + bh / 2 + 10} stroke={lineStroke} strokeWidth={2} strokeDasharray="6 5" />;
       })}
       {DEMO_BOXES.map((b, i) => {
         const x = i * (bw + gap);
         return (
           <g key={i}>
-            <rect x={x} y={y + 10} width={bw} height={bh} rx={8} fill="#fff" stroke={b.color} />
-            <text x={x + bw / 2} y={y + 10 + bh / 2 + 4} textAnchor="middle" fontSize={12} fill="#4a5568">{b.label}</text>
+            <rect x={x} y={y + 10} width={bw} height={bh} rx={8} fill={boxFill} stroke={b.color} />
+            <text x={x + bw / 2} y={y + 10 + bh / 2 + 4} textAnchor="middle" fontSize={12} fill={textFill}>{b.label}</text>
           </g>
         );
       })}
@@ -42,13 +45,22 @@ function DecorPipeline() {
   );
 }
 
-const CARD: React.CSSProperties = {
-  background: "rgba(255,255,255,0.97)",
-  border: "1px solid #e2e8f0",
-  borderRadius: 12,
-  boxShadow: "0 8px 30px rgba(0,0,0,0.14)",
-  backdropFilter: "blur(4px)",
-};
+function systemDarkMode(): boolean {
+  return typeof window !== "undefined" && window.matchMedia?.("(prefers-color-scheme: dark)").matches;
+}
+
+function useSystemDarkMode(): boolean {
+  const [dark, setDark] = useState(systemDarkMode);
+  useEffect(() => {
+    const mq = window.matchMedia?.("(prefers-color-scheme: dark)");
+    if (!mq) return;
+    const onChange = () => setDark(mq.matches);
+    onChange();
+    mq.addEventListener?.("change", onChange);
+    return () => mq.removeEventListener?.("change", onChange);
+  }, []);
+  return dark;
+}
 
 export interface JoinGateProps {
   room: string;
@@ -68,20 +80,87 @@ export interface JoinGateProps {
 
 export function JoinGate({ room, onRoomChange, name, onNameChange, role, onRoleChange, submitLabel, onSubmit, tagline, footer }: JoinGateProps) {
   const valid = isRoomCode(room.trim());
+  const dark = useSystemDarkMode();
   const submit = () => { if (valid) onSubmit(); };
   const onEnter = (e: React.KeyboardEvent) => { if (e.key === "Enter") submit(); };
+  const colors = dark
+    ? {
+        page: "#0d1117",
+        text: "#edf2f7",
+        muted: "#9aa7b8",
+        subtle: "#7d8aa0",
+        card: "rgba(20,25,33,0.96)",
+        cardBorder: "#2f3a4a",
+        fieldBg: "#101820",
+        fieldBorder: "#3b485a",
+        fieldText: "#edf2f7",
+        secondaryBg: "#182231",
+        secondaryText: "#d7dde7",
+        secondaryBorder: "#3b485a",
+        disabled: "#374151",
+        warn: "#f6ad55",
+        shadow: "0 8px 34px rgba(0,0,0,0.42)",
+      }
+    : {
+        page: "#f7fafc",
+        text: "#1a202c",
+        muted: "#718096",
+        subtle: "#a0aec0",
+        card: "rgba(255,255,255,0.97)",
+        cardBorder: "#e2e8f0",
+        fieldBg: "#fff",
+        fieldBorder: "#cbd5e0",
+        fieldText: "#1a202c",
+        secondaryBg: "#fff",
+        secondaryText: "#2d3748",
+        secondaryBorder: "#cbd5e0",
+        disabled: "#cbd5e0",
+        warn: "#c05621",
+        shadow: "0 8px 30px rgba(0,0,0,0.14)",
+      };
+  const fieldStyle: React.CSSProperties = {
+    background: colors.fieldBg,
+    color: colors.fieldText,
+    border: `1px solid ${colors.fieldBorder}`,
+  };
+  const diceStyle: React.CSSProperties = {
+    fontSize: 16,
+    padding: "0 10px",
+    border: `1px solid ${colors.secondaryBorder}`,
+    borderRadius: 8,
+    background: colors.secondaryBg,
+    color: colors.secondaryText,
+    cursor: "pointer",
+  };
 
   return (
-    <div style={{ position: "relative", height: "100vh", overflow: "hidden", fontFamily: "system-ui, sans-serif" }}>
+    <div
+      style={{
+        position: "relative",
+        height: "100vh",
+        overflow: "hidden",
+        fontFamily: "system-ui, sans-serif",
+        colorScheme: dark ? "dark" : "light",
+        background: colors.page,
+        color: colors.text,
+        ["--otoji-gate-muted" as string]: colors.muted,
+        ["--otoji-gate-subtle" as string]: colors.subtle,
+        ["--otoji-gate-field-bg" as string]: colors.fieldBg,
+        ["--otoji-gate-field-border" as string]: colors.fieldBorder,
+        ["--otoji-gate-field-text" as string]: colors.fieldText,
+        ["--otoji-gate-secondary-bg" as string]: colors.secondaryBg,
+        ["--otoji-gate-secondary-border" as string]: colors.secondaryBorder,
+        ["--otoji-gate-secondary-text" as string]: colors.secondaryText,
+      }}
+    >
       {/* decorative graph background */}
       <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center" }}>
-        <DecorPipeline />
+        <DecorPipeline dark={dark} />
       </div>
 
       {/* floating "hello" card */}
       <div
         style={{
-          ...CARD,
           position: "absolute",
           top: "50%",
           left: "50%",
@@ -90,13 +169,18 @@ export function JoinGate({ room, onRoomChange, name, onNameChange, role, onRoleC
           maxWidth: "calc(100% - 32px)",
           padding: "20px 22px",
           zIndex: 10,
+          background: colors.card,
+          border: `1px solid ${colors.cardBorder}`,
+          borderRadius: 12,
+          boxShadow: colors.shadow,
+          backdropFilter: "blur(4px)",
         }}
       >
-        <div style={{ fontSize: 13, color: "#a0aec0", marginBottom: 2 }}>👋 hello</div>
-        <strong style={{ fontSize: 26, letterSpacing: "-0.02em" }}>otoji</strong>
-        {tagline && <p style={{ fontSize: 13, color: "#718096", margin: "4px 0 16px" }}>{tagline}</p>}
+        <div style={{ fontSize: 13, color: colors.subtle, marginBottom: 2 }}>👋 hello</div>
+        <strong style={{ fontSize: 26, letterSpacing: "-0.02em", color: colors.text }}>otoji</strong>
+        {tagline && <p style={{ fontSize: 13, color: colors.muted, margin: "4px 0 16px" }}>{tagline}</p>}
 
-        <label style={{ display: "block", fontSize: 12, color: "#718096", marginTop: tagline ? 0 : 16, marginBottom: 8 }}>
+        <label style={{ display: "block", fontSize: 12, color: colors.muted, marginTop: tagline ? 0 : 16, marginBottom: 8 }}>
           room
           <div style={{ display: "flex", gap: 6, marginTop: 3 }}>
             <input
@@ -104,15 +188,15 @@ export function JoinGate({ room, onRoomChange, name, onNameChange, role, onRoleC
               onChange={(e) => onRoomChange(e.target.value)}
               onKeyDown={onEnter}
               placeholder="room code"
-              style={{ flex: 1, minWidth: 0, fontSize: 14, padding: "8px 10px", border: "1px solid #cbd5e0", borderRadius: 8, outline: "none" }}
+              style={{ ...fieldStyle, flex: 1, minWidth: 0, fontSize: 14, padding: "8px 10px", borderRadius: 8, outline: "none" }}
             />
-            <button onClick={() => onRoomChange(generateRoomCode())} title="random room" style={{ fontSize: 16, padding: "0 10px", border: "1px solid #cbd5e0", borderRadius: 8, background: "#fff", cursor: "pointer" }}>
+            <button onClick={() => onRoomChange(generateRoomCode())} title="random room" style={diceStyle}>
               🎲
             </button>
           </div>
         </label>
 
-        <label style={{ display: "block", fontSize: 12, color: "#718096", marginBottom: role ? 8 : 16 }}>
+        <label style={{ display: "block", fontSize: 12, color: colors.muted, marginBottom: role ? 8 : 16 }}>
           your name
           <div style={{ display: "flex", gap: 6, marginTop: 3 }}>
             <input
@@ -120,21 +204,21 @@ export function JoinGate({ room, onRoomChange, name, onNameChange, role, onRoleC
               onChange={(e) => onNameChange(e.target.value)}
               onKeyDown={onEnter}
               placeholder="your name"
-              style={{ flex: 1, minWidth: 0, fontSize: 14, padding: "8px 10px", border: "1px solid #cbd5e0", borderRadius: 8, outline: "none" }}
+              style={{ ...fieldStyle, flex: 1, minWidth: 0, fontSize: 14, padding: "8px 10px", borderRadius: 8, outline: "none" }}
             />
-            <button onClick={() => onNameChange(generateDeviceName())} title="random name" style={{ fontSize: 16, padding: "0 10px", border: "1px solid #cbd5e0", borderRadius: 8, background: "#fff", cursor: "pointer" }}>
+            <button onClick={() => onNameChange(generateDeviceName())} title="random name" style={diceStyle}>
               🎲
             </button>
           </div>
         </label>
 
         {role !== undefined && onRoleChange && (
-          <label style={{ display: "block", fontSize: 12, color: "#718096", marginBottom: 16 }}>
+          <label style={{ display: "block", fontSize: 12, color: colors.muted, marginBottom: 16 }}>
             this device's role
             <select
               value={role}
               onChange={(e) => onRoleChange(e.target.value as DeviceRole)}
-              style={{ width: "100%", boxSizing: "border-box", fontSize: 14, padding: "8px 10px", border: "1px solid #cbd5e0", borderRadius: 8, outline: "none", marginTop: 3, background: "#fff" }}
+              style={{ ...fieldStyle, width: "100%", boxSizing: "border-box", fontSize: 14, padding: "8px 10px", borderRadius: 8, outline: "none", marginTop: 3 }}
             >
               {ROLES.map((r) => <option key={r.id} value={r.id}>{r.label}</option>)}
             </select>
@@ -151,14 +235,14 @@ export function JoinGate({ room, onRoomChange, name, onNameChange, role, onRoleC
             padding: "10px",
             border: "none",
             borderRadius: 8,
-            background: valid ? "#2b6cb0" : "#cbd5e0",
+            background: valid ? "#2b6cb0" : colors.disabled,
             color: "#fff",
             cursor: valid ? "pointer" : "not-allowed",
           }}
         >
           {submitLabel}
         </button>
-        {!valid && <div style={{ fontSize: 11, color: "#c05621", marginTop: 6 }}>room needs 3+ words/parts, e.g. blue-otter-7x2k</div>}
+        {!valid && <div style={{ fontSize: 11, color: colors.warn, marginTop: 6 }}>room needs 3+ words/parts, e.g. blue-otter-7x2k</div>}
 
         {footer}
       </div>

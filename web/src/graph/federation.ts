@@ -27,6 +27,7 @@ const KIND: Record<PortType, SignalKind> = {
   image: "image",
   control: "ctl",
   environment: "ctl",
+  spatial: "ctl",
 };
 
 const PUBLIC_CONFIG: Partial<Record<NodeType, string[]>> = {

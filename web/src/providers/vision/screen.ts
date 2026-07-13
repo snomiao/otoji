@@ -47,6 +47,14 @@ export function releaseScreenShare(key: string): void {
   cachedStreams.delete(key);
 }
 
+/** Prompt immediately from a trusted UI click and cache the chosen stream. */
+export async function preselectScreenShare(key: string): Promise<void> {
+  releaseScreenShare(key);
+  const stream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: true });
+  cachedStreams.set(key, stream);
+  stream.getVideoTracks()[0]?.addEventListener("ended", () => cachedStreams.delete(key), { once: true });
+}
+
 export async function startScreenShare(opts: ScreenOpts): Promise<ScreenHandle> {
   let stream = opts.cacheKey ? cachedStreams.get(opts.cacheKey) : undefined;
   // A cached stream is reusable only while its video track is live (the user may

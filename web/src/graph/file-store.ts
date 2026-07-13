@@ -37,6 +37,16 @@ class FileStore {
 // or the synced graph.
 export const fileStore = new FileStore();
 
+export function fileKindForMetadata(name: string, type = ""): "audio" | "text" | "video" | "image" | null {
+  const mime = type.toLowerCase();
+  if (mime.startsWith("image/")) return "image";
+  if (mime.startsWith("audio/")) return "audio";
+  if (mime.startsWith("video/")) return "video";
+  if (mime.startsWith("text/")) return "text";
+  if (["application/json", "application/xml", "application/x-subrip"].includes(mime)) return "text";
+  return fileKindForName(name);
+}
+
 export function fileKindForName(name: string): "audio" | "text" | "video" | "image" | null {
   const ext = name.toLowerCase().split(".").pop() ?? "";
   if (["png", "jpg", "jpeg", "webp", "gif", "bmp", "avif"].includes(ext)) return "image";

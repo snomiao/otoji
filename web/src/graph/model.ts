@@ -5,7 +5,7 @@
 // segment = audio PCM, transcript = text, image = a captured frame,
 // control = a feedback signal (a "next"/credit pulse or a target rate number),
 // environment = runtime/capability metadata link from an Environment node.
-export type PortType = "segment" | "transcript" | "image" | "control" | "environment";
+export type PortType = "segment" | "transcript" | "image" | "control" | "environment" | "spatial";
 export type NodeType =
   | "environment"
   | "mic-vad"
@@ -41,6 +41,13 @@ export type NodeType =
   | "paddle-ocr"
   | "text-diff"
   | "vision-model"
+  | "depth-field"
+  | "hand-space"
+  | "spatial-calibration"
+  | "rgbd-point-cloud"
+  | "model-3d"
+  | "spatial-renderer"
+  | "image-match"
   | "audio-mix";
 
 export interface NodeSpec {
@@ -349,6 +356,65 @@ const RAW_NODE_SPECS: Record<NodeType, NodeSpec> = {
       { id: "json", type: "transcript" },
     ],
   },
+  "depth-field": {
+    type: "depth-field",
+    label: "Depth field",
+    inputs: [{ id: "in", type: "image" }],
+    outputs: [{ id: "depth", type: "spatial" }, { id: "preview", type: "image" }],
+  },
+  "hand-space": {
+    type: "hand-space",
+    label: "Hand space",
+    inputs: [{ id: "in", type: "image" }],
+    outputs: [{ id: "hand", type: "spatial" }, { id: "preview", type: "image" }],
+  },
+  "spatial-calibration": {
+    type: "spatial-calibration",
+    label: "3D calibration",
+    inputs: [{ id: "depth", type: "spatial" }, { id: "hand", type: "spatial" }],
+    outputs: [{ id: "space", type: "spatial" }],
+  },
+  "rgbd-point-cloud": {
+    type: "rgbd-point-cloud",
+    label: "RGB-D point cloud",
+    inputs: [{ id: "frame", type: "image" }, { id: "depth", type: "spatial" }],
+    outputs: [{ id: "scene", type: "spatial" }],
+  },
+  "model-3d": {
+    type: "model-3d",
+    label: "3D model",
+    inputs: [],
+    outputs: [{ id: "object", type: "spatial" }],
+  },
+  "spatial-renderer": {
+    type: "spatial-renderer",
+    label: "Spatial renderer",
+    inputs: [
+      { id: "frame", type: "image" },
+      { id: "depth", type: "spatial" },
+      { id: "space", type: "spatial" },
+      { id: "object", type: "spatial" },
+      { id: "scene", type: "spatial" },
+    ],
+    outputs: [{ id: "out", type: "image" }],
+  },
+  "image-match": {
+    type: "image-match",
+    label: "Image match",
+    // Template matching: find every occurrence of a small `pattern` image
+    // (wire a file-image or any image source) inside each `in` frame.
+    // Latest-only, pure NCC — no model download. `out` = annotated overlay,
+    // `count` = "N matches" text, `json` = count + per-match positions.
+    inputs: [
+      { id: "in", type: "image" },
+      { id: "pattern", type: "image" },
+    ],
+    outputs: [
+      { id: "out", type: "image" },
+      { id: "count", type: "transcript" },
+      { id: "json", type: "transcript" },
+    ],
+  },
 };
 
 const ENV_INPUT: NodeSpec["inputs"][number] = { id: "env", type: "environment" };
@@ -374,7 +440,7 @@ export const NODE_CATEGORIES: { id: string; label: string; types: NodeType[] }[]
   { id: "output", label: "Output", types: ["sink", "audio-out", "video-recorder", "srt-out", "speaker"] },
   { id: "model", label: "Custom model", types: ["llm-agent", "model"] },
   { id: "pipe", label: "Pipe (CLI)", types: ["pipe"] },
-  { id: "vision", label: "Vision", types: ["camera", "screen-share", "paddle-ocr", "vision-model"] },
+  { id: "vision", label: "Vision", types: ["camera", "screen-share", "paddle-ocr", "vision-model", "depth-field", "hand-space", "spatial-calibration", "rgbd-point-cloud", "model-3d", "spatial-renderer", "image-match"] },
   { id: "text", label: "Text", types: ["text-diff"] },
   { id: "net", label: "Network", types: ["environment", "tracker"] },
 ];

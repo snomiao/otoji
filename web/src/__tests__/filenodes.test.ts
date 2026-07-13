@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { buildSrt } from "../lib/srt";
-import { fileKindForName } from "../graph/file-store";
+import { fileKindForMetadata, fileKindForName } from "../graph/file-store";
 import { segmentSamples, MIC_VAD_SR } from "../lib/mic-vad";
 
 describe("buildSrt", () => {
@@ -34,6 +34,17 @@ describe("fileKindForName", () => {
     expect(fileKindForName("notes.md")).toBe("text");
     expect(fileKindForName("subs.srt")).toBe("text");
     expect(fileKindForName("archive.zip")).toBeNull();
+  });
+});
+
+describe("fileKindForMetadata", () => {
+  it("prefers MIME metadata and falls back to extension", () => {
+    expect(fileKindForMetadata("clipboard", "image/png")).toBe("image");
+    expect(fileKindForMetadata("recording", "audio/webm")).toBe("audio");
+    expect(fileKindForMetadata("clip.bin", "video/mp4")).toBe("video");
+    expect(fileKindForMetadata("payload", "application/json")).toBe("text");
+    expect(fileKindForMetadata("notes.md", "")).toBe("text");
+    expect(fileKindForMetadata("archive.zip", "application/zip")).toBeNull();
   });
 });
 

@@ -4,13 +4,14 @@
 // future bandwidth optimization; it decodes to 48 kHz and would need a resample.)
 
 import { bytesToBase64, base64ToBytes } from "../lib/base64";
-import type { ControlMsg, ImageMsg, SegmentMsg, TranscriptMsg } from "./runtime";
+import type { ControlMsg, ImageMsg, SegmentMsg, SpatialMsg, TranscriptMsg } from "./runtime";
+import type { CameraCaptureInfo } from "../providers/vision/camera";
 
 export interface EdgeFrame {
   kind: "edge";
   target: string; // node id
   port: string; // target input handle
-  mtype: "segment" | "transcript" | "image" | "control";
+  mtype: "segment" | "transcript" | "image" | "control" | "spatial";
   sampleRate?: number;
   durationMs?: number;
   offsetMs?: number; // segment offset in source timeline
@@ -26,12 +27,15 @@ export interface EdgeFrame {
   height?: number;
   ts?: number;
   pulse?: boolean;
+  spatial?: unknown;
+  capture?: CameraCaptureInfo;
 }
 
 export type SegmentFrame = EdgeFrame & { mtype: "segment"; sampleRate: number; durationMs: number; samplesB64: string };
 export type TranscriptFrame = EdgeFrame & { mtype: "transcript"; sampleRate: number; durationMs: number; samplesB64: string; text?: string };
 export type ImageFrame = EdgeFrame & { mtype: "image"; imageDataUrl: string; width: number; height: number; ts: number };
 export type ControlFrame = EdgeFrame & { mtype: "control"; ts: number };
+export type SpatialFrame = EdgeFrame & { mtype: "spatial"; spatial: unknown; ts: number };
 
 function encodeSamples(samples: Float32Array): string {
   return bytesToBase64(new Uint8Array(samples.buffer, samples.byteOffset, samples.byteLength));
@@ -86,11 +90,15 @@ export async function buildImageFrame(target: string, port: string, img: ImageMs
     reader.onerror = () => reject(reader.error ?? new Error("image encode failed"));
     reader.readAsDataURL(blob);
   });
-  return { kind: "edge", target, port, mtype: "image", width: img.width, height: img.height, ts: img.ts, imageDataUrl };
+  return { kind: "edge", target, port, mtype: "image", width: img.width, height: img.height, ts: img.ts, imageDataUrl, capture: img.capture };
 }
 
 export function buildControlFrame(target: string, port: string, ctl: ControlMsg): ControlFrame {
   return { kind: "edge", target, port, mtype: "control", pulse: ctl.pulse, ts: ctl.ts };
+}
+
+export function buildSpatialFrame(target: string, port: string, msg: SpatialMsg): SpatialFrame {
+  return { kind: "edge", target, port, mtype: "spatial", spatial: msg.data, ts: msg.ts };
 }
 
 async function dataUrlToImageBitmap(dataUrl: string): Promise<ImageBitmap> {
@@ -103,17 +111,20 @@ export function frameToMessage(f: SegmentFrame): SegmentMsg;
 export function frameToMessage(f: TranscriptFrame): TranscriptMsg;
 export function frameToMessage(f: ControlFrame): ControlMsg;
 export function frameToMessage(f: ImageFrame): Promise<ImageMsg>;
-export function frameToMessage(f: EdgeFrame): SegmentMsg | TranscriptMsg | ControlMsg | Promise<ImageMsg>;
-export function frameToMessage(f: EdgeFrame): SegmentMsg | TranscriptMsg | ControlMsg | Promise<ImageMsg> {
+export function frameToMessage(f: SpatialFrame): SpatialMsg;
+export function frameToMessage(f: EdgeFrame): SegmentMsg | TranscriptMsg | ControlMsg | SpatialMsg | Promise<ImageMsg>;
+export function frameToMessage(f: EdgeFrame): SegmentMsg | TranscriptMsg | ControlMsg | SpatialMsg | Promise<ImageMsg> {
   if (f.mtype === "image") {
     return dataUrlToImageBitmap(f.imageDataUrl ?? "").then((bitmap) => ({
       bitmap,
       width: f.width ?? bitmap.width,
       height: f.height ?? bitmap.height,
       ts: f.ts ?? Date.now(),
+      capture: f.capture,
     }));
   }
   if (f.mtype === "control") return { pulse: f.pulse, ts: f.ts ?? Date.now() };
+  if (f.mtype === "spatial") return { data: f.spatial, ts: f.ts ?? Date.now() };
   const samples = decodeSamples(f.samplesB64 ?? "");
   const seg: SegmentMsg = { samples, sampleRate: f.sampleRate ?? 16000, durationMs: f.durationMs ?? 0, offsetMs: f.offsetMs };
   if (f.mtype === "transcript")

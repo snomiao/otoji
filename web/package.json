@@ -26,7 +26,8 @@
     "monaco-editor": "^0.55.1",
     "onnxruntime-web": "^1.27.0",
     "react": "^18.3.1",
-    "react-dom": "^18.3.1"
+    "react-dom": "^18.3.1",
+    "three": "^0.185.1"
   },
   "devDependencies": {
     "@playwright/test": "^1.61.1",
@@ -34,8 +35,10 @@
     "@types/node": "^25.5.2",
     "@types/react": "^18.3.3",
     "@types/react-dom": "^18.3.0",
+    "@types/three": "^0.185.1",
     "@typescript/native-preview": "7.0.0-dev.20260627.2",
     "@vitejs/plugin-react": "^4.3.1",
+    "@webgpu/types": "^0.1.71",
     "esbuild": "^0.23.0",
     "jsdom": "^24.1.0",
     "tsx": "^4.16.0",

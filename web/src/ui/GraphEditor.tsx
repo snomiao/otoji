@@ -36,7 +36,7 @@ import {
   type GraphTemplate,
 } from "../lib/templates";
 import { LiveStore } from "../graph/live-store";
-import { fileStore, fileKindForName } from "../graph/file-store";
+import { fileStore, fileKindForMetadata } from "../graph/file-store";
 import { PeerMeshTransport } from "../graph/mesh-transport";
 import { PreviewSync } from "../graph/preview-sync";
 import { p2pModelCache } from "../providers/model/p2p-cache";
@@ -89,7 +89,7 @@ function activeTrackers(approved: string[]): string[] {
 }
 
 /** Port/signal-type accent colors (palette dots, etc.). */
-const PORT_COLOR: Record<PortType, string> = { segment: "#dd6b20", transcript: "#2b6cb0", image: "#319795", control: "#d69e2e", environment: "#805ad5" };
+const PORT_COLOR: Record<PortType, string> = { segment: "#dd6b20", transcript: "#2b6cb0", image: "#319795", control: "#d69e2e", environment: "#805ad5", spatial: "#d53f8c" };
 
 /** localStorage key for the persisted local-mode graph (rooms use the DO). */
 const LOCAL_GRAPH_KEY = "otoji.local.graph";
@@ -99,6 +99,16 @@ const PANEL_ANCHORS_KEY = "otoji.rgui.panel-anchors";
 function loadPanelAnchors(): Record<string, { x: number; y: number }> {
   try {
     return JSON.parse(localStorage.getItem(PANEL_ANCHORS_KEY) ?? "{}");
+  } catch {
+    return {};
+  }
+}
+
+/** localStorage key for rgui panel collapse state (panelId -> collapsed). */
+const PANEL_COLLAPSED_KEY = "otoji.rgui.panel-collapsed";
+function loadPanelCollapsed(): Record<string, boolean> {
+  try {
+    return JSON.parse(localStorage.getItem(PANEL_COLLAPSED_KEY) ?? "{}");
   } catch {
     return {};
   }
@@ -114,12 +124,12 @@ const CONTROL_ROWS: Partial<Record<NodeType, number>> = {
   translate: 5, "browser-translate-api": 3, "text-aggregate": 3, "text-normalize": 8, "text-filter": 7, "llm-agent": 8, sink: 7, "video-recorder": 8, "video-clip": 6, url: 0, tts: 4, "tts-model": 5, model: 5,
   // Visual nodes are full-bleed: controls live in the overlay's title bar, so
   // the whole body is preview.
-  camera: 0, "screen-share": 0, "vision-model": 0, "paddle-ocr": 2, "text-diff": 3,
+  camera: 0, "screen-share": 0, "vision-model": 0, "depth-field": 0, "hand-space": 0, "spatial-calibration": 3, "rgbd-point-cloud": 4, "spatial-renderer": 0, "model-3d": 3, "image-match": 0, "paddle-ocr": 2, "text-diff": 3,
 };
 
 type DisplayMode = "full-bleed" | "fit" | "stack";
 const DISPLAY_MODES: DisplayMode[] = ["full-bleed", "fit", "stack"];
-const VISUAL_DISPLAY_NODES = new Set<NodeType>(["camera", "screen-share", "vision-model", "file-image", "video-recorder", "video-clip", "url"]);
+const VISUAL_DISPLAY_NODES = new Set<NodeType>(["camera", "screen-share", "vision-model", "depth-field", "hand-space", "spatial-renderer", "image-match", "file-image", "video-recorder", "video-clip", "url"]);
 const TEXT_DISPLAY_NODES = new Set<NodeType>(["environment", "stt", "web-speech", "vosk", "sherpa", "translate", "browser-translate-api", "text-aggregate", "text-normalize", "text-filter", "llm-agent", "model", "tts", "tts-model", "sink", "paddle-ocr", "text-diff"]);
 
 type SmartLinkOption = {
@@ -247,148 +257,6 @@ function fromRF(nodes: Node[], edges: Edge[], version: number): VoiceGraph {
   return g;
 }
 
-// --- Auto-layout: depth columns + hard non-overlap + connection spring -----
-// Constraint-projection layout (position-based, no momentum):
-//   0. seed each node into a COLUMN by its longest-path depth (cheap coarse
-//      layout that pre-solves the slow chain-stretch mode → fast convergence);
-//   1. a SOFT spring nudges connected nodes toward a rest gap and biases the
-//      flow left→right (source left of its target, aligned in y);
-//   2. then non-overlap is enforced as a STRONG/HARD constraint — overlapping
-//      boxes (sized by each node's MEASURED box) are projected fully apart,
-//      repeated until the layout is clean.
-// The result is a deterministic function of (nodes, edges, sizes) — it does NOT
-// read prior positions — so re-running yields the SAME tidy layout: a genuine
-// fixpoint (no drift / no sparsening). Pure + deterministic, safe to broadcast.
-function autoLayout(
-  nodes: Node[],
-  edges: Edge[],
-  sizeOf: (id: string) => { w: number; h: number },
-): Record<string, { x: number; y: number }> {
-  // Work in box CENTERS (node.position is the top-left corner).
-  const P = nodes.map((n) => {
-    const { w, h } = sizeOf(n.id);
-    return { id: n.id, cx: n.position.x + w / 2, cy: n.position.y + h / 2, w, h };
-  });
-  if (P.length === 0) return {};
-  const idx = new Map(P.map((p, i) => [p.id, i] as const));
-  const links = edges
-    .map((e) => [idx.get(e.source), idx.get(e.target)] as [number | undefined, number | undefined])
-    .filter((l): l is [number, number] => l[0] != null && l[1] != null);
-
-  const GAP = 40; // hard min empty space between any two boxes
-  const SPRING_GAP = 64; // desired edge-to-edge gap along a connection (≥ GAP)
-  const SPRING_K = 0.2; // soft spring step fraction (per endpoint)
-  const SEP_LOOP = 4; // cheap approximate separation passes inside the spring loop
-  // Iteration cap scaled DOWN as the graph grows so a non-converging dense graph
-  // can't lock the UI: cost is ~ITERS·N², so ITERS·N² is held ≈ constant (with a
-  // floor for quality on small graphs and a ceiling for big ones). Still breaks
-  // early on convergence, so small/typical graphs run far fewer iterations.
-  const ITERS = Math.max(80, Math.min(600, Math.round(2_000_000 / (P.length * P.length))));
-  // Global budget on separation passes (each is an O(N²) pairwise scan), so the
-  // total auto-arrange cost is hard-capped (~20M comparisons, tens of ms) and a
-  // pathological dense/cyclic graph can never freeze the UI. The budget is sized
-  // so the per-node pass allowance exceeds any realistic column height: at N=200
-  // it's ~500 passes (a 200-tall column needs ~200), and this editor's graphs are
-  // far smaller — so real graphs always fully de-overlap. Only an extreme graph
-  // (many hundreds of dense nodes) would hit the cap, degrading gracefully (a few
-  // residual overlaps) rather than hanging. settle()/the loop stop when clean OR
-  // when this is exhausted; for real inputs that's always "clean".
-  let sepBudget = Math.ceil(20_000_000 / (P.length * P.length));
-
-  // Coarse initial layout: place each node in a COLUMN by its longest-path depth
-  // (source→target distance), rows stacked within a column. This solves the
-  // slow "stretch the whole chain" relaxation mode up front — the spring then
-  // only fine-tunes — so even long pipelines converge in a few dozen iterations
-  // instead of thousands. It also makes the result a deterministic function of
-  // (nodes, edges, sizes): re-running gives the same layout (a true fixpoint).
-  const depth = new Array(P.length).fill(0);
-  for (let pass = 0; pass < P.length; pass++) {
-    let changed = false;
-    for (const [s, t] of links) if (depth[t] < depth[s] + 1) { depth[t] = depth[s] + 1; changed = true; }
-    if (!changed) break; // (caps naturally on cycles after P.length passes)
-  }
-  const COL = 230, ROW = 140; // approx column/row pitch (≥ box+GAP); spring + separation refine it
-  const rowOf: Record<number, number> = {};
-  for (let k = 0; k < P.length; k++) {
-    const d = depth[k];
-    const r = (rowOf[d] = (rowOf[d] ?? 0) + 1) - 1;
-    P[k].cx = d * COL;
-    P[k].cy = r * ROW;
-  }
-
-  // One relaxation pass of the non-overlap constraint: project every overlapping
-  // box pair apart along the axis of least penetration (half each). Returns
-  // whether anything moved, so callers can stop once the layout is clean.
-  const separatePass = (): boolean => {
-    if (sepBudget <= 0) return false; // out of budget — stop separating (no freeze)
-    sepBudget--;
-    let moved = false;
-    for (let i = 0; i < P.length; i++) {
-      for (let j = i + 1; j < P.length; j++) {
-        const a = P[i], b = P[j];
-        const dx = b.cx - a.cx, dy = b.cy - a.cy;
-        const minX = (a.w + b.w) / 2 + GAP;
-        const minY = (a.h + b.h) / 2 + GAP;
-        const ox = minX - Math.abs(dx);
-        const oy = minY - Math.abs(dy);
-        if (ox > 0 && oy > 0) {
-          moved = true;
-          // `|| s/2` breaks the exact dx/dy===0 tie so coincident boxes split.
-          if (ox <= oy) {
-            const s = (ox / 2) * (dx < 0 ? -1 : 1) || ox / 2;
-            a.cx -= s; b.cx += s;
-          } else {
-            const s = (oy / 2) * (dy < 0 ? -1 : 1) || oy / 2;
-            a.cy -= s; b.cy += s;
-          }
-        }
-      }
-    }
-    return moved;
-  };
-  // "Separate to completion": pass until nothing overlaps or the global budget
-  // runs out. Used for the initial seed and the FINAL guarantee, so the returned
-  // layout has zero overlaps whenever the budget allows (always, for real graphs).
-  const settle = () => { while (separatePass()) { /* until clean or out of budget */ } };
-
-  settle(); // start from a guaranteed non-overlapping state
-  for (let it = 0; it < ITERS; it++) {
-    // snapshot to measure net movement this iteration (for convergence break)
-    const px = P.map((p) => p.cx), py = P.map((p) => p.cy);
-    // 1) soft springs: nudge connected nodes toward a rest gap to the right and
-    //    into the same row. Small steps so the hard pass can always restore order.
-    for (const [s, t] of links) {
-      const a = P[s], b = P[t];
-      const wantX = (a.w + b.w) / 2 + SPRING_GAP;
-      const ex = (b.cx - a.cx) - wantX; // x error (>0 too far / <0 too close)
-      const ey = b.cy - a.cy; // y error → pull into the same row
-      a.cx += ex * SPRING_K; a.cy += ey * SPRING_K;
-      b.cx -= ex * SPRING_K; b.cy -= ey * SPRING_K;
-    }
-    // 2) hard constraint: a few cheap separation passes — approximate is fine
-    //    mid-relaxation (the final settle() guarantees a clean result), and it
-    //    keeps per-iteration cost at O(SEP_LOOP·N²) instead of O(N³).
-    for (let s = 0; s < SEP_LOOP; s++) if (!separatePass()) break;
-    // Stop once the layout has settled (net per-node move below ~0.1px) so small
-    // graphs don't burn the whole ITERS budget.
-    let maxMove = 0;
-    for (let k = 0; k < P.length; k++) {
-      maxMove = Math.max(maxMove, Math.abs(P[k].cx - px[k]), Math.abs(P[k].cy - py[k]));
-    }
-    if (maxMove < 0.1) break;
-  }
-  settle(); // final guarantee: spread until truly clean (no overlaps remain)
-
-  // Snap the whole layout so its top-left starts near a tidy origin.
-  let minX = Infinity, minY = Infinity;
-  for (const p of P) { minX = Math.min(minX, p.cx - p.w / 2); minY = Math.min(minY, p.cy - p.h / 2); }
-  const out: Record<string, { x: number; y: number }> = {};
-  for (const p of P) {
-    out[p.id] = { x: Math.round(p.cx - p.w / 2 - minX + 40), y: Math.round(p.cy - p.h / 2 - minY + 40) };
-  }
-  return out;
-}
-
 // Poll remote federation feeds (org.rgui.graph.v1 envelopes over HTTP) and keep
 // the last good envelope per URL. Revision-gated: an unchanged `revision` does
 // not re-render; an unreachable feed keeps serving its last good copy (the
@@ -432,6 +300,33 @@ function Editor({ initialRoom, local, federationDemo }: { initialRoom?: string; 
   const [paused, setPaused] = useState(!!local); // local demo starts paused (don't grab the mic until asked)
   const [role, setRoleState] = useState<DeviceRole>(() => getRole());
   const caps = useMemo(() => detectCaps(), []);
+  const [gpuDebug, setGpuDebug] = useState<{ status: "probing" | "ready" | "unavailable" | "error"; adapter?: string; features?: string; error?: string }>({ status: "probing" });
+  const [cameraPermission, setCameraPermission] = useState("unknown");
+
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      try {
+        const gpu = (navigator as any).gpu;
+        if (!gpu) { if (!cancelled) setGpuDebug({ status: "unavailable" }); return; }
+        const adapter = await gpu.requestAdapter({ powerPreference: "high-performance" });
+        if (!adapter) { if (!cancelled) setGpuDebug({ status: "unavailable", error: "requestAdapter returned null" }); return; }
+        const info = adapter.info ?? {};
+        const label = [info.vendor, info.architecture, info.device, info.description].filter(Boolean).join(" · ") || "adapter ready";
+        const wanted = ["shader-f16", "timestamp-query", "bgra8unorm-storage"].filter((f) => adapter.features?.has?.(f));
+        if (!cancelled) setGpuDebug({ status: "ready", adapter: label, features: wanted.join(", ") || "baseline" });
+      } catch (e) {
+        if (!cancelled) setGpuDebug({ status: "error", error: e instanceof Error ? e.message : String(e) });
+      }
+    })();
+    const permissions = navigator.permissions as any;
+    void permissions?.query?.({ name: "camera" }).then((p: PermissionStatus) => {
+      const update = () => !cancelled && setCameraPermission(p.state);
+      update();
+      p.addEventListener?.("change", update);
+    }).catch(() => undefined);
+    return () => { cancelled = true; };
+  }, []);
 
   const [nodes, setNodes] = useState<Node[]>([]);
   const [edges, setEdges] = useState<Edge[]>([]);
@@ -1172,7 +1067,7 @@ function Editor({ initialRoom, local, federationDemo }: { initialRoom?: string; 
   // monotonic seq so re-picking the SAME filename still restarts the runtime).
   const setFile = useCallback(
     (nodeId: string, file: File) => {
-      const kind = fileKindForName(file.name) ?? "audio";
+      const kind = fileKindForMetadata(file.name, file.type) ?? "audio";
       fileStore.set(nodeId, { kind, name: file.name, file });
       onConfig(nodeId, { file: file.name, fileSeq: ++fileSeqRef.current, url: undefined }); // local file wins; clear any URL
     },
@@ -1182,7 +1077,7 @@ function Editor({ initialRoom, local, federationDemo }: { initialRoom?: string; 
   // Drag-drop a media/text file onto the canvas -> create a file-source node here.
   const addFileNodeAt = useCallback(
     async (file: File, clientX: number, clientY: number, worldPos?: { x: number; y: number }) => {
-      const kind = file.type.startsWith("video/") ? "video" : fileKindForName(file.name);
+      const kind = fileKindForMetadata(file.name, file.type);
       if (!kind) return;
       const position = worldPos ? snapWorld(worldPos) : { x: 80 + Math.random() * 120, y: 80 + Math.random() * 120 };
       if (kind === "video") {
@@ -1215,7 +1110,7 @@ function Editor({ initialRoom, local, federationDemo }: { initialRoom?: string; 
           id,
           type: "voice",
           position,
-          data: { voiceType: "video-clip", device: myDeviceId, config: { clipId: clip.id, file: file.name, generatedBy: "file-drop" } },
+          data: { voiceType: "video-clip", device: myDeviceId, config: { clipId: clip.id, file: file.name, mimeType: file.type || undefined, size: file.size, generatedBy: "file-drop" } },
         };
         const next = [...nodesRef.current, n];
         nodesRef.current = next;
@@ -1226,7 +1121,7 @@ function Editor({ initialRoom, local, federationDemo }: { initialRoom?: string; 
       }
       const voiceType = kind === "audio" ? "file-audio" : kind === "image" ? "file-image" : "file-text";
       const id = `${voiceType}-${Math.random().toString(36).slice(2, 8)}`;
-      const n: Node = { id, type: "voice", position, data: { voiceType, device: myDeviceId, config: { file: file.name } } };
+      const n: Node = { id, type: "voice", position, data: { voiceType, device: myDeviceId, config: { file: file.name, mimeType: file.type || undefined, size: file.size } } };
       fileStore.set(id, { kind, name: file.name, file });
       const next = [...nodesRef.current, n];
       nodesRef.current = next;
@@ -1234,6 +1129,19 @@ function Editor({ initialRoom, local, federationDemo }: { initialRoom?: string; 
       broadcast(next, edgesRef.current);
     },
     [myDeviceId, setNodes, broadcast, snapWorld],
+  );
+
+  const addFileNodesAt = useCallback(
+    async (files: File[], world: { x: number; y: number }) => {
+      let added = 0;
+      for (const file of files) {
+        if (!fileKindForMetadata(file.name, file.type)) continue;
+        await addFileNodeAt(file, 0, 0, { x: world.x + added * 40, y: world.y + added * 40 });
+        added++;
+      }
+      return added;
+    },
+    [addFileNodeAt],
   );
 
   const addTextNodeAt = useCallback((text: string, worldPos?: { x: number; y: number }) => {
@@ -1259,6 +1167,36 @@ function Editor({ initialRoom, local, federationDemo }: { initialRoom?: string; 
     setNodes(next);
     broadcast(next, edgesRef.current);
   }, [addTextNodeAt, broadcast, myDeviceId, setNodes, snapWorld]);
+
+  const addClipboardNodesAt = useCallback(
+    async (data: DataTransfer, world: { x: number; y: number }) => {
+      const files = Array.from(data.files ?? []);
+      if (files.length && (await addFileNodesAt(files, world)) > 0) return;
+
+      const itemFiles = Array.from(data.items ?? [])
+        .filter((item) => item.kind === "file")
+        .map((item) => item.getAsFile())
+        .filter((file): file is File => !!file);
+      if (itemFiles.length && (await addFileNodesAt(itemFiles, world)) > 0) return;
+
+      const uri = data.getData("text/uri-list")?.split("\n").find((x) => x && !x.startsWith("#"))?.trim();
+      if (uri) return addUrlNodeAt(uri, world);
+
+      const plain = data.getData("text/plain")?.trim();
+      if (plain) return /^https?:\/\//i.test(plain) ? addUrlNodeAt(plain, world) : addTextNodeAt(plain, world);
+
+      const html = data.getData("text/html")?.trim();
+      if (html) {
+        const doc = new DOMParser().parseFromString(html, "text/html");
+        const img = doc.querySelector("img[src]");
+        const src = img?.getAttribute("src")?.trim();
+        if (src && /^https?:\/\//i.test(src)) return addUrlNodeAt(src, world);
+        const text = doc.body.textContent?.trim();
+        if (text) return addTextNodeAt(text, world);
+      }
+    },
+    [addFileNodesAt, addTextNodeAt, addUrlNodeAt],
+  );
 
   // Keyboard: Ctrl/Cmd+A selects all nodes; Delete/Backspace removes the current
   // selection (nodes + edges). Ignored while typing in a field.
@@ -1343,24 +1281,13 @@ function Editor({ initialRoom, local, federationDemo }: { initialRoom?: string; 
     broadcast(nextNodes, nextEdges);
   }, [myDeviceId, devices, caps.hasMic, setNodes, setEdges, broadcast]);
 
-  // Auto-arrange: relax all node positions with a box-collision spring layout so
-  // boxes stop overlapping and connected nodes flow left→right, then fit the view.
-  // rgui draws all nodes at a uniform width; a per-type height estimate keeps the
-  // non-overlap layout roughly right without needing measured DOM sizes.
+  // Auto-arrange is owned entirely by rgui. Dense mode contracts maximal direct
+  // chains, preserves branch gaps, snaps position+size, and guarantees no overlap.
+  // Existing rgui move/resize callbacks persist and broadcast the result.
   const autoArrange = useCallback(() => {
-    const sizeOf = (id: string) => {
-      const t = (nodesRef.current.find((n) => n.id === id)?.data as any)?.voiceType as NodeType | undefined;
-      const rows = t ? Math.max(NODE_SPECS[t].inputs.length, NODE_SPECS[t].outputs.length, 1) + 1 : 2;
-      return { w: 200, h: 40 + rows * 22 };
-    };
-    const pos = autoLayout(nodesRef.current, edgesRef.current, sizeOf);
-    const next = nodesRef.current.map((n) => (pos[n.id] ? { ...n, position: pos[n.id] } : n));
-    nodesRef.current = next;
-    pendingSnapRef.current = true; // land the spring layout on the grid
-    setNodes(next);
-    broadcast(next, edgesRef.current);
-    setTimeout(() => rguiApiRef.current?.fitView(48), 60);
-  }, [setNodes, broadcast]);
+    rguiApiRef.current?.autoLayout({ mode: "dense", animate: true });
+    setTimeout(() => rguiApiRef.current?.fitView(48), 360);
+  }, []);
 
   // Create the chosen node at the drop point and wire it to the dragged handle,
   // in one synced update. If the drag started from an output the new node is the
@@ -1560,6 +1487,7 @@ function Editor({ initialRoom, local, federationDemo }: { initialRoom?: string; 
       },
       onNodeBusy: (id, b) => { live.setBusy(id, b); pv?.onLocalPreview(id, "busy", b); },
       onQueue: (id, processing, queued) => { live.setQueue(id, processing, queued); pv?.onLocalPreview(id, "queue", { processing, queued }); },
+      onNodeMetric: (id, metric) => live.recordMetric(id, metric),
       hasPreviewConsumer: (id) => isPreviewShown(id) || (pv?.hasSubscriber(id) ?? false),
       onPipeOut: (id, text) => sigRef.current?.pipe(id, text, "node"), // pipe node input → CLI stdout
       onEdgeBytes: (eid, bytes) => edgeBytesRef.current.set(eid, (edgeBytesRef.current.get(eid) ?? 0) + bytes),
@@ -1633,6 +1561,7 @@ function Editor({ initialRoom, local, federationDemo }: { initialRoom?: string; 
       },
     });
     runtimeRef.current = rt;
+    if (import.meta.env.DEV) (window as any).__otojiRt = rt; // e2e / debug handle
     setRunning(true);
     try {
       await rt.start();
@@ -1747,7 +1676,7 @@ function Editor({ initialRoom, local, federationDemo }: { initialRoom?: string; 
     const n = nodesRef.current.find((x) => x.id === id);
     if (!n) return null;
     const vt = (n.data as any).voiceType as NodeType;
-    const visual = vt === "camera" || vt === "screen-share" || vt === "vision-model" || vt === "url";
+    const visual = vt === "camera" || vt === "screen-share" || vt === "vision-model" || vt === "depth-field" || vt === "hand-space" || vt === "spatial-renderer" || vt === "image-match" || vt === "url";
     const controls = controlNodeId === id;
     if (!visual && !controls) return null;
     const node = {
@@ -1863,13 +1792,6 @@ function Editor({ initialRoom, local, federationDemo }: { initialRoom?: string; 
         if (options.length) setSmartLinkMenu({ x: at.screen.x, y: at.screen.y, options, placeholder: "smart-link to…" });
       },
       onCanvasDrop: (world, dt) => {
-        const f = dt.files?.[0];
-        if (f) return addFileNodeAt(f, 0, 0, world);
-        const uri = dt.getData("text/uri-list")?.split("\n").find((x) => x && !x.startsWith("#"))?.trim();
-        if (uri) return addUrlNodeAt(uri, world);
-        const plain = dt.getData("text/plain")?.trim();
-        if (plain && /^https?:\/\//i.test(plain)) return addUrlNodeAt(plain, world);
-        if (plain) return addTextNodeAt(plain, world);
         const tplId = dt.getData("application/otoji-template");
         if (tplId) {
           const tpl = allTemplates.find((x) => x.id === tplId);
@@ -1878,9 +1800,11 @@ function Editor({ initialRoom, local, federationDemo }: { initialRoom?: string; 
         }
         const t = dt.getData("application/otoji-node") as NodeType;
         if (t && NODE_SPECS[t]) addNode(t, world);
+        else void addClipboardNodesAt(dt, world);
       },
+      onCanvasPaste: (world, dt) => void addClipboardNodesAt(dt, world),
     }),
-    [setNodes, setEdges, broadcast, addNode, addTemplate, addFileNodeAt, addTextNodeAt, addUrlNodeAt, allTemplates, removeEdge, controlNodeId, smartLinkPairs, smartLinkNodeOptions, applySmartLink],
+    [setNodes, setEdges, broadcast, addNode, addTemplate, addClipboardNodesAt, allTemplates, removeEdge, controlNodeId, smartLinkPairs, smartLinkNodeOptions, applySmartLink],
   );
 
   // Edges whose signal lacks a duplicable wire format and crosses devices.
@@ -1918,15 +1842,14 @@ function Editor({ initialRoom, local, federationDemo }: { initialRoom?: string; 
   const nodeBody = useCallback((node: { id: string; type: NodeType }) => {
     const t = node.type;
     const isMic = t === "mic-vad" || t === "mic-raw";
-    const isImg = t === "camera" || t === "screen-share" || t === "file-image" || t === "paddle-ocr" || t === "vision-model" || t === "video-recorder" || t === "video-clip";
+    const isImg = t === "camera" || t === "screen-share" || t === "file-image" || t === "paddle-ocr" || t === "vision-model" || t === "depth-field" || t === "hand-space" || t === "spatial-renderer" || t === "image-match" || t === "video-recorder" || t === "video-clip";
     const isText = TEXT_DISPLAY_NODES.has(t);
-    if (!isMic && !isImg && !isText) return undefined;
     const id = node.id;
     // The body hosts BOTH the config-controls overlay (upper zone, HTML, shown
     // whenever the node is readable-scaled) and the live preview (bottom strip,
     // canvas). Reserve rows for each; when rgui hides the overlay below its
     // minScale, the preview expands to the full body.
-    const previewRows = isImg ? 4 : 2;
+    const previewRows = isImg ? 4 : isMic || isText ? 2 : 1;
     const controlRows = CONTROL_ROWS[t] ?? 3;
     return {
       rows: previewRows + controlRows,
@@ -1937,7 +1860,7 @@ function Editor({ initialRoom, local, federationDemo }: { initialRoom?: string; 
         const displayMode = displayModeOf((graphNode?.data as any)?.config);
         // overlay (controls) visible above minScale 0.5 → keep to the bottom
         // strip; full-bleed screen-share has no control zone, use it all
-        const fullBleedVisual = t === "camera" || t === "screen-share" || t === "vision-model";
+        const fullBleedVisual = t === "camera" || t === "screen-share" || t === "vision-model" || t === "depth-field" || t === "hand-space" || t === "spatial-renderer" || t === "image-match";
         const stackTop = displayMode === "stack" ? Math.min(rect.height, (fullBleedVisual ? 26 : controlRows * 22) * k) : 0;
         const top = fullBleedVisual
           ? stackTop
@@ -1961,8 +1884,8 @@ function Editor({ initialRoom, local, federationDemo }: { initialRoom?: string; 
           // At readable zoom the HTML overlay shows visual nodes full-bleed:
           // local sources via <video>, remote sources via the streamed ImageBitmap.
           // Skip canvas fallback there so it doesn't look like a body-only stack.
-          if (k >= 0.5 && fullBleedVisual && (live.getMedia(id) || live.getImage(id))) return;
-          const img = live.getImage(id);
+          const skipImageFallback = k >= 0.5 && fullBleedVisual && (live.getMedia(id) || live.getImage(id));
+          const img = skipImageFallback ? undefined : live.getImage(id);
           if (img) {
             const s = displayMode === "full-bleed" && fullBleedVisual
               ? Math.max(rect.width / img.width, availH / img.height)
@@ -2015,7 +1938,7 @@ function Editor({ initialRoom, local, federationDemo }: { initialRoom?: string; 
               ctx.fillText(msg, 0, Math.max(top, rect.height - 15));
             }
           }
-        } else {
+        } else if (isText) {
           const texts = live.getTexts(id);
           ctx.font = "12px system-ui, sans-serif";
           ctx.textBaseline = "top";
@@ -2051,6 +1974,24 @@ function Editor({ initialRoom, local, federationDemo }: { initialRoom?: string; 
           ctx.beginPath();
           ctx.arc(rect.width - 5, 5, 3, 0, Math.PI * 2);
           ctx.fill();
+        }
+        const metric = live.getMetric(id);
+        if (metric && (metric.emitHz > 0 || metric.hz > 0 || metric.p95Ms > 0)) {
+          const isFrameLike = t === "camera" || t === "screen-share" || t === "file-image" || t === "vision-model" || t === "depth-field" || t === "hand-space" || t === "spatial-renderer" || t === "paddle-ocr" || t === "image-match" || t === "video-recorder" || t === "video-clip";
+          const rate = isFrameLike ? metric.emitHz || metric.hz : metric.hz || metric.emitHz;
+          const rateLabel = `${rate.toFixed(rate >= 10 ? 0 : 1)}${isFrameLike ? "fps" : "Hz"}`;
+          const ms = metric.p95Ms ? ` p95 ${metric.p95Ms.toFixed(metric.p95Ms >= 10 ? 0 : 1)}ms` : "";
+          const label = `${rateLabel}${ms}`;
+          ctx.font = "10px system-ui, sans-serif";
+          ctx.textAlign = "right";
+          ctx.textBaseline = "alphabetic";
+          const w = ctx.measureText(label).width + 8;
+          const x = rect.width - 2;
+          const y = rect.height - 4;
+          ctx.fillStyle = "rgba(15, 23, 42, 0.72)";
+          ctx.fillRect(Math.max(0, x - w), y - 12, w, 15);
+          ctx.fillStyle = metric.p95Ms > 100 ? "#f6ad55" : "#9ae6b4";
+          ctx.fillText(label, x - 4, y);
         }
       },
     };
@@ -2114,6 +2055,16 @@ function Editor({ initialRoom, local, federationDemo }: { initialRoom?: string; 
     panelAnchorsRef.current[panelId] = anchor;
     try { localStorage.setItem(PANEL_ANCHORS_KEY, JSON.stringify(panelAnchorsRef.current)); } catch { /* ignore */ }
   }, []);
+  // Collapse state persists like anchors. Node palettes + templates start
+  // collapsed (headers only) so a fresh canvas isn't walled in by panels;
+  // a header click expands one and the choice sticks across runs.
+  const panelCollapsedRef = useRef(loadPanelCollapsed());
+  const onPanelToggle = useCallback((panelId: string, collapsed: boolean) => {
+    panelCollapsedRef.current[panelId] = collapsed;
+    try { localStorage.setItem(PANEL_COLLAPSED_KEY, JSON.stringify(panelCollapsedRef.current)); } catch { /* ignore */ }
+  }, []);
+  // which node-palette category is expanded (accordion: one at a time)
+  const [openCategory, setOpenCategory] = useState<string | null>(null);
   const rguiPanels = useMemo<Panel[]>(() => {
     const kindColor = (t: NodeType) => {
       const spec = NODE_SPECS[t];
@@ -2121,24 +2072,39 @@ function Editor({ initialRoom, local, federationDemo }: { initialRoom?: string; 
       return pt ? PORT_COLOR[pt] : "#a0aec0";
     };
     const anchorOf = (id: string, edge: "left" | "right") => panelAnchorsRef.current[id] ?? edge;
-    const nodePanels: Panel[] = NODE_CATEGORIES.map((cat) => ({
-      id: `cat-${cat.id}`,
-      title: cat.label,
-      anchor: anchorOf(`cat-${cat.id}`, "left"),
-      items: cat.types.map((t) => ({ id: t, label: NODE_SPECS[t].label, color: kindColor(t) })),
-      onItemClick: (it) => addNode(it.id as NodeType),
-      onItemDrop: (it, at) => addNode(it.id as NodeType, at.world),
-    }));
+    // ONE nodes palette (not a panel per category — ~9 stacked headers walled
+    // in the canvas). Category rows are an accordion: one open at a time, so
+    // the expanded panel always fits the viewport (rgui panels don't scroll).
+    const isHeading = (id: string) => id.startsWith("hdr-");
+    const nodePanel: Panel = {
+      id: "nodes",
+      title: "＋ Nodes",
+      // default below the canvas wordmark HUD (top-left) instead of under it
+      anchor: panelAnchorsRef.current["nodes"] ?? { x: 12, y: 56 },
+      collapsed: panelCollapsedRef.current["nodes"] ?? true,
+      items: NODE_CATEGORIES.flatMap((cat) => [
+        { id: `hdr-${cat.id}`, label: `${openCategory === cat.id ? "▾" : "▸"} ${cat.label}`, color: "#a0aec0" },
+        ...(openCategory === cat.id
+          ? cat.types.map((t) => ({ id: t, label: `　${NODE_SPECS[t].label}`, color: kindColor(t) }))
+          : []),
+      ]),
+      onItemClick: (it) => {
+        if (isHeading(it.id)) setOpenCategory((cur) => (cur === it.id.slice(4) ? null : it.id.slice(4)));
+        else addNode(it.id as NodeType);
+      },
+      onItemDrop: (it, at) => { if (!isHeading(it.id)) addNode(it.id as NodeType, at.world); },
+    };
     const tplPanel: Panel = {
       id: "templates",
       title: "Templates",
       anchor: anchorOf("templates", "right"),
+      collapsed: panelCollapsedRef.current["templates"] ?? true,
       items: allTemplates.map((tpl) => ({ id: tpl.id, label: tpl.name })),
       onItemClick: (it) => { const tpl = allTemplates.find((x) => x.id === it.id); if (tpl) addTemplate(tpl); },
       onItemDrop: (it, at) => { const tpl = allTemplates.find((x) => x.id === it.id); if (tpl) addTemplate(tpl, undefined, at.world); },
     };
-    return [...nodePanels, tplPanel];
-  }, [allTemplates, addNode, addTemplate]);
+    return [nodePanel, tplPanel];
+  }, [allTemplates, addNode, addTemplate, openCategory]);
 
   // Canvas-native toolbar: the floating HTML toolbar as an rgui panel. Items
   // are one-shot actions; live state shows as the row dot + label (active view,
@@ -2178,6 +2144,7 @@ function Editor({ initialRoom, local, federationDemo }: { initialRoom?: string; 
       id: "toolbar",
       title: `otoji · ${running ? "live" : paused ? "paused" : "idle"}`,
       anchor: panelAnchorsRef.current["toolbar"] ?? { x: 210, y: 12 },
+      collapsed: panelCollapsedRef.current["toolbar"] ?? false,
       items,
       onItemClick: (it) => {
         const api = rguiApiRef.current;
@@ -2208,7 +2175,29 @@ function Editor({ initialRoom, local, federationDemo }: { initialRoom?: string; 
       },
     };
   }, [local, view, paused, running, peerBadgeShown, lastError, copied, addPipeline, autoArrange, saveSelectionAsTemplate]);
-  const allPanels = useMemo<Panel[]>(() => [...rguiPanels, toolbarPanel], [rguiPanels, toolbarPanel]);
+  const debugPanel = useMemo<Panel>(() => {
+    const ok = "#48bb78", warn = "#f6ad55", bad = "#fc8181", dim = "#8b949e";
+    const gpuColor = gpuDebug.status === "ready" ? ok : gpuDebug.status === "probing" ? warn : bad;
+    const spatialCount = nodes.filter((n) => ["depth-field", "hand-space", "spatial-calibration", "rgbd-point-cloud", "model-3d", "spatial-renderer"].includes((n.data as any)?.voiceType)).length;
+    return {
+      id: "debug-runtime",
+      title: "Runtime debug",
+      anchor: panelAnchorsRef.current["debug-runtime"] ?? "right",
+      collapsed: panelCollapsedRef.current["debug-runtime"] ?? false,
+      w: 290,
+      items: [
+        { id: "webgpu", label: `WebGPU  ${gpuDebug.status}`, color: gpuColor },
+        { id: "adapter", label: `GPU  ${gpuDebug.adapter ?? gpuDebug.error ?? "—"}`, color: gpuColor },
+        { id: "features", label: `features  ${gpuDebug.features ?? "—"}`, color: dim },
+        { id: "webgl2", label: `WebGL2  ${typeof WebGL2RenderingContext !== "undefined" ? "available" : "unavailable"}`, color: typeof WebGL2RenderingContext !== "undefined" ? ok : bad },
+        { id: "camera", label: `camera  ${cameraPermission}`, color: cameraPermission === "granted" ? ok : cameraPermission === "denied" ? bad : warn },
+        { id: "runtime", label: `graph  ${running ? "running" : paused ? "paused" : "idle"}`, color: running ? ok : warn },
+        { id: "spatial", label: `spatial nodes  ${spatialCount}`, color: spatialCount ? "#d53f8c" : dim },
+        { id: "status", label: `status  ${lastError || runStatus || "ok"}`, color: lastError ? bad : dim },
+      ],
+    };
+  }, [gpuDebug, cameraPermission, running, paused, nodes, lastError, runStatus]);
+  const allPanels = useMemo<Panel[]>(() => [...rguiPanels, toolbarPanel, debugPanel], [rguiPanels, toolbarPanel, debugPanel]);
 
   // DEV-only QA handle (like window.__rgui): drive add/inspect/connect from e2e.
   useEffect(() => {
@@ -2222,11 +2211,16 @@ function Editor({ initialRoom, local, federationDemo }: { initialRoom?: string; 
         nodes: () => nodesRef.current,
         edges: () => edgesRef.current,
         live: liveRef.current,
+        setPaused,
         debug: () => ({
           myDeviceId,
           present,
           onlineDeviceIds,
           peerStates,
+          running,
+          paused,
+          runStatus,
+          lastError,
           mesh: meshRef.current?.debugState(),
           preview: previewSyncRef.current?.debugState(),
           transport: transportRef.current
@@ -2235,7 +2229,7 @@ function Editor({ initialRoom, local, federationDemo }: { initialRoom?: string; 
         }),
       };
     }
-  }, [addNode, addTemplate, rguiHandlers, myDeviceId, present, onlineDeviceIds, peerStates]);
+  }, [addNode, addTemplate, rguiHandlers, myDeviceId, present, onlineDeviceIds, peerStates, running, paused, runStatus, lastError]);
 
   // Compact summary rgui renders when a node is too small for its config, or when
   // nodes merge into a pseudo-node. The host knows what each node means, so it
@@ -2253,7 +2247,7 @@ function Editor({ initialRoom, local, federationDemo }: { initialRoom?: string; 
         const micIds = rgNodes.map((n) => n.id).filter((id) => { const t = vtOf(id); return t === "mic-vad" || t === "mic-raw"; });
         // image-preview members: their frames are the fast-changing part that
         // says what the block is handling, so they survive the contraction
-        const IMG_TYPES: NodeType[] = ["camera", "screen-share", "paddle-ocr", "vision-model"];
+        const IMG_TYPES: NodeType[] = ["camera", "screen-share", "paddle-ocr", "vision-model", "depth-field", "hand-space", "spatial-renderer", "image-match"];
         const imgIds = rgNodes.map((n) => n.id).filter((id) => { const t = vtOf(id); return !!t && IMG_TYPES.includes(t); });
         // signal-flow display order for text-bearing nodes
         const TEXT_ORDER: NodeType[] = ["stt", "web-speech", "vosk", "paddle-ocr", "text-normalize", "text-diff", "text-filter", "text-aggregate", "llm-agent", "model", "translate", "browser-translate-api", "sink"];
@@ -2417,7 +2411,7 @@ function Editor({ initialRoom, local, federationDemo }: { initialRoom?: string; 
       <div style={{ position: "relative", height: "100vh", overflow: "hidden", fontFamily: "system-ui, sans-serif" }}>
         {/* full-bleed graph canvas — the whole background */}
         <div style={{ position: "absolute", inset: 0 }}>
-          <RguiGraphView graph={currentGraph} federatedGraphs={federatedGraphs} deviceName={deviceNameOf} handlers={rguiHandlers} selection={selected} edgeMeta={edgeMeta} nodeBody={nodeBody} nodeBusy={nodeBusy} nodeRemote={nodeRemote} live={liveRef.current} panels={allPanels} onPanelMove={onPanelMove} renderNodeOverlay={renderNodeOverlay} summarize={summarize} hud={{ title: "otoji", subtitle: local ? "local · this device only" : `room ${room} · ${status} · ${role} · ${devices.length} device(s)` }} hudStatus={hudStatus} apiRef={rguiApiRef} />
+          <RguiGraphView graph={currentGraph} federatedGraphs={federatedGraphs} deviceName={deviceNameOf} handlers={rguiHandlers} selection={selected} edgeMeta={edgeMeta} nodeBody={nodeBody} nodeBusy={nodeBusy} nodeRemote={nodeRemote} live={liveRef.current} panels={allPanels} onPanelMove={onPanelMove} onPanelToggle={onPanelToggle} renderNodeOverlay={renderNodeOverlay} summarize={summarize} hud={{ title: "otoji", subtitle: local ? "local · this device only" : `room ${room} · ${status} · ${role} · ${devices.length} device(s)` }} hudStatus={hudStatus} apiRef={rguiApiRef} />
         </div>
 
         {/* The toolbar is an rgui canvas panel now (see toolbarPanel): the old

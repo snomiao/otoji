@@ -83,4 +83,16 @@ describe("builtin templates", () => {
       { from: "agent", fromHandle: "out", to: "tts", toHandle: "in" },
     ]);
   });
+
+  it("keeps depth, hand, calibration, model, and rendering as separate spatial nodes", () => {
+    const t = BUILTIN_TEMPLATES.find((x) => x.id === "spatial-monkey")!;
+    expect(t.nodes.map((n) => n.type)).toEqual([
+      "camera", "depth-field", "hand-space", "spatial-calibration", "rgbd-point-cloud", "model-3d", "spatial-renderer",
+    ]);
+    const typed = t.edges.map((e) => {
+      const from = t.nodes.find((n) => n.key === e.from)!;
+      return NODE_SPECS[from.type].outputs.find((p) => p.id === e.fromHandle)?.type;
+    });
+    expect(typed.filter((x) => x === "spatial")).toHaveLength(7);
+  });
 });

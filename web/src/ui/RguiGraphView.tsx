@@ -4,7 +4,7 @@ import type { VoiceGraph } from "../graph/model";
 import { voiceGraphToRgui, type RguiMeta } from "../graph/rgui-adapter";
 import { federatedGraphToRguiMirror, type FederatedGraphEnvelope } from "../graph/federation";
 import type { LiveStore } from "../graph/live-store";
-import { snap, gridLevels, type PortRef, type Panel, type SummarizeFn, type ViewTransform } from "@snomiao/rgui";
+import { snap, gridLevels, type AutoLayoutOptions, type PortRef, type Panel, type SummarizeFn, type ViewTransform } from "@snomiao/rgui";
 
 // Primary graph renderer: draws + edits the voice graph with @snomiao/rgui
 // (readable-grid, semantic-zoom LOD, Canvas 2D). rgui owns pan/zoom, grid-snap
@@ -27,6 +27,8 @@ export interface RguiHandlers {
   onNodeContextMenu?: (nodeId: string, screen: { x: number; y: number }) => void;
   /** something dropped on the canvas at a world position (palette / file / template) */
   onCanvasDrop?: (world: { x: number; y: number }, dataTransfer: DataTransfer) => void;
+  /** clipboard data pasted into the canvas at a world position */
+  onCanvasPaste?: (world: { x: number; y: number }, dataTransfer: DataTransfer) => void;
   /** selection changed via the canvas (click / shift-drag box) */
   onSelectionChange?: (nodeIds: string[]) => void;
   /** left-click on an edge (rgui edge = {from,to}) */
@@ -56,6 +58,8 @@ export interface RguiApi {
   snapWorld: (pos: { x: number; y: number }) => { x: number; y: number };
   /** snap ALL nodes to the main grid (tidy a freshly generated/expanded graph) */
   snapGraph: (opts?: { silent?: boolean }) => void;
+  /** rgui-owned workflow layout; host persists through normal move/resize callbacks. */
+  autoLayout: (opts?: AutoLayoutOptions) => void;
   /** current graph-plane 3-D orientation (radians) */
   rotation3: () => { yaw: number; pitch: number; roll: number };
   /** tilt the graph plane in 3-D (nodes stay upright); no arg / zeros = flat */
@@ -75,6 +79,7 @@ export function RguiGraphView({
   live,
   panels,
   onPanelMove,
+  onPanelToggle,
   renderNodeOverlay,
   summarize,
   hud,
@@ -103,6 +108,9 @@ export function RguiGraphView({
   /** a panel was header-dragged to a new screen anchor (fires on release) —
    *  persist it and pass it back via Panel.anchor to restore across runs */
   onPanelMove?: (panelId: string, anchor: { x: number; y: number }) => void;
+  /** a panel header was clicked, toggling collapse — persist it and pass it
+   *  back via Panel.collapsed to restore across runs */
+  onPanelToggle?: (panelId: string, collapsed: boolean) => void;
   /** render the config controls overlay for a node — rgui glues one per node to
    *  its screen rect and auto-hides it when the node isn't readable-sized */
   renderNodeOverlay?: (nodeId: string) => React.ReactNode;
@@ -117,6 +125,7 @@ export function RguiGraphView({
   apiRef?: React.MutableRefObject<RguiApi | null>;
 }) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const rootRef = useRef<HTMLDivElement | null>(null);
   const viewerRef = useRef<Awaited<ReturnType<typeof createViewer>> | null>(null);
   const [error, setError] = useState<string>("");
 
@@ -157,7 +166,7 @@ export function RguiGraphView({
       for (const n of g.nodes) {
         if (n.overlay) continue; // federated mirrors may carry their own live-embed overlay
         const vt = graph.nodes[n.id]?.type;
-        const full = vt === "textarea" || vt === "url" || vt === "screen-share" || vt === "camera" || vt === "vision-model";
+        const full = vt === "textarea" || vt === "url" || vt === "screen-share" || vt === "camera" || vt === "vision-model" || vt === "depth-field" || vt === "hand-space" || vt === "spatial-renderer" || vt === "image-match";
         const host = hostFor(n.id);
         host.style.height = full ? "100%" : "";
         n.overlay = {
@@ -193,6 +202,8 @@ export function RguiGraphView({
   panelsRef.current = panels;
   const panelMoveRef = useRef(onPanelMove);
   panelMoveRef.current = onPanelMove;
+  const panelToggleRef = useRef(onPanelToggle);
+  panelToggleRef.current = onPanelToggle;
   const sumRef = useRef<SummarizeFn | undefined>(summarize);
   sumRef.current = summarize;
   const hudRef = useRef<{ title: string; subtitle: string } | undefined>(hud);
@@ -213,7 +224,7 @@ export function RguiGraphView({
     const canvas = canvasRef.current;
     if (!canvas) return;
     let disposed = false;
-    createViewer(canvas, rgGraphRef, hRef, panelsRef, panelMoveRef, sumRef, hudRef, hudStatusRef)
+    createViewer(canvas, rgGraphRef, hRef, panelsRef, panelMoveRef, panelToggleRef, sumRef, hudRef, hudStatusRef)
       .then((viewer) => {
         if (disposed) viewer?.destroy();
         else {
@@ -318,6 +329,31 @@ export function RguiGraphView({
   }, [selection]);
 
   // Native drop (palette node / template / file) → world coords → host handler.
+  const worldAtCenter = () => {
+    const v = viewerRef.current;
+    const el = rootRef.current;
+    if (!v || !el) return null;
+    const rect = el.getBoundingClientRect();
+    const view = v.view;
+    return { x: (rect.width / 2 - view.x) / view.k, y: (rect.height / 2 - view.y) / view.k };
+  };
+
+  const onPaste = (e: React.ClipboardEvent | ClipboardEvent) => {
+    const target = e.target as HTMLElement | null;
+    if (target && (/^(INPUT|TEXTAREA|SELECT|BUTTON)$/.test(target.tagName) || target.isContentEditable)) return;
+    const dt = e.clipboardData;
+    const world = dt ? worldAtCenter() : null;
+    if (!dt || !world) return;
+    hRef.current?.onCanvasPaste?.(world, dt);
+    e.preventDefault();
+  };
+
+  useEffect(() => {
+    const handler = (e: ClipboardEvent) => onPaste(e);
+    window.addEventListener("paste", handler);
+    return () => window.removeEventListener("paste", handler);
+  }, []);
+
   const onDrop = (e: React.DragEvent) => {
     e.preventDefault();
     const v = viewerRef.current;
@@ -332,12 +368,15 @@ export function RguiGraphView({
 
   return (
     <div
+      ref={rootRef}
       style={{ position: "absolute", inset: 0 }}
+      tabIndex={0}
       onDragOver={(e) => {
         e.preventDefault();
         e.dataTransfer.dropEffect = "copy";
       }}
       onDrop={onDrop}
+      onPaste={onPaste}
     >
       <canvas ref={canvasRef} style={{ width: "100%", height: "100%", display: "block", touchAction: "none", overscrollBehavior: "none" }} />
       {error && (
@@ -378,6 +417,7 @@ async function createViewer(
   hRef: React.MutableRefObject<RguiHandlers | undefined>,
   panelsRef: React.MutableRefObject<Panel[] | undefined>,
   panelMoveRef: React.MutableRefObject<((panelId: string, anchor: { x: number; y: number }) => void) | undefined>,
+  panelToggleRef: React.MutableRefObject<((panelId: string, collapsed: boolean) => void) | undefined>,
   sumRef: React.MutableRefObject<SummarizeFn | undefined>,
   hudRef: React.MutableRefObject<{ title: string; subtitle: string } | undefined>,
   hudStatusRef: React.MutableRefObject<((ctx: CanvasRenderingContext2D, size: { width: number; height: number }) => void) | undefined>,
@@ -391,6 +431,7 @@ async function createViewer(
     renderer: "canvas2d",
     panels: panelsRef.current as any,
     onPanelMove: (panel: Panel, anchor: { x: number; y: number }) => panelMoveRef.current?.(panel.id, anchor),
+    onPanelToggle: (panel: Panel, collapsed: boolean) => panelToggleRef.current?.(panel.id, collapsed),
     summarize: (nodes: any, info: any) => sumRef.current?.(nodes, info) ?? null,
     onNodeMoveEnd: (id, pos) => hRef.current?.onNodeMoveEnd?.(id, pos),
     onNodeResizeEnd: (id: string, size: { w: number; h: number; scale: number; x?: number; y?: number }) =>
@@ -477,11 +518,12 @@ function makeApi(viewer: Awaited<ReturnType<typeof createViewer>>, canvas: HTMLC
       // Snap to the minor readable-grid step (same step rgui snaps node drags to),
       // so dropped nodes/workflows land aligned to the visible grid.
       const r = viewer.rule;
-      const step = gridLevels(viewer.view.k, r.minGridPx, r.ladder)[1]!.step;
+      const step = gridLevels(viewer.view.k, r.minGridPx, r.radix)[1]!.step;
       return { x: snap(pos.x, step), y: snap(pos.y, step) };
     },
     rotation3: () => viewer.rotation3,
     setRotation3: (target, opts) => viewer.setRotation3(target, opts),
     snapGraph: (opts) => viewer.snapGraph(opts),
+    autoLayout: (opts) => viewer.autoLayout(opts),
   };
 }
