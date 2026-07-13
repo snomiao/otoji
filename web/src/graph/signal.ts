@@ -29,6 +29,7 @@ export const SIGNAL: Record<PortType, { measure: Measure; ownership: Ownership }
   control: { measure: "intensive", ownership: "copy" },
   // Environment links are metadata/capability references, not media payloads.
   environment: { measure: "intensive", ownership: "copy" },
+  spatial: { measure: "intensive", ownership: "clone" },
 };
 
 /** Can the signal be turned into a wire frame? (copy/clone) */

@@ -11,11 +11,18 @@
     "resolveJsonModule": true,
     "isolatedModules": true,
     "paths": {
-      "@snomiao/rgui": ["./src/vendor/rgui-stub.ts"]
+      // Typecheck against the live sibling-worktree rgui source when present
+      // (matches rgui-alias.ts / dev runtime), else the typed stub (CI). The
+      // pinned submodule is skipped here on purpose: it may trail the API the
+      // web code is written against.
+      "@snomiao/rgui": [
+        "../../../../rgui/tree/main/src/index.ts",
+        "./src/vendor/rgui-stub.ts"
+      ]
     },
     "noEmit": true,
     "allowSyntheticDefaultImports": true,
-    "types": ["vite/client", "vitest/globals", "node"]
+    "types": ["vite/client", "vitest/globals", "node", "@webgpu/types"]
   },
   "include": ["src", "extension", "userscript"]
 }

@@ -15,17 +15,20 @@ import { DEFAULT_NEURAL_TTS_MODEL, AUTO_TTS_MODEL, AUTO_TTS_VOICE, langToTtsMode
 import { runAsr, runText, runTts, warmPipe, type ModelTask } from "../providers/model/transformers-pipeline";
 import { createVoskStream, warmVosk, DEFAULT_VOSK_MODEL, type VoskStream } from "../providers/stt/vosk";
 import { createSherpaNativeStream, DEFAULT_SHERPA_SERVER_URL, type SherpaNativeStream } from "../providers/stt/sherpa_native";
-import { startCamera, clampFps, DEFAULT_CAMERA_FPS, type CameraHandle } from "../providers/vision/camera";
+import { startCamera, clampFps, DEFAULT_CAMERA_FPS, type CameraCaptureInfo, type CameraHandle } from "../providers/vision/camera";
 import { startScreenShare, type ScreenHandle } from "../providers/vision/screen";
 import { ocrRecognize, warmOcr } from "../providers/vision/paddleocr";
 import { detect, drawDetections, warmDetect, DEFAULT_DETECT_MODEL } from "../providers/vision/detect";
-import { estimateDepth, warmDepth } from "../providers/vision/depth";
-import { landmarks, drawLandmarks, formatLandmarksLabels, formatLandmarksJson, warmMediapipe, prewarmMediapipe, type MpTask } from "../providers/vision/mediapipe";
+import { estimateDepth, estimateDepthField, warmDepth } from "../providers/vision/depth";
+import { landmarks, drawLandmarks, drawSpatialMonkey, formatLandmarksLabels, formatLandmarksJson, warmMediapipe, prewarmMediapipe, type MpTask } from "../providers/vision/mediapipe";
+import { matchTemplate, drawMatches, formatMatchLabels, formatMatchJson, type Match } from "../providers/vision/match";
+import { SpatialSceneRenderer, type CalibratedSpace, type DepthField, type RgbdPointCloud, type SpatialObjectDescriptor } from "../providers/vision/spatial-renderer";
+import { calibrateSpatialCursor, SpatialCursorPublisher, type DepthFieldData, type HandSpaceData, type SpatialCalibrationOptions } from "./spatial-cursor";
 import { formatLabels, formatJsonl, type Detection } from "../lib/detect-format";
 import { diffText, type DiffStyle, DEFAULT_DIFF_STYLE } from "../lib/textdiff";
 import { isPreviewShown } from "../lib/prefs";
 import type { SttLevel } from "../providers/types";
-import { buildControlFrame, buildImageFrame, buildSegmentFrame, buildTranscriptFrame, frameToMessage, type EdgeFrame } from "./frames";
+import { buildControlFrame, buildImageFrame, buildSegmentFrame, buildSpatialFrame, buildTranscriptFrame, frameToMessage, type EdgeFrame } from "./frames";
 import { videoClipsDB, type VideoClip } from "../lib/video-clips-db";
 
 const DEFAULT_LLM_AGENT_MODEL = "Xenova/flan-t5-small";
@@ -124,10 +127,15 @@ export interface ImageMsg {
   width: number;
   height: number;
   ts: number; // capture time (ms epoch)
+  capture?: CameraCaptureInfo;
 }
 /** A feedback signal on a "control" edge: a "next" credit pulse. */
 export interface ControlMsg {
   pulse?: boolean; // "next": produce one frame (credit-based backpressure)
+  ts: number;
+}
+export interface SpatialMsg<T = unknown> {
+  data: T;
   ts: number;
 }
 
@@ -165,8 +173,17 @@ export interface RuntimeHooks {
   onVideoClip?: (nodeId: string, clip: VideoClip) => void; // encoded video+audio collected at video-recorder
   onPipeOut?: (nodeId: string, text: string) => void; // pipe node input -> external CLI stdout
   onEdgeBytes?: (edgeId: string, bytes: number) => void; // payload bytes sent over a cross-device edge
+  onNodeMetric?: (nodeId: string, metric: NodeMetricSample) => void;
   onStatus?: (s: string) => void;
   onError?: (e: Error) => void;
+}
+
+export interface NodeMetricSample {
+  event: "start" | "stop" | "input" | "process" | "emit";
+  durationMs?: number;
+  port?: string;
+  label?: string;
+  ts?: number;
 }
 
 /**
@@ -231,6 +248,7 @@ export class GraphRuntime {
   }
 
   private emit(nodeId: string, port: string, msg: unknown): void {
+    this.hooks.onNodeMetric?.(nodeId, { event: "emit", port, ts: Date.now() });
     for (const t of this.adj.get(`${nodeId}:${port}`) ?? []) {
       if (this.isLocal(t.node)) {
         this.nodes.get(t.node)?.input?.(t.port, msg);
@@ -245,16 +263,17 @@ export class GraphRuntime {
     if (!self) return;
     const owner = nodeOwner(this.graph.nodes[target.node], self.deviceIds);
     if (!owner) return;
-    const m = msg as Partial<TranscriptMsg> & Partial<SegmentMsg> & Partial<ImageMsg> & Partial<ControlMsg>;
+    const m = msg as Partial<TranscriptMsg> & Partial<SegmentMsg> & Partial<ImageMsg> & Partial<ControlMsg> & Partial<SpatialMsg>;
     let frame: EdgeFrame | null = null;
-    if (m.text !== undefined) frame = buildTranscriptFrame(target.node, target.port, m as TranscriptMsg);
+    if (m.data !== undefined) frame = buildSpatialFrame(target.node, target.port, m as SpatialMsg);
+    else if (m.text !== undefined) frame = buildTranscriptFrame(target.node, target.port, m as TranscriptMsg);
     else if (m.samples instanceof Float32Array) frame = buildSegmentFrame(target.node, target.port, m as SegmentMsg);
     else if (m.bitmap instanceof ImageBitmap) frame = await buildImageFrame(target.node, target.port, m as ImageMsg);
     else if (m.pulse !== undefined || m.ts !== undefined) frame = buildControlFrame(target.node, target.port, m as ControlMsg);
     if (!frame) return;
     const ok = self.transport.send(owner, frame);
     if (ok) {
-      const bytes = (frame.samplesB64?.length ?? 0) + (frame.imageDataUrl?.length ?? 0) + (frame.text?.length ?? 0) + 80;
+      const bytes = (frame.samplesB64?.length ?? 0) + (frame.imageDataUrl?.length ?? 0) + (frame.text?.length ?? 0) + (frame.spatial ? JSON.stringify(frame.spatial).length : 0) + 80;
       this.hooks.onEdgeBytes?.(`${nodeId}:${port}->${target.node}:${target.port}`, bytes);
     }
   }
@@ -271,7 +290,7 @@ export class GraphRuntime {
 
     // Instantiate only the nodes this device owns.
     for (const n of Object.values(this.graph.nodes)) {
-      if (this.isLocal(n.id)) this.nodes.set(n.id, this.build(n.id, n.type));
+      if (this.isLocal(n.id)) this.nodes.set(n.id, this.instrumentNode(n.id, this.build(n.id, n.type)));
     }
     this.hooks.self?.transport.setReceiver((f) => this.onFrame(f));
 
@@ -369,11 +388,14 @@ export class GraphRuntime {
       else if (p.text) this.hooks.onStatus?.(p.text);
     };
     for (const n of Object.values(this.graph.nodes)) {
-      if (n.type !== "vision-model" || !this.isLocal(n.id)) continue;
+      if (!this.isLocal(n.id)) continue;
+      if (n.type === "depth-field") { visionWarms.push(warmDepth(n.config?.model as string | undefined, onVisionProgress)); continue; }
+      if (n.type === "hand-space") { visionWarms.push(warmMediapipe("hand", onVisionProgress)); continue; }
+      if (n.type !== "vision-model") continue;
       const task = (n.config?.task as string | undefined) ?? "detect";
       const m = n.config?.model as string | undefined;
       if (task === "depth") visionWarms.push(warmDepth(m, onVisionProgress));
-      else if (task === "pose" || task === "hand") visionWarms.push(warmMediapipe(task, onVisionProgress));
+      else if (task === "pose" || task === "hand" || task === "gesture" || task === "spatial-monkey") visionWarms.push(warmMediapipe(task === "spatial-monkey" ? "hand" : task, onVisionProgress));
       else visionWarms.push(warmDetect(m ?? DEFAULT_DETECT_MODEL, onVisionProgress));
     }
     if (visionWarms.length) {
@@ -438,13 +460,13 @@ export class GraphRuntime {
     // one-off first-frame stall. Non-fatal and best-effort.
     const mpPrewarms: Array<Promise<void>> = [];
     for (const n of Object.values(this.graph.nodes)) {
-      if (n.type !== "vision-model" || !this.isLocal(n.id)) continue;
-      const task = (n.config?.task as string | undefined) ?? "detect";
-      if (task !== "pose" && task !== "hand") continue;
+      if (!this.isLocal(n.id) || (n.type !== "vision-model" && n.type !== "hand-space")) continue;
+      const task = n.type === "hand-space" ? "hand" : (n.config?.task as string | undefined) ?? "detect";
+      if (task !== "pose" && task !== "hand" && task !== "gesture" && task !== "spatial-monkey") continue;
       const cam = this.upstreamCamera(n.id);
       if (!cam) continue;
       mpPrewarms.push(
-        this.waitForDims(cam).then((d) => (d ? prewarmMediapipe(task, d.width, d.height) : undefined)),
+        this.waitForDims(cam).then((d) => (d ? prewarmMediapipe(task === "spatial-monkey" ? "hand" : task, d.width, d.height) : undefined)),
       );
     }
     if (mpPrewarms.length) {
@@ -453,6 +475,32 @@ export class GraphRuntime {
     }
 
     this.hooks.onStatus?.("running");
+  }
+
+  private instrumentNode(id: string, node: RuntimeNode): RuntimeNode {
+    const timed = async (event: NodeMetricSample["event"], fn: () => Promise<void> | void) => {
+      const t0 = performance.now();
+      try {
+        await fn();
+      } finally {
+        this.hooks.onNodeMetric?.(id, { event, durationMs: performance.now() - t0, ts: Date.now() });
+      }
+    };
+    return {
+      ...node,
+      start: node.start ? () => timed("start", () => node.start!()) : undefined,
+      stop: node.stop ? () => timed("stop", () => node.stop!()) : undefined,
+      input: node.input
+        ? (port, msg) => {
+            const t0 = performance.now();
+            try {
+              node.input!(port, msg);
+            } finally {
+              this.hooks.onNodeMetric?.(id, { event: "input", port, durationMs: performance.now() - t0, ts: Date.now() });
+            }
+          }
+        : undefined,
+    };
   }
 
   /** The frame source (camera or screen share) feeding this node's `in` port. */
@@ -561,9 +609,11 @@ export class GraphRuntime {
         chain = chain.then(async () => {
           processing = queued.shift() ?? label;
           emit();
+          const t0 = performance.now();
           try {
             await fn();
           } finally {
+            this.hooks.onNodeMetric?.(id, { event: "process", label, durationMs: performance.now() - t0, ts: Date.now() });
             processing = null;
             emit();
           }
@@ -589,10 +639,12 @@ export class GraphRuntime {
       busy = true;
       this.hooks.onNodeBusy?.(id, true);
       this.hooks.onQueue?.(id, job.label, []);
+      const t0 = performance.now();
       job
         .fn()
         .catch(() => {})
         .finally(() => {
+          this.hooks.onNodeMetric?.(id, { event: "process", label: job.label, durationMs: performance.now() - t0, ts: Date.now() });
           busy = false;
           this.hooks.onNodeBusy?.(id, false);
           this.hooks.onQueue?.(id, null, []);
@@ -1505,9 +1557,9 @@ export class GraphRuntime {
               deviceId,
               fps,
               demand,
-              onFrame: (bitmap, width, height) => {
+              onFrame: (bitmap, width, height, capture) => {
                 this.hooks.onImage?.(id, bitmap);
-                this.emit(id, "out", { bitmap, width, height, ts: Date.now() } as ImageMsg);
+                this.emit(id, "out", { bitmap, width, height, ts: Date.now(), capture } as ImageMsg);
               },
               onError: (e) => this.hooks.onError?.(e),
             });
@@ -1601,6 +1653,192 @@ export class GraphRuntime {
       };
     }
 
+    if (type === "depth-field") {
+      const cfg = this.graph.nodes[id]?.config ?? {};
+      const latest = this.makeLatest(id);
+      return {
+        input: (_port, msg) => {
+          const img = msg as ImageMsg;
+          latest.submit("depth field", async () => {
+            const result = await estimateDepthField(img.bitmap, cfg.model as string | undefined);
+            this.hooks.onImage?.(id, result.preview);
+            this.emit(id, "depth", { data: { kind: "depth-field", width: result.width, height: result.height, values: result.values }, ts: img.ts } as SpatialMsg);
+            if (this.hasOutgoing(id, "preview")) this.emit(id, "preview", { bitmap: result.preview, width: result.preview.width, height: result.preview.height, ts: img.ts } as ImageMsg);
+          });
+        },
+      };
+    }
+
+    if (type === "hand-space") {
+      const latest = this.makeLatest(id);
+      return {
+        input: (_port, msg) => {
+          const img = msg as ImageMsg;
+          latest.submit("hand space", async () => {
+            const result = await landmarks(img.bitmap, "hand");
+            const preview = await drawLandmarks(img.bitmap, result);
+            this.hooks.onImage?.(id, preview);
+            this.emit(id, "hand", { data: {
+              kind: "hand-landmarks",
+              landmarks: result.sets[0] ?? [],
+              width: img.width,
+              height: img.height,
+              capture: img.capture ?? { facingMode: "unknown", mirroredPreview: false, inferenceMirrored: false },
+            }, ts: img.ts } as SpatialMsg);
+            if (this.hasOutgoing(id, "preview")) this.emit(id, "preview", { bitmap: preview, width: preview.width, height: preview.height, ts: img.ts } as ImageMsg);
+          });
+        },
+      };
+    }
+
+    if (type === "spatial-calibration") {
+      const cfg = this.graph.nodes[id]?.config ?? {};
+      let depth: DepthFieldData | null = null;
+      let hand: HandSpaceData | null = null;
+      let depthTs = 0;
+      let handTs = 0;
+      const options: SpatialCalibrationOptions = {
+        nearMeters: (cfg.nearMeters as number | undefined) ?? .2,
+        farMeters: (cfg.farMeters as number | undefined) ?? 2.5,
+        fovDegrees: (cfg.fovDegrees as number | undefined) ?? 60,
+        maxSkewMs: (cfg.maxSkewMs as number | undefined) ?? 200,
+        cameraToWorld: cfg.cameraToWorld as number[] | undefined,
+      };
+      const publisher = new SpatialCursorPublisher(id, options.cameraToWorld);
+      let pendingFailure: ReturnType<typeof calibrateSpatialCursor> | null = null;
+      let failureTimer: ReturnType<typeof setTimeout> | null = null;
+      const cancelPendingFailure = () => {
+        if (failureTimer) clearTimeout(failureTimer);
+        failureTimer = null;
+        pendingFailure = null;
+      };
+      const emitSpace = () => {
+        const result = calibrateSpatialCursor(depth, depthTs, hand, handTs, options);
+        if (result.ok) {
+          cancelPendingFailure();
+          publisher.publish(result);
+          this.emit(id, "space", { data: result.space, ts: result.ts } as SpatialMsg);
+          return;
+        }
+        // Async depth/hand branches for the same camera frame commonly arrive
+        // a few milliseconds apart. Give their matching timestamp one skew
+        // window to arrive before announcing loss; structural failures are real
+        // immediately and bypass this pairing grace.
+        if (result.reason === "temporal-skew" || result.reason === "waiting-for-depth") {
+          pendingFailure = result;
+          if (!failureTimer) failureTimer = setTimeout(() => {
+            failureTimer = null;
+            if (pendingFailure) publisher.publish(pendingFailure);
+            pendingFailure = null;
+          }, options.maxSkewMs ?? 200);
+        } else {
+          cancelPendingFailure();
+          publisher.publish(result);
+        }
+      };
+      return { stop: () => { cancelPendingFailure(); publisher.close(); }, input: (port, msg) => {
+        const spatial = msg as SpatialMsg<any>;
+        if (port === "depth") { depth = spatial.data; depthTs = spatial.ts; }
+        if (port === "hand") { hand = spatial.data; handTs = spatial.ts; }
+        emitSpace();
+      } };
+    }
+
+    if (type === "rgbd-point-cloud") {
+      const cfg = this.graph.nodes[id]?.config ?? {};
+      let frame: ImageMsg | null = null;
+      let depth: any = null;
+      let depthTs = 0;
+      const latest = this.makeLatest(id);
+      const generate = () => {
+        if (!frame || !depth?.values?.length) return;
+        const img = frame;
+        latest.submit("RGB-D cloud", async () => {
+          const canvas = document.createElement("canvas");
+          canvas.width = depth.width; canvas.height = depth.height;
+          const ctx = canvas.getContext("2d", { willReadFrequently: true })!;
+          ctx.drawImage(img.bitmap, 0, 0, depth.width, depth.height);
+          const rgba = ctx.getImageData(0, 0, depth.width, depth.height).data;
+          const stride = Math.max(2, Math.round((cfg.stride as number | undefined) ?? 8));
+          const near = (cfg.nearMeters as number | undefined) ?? .2;
+          const far = (cfg.farMeters as number | undefined) ?? 2.5;
+          const fov = ((cfg.fovDegrees as number | undefined) ?? 60) * Math.PI / 180;
+          const focal = .5 * depth.width / Math.tan(fov / 2);
+          const points: number[] = [];
+          const colors: number[] = [];
+          for (let y = 0; y < depth.height; y += stride) for (let x = 0; x < depth.width; x += stride) {
+            const i = y * depth.width + x;
+            const z = near + (1 - depth.values[i] / 255) * (far - near);
+            points.push(((x - depth.width / 2) * z) / focal, -((y - depth.height / 2) * z) / focal, -z);
+            colors.push(rgba[i * 4] / 255, rgba[i * 4 + 1] / 255, rgba[i * 4 + 2] / 255);
+          }
+          this.emit(id, "scene", { data: { kind: "rgbd-point-cloud", points, colors, count: points.length / 3 }, ts: Math.max(img.ts, depthTs) } as SpatialMsg);
+          this.hooks.onRecognized?.(id, `${points.length / 3} RGB-D points`);
+        });
+      };
+      return { input: (port, msg) => {
+        if (port === "frame") frame = msg as ImageMsg;
+        if (port === "depth") { const s = msg as SpatialMsg<any>; depth = s.data; depthTs = s.ts; }
+        generate();
+      } };
+    }
+
+    if (type === "model-3d") {
+      const cfg = this.graph.nodes[id]?.config ?? {};
+      return {
+        start: () => {
+          const descriptor = {
+            kind: "model-3d",
+            primitive: (cfg.primitive as string | undefined) ?? "suzanne",
+            url: (cfg.url as string | undefined) ?? null,
+            scale: (cfg.scale as number | undefined) ?? 1,
+          };
+          this.hooks.onRecognized?.(id, JSON.stringify(descriptor));
+          this.emit(id, "object", { data: descriptor, ts: Date.now() } as SpatialMsg);
+        },
+      };
+    }
+
+    if (type === "spatial-renderer") {
+      let space: CalibratedSpace | null = null;
+      let depth: DepthField | null = null;
+      let object: SpatialObjectDescriptor = { kind: "model-3d", primitive: "suzanne", scale: 1 };
+      const scene = new SpatialSceneRenderer();
+      const latest = this.makeLatest(id);
+      return {
+        stop: () => scene.dispose(),
+        input: (port, msg) => {
+          if (port === "space") {
+            space = (msg as SpatialMsg<CalibratedSpace>).data;
+            return;
+          }
+          if (port === "depth") {
+            depth = (msg as SpatialMsg<DepthField>).data;
+            return;
+          }
+          if (port === "scene") {
+            scene.setPointCloud((msg as SpatialMsg<RgbdPointCloud>).data);
+            return;
+          }
+          if (port === "object") {
+            object = { ...object, ...(msg as SpatialMsg<SpatialObjectDescriptor>).data };
+            return;
+          }
+          if (port !== "frame") return;
+          const img = msg as ImageMsg;
+          if (!space?.landmarks?.length) {
+            this.hooks.onImage?.(id, img.bitmap);
+            return;
+          }
+          latest.submit("3D render", async () => {
+            const overlay = await scene.render(img.bitmap, space!, object, depth);
+            this.hooks.onImage?.(id, overlay);
+            if (this.hasOutgoing(id, "out")) this.emit(id, "out", { bitmap: overlay, width: overlay.width, height: overlay.height, ts: Date.now() } as ImageMsg);
+          });
+        },
+      };
+    }
+
     if (type === "vision-model") {
       const w = this.makeLatest(id);
       const cfg = this.graph.nodes[id]?.config ?? {};
@@ -1630,9 +1868,10 @@ export class GraphRuntime {
             try {
               if (task === "depth") {
                 overlay = await estimateDepth(img.bitmap, model || undefined);
-              } else if (task === "pose" || task === "hand") {
-                const res = await landmarks(img.bitmap, task as MpTask);
-                overlay = await drawLandmarks(img.bitmap, res);
+              } else if (task === "pose" || task === "hand" || task === "gesture" || task === "spatial-monkey") {
+                const mpTask = task === "spatial-monkey" ? "hand" : task as MpTask;
+                const res = await landmarks(img.bitmap, mpTask);
+                overlay = task === "spatial-monkey" ? await drawSpatialMonkey(img.bitmap, res) : await drawLandmarks(img.bitmap, res);
                 labels = formatLandmarksLabels(res);
                 json = formatLandmarksJson(res);
               } else {
@@ -1652,6 +1891,59 @@ export class GraphRuntime {
               this.emit(id, "labels", { text: labels, audio: emptyAudio() } as TranscriptMsg);
             }
             if (wantJson && json) this.emit(id, "json", { text: json, audio: emptyAudio() } as TranscriptMsg);
+            // Credit pulse so a connected Camera can self-pace.
+            this.emit(id, "rate", { pulse: true, ts: Date.now() } as ControlMsg);
+          });
+        },
+      };
+    }
+
+    if (type === "image-match") {
+      const w = this.makeLatest(id);
+      const cfg = this.graph.nodes[id]?.config ?? {};
+      const threshold = typeof cfg.threshold === "number" ? (cfg.threshold as number) : 0.8;
+      const maxMatches = typeof cfg.maxMatches === "number" ? (cfg.maxMatches as number) : 16;
+      const emptyAudio = () => ({ samples: new Float32Array(0), sampleRate: MIC_VAD_SR, durationMs: 0 });
+      let pattern: ImageBitmap | null = null; // latest image seen on `pattern`
+      return {
+        input: (port, msg) => {
+          const img = msg as ImageMsg;
+          if (port === "pattern") {
+            pattern = img.bitmap;
+            this.hooks.onRecognized?.(id, `pattern ${img.width}×${img.height}`);
+            return;
+          }
+          if (!pattern) {
+            // No pattern yet — pass the frame through the preview untouched so
+            // the user sees the node is alive but unarmed.
+            this.hooks.onImage?.(id, img.bitmap);
+            return;
+          }
+          const pat = pattern;
+          const wantImg = this.hasOutgoing(id, "out");
+          const wantCount = this.hasOutgoing(id, "count");
+          const wantJson = this.hasOutgoing(id, "json");
+          const wantPreview = this.hooks.hasPreviewConsumer ? this.hooks.hasPreviewConsumer(id) : isPreviewShown(id);
+          if (!wantImg && !wantCount && !wantJson && !wantPreview) {
+            this.hooks.onImage?.(id, img.bitmap);
+            return;
+          }
+          w.submit("🔎 match", async () => {
+            let matches: Match[] = [];
+            let overlay: ImageBitmap | null = null;
+            try {
+              matches = matchTemplate(img.bitmap, pat, { threshold, maxMatches });
+              if (wantImg || wantPreview) overlay = await drawMatches(img.bitmap, matches);
+            } catch (e) {
+              this.hooks.onError?.(e instanceof Error ? e : new Error(String(e)));
+            }
+            this.hooks.onImage?.(id, overlay ?? img.bitmap);
+            if (wantImg && overlay)
+              this.emit(id, "out", { bitmap: overlay, width: overlay.width, height: overlay.height, ts: Date.now() } as ImageMsg);
+            const labels = formatMatchLabels(matches);
+            this.hooks.onRecognized?.(id, labels);
+            if (wantCount) this.emit(id, "count", { text: labels, audio: emptyAudio() } as TranscriptMsg);
+            if (wantJson) this.emit(id, "json", { text: formatMatchJson(matches), audio: emptyAudio() } as TranscriptMsg);
             // Credit pulse so a connected Camera can self-pace.
             this.emit(id, "rate", { pulse: true, ts: Date.now() } as ControlMsg);
           });

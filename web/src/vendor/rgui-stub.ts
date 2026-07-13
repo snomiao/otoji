@@ -77,7 +77,7 @@ export interface Panel {
 export interface RgRule {
   collapsePx: number;
   minGridPx: number;
-  ladder: number[];
+  radix: number;
   [k: string]: unknown;
 }
 
@@ -156,6 +156,7 @@ export interface Rgui {
   /** snap every node to the current-scale main grid; fires onNodeMoveEnd per moved
    *  node (normal broadcast path) unless {silent:true} */
   snapGraph(opts?: { silent?: boolean }): void;
+  autoLayout(opts?: AutoLayoutOptions): void;
   /** v1.7.0 billboard 3-D: current graph-plane orientation (radians) */
   readonly rotation3: { yaw: number; pitch: number; roll: number };
   /** v1.7.0 billboard 3-D: tilt the graph plane (nodes stay upright 2-D cards) */
@@ -173,6 +174,10 @@ export interface Rgui {
   invalidate(): void;
   destroy(): void;
 }
+
+export type AutoLayoutOptions =
+  | ({ animate?: boolean; mode?: "layered"; gapX?: number; gapY?: number; gridStep?: number; origin?: { x: number; y: number } })
+  | ({ animate?: boolean; mode: "dense"; gridStep?: number; gapCells?: number; relaxationPasses?: number; origin?: { x: number; y: number } });
 
 export interface NodeHtmlOverlay {
   el: HTMLElement;
@@ -209,7 +214,7 @@ export interface GridLevel {
 export function snap(_v: number, _step: number): number {
   throw new Error("@snomiao/rgui source is not available in this build");
 }
-export function gridLevels(_k: number, _minPx?: number, _ladder?: number[]): GridLevel[] {
+export function gridLevels(_k: number, _minPx?: number, _radix?: number): GridLevel[] {
   throw new Error("@snomiao/rgui source is not available in this build");
 }
 
