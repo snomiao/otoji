@@ -232,6 +232,13 @@ interface RuntimeNode {
 // to an ONNX model triggers "Tensor shape.Size() must be >= 0" in onnxruntime-web.
 const MIN_STT_SAMPLES = 256; // ~16ms @ 16kHz
 
+export function vibeVoiceBufferDecision(bufferedDurationMs: number, segmentDurationMs: number, configuredMaxBufferMs: unknown): { durationMs: number; flush: boolean } {
+  const configured = typeof configuredMaxBufferMs === "number" && Number.isFinite(configuredMaxBufferMs) ? configuredMaxBufferMs : 15000;
+  const maxBufferMs = Math.min(60000, Math.max(1000, configured));
+  const durationMs = bufferedDurationMs + segmentDurationMs;
+  return { durationMs, flush: durationMs >= maxBufferMs };
+}
+
 /** Short label for a queue item (a text snippet). */
 function snippet(t: string): string {
   const s = t.trim().replace(/\s+/g, " ");
@@ -855,12 +862,14 @@ export class GraphRuntime {
       let sourceModel = "microsoft/VibeVoice-ASR";
       const q = this.makeQueue(id);
       let pending: SegmentMsg[] = [];
+      let pendingDurationMs = 0;
       let flushTimer: ReturnType<typeof setTimeout> | null = null;
       const flush = () => {
         if (flushTimer) clearTimeout(flushTimer);
         flushTimer = null;
         const segments = pending;
         pending = [];
+        pendingDurationMs = 0;
         if (!segments.length) return;
         const sampleRate = segments[0]?.sampleRate || MIC_VAD_SR;
         let appendAt = 0;
@@ -915,7 +924,13 @@ export class GraphRuntime {
           const seg = msg as SegmentMsg;
           if (!seg.samples?.length) return;
           pending.push(seg);
+          const decision = vibeVoiceBufferDecision(pendingDurationMs, seg.durationMs, cfg.maxBufferMs);
+          pendingDurationMs = decision.durationMs;
           if (flushTimer) clearTimeout(flushTimer);
+          if (decision.flush) {
+            flush();
+            return;
+          }
           flushTimer = setTimeout(flush, 400);
         },
         stop: async () => { flush(); await q.drain(); },
