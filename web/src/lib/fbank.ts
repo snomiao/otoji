@@ -124,6 +124,109 @@ function fftInPlace(re: Float32Array, im: Float32Array): void {
 
 const LOG_FLOOR = Math.log(1.1920928955078125e-7); // log(FLT_EPSILON), kaldi floor
 
+interface FbankComputer {
+  frameLength: number;
+  frameShift: number;
+  computeFrames(samples: Float32Array, numFrames: number): Float32Array;
+}
+
+function createFbankComputer(opts: FbankOptions): FbankComputer {
+  const frameLength = Math.round((opts.frameLengthMs * opts.sampleRate) / 1000); // 400
+  const frameShift = Math.round((opts.frameShiftMs * opts.sampleRate) / 1000); // 160
+  const fftSize = roundUpToPow2(frameLength); // 512
+  const window = hammingWindow(frameLength);
+  const melBank = buildMelBank(opts, fftSize);
+
+  return {
+    frameLength,
+    frameShift,
+    computeFrames(samples, numFrames) {
+      const feats = new Float32Array(numFrames * opts.numBins);
+      const re = new Float32Array(fftSize);
+      const im = new Float32Array(fftSize);
+      const frame = new Float32Array(frameLength);
+
+      for (let f = 0; f < numFrames; f++) {
+        const offset = f * frameShift;
+        for (let i = 0; i < frameLength; i++) frame[i] = samples[offset + i];
+
+        if (opts.removeDcOffset) {
+          let mean = 0;
+          for (let i = 0; i < frameLength; i++) mean += frame[i];
+          mean /= frameLength;
+          for (let i = 0; i < frameLength; i++) frame[i] -= mean;
+        }
+
+        // Kaldi applies preemphasis independently to each frame. Keeping the raw
+        // overlapping waveform tail therefore also preserves the previous sample
+        // needed by the first newly emitted frame across push boundaries.
+        if (opts.preemph > 0) {
+          for (let i = frameLength - 1; i > 0; i--) frame[i] -= opts.preemph * frame[i - 1];
+          frame[0] -= opts.preemph * frame[0];
+        }
+
+        for (let i = 0; i < frameLength; i++) re[i] = frame[i] * window[i];
+        for (let i = frameLength; i < fftSize; i++) re[i] = 0;
+        im.fill(0);
+
+        fftInPlace(re, im);
+
+        const base = f * opts.numBins;
+        for (let m = 0; m < opts.numBins; m++) {
+          const start = melBank.starts[m];
+          const w = melBank.weights[m];
+          let energy = 0;
+          for (let k = 0; k < w.length; k++) {
+            const bin = start + k;
+            const power = re[bin] * re[bin] + im[bin] * im[bin];
+            energy += power * w[k];
+          }
+          feats[base + m] = energy > 0 ? Math.log(energy) : LOG_FLOOR;
+        }
+      }
+
+      return feats;
+    },
+  };
+}
+
+export interface StreamingFbank {
+  push(samples: Float32Array): { feats: Float32Array; numFrames: number; numBins: number };
+  reset(): void;
+}
+
+/**
+ * Create an incremental, snip-edges fbank frontend.
+ *
+ * Only complete frames are emitted. The raw, unconsumed waveform overlap is kept
+ * between pushes, so chunking does not affect per-frame DC removal or preemphasis.
+ * Utterance-level transforms such as CMVN and SenseVoice LFR must remain downstream.
+ */
+export function createStreamingFbank(
+  opts: FbankOptions = SENSEVOICE_FBANK,
+): StreamingFbank {
+  const computer = createFbankComputer(opts);
+  let tail = new Float32Array(0);
+
+  return {
+    push(samples) {
+      const buffered = new Float32Array(tail.length + samples.length);
+      buffered.set(tail);
+      buffered.set(samples, tail.length);
+
+      const numFrames = buffered.length < computer.frameLength
+        ? 0
+        : 1 + Math.floor((buffered.length - computer.frameLength) / computer.frameShift);
+      const feats = computer.computeFrames(buffered, numFrames);
+      tail = buffered.slice(numFrames * computer.frameShift);
+      return { feats, numFrames, numBins: opts.numBins };
+    },
+    reset() {
+      tail = new Float32Array(0);
+    },
+  };
+}
+
 /**
  * Compute a [numFrames, numBins] log-mel fbank from 16k mono float samples
  * in [-1, 1]. Returns a flat Float32Array (row-major).
@@ -132,56 +235,14 @@ export function computeFbank(
   samples: Float32Array,
   opts: FbankOptions = SENSEVOICE_FBANK,
 ): { feats: Float32Array; numFrames: number; numBins: number } {
-  const frameLength = Math.round((opts.frameLengthMs * opts.sampleRate) / 1000); // 400
-  const frameShift = Math.round((opts.frameShiftMs * opts.sampleRate) / 1000); // 160
-  const fftSize = roundUpToPow2(frameLength); // 512
-  const window = hammingWindow(frameLength);
-  const melBank = buildMelBank(opts, fftSize);
+  const computer = createFbankComputer(opts);
 
   // snip_edges = true: only full frames.
   const numFrames =
-    samples.length < frameLength ? 0 : 1 + Math.floor((samples.length - frameLength) / frameShift);
-  const feats = new Float32Array(numFrames * opts.numBins);
-
-  const re = new Float32Array(fftSize);
-  const im = new Float32Array(fftSize);
-  const frame = new Float32Array(frameLength);
-
-  for (let f = 0; f < numFrames; f++) {
-    const offset = f * frameShift;
-    for (let i = 0; i < frameLength; i++) frame[i] = samples[offset + i];
-
-    if (opts.removeDcOffset) {
-      let mean = 0;
-      for (let i = 0; i < frameLength; i++) mean += frame[i];
-      mean /= frameLength;
-      for (let i = 0; i < frameLength; i++) frame[i] -= mean;
-    }
-
-    if (opts.preemph > 0) {
-      for (let i = frameLength - 1; i > 0; i--) frame[i] -= opts.preemph * frame[i - 1];
-      frame[0] -= opts.preemph * frame[0];
-    }
-
-    for (let i = 0; i < frameLength; i++) re[i] = frame[i] * window[i];
-    for (let i = frameLength; i < fftSize; i++) re[i] = 0;
-    im.fill(0);
-
-    fftInPlace(re, im);
-
-    const base = f * opts.numBins;
-    for (let m = 0; m < opts.numBins; m++) {
-      const start = melBank.starts[m];
-      const w = melBank.weights[m];
-      let energy = 0;
-      for (let k = 0; k < w.length; k++) {
-        const bin = start + k;
-        const power = re[bin] * re[bin] + im[bin] * im[bin];
-        energy += power * w[k];
-      }
-      feats[base + m] = energy > 0 ? Math.log(energy) : LOG_FLOOR;
-    }
-  }
+    samples.length < computer.frameLength
+      ? 0
+      : 1 + Math.floor((samples.length - computer.frameLength) / computer.frameShift);
+  const feats = computer.computeFrames(samples, numFrames);
 
   return { feats, numFrames, numBins: opts.numBins };
 }
