@@ -377,11 +377,16 @@ const RAW_NODE_SPECS: Record<NodeType, NodeSpec> = {
   },
   "paddle-ocr": {
     type: "paddle-ocr",
-    label: "OCR (PaddleOCR)",
-    // image → recognized text. Latest-only: while busy it keeps just the newest
-    // frame and drops the rest (never queues). `rate` emits a credit pulse
-    // after each frame, to feed back into a Camera's rate input.
-    inputs: [{ id: "in", type: "image" }],
+    label: "OCR (browser)",
+    // image → recognized text. PaddleOCR (PP-OCRv4) is the default; a connected
+    // Model provider pointing at a Paddle-format det/rec/dict trio overrides it.
+    // Latest-only: while busy it keeps just the newest frame and drops the rest
+    // (never queues). `rate` emits a credit pulse after each frame, to feed back
+    // into a Camera's rate input.
+    inputs: [
+      { id: "in", type: "image" },
+      { id: "model", type: "model" },
+    ],
     outputs: [{ id: "out", type: "transcript" }],
   },
   "text-diff": {
