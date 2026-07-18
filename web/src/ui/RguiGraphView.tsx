@@ -166,7 +166,7 @@ export function RguiGraphView({
       for (const n of g.nodes) {
         if (n.overlay) continue; // federated mirrors may carry their own live-embed overlay
         const vt = graph.nodes[n.id]?.type;
-        const full = vt === "textarea" || vt === "url" || vt === "screen-share" || vt === "camera" || vt === "vision-model" || vt === "depth-field" || vt === "hand-space" || vt === "spatial-renderer" || vt === "image-match";
+        const full = vt === "textarea" || vt === "url" || vt === "screen-share" || vt === "camera" || vt === "vision-model" || vt === "qwen-image" || vt === "depth-field" || vt === "hand-space" || vt === "spatial-renderer" || vt === "image-match";
         const host = hostFor(n.id);
         host.style.height = full ? "100%" : "";
         n.overlay = {

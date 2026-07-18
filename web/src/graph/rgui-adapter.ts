@@ -65,6 +65,7 @@ export interface RgGraphNode {
   x: number;
   y: number;
   w: number;
+  flow?: "ltr" | "rtl" | "ttb" | "btt";
   /** explicit height — extra space flows into the live-body region */
   h?: number;
   /** content scale (default 1): magnifies the node like a lens (shift+grip) */
@@ -119,6 +120,7 @@ const KIND: Record<PortType, RgSignalKind> = {
   control: "ctl",
   environment: "ctl",
   spatial: "ctl",
+  model: "ctl",
 };
 
 /** A node with no inputs is a source, none-outputs is a sink, else a model. */
@@ -130,7 +132,7 @@ function categoryOf(type: NodeType): RgNodeCategory {
 }
 
 const DEFAULT_W = 200;
-const TEXT_PREVIEW_TYPES = new Set<NodeType>(["environment", "stt", "web-speech", "vosk", "sherpa", "translate", "browser-translate-api", "text-aggregate", "text-normalize", "text-filter", "llm-agent", "model", "tts", "tts-model", "sink", "paddle-ocr", "text-diff"]);
+const TEXT_PREVIEW_TYPES = new Set<NodeType>(["environment", "stt", "web-speech", "vosk", "sherpa", "vibevoice-asr", "translate", "browser-translate-api", "text-aggregate", "text-normalize", "text-filter", "llm-agent", "model", "tts", "tts-model", "sink", "srt-out", "paddle-ocr", "text-diff"]);
 
 // Mirrors of rgui's grip clamps (grip.ts MIN_SCALE/MAX_SCALE, graph.ts
 // NODE_MIN_W). setGraph does NOT validate geometry — these invariants are only
@@ -166,6 +168,18 @@ export function voiceGraphToRgui(graph: VoiceGraph, meta: RguiMeta = {}): RgGrap
   const nameOf = meta.deviceName ?? ((d) => d ?? "unassigned");
   const nodes: RgGraphNode[] = Object.values(graph.nodes).map((n) => {
     const spec = NODE_SPECS[n.type];
+    const modelSourceTitle = n.type === "model-source"
+      ? n.config?.provider === "webllm"
+        ? "WebLLM Models"
+        : n.config?.provider === "civitai"
+        ? "Civitai Models"
+        : n.config?.provider === "url"
+          ? "Model URL"
+          : "Hugging Face Models"
+      : undefined;
+    const mediaTitle = ["file-audio", "file-image", "file-text", "textarea", "video-clip"].includes(n.type)
+      ? String(n.config?.title ?? n.config?.file ?? "").trim() || undefined
+      : undefined;
     const fields: [string, string][] = [["device", nameOf(n.device)]];
     const body = meta.nodeBody?.({ id: n.id, type: n.type });
     // user-resized box + content scale persist on the VoiceNode; the rgui
@@ -173,7 +187,7 @@ export function voiceGraphToRgui(graph: VoiceGraph, meta: RguiMeta = {}): RgGrap
     const scale = Math.min(MAX_SCALE, Math.max(MIN_SCALE, n.scale ?? 1));
     // full-bleed content nodes (Monaco editor / visual previews) get a
     // content-sized default box
-    const fullBleed = n.type === "textarea" || n.type === "screen-share" || n.type === "camera" || n.type === "vision-model" || n.type === "depth-field" || n.type === "hand-space" || n.type === "spatial-renderer" || n.type === "image-match";
+    const fullBleed = n.type === "textarea" || n.type === "screen-share" || n.type === "camera" || n.type === "vision-model" || n.type === "qwen-image" || n.type === "depth-field" || n.type === "hand-space" || n.type === "spatial-renderer" || n.type === "image-match";
     const textPreview = TEXT_PREVIEW_TYPES.has(n.type);
     const defW = fullBleed ? 320 : textPreview ? 260 : DEFAULT_W;
     const w = Math.max(NODE_MIN_W * scale, n.size?.w ?? defW);
@@ -187,11 +201,12 @@ export function voiceGraphToRgui(graph: VoiceGraph, meta: RguiMeta = {}): RgGrap
         : { h };
     return {
       id: n.id,
-      title: spec.label,
+      title: mediaTitle ?? modelSourceTitle ?? spec.label,
       category: categoryOf(n.type),
       x: n.pos.x,
       y: n.pos.y,
       w,
+      flow: "ltr",
       ...defH,
       ...(scale !== 1 ? { scale } : {}),
       // Signal-algebra declarations ride along on every port (fanout stays the

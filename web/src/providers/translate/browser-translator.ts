@@ -75,7 +75,7 @@ export class BrowserTranslateProvider implements TranslateProvider {
     }
   }
 
-  async translate(text: string, targetLang: string, _modelId?: string, sourceLang?: string): Promise<string> {
+  async translate(text: string, targetLang: string, _modelId?: string, sourceLang?: string, _promptTemplate?: string): Promise<string> {
     const src0 = text.trim();
     if (!src0) return "";
     const tgt = langNameToCode(targetLang);

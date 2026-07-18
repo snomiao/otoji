@@ -84,6 +84,39 @@ describe("builtin templates", () => {
     ]);
   });
 
+  it("includes a browser-only Qwen agent demo with editable text state", () => {
+    const template = BUILTIN_TEMPLATES.find((item) => item.id === "qwen-agent-browser")!;
+    expect(template.nodes.map((node) => node.type)).toEqual(["textarea", "model-source", "llm-agent", "textarea"]);
+    expect(template.nodes.find((node) => node.key === "provider")?.config).toMatchObject({
+      provider: "webllm",
+      ref: "Qwen2.5-0.5B-Instruct-q4f16_1-MLC",
+      runtimeFilter: "browser",
+    });
+    expect(template.nodes.find((node) => node.key === "agent")?.config).toMatchObject({
+      backend: "webllm",
+      task: "text-generation",
+      model: "Qwen2.5-0.5B-Instruct-q4f16_1-MLC",
+    });
+    expect(template.edges).toContainEqual({ from: "provider", fromHandle: "model", to: "agent", toHandle: "model" });
+    expect(template.edges).toContainEqual({ from: "agent", fromHandle: "out", to: "response", toHandle: "in" });
+  });
+
+  it("separates browser captioning, text-to-image, and image-to-image workflows", () => {
+    const caption = BUILTIN_TEMPLATES.find((item) => item.id === "image-caption-browser")!;
+    const textToImage = BUILTIN_TEMPLATES.find((item) => item.id === "text-to-image-native")!;
+    const imageToImage = BUILTIN_TEMPLATES.find((item) => item.id === "image-to-image-native")!;
+    expect(caption.area).toBeUndefined();
+    expect(caption.nodes.find((node) => node.key === "captioner")?.config).toMatchObject({ task: "image-to-text" });
+    expect(caption.edges).toContainEqual({ from: "image", fromHandle: "out", to: "captioner", toHandle: "in_img" });
+    expect(textToImage.area).toBe("advanced");
+    expect(textToImage.nodes.find((node) => node.key === "source")?.config).toMatchObject({ taskFilter: "text-to-image" });
+    expect(textToImage.nodes.find((node) => node.key === "generator")?.config).toMatchObject({ mode: "generate", backend: "diffusers" });
+    expect(imageToImage.area).toBe("advanced");
+    expect(imageToImage.nodes.find((node) => node.key === "source")?.config).toMatchObject({ taskFilter: "image-to-image" });
+    expect(imageToImage.nodes.find((node) => node.key === "editor")?.config).toMatchObject({ mode: "edit", strength: 0.75 });
+    expect(imageToImage.edges).toContainEqual({ from: "seed", fromHandle: "out", to: "editor", toHandle: "image" });
+  });
+
   it("keeps depth, hand, calibration, model, and rendering as separate spatial nodes", () => {
     const t = BUILTIN_TEMPLATES.find((x) => x.id === "spatial-monkey")!;
     expect(t.nodes.map((n) => n.type)).toEqual([

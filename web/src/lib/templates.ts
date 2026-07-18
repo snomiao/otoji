@@ -26,10 +26,13 @@ export interface GraphTemplate {
   nodes: TemplateNode[];
   edges: TemplateEdge[];
   builtin?: boolean;
+  area?: "default" | "advanced";
 }
 
 const COL = 240;
 const ROW = 160;
+const WORKFLOW_COL = 440;
+const WORKFLOW_ROW = 280;
 
 export const BUILTIN_TEMPLATES: GraphTemplate[] = [
   {
@@ -75,6 +78,154 @@ export const BUILTIN_TEMPLATES: GraphTemplate[] = [
     edges: [
       { from: "mic", fromHandle: "out", to: "stt", toHandle: "in" },
       { from: "stt", fromHandle: "out", to: "sink", toHandle: "in" },
+    ],
+  },
+  {
+    id: "qwen-agent-browser",
+    name: "Qwen Agent (browser)",
+    desc: "Searchable WebLLM provider + prompt → WebGPU Qwen 2.5 agent → editable response",
+    builtin: true,
+    nodes: [
+      { key: "prompt", type: "textarea", dx: 0, dy: 0, config: { title: "Prompt", text: "Reply with exactly: OTOJI QWEN READY" } },
+      { key: "provider", type: "model-source", dx: 0, dy: WORKFLOW_ROW, config: { provider: "webllm", ref: "Qwen2.5-0.5B-Instruct-q4f16_1-MLC", formatFilter: "mlc", runtimeFilter: "browser", taskFilter: "text" } },
+      {
+        key: "agent",
+        type: "llm-agent",
+        dx: WORKFLOW_COL,
+        dy: 0,
+        config: {
+          backend: "webllm",
+          task: "text-generation",
+          model: "Qwen2.5-0.5B-Instruct-q4f16_1-MLC",
+          instruction: "You are Qwen running locally in Otoji. Follow the user request directly and keep the response concise.",
+        },
+      },
+      { key: "response", type: "textarea", dx: WORKFLOW_COL * 2, dy: 0, config: { title: "Response", text: "" } },
+    ],
+    edges: [
+      { from: "prompt", fromHandle: "out", to: "agent", toHandle: "in" },
+      { from: "provider", fromHandle: "model", to: "agent", toHandle: "model" },
+      { from: "agent", fromHandle: "out", to: "response", toHandle: "in" },
+    ],
+  },
+  {
+    id: "image-caption-browser",
+    name: "Image → text (browser)",
+    desc: "Image + searchable browser ONNX provider → editable caption",
+    builtin: true,
+    nodes: [
+      { key: "image", type: "file-image", dx: 0, dy: 0, config: { title: "Input image" } },
+      { key: "source", type: "model-source", dx: 0, dy: WORKFLOW_ROW, config: { provider: "huggingface", ref: "Xenova/vit-gpt2-image-captioning", formatFilter: "onnx", runtimeFilter: "browser", taskFilter: "image-to-text" } },
+      { key: "captioner", type: "model", dx: WORKFLOW_COL, dy: WORKFLOW_ROW / 2, config: { task: "image-to-text", model: "Xenova/vit-gpt2-image-captioning", dtype: "fp32" } },
+      { key: "caption", type: "textarea", dx: WORKFLOW_COL * 2, dy: WORKFLOW_ROW / 2, config: { title: "Image caption", text: "" } },
+    ],
+    edges: [
+      { from: "image", fromHandle: "out", to: "captioner", toHandle: "in_img" },
+      { from: "source", fromHandle: "model", to: "captioner", toHandle: "model" },
+      { from: "captioner", fromHandle: "out_txt", to: "caption", toHandle: "in" },
+    ],
+  },
+  {
+    id: "vibevoice-asr",
+    name: "Speech round-trip (browser)",
+    desc: "Text → browser TTS → browser ASR → downloadable SRT",
+    builtin: true,
+    nodes: [
+      { key: "text", type: "textarea", dx: 0, dy: 0, config: { text: "Welcome to Otoji. This is a generated voice transcription test.", seq: 1 } },
+      { key: "source", type: "model-source", dx: 0, dy: WORKFLOW_ROW, config: { provider: "huggingface", ref: "csukuangfj/sherpa-onnx-sense-voice-zh-en-ja-ko-yue-2024-07-17", runtimeFilter: "browser", taskFilter: "asr" } },
+      { key: "tts", type: "tts-model", dx: WORKFLOW_COL, dy: 0 },
+      { key: "asr", type: "stt", dx: WORKFLOW_COL * 2, dy: WORKFLOW_ROW / 2, config: { model: "sensevoice-small-int8" } },
+      { key: "transcript", type: "srt-out", dx: WORKFLOW_COL * 3, dy: WORKFLOW_ROW / 2 },
+    ],
+    edges: [
+      { from: "text", fromHandle: "out", to: "tts", toHandle: "in" },
+      { from: "tts", fromHandle: "out", to: "asr", toHandle: "in" },
+      { from: "source", fromHandle: "model", to: "asr", toHandle: "model" },
+      { from: "asr", fromHandle: "caption", to: "transcript", toHandle: "in" },
+    ],
+  },
+  {
+    id: "vibevoice-native-asr",
+    name: "VibeVoice long-form ASR",
+    desc: "Native MLX/VLLM model provider → ASR → SRT",
+    builtin: true,
+    area: "advanced",
+    nodes: [
+      { key: "audio", type: "file-audio", dx: 0, dy: 0 },
+      { key: "source", type: "model-source", dx: 0, dy: WORKFLOW_ROW, config: { provider: "huggingface", ref: "mlx-community/VibeVoice-ASR-bf16", runtimeFilter: "mlx", taskFilter: "asr" } },
+      { key: "asr", type: "vibevoice-asr", dx: WORKFLOW_COL, dy: WORKFLOW_ROW / 2, config: { backend: "mlx", serverUrl: "http://localhost:8000", apiModel: "mlx-community/VibeVoice-ASR-bf16" } },
+      { key: "transcript", type: "srt-out", dx: WORKFLOW_COL * 2, dy: WORKFLOW_ROW / 2 },
+    ],
+    edges: [
+      { from: "audio", fromHandle: "out", to: "asr", toHandle: "in" },
+      { from: "source", fromHandle: "model", to: "asr", toHandle: "model" },
+      { from: "asr", fromHandle: "caption", to: "transcript", toHandle: "in" },
+    ],
+  },
+  {
+    id: "text-to-image-native",
+    name: "Text → image",
+    desc: "Prompt + searchable image provider → native/remote runner → image",
+    builtin: true,
+    area: "advanced",
+    nodes: [
+      { key: "prompt", type: "textarea", dx: 0, dy: 0, config: { title: "Image prompt", text: "A clean white poster with large black text: OTOJI IMAGE MODEL" } },
+      { key: "source", type: "model-source", dx: 0, dy: WORKFLOW_ROW, config: { provider: "huggingface", ref: "Qwen/Qwen-Image-2512", formatFilter: "diffusers", runtimeFilter: "diffusers", taskFilter: "text-to-image" } },
+      { key: "env", type: "environment", dx: 0, dy: WORKFLOW_ROW * 2, config: { label: "Diffusers image runner", scope: "native-device", runtime: "native", mic: false, camera: false, screen: false, webgpu: false } },
+      { key: "generator", type: "qwen-image", dx: WORKFLOW_COL, dy: WORKFLOW_ROW / 2, config: { mode: "generate", backend: "diffusers", serverUrl: "http://127.0.0.1:7861/generate", model: "Qwen/Qwen-Image-2512", width: 1024, height: 1024, steps: 20 } },
+      { key: "output", type: "file-image", dx: WORKFLOW_COL * 2, dy: WORKFLOW_ROW / 2, config: { title: "Generated image" } },
+    ],
+    edges: [
+      { from: "prompt", fromHandle: "out", to: "generator", toHandle: "prompt" },
+      { from: "source", fromHandle: "model", to: "generator", toHandle: "model" },
+      { from: "env", fromHandle: "env", to: "generator", toHandle: "env" },
+      { from: "generator", fromHandle: "out", to: "output", toHandle: "in" },
+    ],
+  },
+  {
+    id: "image-to-image-native",
+    name: "Image → image",
+    desc: "Seed image + prompt + searchable edit provider → native/remote runner → image",
+    builtin: true,
+    area: "advanced",
+    nodes: [
+      { key: "seed", type: "file-image", dx: 0, dy: 0, config: { title: "Seed image" } },
+      { key: "prompt", type: "textarea", dx: 0, dy: WORKFLOW_ROW, config: { title: "Edit prompt", text: "Turn this into a clean editorial illustration while preserving the composition." } },
+      { key: "source", type: "model-source", dx: 0, dy: WORKFLOW_ROW * 2, config: { provider: "huggingface", ref: "Qwen/Qwen-Image-Edit-2511", formatFilter: "diffusers", runtimeFilter: "diffusers", taskFilter: "image-to-image" } },
+      { key: "env", type: "environment", dx: 0, dy: WORKFLOW_ROW * 3, config: { label: "Diffusers image runner", scope: "native-device", runtime: "native", mic: false, camera: false, screen: false, webgpu: false } },
+      { key: "editor", type: "qwen-image", dx: WORKFLOW_COL, dy: WORKFLOW_ROW, config: { mode: "edit", backend: "diffusers", serverUrl: "http://127.0.0.1:7861/generate", model: "Qwen/Qwen-Image-Edit-2511", width: 1024, height: 1024, steps: 20, strength: 0.75 } },
+      { key: "output", type: "file-image", dx: WORKFLOW_COL * 2, dy: WORKFLOW_ROW, config: { title: "Edited image" } },
+    ],
+    edges: [
+      { from: "seed", fromHandle: "out", to: "editor", toHandle: "image" },
+      { from: "prompt", fromHandle: "out", to: "editor", toHandle: "prompt" },
+      { from: "source", fromHandle: "model", to: "editor", toHandle: "model" },
+      { from: "env", fromHandle: "env", to: "editor", toHandle: "env" },
+      { from: "editor", fromHandle: "out", to: "output", toHandle: "in" },
+    ],
+  },
+  {
+    id: "text-image-text",
+    name: "Text → image → text",
+    desc: "Generate an image from text, then recover its visible text with OCR",
+    builtin: true,
+    area: "advanced",
+    nodes: [
+      { key: "text", type: "textarea", dx: 0, dy: 0, config: { text: "A clean white poster with large black text: OTOJI CONNECTS EVERY MODEL", seq: 1, maxUpdates: 4 } },
+      { key: "source", type: "model-source", dx: 0, dy: WORKFLOW_ROW, config: { provider: "huggingface", ref: "Qwen/Qwen-Image-2512", runtimeFilter: "diffusers", taskFilter: "text-to-image" } },
+      { key: "image", type: "qwen-image", dx: WORKFLOW_COL, dy: WORKFLOW_ROW / 2, config: { backend: "diffusers", serverUrl: "http://127.0.0.1:7861/generate", model: "Qwen/Qwen-Image-2512" } },
+      { key: "state", type: "file-image", dx: WORKFLOW_COL * 2, dy: 0, config: { maxUpdates: 4 } },
+      { key: "ocr", type: "paddle-ocr", dx: WORKFLOW_COL * 3, dy: 0 },
+      { key: "transcript", type: "srt-out", dx: WORKFLOW_COL * 4, dy: 0 },
+    ],
+    edges: [
+      { from: "text", fromHandle: "out", to: "image", toHandle: "prompt" },
+      { from: "source", fromHandle: "model", to: "image", toHandle: "model" },
+      { from: "image", fromHandle: "out", to: "state", toHandle: "in" },
+      { from: "state", fromHandle: "out", to: "image", toHandle: "image" },
+      { from: "state", fromHandle: "out", to: "ocr", toHandle: "in" },
+      { from: "ocr", fromHandle: "out", to: "text", toHandle: "in" },
+      { from: "ocr", fromHandle: "out", to: "transcript", toHandle: "in" },
     ],
   },
   {

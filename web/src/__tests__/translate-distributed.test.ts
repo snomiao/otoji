@@ -6,6 +6,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 // translated result hops B→A into a sink.
 const h = vi.hoisted(() => ({
   mic: null as null | { onSegment: (s: Float32Array, ms: number) => void },
+  translateCalls: [] as Array<{ text: string; lang: string; sourceLang?: string; promptTemplate?: string }>,
 }));
 
 vi.mock("../lib/mic-vad", () => ({
@@ -26,7 +27,10 @@ vi.mock("../providers/translate/webllm", () => ({
     isAvailable: () => true,
     warm: async () => {},
     // Echo the target language so the assertion proves the right node ran.
-    translate: async (text: string, lang: string) => `[${lang}] ${text}`,
+    translate: async (text: string, lang: string, _model?: string, sourceLang?: string, promptTemplate?: string) => {
+      h.translateCalls.push({ text, lang, sourceLang, promptTemplate });
+      return `[${lang}] ${text}`;
+    },
   },
 }));
 
@@ -59,7 +63,7 @@ function distGraph(): VoiceGraph {
   g.nodes = {
     mic: { id: "mic", type: "mic-vad", device: "A", pos: { x: 0, y: 0 } },
     stt: { id: "stt", type: "stt", device: "A", pos: { x: 0, y: 0 } },
-    tr: { id: "tr", type: "translate", device: "B", pos: { x: 0, y: 0 }, config: { lang: "Japanese" } },
+    tr: { id: "tr", type: "translate", device: "B", pos: { x: 0, y: 0 }, config: { lang: "Japanese", promptTemplate: "Translate {text} into {target_language}." } },
     sink: { id: "sink", type: "sink", device: "A", pos: { x: 0, y: 0 } },
   };
   g.edges = [
@@ -73,6 +77,7 @@ function distGraph(): VoiceGraph {
 describe("cross-device translate routing", () => {
   beforeEach(() => {
     h.mic = null;
+    h.translateCalls = [];
   });
 
   it("routes stt@A → translate@B → sink@A across the mesh", async () => {
@@ -99,6 +104,12 @@ describe("cross-device translate routing", () => {
     await flush();
 
     expect(sunk).toEqual(["[Japanese] hello world"]);
+    expect(h.translateCalls).toEqual([{
+      text: "hello world",
+      lang: "Japanese",
+      sourceLang: "zh",
+      promptTemplate: "Translate {text} into {target_language}.",
+    }]);
 
     await rtA.stop();
     await rtB.stop();

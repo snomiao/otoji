@@ -12,9 +12,8 @@
     "isolatedModules": true,
     "paths": {
       // Typecheck against the live sibling-worktree rgui source when present
-      // (matches rgui-alias.ts / dev runtime), else the typed stub (CI). The
-      // pinned submodule is skipped here on purpose: it may trail the API the
-      // web code is written against.
+      // (matches the public API), else the typed stub. Runtime uses the pinned
+      // source first; it resolves d3 through Vite aliases without local deps.
       "@snomiao/rgui": [
         "../../../../rgui/tree/main/src/index.ts",
         "./src/vendor/rgui-stub.ts"

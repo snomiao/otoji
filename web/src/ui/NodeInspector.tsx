@@ -16,6 +16,8 @@ import { NEURAL_TTS_MODELS, AUTO_TTS_MODEL, AUTO_TTS_VOICE } from "../providers/
 import { MODEL_TASKS, MODEL_DTYPES, DEFAULT_MODEL_DTYPE } from "../providers/model/transformers-pipeline";
 import { VOSK_MODELS, DEFAULT_VOSK_MODEL } from "../providers/stt/vosk";
 import { DEFAULT_SHERPA_SERVER_URL } from "../providers/stt/sherpa_native";
+import { DEFAULT_VIBEVOICE_MLX_MODEL, DEFAULT_VIBEVOICE_SERVER, DEFAULT_VIBEVOICE_VLLM_MODEL } from "../providers/stt/vibevoice";
+import { DEFAULT_TRANSLATE_PROMPT_TEMPLATE, listWebLlmModels } from "../providers/translate/webllm";
 import { useNodeLive } from "./useNodeLive";
 import { RecordingPlayer } from "./RecordingPlayer";
 import { VideoClipPlayer } from "./VideoClipPlayer";
@@ -23,10 +25,21 @@ import { DIFF_STYLES, DEFAULT_DIFF_STYLE } from "../lib/textdiff";
 import { DEFAULT_CAMERA_FPS } from "../providers/vision/camera";
 import { preselectScreenShare, releaseScreenShare } from "../providers/vision/screen";
 import { DETECT_MODELS, DEFAULT_DETECT_MODEL } from "../providers/vision/detect";
+import { DEFAULT_QWEN_IMAGE_MODEL, DEFAULT_QWEN_IMAGE_SERVER, qwenImageHardwareHint } from "../providers/vision/qwen-image";
+import {
+  searchModelSources,
+  type ModelFormat,
+  type ModelRuntime,
+  type ModelSearchFilters,
+  type ModelSearchResult,
+  type ModelSourceProvider,
+  type ModelTaskGroup,
+} from "../providers/model/model-source";
 import { isPreviewShown, setPreviewShown, subscribePrefs } from "../lib/prefs";
 import { samplesToWavBlob, concatSamples } from "../lib/peaks";
 import { buildSrt } from "../lib/srt";
 import { MonacoText } from "./MonacoText";
+import { EnumOmnibox, SelectOmnibox, type EnumOption } from "./EnumOmnibox";
 
 // Node inspector: the config surface for the currently-selected node, replacing
 // the inline controls React Flow's VoiceNode rendered. rgui draws nodes on a
@@ -39,6 +52,51 @@ function download(blob: Blob, name: string): void {
   a.download = name;
   a.click();
   setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+function AudioSeedPreview({ nodeId, fallbackUrl, fileKey }: { nodeId: string; fallbackUrl?: string; fileKey?: string }) {
+  const [src, setSrc] = useState(fallbackUrl ?? "");
+  useEffect(() => {
+    const file = fileStore.get(nodeId)?.file;
+    if (!file) { setSrc(fallbackUrl ?? ""); return; }
+    const objectUrl = URL.createObjectURL(file);
+    setSrc(objectUrl);
+    return () => URL.revokeObjectURL(objectUrl);
+  }, [nodeId, fallbackUrl, fileKey]);
+  if (!src) return null;
+  return <audio src={src} controls preload="metadata" style={{ width: "100%", height: 30, marginTop: 5 }} />;
+}
+
+function WebLlmModelOmnibox({
+  value,
+  onChange,
+  disabled = false,
+}: {
+  value: string;
+  onChange: (value: string) => void;
+  disabled?: boolean;
+}) {
+  const fallback = TRANSLATE_MODELS.map((model) => ({ value: model.id, label: `${model.name} · ${model.size}`, keywords: model.id }));
+  const [options, setOptions] = useState<EnumOption[]>(fallback);
+  const [status, setStatus] = useState<"loading" | "ready" | "error">("loading");
+  useEffect(() => {
+    let active = true;
+    listWebLlmModels().then((models) => {
+      if (!active) return;
+      setOptions(models.map((model) => ({ value: model.id, label: model.label, keywords: model.keywords })));
+      setStatus("ready");
+    }).catch(() => { if (active) setStatus("error"); });
+    return () => { active = false; };
+  }, []);
+  const all = options.some((option) => option.value === value) ? options : [{ value, label: value }, ...options];
+  return (
+    <div style={{ flex: 1, minWidth: 0 }}>
+      <EnumOmnibox value={value} options={all} onChange={onChange} disabled={disabled} ariaLabel="WebLLM model" title={disabled ? "Controlled by connected Model provider" : "Search every model in WebLLM prebuiltAppConfig.model_list"} />
+      <div style={{ marginTop: 2, fontSize: 9, color: status === "error" ? "#c53030" : "#a0aec0" }}>
+        {status === "loading" ? "loading supported model catalog…" : status === "error" ? "catalog unavailable · showing curated fallback" : `${options.length} WebLLM models`}
+      </div>
+    </div>
+  );
 }
 
 function useAudioDevices(kind: "audioinput" | "audiooutput" | "videoinput"): MediaDeviceInfo[] {
@@ -112,6 +170,10 @@ const MODEL_OPTIONS: Partial<Record<string, readonly { id: string; label: string
     { id: "onnx-community/Llama-3.2-1B-Instruct-ONNX", label: "Llama 3.2 1B Instruct ONNX" },
     { id: "onnx-community/tiny-gpt2-ONNX", label: "tiny GPT-2 ONNX · smoke test" },
   ],
+  "image-to-text": [
+    { id: "Xenova/vit-gpt2-image-captioning", label: "ViT-GPT2 image captioning · browser ONNX" },
+    { id: "onnx-community/Florence-2-base-ft", label: "Florence 2 base FT · browser ONNX" },
+  ],
   asr: [
     { id: "Xenova/whisper-tiny", label: "Whisper tiny · light" },
     { id: "Xenova/whisper-tiny.en", label: "Whisper tiny.en · English light" },
@@ -149,30 +211,64 @@ function defaultModelForTask(task: string | undefined) {
   return modelOptionsFor(task)[0]?.id ?? DEFAULT_LLM_AGENT_MODEL;
 }
 
+const MODEL_FORMAT_OPTIONS: EnumOption[] = [
+  { value: "any", label: "Any format" }, { value: "onnx", label: "ONNX" },
+  { value: "gguf", label: "GGUF" }, { value: "safetensors", label: "Safetensors" },
+  { value: "diffusers", label: "Diffusers" }, { value: "mlx", label: "MLX" }, { value: "mlc", label: "MLC (WebLLM)" },
+];
+const MODEL_RUNTIME_OPTIONS: EnumOption[] = [
+  { value: "any", label: "Any runtime" }, { value: "browser", label: "Browser", keywords: "web wasm webgpu transformers.js" },
+  { value: "mlx", label: "MLX", keywords: "apple silicon" }, { value: "llama.cpp", label: "llama.cpp", keywords: "gguf" },
+  { value: "diffusers", label: "Diffusers/CUDA", keywords: "python gpu" }, { value: "remote", label: "Remote API" },
+];
+const MODEL_TASK_OPTIONS: EnumOption[] = [
+  { value: "any", label: "Any task" }, { value: "text", label: "Text" }, { value: "asr", label: "ASR", keywords: "speech recognition" },
+  { value: "tts", label: "TTS", keywords: "speech synthesis" }, { value: "image", label: "Any image gen" },
+  { value: "text-to-image", label: "Text → Image", keywords: "text2img t2i generation" },
+  { value: "image-to-image", label: "Image → Image", keywords: "img2img edit" },
+  { value: "image-to-text", label: "Image → Text", keywords: "caption image2text" },
+  { value: "vision", label: "Vision" },
+];
+const MODEL_PROVIDER_OPTIONS: EnumOption[] = [
+  { value: "webllm", label: "WebLLM", keywords: "MLC WebGPU browser" },
+  { value: "huggingface", label: "Hugging Face", keywords: "hf" },
+  { value: "civitai", label: "Civitai" },
+  { value: "url", label: "Direct URL" },
+];
+
 function ModelRepoInput({
   value,
   listId,
   placeholder = DEFAULT_LLM_AGENT_MODEL,
   task = "text2text",
   onCommit,
+  disabled = false,
+  controlledValue,
 }: {
   value: string | undefined;
   listId: string;
   placeholder?: string;
   task?: string;
   onCommit: (model: string | undefined) => void;
+  disabled?: boolean;
+  controlledValue?: string;
 }) {
   return (
     <>
       <input
         type="text"
         list={listId}
-        defaultValue={value ?? DEFAULT_LLM_AGENT_MODEL}
+        {...(disabled
+          ? { value: controlledValue ?? value ?? DEFAULT_LLM_AGENT_MODEL, readOnly: true }
+          : { defaultValue: value ?? DEFAULT_LLM_AGENT_MODEL })}
         placeholder={placeholder}
         spellCheck={false}
+        disabled={disabled}
+        aria-readonly={disabled}
+        title={disabled ? "Controlled by connected Model provider" : undefined}
         onBlur={(e) => onCommit(e.target.value.trim() || undefined)}
         onKeyDown={(e) => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); }}
-        style={{ fontSize: 12, width: "100%", marginTop: 2, boxSizing: "border-box" }}
+        style={{ fontSize: 12, width: "100%", marginTop: 2, boxSizing: "border-box", ...(disabled ? { opacity: 1, color: "#4a5568", background: "#edf2f7", borderColor: "#4299e1", boxShadow: "inset 3px 0 0 #3182ce", cursor: "not-allowed" } : {}) }}
       />
       <datalist id={listId}>
         {modelOptionsFor(task).map((m) => <option key={m.id} value={m.id} label={m.label} />)}
@@ -181,24 +277,191 @@ function ModelRepoInput({
   );
 }
 
+function ModelSourceOmnibox({
+  provider,
+  value,
+  onCommit,
+  filters,
+  onFilters,
+}: {
+  provider: ModelSourceProvider;
+  value?: string;
+  onCommit: (ref: string | undefined) => void;
+  filters: ModelSearchFilters;
+  onFilters: (filters: ModelSearchFilters) => void;
+}) {
+  const [query, setQuery] = useState(value ?? "");
+  const [results, setResults] = useState<ModelSearchResult[]>([]);
+  const [active, setActive] = useState(0);
+  const [open, setOpen] = useState(false);
+  const [status, setStatus] = useState<"idle" | "loading" | "error">("idle");
+  const suppressBlurCommit = useRef(false);
+
+  useEffect(() => {
+    setQuery(value ?? "");
+    setResults([]);
+    setActive(0);
+  }, [provider, value]);
+
+  useEffect(() => {
+    const q = query.trim();
+    if (!open || provider === "url" || q.length < 2) {
+      setResults([]);
+      setStatus("idle");
+      return;
+    }
+    const controller = new AbortController();
+    setStatus("loading");
+    const timer = window.setTimeout(() => {
+      searchModelSources(provider, q, { signal: controller.signal, limit: 8, filters })
+        .then((next) => {
+          setResults(next);
+          setActive(0);
+          setStatus("idle");
+        })
+        .catch((error) => {
+          if (error instanceof DOMException && error.name === "AbortError") return;
+          setResults([]);
+          setStatus("error");
+        });
+    }, 250);
+    return () => {
+      window.clearTimeout(timer);
+      controller.abort();
+    };
+  }, [open, provider, query, filters.format, filters.runtime, filters.task]);
+
+  const pick = (result: ModelSearchResult) => {
+    setQuery(result.ref);
+    setResults([]);
+    setOpen(false);
+    onCommit(result.ref);
+  };
+  const commitDraft = () => {
+    const ref = query.trim();
+    setOpen(false);
+    onCommit(ref || undefined);
+  };
+  const isCompleteRef = (ref: string) => {
+    if (!ref) return true;
+    if (provider === "url") return true;
+    if (/^https?:\/\//i.test(ref)) return true;
+    return provider === "huggingface" && /^[^/\s]+\/[^/\s]+$/.test(ref);
+  };
+  const placeholder = provider === "civitai"
+    ? "Search Civitai models"
+    : provider === "url"
+      ? "https://.../model.safetensors"
+      : "Search Hugging Face models";
+
+  return (
+    <div style={{ position: "relative", marginTop: 2 }}>
+      <input
+        type="text"
+        value={query}
+        placeholder={placeholder}
+        spellCheck={false}
+        onFocus={() => setOpen(true)}
+        onChange={(e) => { setQuery(e.target.value); setOpen(true); }}
+        onBlur={() => {
+          window.setTimeout(() => setOpen(false), 120);
+          if (suppressBlurCommit.current) {
+            suppressBlurCommit.current = false;
+            return;
+          }
+          const ref = query.trim();
+          if (isCompleteRef(ref)) onCommit(ref || undefined);
+          else setQuery(value ?? "");
+        }}
+        onKeyDown={(e) => {
+          if (e.key === "ArrowDown" && results.length) {
+            e.preventDefault();
+            setActive((index) => Math.min(results.length - 1, index + 1));
+          } else if (e.key === "ArrowUp" && results.length) {
+            e.preventDefault();
+            setActive((index) => Math.max(0, index - 1));
+          } else if (e.key === "Enter") {
+            e.preventDefault();
+            const result = results[active];
+            if (result) pick(result);
+            else commitDraft();
+          } else if (e.key === "Escape") {
+            e.preventDefault();
+            suppressBlurCommit.current = true;
+            setQuery(value ?? "");
+            setOpen(false);
+            (e.currentTarget as HTMLInputElement).blur();
+          }
+        }}
+        style={{ fontSize: 12, width: "100%", boxSizing: "border-box" }}
+      />
+      {provider !== "url" && (
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 3, marginTop: 4 }}>
+          <EnumOmnibox ariaLabel="Model format" title="Artifact format" value={filters.format ?? "any"} options={MODEL_FORMAT_OPTIONS}
+            onChange={(value) => onFilters({ ...filters, format: value as ModelFormat | "any" })} inputStyle={{ fontSize: 9.5 }} />
+          <EnumOmnibox ariaLabel="Model runtime" title="Compatible runtime (inferred from repository metadata)" value={filters.runtime ?? "any"} options={MODEL_RUNTIME_OPTIONS}
+            onChange={(value) => onFilters({ ...filters, runtime: value as ModelRuntime | "any" })} inputStyle={{ fontSize: 9.5 }} />
+          <EnumOmnibox ariaLabel="Model compatibility" title="Compatible Otoji task" value={filters.task ?? "any"} options={MODEL_TASK_OPTIONS}
+            onChange={(value) => onFilters({ ...filters, task: value as ModelTaskGroup | "any" })} inputStyle={{ fontSize: 9.5 }} />
+        </div>
+      )}
+      {open && provider !== "url" && query.trim().length >= 2 && (
+        <div style={{ marginTop: 3, maxHeight: 132, overflowY: "auto", border: "1px solid #4a5568", borderRadius: 4, background: "#1f252c" }}>
+          {status === "loading" && results.length === 0 && (
+            <div style={{ fontSize: 10, color: "#a0aec0", padding: "6px 7px" }}>searching…</div>
+          )}
+          {status === "error" && (
+            <div style={{ fontSize: 10, color: "#fc8181", padding: "6px 7px" }}>search unavailable</div>
+          )}
+          {status === "idle" && results.length === 0 && (
+            <div style={{ fontSize: 10, color: "#a0aec0", padding: "6px 7px" }}>no models found</div>
+          )}
+          {results.map((result, index) => (
+            <button
+              key={`${result.provider}:${result.id}`}
+              type="button"
+              onMouseEnter={() => setActive(index)}
+              onMouseDown={(e) => e.preventDefault()}
+              onClick={() => pick(result)}
+              style={{ display: "block", width: "100%", padding: "5px 7px", border: 0, borderRadius: 0, cursor: "pointer", textAlign: "left", background: index === active ? "#34404d" : "transparent", color: "#edf2f7" }}
+            >
+              <span style={{ display: "block", fontSize: 11, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{result.title}</span>
+              {result.detail && <span style={{ display: "block", fontSize: 9.5, color: "#a0aec0", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{result.detail}</span>}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export interface InspectorNode {
   id: string;
   voiceType: NodeType;
   device: string | null;
   config?: Record<string, unknown>;
+  connectedInputs?: string[];
+  controlledModel?: string;
+  controlledBackend?: "webllm" | "transformers";
 }
 
 export function NodeInspector({ node, controls = true, onClose }: { node: InspectorNode; controls?: boolean; onClose?: () => void }) {
-  const { devices, myDeviceId, onAssign, onConfig, onDelete, getRecords, getVideoClips, getVideoClip, spawnVideoClipNode, clearRecords, clearVideoClips, setFile, counts, live, trackerState } =
+  const { devices, myDeviceId, onAssign, onConfig, onDelete, getRecords, getVideoClips, getVideoClip, spawnVideoClipNode, clearRecords, clearVideoClips, setFile, replayNode, counts, live, trackerState } =
     useContext(GraphContext);
   const id = node.id;
   const vt = node.voiceType;
   const spec = NODE_SPECS[vt];
   const config = node.config;
+  const modelInputConnected = node.connectedInputs?.includes("model") ?? false;
+  const controlledModel = node.controlledModel?.trim();
+  const controlledBackend = node.controlledBackend;
+  const readonlyModelStyle = modelInputConnected
+    ? { opacity: 1, color: "#4a5568", background: "#edf2f7", borderColor: "#4299e1", boxShadow: "inset 3px 0 0 #3182ce", cursor: "not-allowed" }
+    : {};
   const fileName = config?.file as string | undefined;
   const assigned = devices.find((x) => x.deviceId === node.device);
   const count = counts[id] ?? 0;
-  const { queue } = useNodeLive(live, id);
+  const { queue, texts } = useNodeLive(live, id);
   const inputDevices = useAudioDevices("audioinput");
   const outputDevices = useAudioDevices("audiooutput");
   const cameraDevices = useAudioDevices("videoinput");
@@ -229,20 +492,22 @@ export function NodeInspector({ node, controls = true, onClose }: { node: Inspec
   const display = (t: string) => t.replace(/^https?:\/\//, "");
 
   const deviceSel = (style: React.CSSProperties) => (
-    <select value={node.device ?? ""} onChange={(e) => onAssign(id, e.target.value || null)} style={style} title="run on device">
+    <SelectOmnibox value={node.device ?? ""} onChange={(e) => onAssign(id, e.target.value || null)} style={style} title="run on device">
       <option value="">(unassigned)</option>
       {assigned && !devices.some((x) => x.deviceId === node.device) && <option value={node.device!}>offline device</option>}
       {devices.map((x) => (
         <option key={x.deviceId} value={x.deviceId}>{x.name}{x.me ? " (me)" : x.online ? "" : " (offline)"}</option>
       ))}
-    </select>
+    </SelectOmnibox>
   );
   const warn = !node.device ? "unassigned" : assigned && !assigned.online ? `● ${assigned.name} offline` : null;
   const warnColor = !node.device ? "#e53e3e" : "#c05621";
 
   // ---- full-bleed cards: content fills the node rect, no padding ----------
   if (vt === "textarea") {
-    const text = (config?.text as string | undefined) ?? "";
+    const configuredText = (config?.text as string | undefined) ?? "";
+    const text = texts[0] ?? configuredText;
+    const title = (config?.title as string | undefined) ?? spec.label;
     return (
       <div
         className="rgui-node-cfg"
@@ -251,17 +516,23 @@ export function NodeInspector({ node, controls = true, onClose }: { node: Inspec
         {/* opaque bar: the fixed-scale overlay can't track the zoomed canvas
             title, so it replaces it instead of tinting it */}
         <div style={{ ...bar, background: "#2b3036" }}>
-          <span style={barTitle}>{spec.label}</span>
+          <input
+            aria-label="Text node title"
+            defaultValue={title}
+            onBlur={(event) => onConfig(id, { title: event.target.value.trim() || undefined })}
+            onKeyDown={(event) => { if (event.key === "Enter") (event.currentTarget as HTMLInputElement).blur(); }}
+            style={{ ...barTitle, minWidth: 56, maxWidth: 150, border: 0, borderBottom: "1px solid #718096", color: "#edf2f7", background: "transparent" }}
+          />
           {deviceSel({ fontSize: 11, flex: "0 1 130px", minWidth: 0, marginLeft: "auto" })}
           <button
             style={{ fontSize: 10, cursor: "pointer", flex: "0 0 auto" }}
             title="Re-send the current text downstream"
-            onClick={() => onConfig(id, { seq: ((config?.seq as number) ?? 0) + 1 })}
+            onClick={() => replayNode(id)}
           >▶ resend</button>
         </div>
         <MonacoText
           value={text}
-          onCommit={(t) => { if (t !== text) onConfig(id, { text: t }); }}
+          onCommit={(t) => { if (t !== configuredText) onConfig(id, { text: t }); }}
           style={{ flex: 1, minHeight: 0, height: "auto", border: "none", borderRadius: 0 }}
         />
         {/* control-free strip: hint text, and it keeps the resize grip and a
@@ -314,7 +585,7 @@ export function NodeInspector({ node, controls = true, onClose }: { node: Inspec
     );
   }
 
-  if (vt === "screen-share" || vt === "camera" || vt === "vision-model" || vt === "depth-field" || vt === "hand-space" || vt === "spatial-renderer" || vt === "image-match") {
+  if (vt === "screen-share" || vt === "camera" || vt === "vision-model" || vt === "qwen-image" || vt === "depth-field" || vt === "hand-space" || vt === "spatial-renderer" || vt === "image-match") {
     const stacked = displayMode === "stack";
     const pickState = config?.screenPickState as string | undefined;
     const pickError = (config?.screenPickError as string | undefined) ?? "";
@@ -383,26 +654,27 @@ export function NodeInspector({ node, controls = true, onClose }: { node: Inspec
               </span>
             )}
             {vt === "camera" && (
-              <select value={(config?.cameraId as string) ?? ""} onChange={(e) => onConfig(id, { cameraId: e.target.value || undefined })} style={{ fontSize: 11, flex: "0 1 120px", minWidth: 0 }} title="camera device">
+              <SelectOmnibox value={(config?.cameraId as string) ?? ""} onChange={(e) => onConfig(id, { cameraId: e.target.value || undefined })} style={{ fontSize: 11, flex: "0 1 120px", minWidth: 0 }} title="camera device">
                 <option value="">(default camera)</option>
                 {cameraDevices.map((dev) => <option key={dev.deviceId} value={dev.deviceId}>{dev.label || `camera ${dev.deviceId.slice(0, 8)}`}</option>)}
-              </select>
+              </SelectOmnibox>
             )}
             {vt === "vision-model" && (
               <>
-                <select value={task} onChange={(e) => onConfig(id, { task: e.target.value })} style={{ fontSize: 11, flex: "0 1 120px", minWidth: 0 }} title="vision task">
+                <SelectOmnibox value={task} onChange={(e) => onConfig(id, { task: e.target.value })} style={{ fontSize: 11, flex: "0 1 120px", minWidth: 0 }} title="vision task">
                   <option value="detect">Object detection</option>
                   <option value="depth">Depth map</option>
                   <option value="pose">Pose</option>
                   <option value="hand">Hand</option>
                   <option value="gesture">Hand gesture</option>
                   <option value="spatial-monkey">3D fingertip monkey</option>
-                </select>
+                </SelectOmnibox>
                 {task === "detect" && (
                   <>
-                    <select value={(config?.model as string) ?? DEFAULT_DETECT_MODEL} onChange={(e) => onConfig(id, { model: e.target.value })} style={{ fontSize: 11, flex: "0 1 130px", minWidth: 0 }} title="vision model">
+                    <SelectOmnibox value={modelInputConnected && controlledModel ? controlledModel : (config?.model as string) ?? DEFAULT_DETECT_MODEL} disabled={modelInputConnected} aria-readonly={modelInputConnected} onChange={(e) => onConfig(id, { model: e.target.value })} style={{ fontSize: 11, flex: "0 1 130px", minWidth: 0, ...readonlyModelStyle }} title={modelInputConnected ? `Controlled by ${controlledModel ?? "Model provider"}` : "vision model"}>
+                      {modelInputConnected && controlledModel && <option value={controlledModel}>{controlledModel}</option>}
                       {DETECT_MODELS.map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
-                    </select>
+                    </SelectOmnibox>
                     <input type="number" min={0.05} max={0.95} step={0.05} defaultValue={(config?.threshold as number) ?? 0.5}
                       title="minimum score"
                       onBlur={(e) => onConfig(id, { threshold: Math.min(0.95, Math.max(0.05, Number(e.target.value) || 0.5)) })}
@@ -410,6 +682,24 @@ export function NodeInspector({ node, controls = true, onClose }: { node: Inspec
                       style={{ fontSize: 11, width: 44 }} />
                   </>
                 )}
+              </>
+            )}
+            {vt === "qwen-image" && (
+              <>
+                <SelectOmnibox value={(config?.mode as string) ?? "generate"} onChange={(e) => onConfig(id, { mode: e.target.value })} style={{ fontSize: 11, flex: "0 1 92px", minWidth: 0 }} title="generation mode">
+                  <option value="generate">generate</option>
+                  <option value="edit">edit</option>
+                </SelectOmnibox>
+                <input type="number" min={256} max={2048} step={64} defaultValue={(config?.width as number) ?? 1024}
+                  title="output width"
+                  onBlur={(e) => onConfig(id, { width: Math.max(256, Math.min(2048, Number(e.target.value) || 1024)) })}
+                  onKeyDown={(e) => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); }}
+                  style={{ fontSize: 11, width: 50 }} />
+                <input type="number" min={256} max={2048} step={64} defaultValue={(config?.height as number) ?? 1024}
+                  title="output height"
+                  onBlur={(e) => onConfig(id, { height: Math.max(256, Math.min(2048, Number(e.target.value) || 1024)) })}
+                  onKeyDown={(e) => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); }}
+                  style={{ fontSize: 11, width: 50 }} />
               </>
             )}
             {vt === "image-match" && (
@@ -430,6 +720,52 @@ export function NodeInspector({ node, controls = true, onClose }: { node: Inspec
                 </label>
               </>
             )}
+          </div>
+        )}
+        {controls && vt === "qwen-image" && (
+          <div style={{ position: "absolute", left: 6, right: 6, bottom: 6, display: "grid", gap: 4, padding: 6, background: "rgba(28,32,37,0.72)", border: "1px solid rgba(203,213,224,0.24)", borderRadius: 6, color: "#e6e9ec" }}>
+            <textarea defaultValue={(config?.prompt as string) ?? ""} placeholder="prompt, or wire transcript into prompt"
+              onBlur={(e) => onConfig(id, { prompt: e.target.value.trim() || undefined, promptSeq: Date.now() })}
+              onKeyDown={(e) => { if ((e.metaKey || e.ctrlKey) && e.key === "Enter") (e.target as HTMLTextAreaElement).blur(); }}
+              style={{ fontSize: 11, minHeight: 44, resize: "vertical", border: "1px solid rgba(203,213,224,0.38)", borderRadius: 4, background: "rgba(255,255,255,0.9)", color: "#1a202c", boxSizing: "border-box", width: "100%" }} />
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 76px 70px", gap: 4, alignItems: "center" }}>
+              <input type="url" defaultValue={(config?.serverUrl as string) ?? DEFAULT_QWEN_IMAGE_SERVER} placeholder={DEFAULT_QWEN_IMAGE_SERVER}
+                title="Qwen Image runner URL"
+                onBlur={(e) => onConfig(id, { serverUrl: e.target.value.trim() || undefined })}
+                onKeyDown={(e) => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); }}
+                style={{ fontSize: 10, minWidth: 0, border: "1px solid rgba(203,213,224,0.38)", borderRadius: 4, padding: "2px 4px" }} />
+              <input type="number" min={1} max={80} step={1} defaultValue={(config?.steps as number) ?? 20}
+                title="inference steps"
+                onBlur={(e) => onConfig(id, { steps: Math.max(1, Math.min(80, Math.round(Number(e.target.value)) || 20)) })}
+                onKeyDown={(e) => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); }}
+                style={{ fontSize: 10, minWidth: 0, border: "1px solid rgba(203,213,224,0.38)", borderRadius: 4, padding: "2px 4px" }} />
+              <label style={{ display: "flex", alignItems: "center", gap: 3, color: "#cbd5e0", fontSize: 10 }}>
+                <input type="checkbox" checked={(config?.autoRun as boolean | undefined) !== false} onChange={(e) => onConfig(id, { autoRun: e.target.checked })} />
+                auto
+              </label>
+            </div>
+            <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr) minmax(0, 1fr)", gap: 4, alignItems: "center" }}>
+              <SelectOmnibox value={(config?.backend as string) ?? "diffusers"} onChange={(e) => onConfig(id, { backend: e.target.value })} title="runner backend" style={{ minWidth: 0 }}>
+                <option value="diffusers">Diffusers</option>
+                <option value="diffsynth">DiffSynth</option>
+                <option value="mlx">MLX</option>
+                <option value="gguf">GGUF</option>
+                <option value="remote">Remote API</option>
+              </SelectOmnibox>
+              <label style={{ display: "flex", alignItems: "center", gap: 4, minWidth: 0, fontSize: 10, color: "#cbd5e0" }}>
+                strength
+                <input type="number" min={0} max={1} step={0.05} defaultValue={(config?.strength as number) ?? 0.75}
+                  onBlur={(e) => onConfig(id, { strength: Math.max(0, Math.min(1, Number(e.target.value) || 0.75)) })}
+                  onKeyDown={(e) => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); }}
+                  style={{ fontSize: 10, width: 48, minWidth: 0, boxSizing: "border-box" }} />
+              </label>
+            </div>
+            <input type="text" {...(modelInputConnected ? { value: controlledModel ?? (config?.model as string) ?? DEFAULT_QWEN_IMAGE_MODEL, readOnly: true } : { defaultValue: (config?.model as string) ?? DEFAULT_QWEN_IMAGE_MODEL })} placeholder={DEFAULT_QWEN_IMAGE_MODEL}
+              disabled={modelInputConnected} aria-readonly={modelInputConnected}
+              title={modelInputConnected ? "Controlled by connected Model provider" : qwenImageHardwareHint((config?.backend as string | undefined) ?? "diffusers")}
+              onBlur={(e) => onConfig(id, { model: e.target.value.trim() || undefined })}
+              onKeyDown={(e) => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); }}
+              style={{ fontSize: 10, minWidth: 0, border: "1px solid rgba(203,213,224,0.38)", borderRadius: 4, padding: "2px 4px", ...readonlyModelStyle }} />
           </div>
         )}
         {warn && (
@@ -467,20 +803,20 @@ export function NodeInspector({ node, controls = true, onClose }: { node: Inspec
                 onKeyDown={(e) => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); }} style={sel} />
             </label>
             <label style={row}>scope:
-              <select value={(config?.scope as string) ?? "browser-tab"} onChange={(e) => onConfig(id, { scope: e.target.value })} style={sel}>
+              <SelectOmnibox value={(config?.scope as string) ?? "browser-tab"} onChange={(e) => onConfig(id, { scope: e.target.value })} style={sel}>
                 <option value="browser-tab">Browser tab</option>
                 <option value="browser-device">Browser device</option>
                 <option value="native-device">Native device</option>
                 <option value="room">Room shared</option>
-              </select>
+              </SelectOmnibox>
             </label>
             <label style={row}>runtime:
-              <select value={(config?.runtime as string) ?? "browser"} onChange={(e) => onConfig(id, { runtime: e.target.value })} style={sel}>
+              <SelectOmnibox value={(config?.runtime as string) ?? "browser"} onChange={(e) => onConfig(id, { runtime: e.target.value })} style={sel}>
                 <option value="browser">Browser</option>
                 <option value="native">Native bridge</option>
                 <option value="worker">Worker</option>
                 <option value="cloud">Cloud</option>
-              </select>
+              </SelectOmnibox>
             </label>
             <div style={{ marginTop: 6, display: "grid", gridTemplateColumns: "1fr 1fr", gap: 4, fontSize: 11, color: "#718096" }}>
               {(["mic", "camera", "screen", "webgpu", "storage", "network"] as const).map((cap) => (
@@ -502,21 +838,25 @@ export function NodeInspector({ node, controls = true, onClose }: { node: Inspec
         )}
 
         {vt === "stt" && (
-          <label style={row}>model:
-            <select value={(config?.model as string) ?? DEFAULT_SENSEVOICE_MODEL} onChange={(e) => onConfig(id, { model: e.target.value })} style={sel}>
-              {SENSEVOICE_MODELS.map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
-            </select>
-          </label>
+          <>
+            <label style={row}>browser model:
+            <SelectOmnibox value={modelInputConnected && controlledModel ? controlledModel : (config?.model as string) ?? DEFAULT_SENSEVOICE_MODEL} disabled={modelInputConnected} aria-readonly={modelInputConnected} title={modelInputConnected ? `Controlled by ${controlledModel ?? "Model provider"}` : undefined} onChange={(e) => onConfig(id, { model: e.target.value })} style={{ ...sel, ...readonlyModelStyle }}>
+              {modelInputConnected && controlledModel && <option value={controlledModel}>{controlledModel}</option>}
+                {SENSEVOICE_MODELS.map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
+              </SelectOmnibox>
+            </label>
+            <div style={{ fontSize: 9.5, color: modelInputConnected ? "#3182ce" : "#a0aec0", marginTop: 2 }}>{modelInputConnected ? "Provider-controlled · disconnect model input to edit" : "Fallback until a Model provider is connected."}</div>
+          </>
         )}
 
         {vt === "model-3d" && (
           <>
             <label style={row}>shape:
-              <select value={(config?.primitive as string) ?? "suzanne"} onChange={(e) => onConfig(id, { primitive: e.target.value, url: undefined })} style={sel}>
+              <SelectOmnibox value={(config?.primitive as string) ?? "suzanne"} onChange={(e) => onConfig(id, { primitive: e.target.value, url: undefined })} style={sel}>
                 <option value="suzanne">Suzanne</option>
                 <option value="cube">Cube</option>
                 <option value="sphere">Sphere</option>
-              </select>
+              </SelectOmnibox>
             </label>
             <label style={row}>GLB:
               <input type="url" defaultValue={(config?.url as string) ?? ""} placeholder="https://…/model.glb"
@@ -567,23 +907,40 @@ export function NodeInspector({ node, controls = true, onClose }: { node: Inspec
         {(vt === "translate" || vt === "browser-translate-api") && (
           <>
             <label style={row}>to:
-              <select value={(config?.lang as string) ?? DEFAULT_TRANSLATE_LANG} onChange={(e) => onConfig(id, { lang: e.target.value })} style={sel}>
+              <SelectOmnibox value={(config?.lang as string) ?? DEFAULT_TRANSLATE_LANG} onChange={(e) => onConfig(id, { lang: e.target.value })} style={sel}>
                 {TRANSLATE_LANGUAGES.map((l) => <option key={l} value={l}>{l}</option>)}
-              </select>
+              </SelectOmnibox>
             </label>
             {vt === "translate" && (
               <label style={row}>via:
-                <select value={provider} onChange={(e) => onConfig(id, { provider: e.target.value })} style={sel}>
+                <SelectOmnibox value={provider} onChange={(e) => onConfig(id, { provider: e.target.value })} style={sel}>
                   {TRANSLATE_PROVIDERS.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
-                </select>
+                </SelectOmnibox>
               </label>
             )}
             {vt === "translate" && provider === "llm" && (
-              <label style={row}>model:
-                <select value={(config?.model as string) ?? DEFAULT_TRANSLATE_MODEL} onChange={(e) => onConfig(id, { model: e.target.value })} style={sel}>
-                  {TRANSLATE_MODELS.map((m) => <option key={m.id} value={m.id}>{m.name} · {m.size}</option>)}
-                </select>
-              </label>
+              <>
+                <label style={row}>model:
+                  <SelectOmnibox value={(config?.model as string) ?? DEFAULT_TRANSLATE_MODEL} onChange={(e) => onConfig(id, { model: e.target.value })} style={sel}>
+                    {TRANSLATE_MODELS.map((m) => <option key={m.id} value={m.id}>{m.name} · {m.size}</option>)}
+                  </SelectOmnibox>
+                </label>
+                <label style={{ display: "block", color: "#718096", marginTop: 6 }}>
+                  <span style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 6 }}>
+                    prompt template:
+                    {(config?.promptTemplate as string | undefined)?.trim() && (
+                      <button type="button" title="Reset translation prompt template" onClick={() => onConfig(id, { promptTemplate: undefined })} style={{ fontSize: 9, padding: "1px 4px" }}>Reset</button>
+                    )}
+                  </span>
+                  <textarea
+                    key={(config?.promptTemplate as string | undefined) ?? "__default_translate_prompt__"}
+                    defaultValue={(config?.promptTemplate as string | undefined) ?? DEFAULT_TRANSLATE_PROMPT_TEMPLATE}
+                    title="Available placeholders: {text}, {source_language}, {target_language}"
+                    onBlur={(e) => onConfig(id, { promptTemplate: e.target.value.trim() || undefined })}
+                    style={{ fontSize: 10, width: "100%", minHeight: 112, marginTop: 2, boxSizing: "border-box", resize: "vertical", fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace" }}
+                  />
+                </label>
+              </>
             )}
           </>
         )}
@@ -591,10 +948,10 @@ export function NodeInspector({ node, controls = true, onClose }: { node: Inspec
         {(vt === "mic-vad" || vt === "mic-raw") && (
           <>
             <label style={row}>mic:
-              <select value={(config?.inputDeviceId as string) ?? ""} onChange={(e) => onConfig(id, { inputDeviceId: e.target.value || undefined })} style={sel}>
+              <SelectOmnibox value={(config?.inputDeviceId as string) ?? ""} onChange={(e) => onConfig(id, { inputDeviceId: e.target.value || undefined })} style={sel}>
                 <option value="">(default mic)</option>
                 {inputDevices.map((dev) => <option key={dev.deviceId} value={dev.deviceId}>{dev.label || `mic ${dev.deviceId.slice(0, 8)}`}</option>)}
-              </select>
+              </SelectOmnibox>
             </label>
             <label style={{ ...row, fontSize: 11 }} title="Browser echo cancellation, noise suppression & auto-gain.">
               <input type="checkbox" checked={(config?.aec as boolean) ?? true} onChange={(e) => onConfig(id, { aec: e.target.checked })} />
@@ -614,35 +971,36 @@ export function NodeInspector({ node, controls = true, onClose }: { node: Inspec
 
         {vt === "speaker" && (
           <label style={row}>out:
-            <select value={(config?.sinkId as string) ?? ""} onChange={(e) => onConfig(id, { sinkId: e.target.value || undefined })} style={sel}>
+            <SelectOmnibox value={(config?.sinkId as string) ?? ""} onChange={(e) => onConfig(id, { sinkId: e.target.value || undefined })} style={sel}>
               <option value="">(default speaker)</option>
               {outputDevices.map((dev) => <option key={dev.deviceId} value={dev.deviceId}>{dev.label || `speaker ${dev.deviceId.slice(0, 8)}`}</option>)}
-            </select>
+            </SelectOmnibox>
           </label>
         )}
 
         {vt === "tts" && (
           <>
             <label style={row}>voice:
-              <select value={(config?.voice as string) ?? AUTO_TTS_VOICE} onChange={(e) => onConfig(id, { voice: e.target.value })} style={sel}>
+              <SelectOmnibox value={(config?.voice as string) ?? AUTO_TTS_VOICE} onChange={(e) => onConfig(id, { voice: e.target.value })} style={sel}>
                 <option value={AUTO_TTS_VOICE}>Auto (match language)</option>
                 {voices.map((v) => <option key={v.voiceURI} value={v.voiceURI}>{v.name} · {v.lang}</option>)}
-              </select>
+              </SelectOmnibox>
             </label>
             <label style={row}>rate:
-              <select value={String((config?.rate as number) ?? 1)} onChange={(e) => onConfig(id, { rate: Number(e.target.value) })} style={sel}>
+              <SelectOmnibox value={String((config?.rate as number) ?? 1)} onChange={(e) => onConfig(id, { rate: Number(e.target.value) })} style={sel}>
                 {[0.75, 1, 1.25, 1.5, 2].map((r) => <option key={r} value={r}>{r}×</option>)}
-              </select>
+              </SelectOmnibox>
             </label>
           </>
         )}
 
         {vt === "tts-model" && (
           <label style={row}>model:
-            <select value={(config?.model as string) ?? AUTO_TTS_MODEL} onChange={(e) => onConfig(id, { model: e.target.value })} style={sel}>
+            <SelectOmnibox value={modelInputConnected && controlledModel ? controlledModel : (config?.model as string) ?? AUTO_TTS_MODEL} disabled={modelInputConnected} aria-readonly={modelInputConnected} title={modelInputConnected ? `Controlled by ${controlledModel ?? "Model provider"}` : undefined} onChange={(e) => onConfig(id, { model: e.target.value })} style={{ ...sel, ...readonlyModelStyle }}>
+              {modelInputConnected && controlledModel && <option value={controlledModel}>{controlledModel}</option>}
               <option value={AUTO_TTS_MODEL}>Auto (match language)</option>
               {NEURAL_TTS_MODELS.map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
-            </select>
+            </SelectOmnibox>
           </label>
         )}
 
@@ -656,20 +1014,20 @@ export function NodeInspector({ node, controls = true, onClose }: { node: Inspec
 
         {vt === "text-diff" && (
           <label style={row}>style:
-            <select value={(config?.style as string) ?? DEFAULT_DIFF_STYLE} onChange={(e) => onConfig(id, { style: e.target.value })} style={sel}>
+            <SelectOmnibox value={(config?.style as string) ?? DEFAULT_DIFF_STYLE} onChange={(e) => onConfig(id, { style: e.target.value })} style={sel}>
               {DIFF_STYLES.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
-            </select>
+            </SelectOmnibox>
           </label>
         )}
 
         {vt === "text-normalize" && (
           <>
             <label style={row}>mode:
-              <select value={(config?.mode as string) ?? "ocr-stable"} onChange={(e) => onConfig(id, { mode: e.target.value })} style={sel}>
+              <SelectOmnibox value={(config?.mode as string) ?? "ocr-stable"} onChange={(e) => onConfig(id, { mode: e.target.value })} style={sel}>
                 <option value="ocr-stable">OCR stable lines</option>
                 <option value="light">Light cleanup</option>
                 <option value="llm-filter">Small LLM filter</option>
-              </select>
+              </SelectOmnibox>
             </label>
             {config?.mode === "llm-filter" && (
               <>
@@ -682,9 +1040,9 @@ export function NodeInspector({ node, controls = true, onClose }: { node: Inspec
                   />
                 </label>
                 <label style={row}>dtype:
-                  <select value={(config?.dtype as string) ?? DEFAULT_MODEL_DTYPE} onChange={(e) => onConfig(id, { dtype: e.target.value })} style={sel}>
+                  <SelectOmnibox value={(config?.dtype as string) ?? DEFAULT_MODEL_DTYPE} onChange={(e) => onConfig(id, { dtype: e.target.value })} style={sel}>
                     {MODEL_DTYPES.map((dt) => <option key={dt} value={dt}>{dt}</option>)}
-                  </select>
+                  </SelectOmnibox>
                 </label>
                 <label style={{ display: "block", color: "#718096", marginTop: 6 }}>filter prompt:
                   <textarea defaultValue={(config?.instruction as string) ?? ""} placeholder={DEFAULT_OCR_FILTER_INSTRUCTION}
@@ -699,13 +1057,13 @@ export function NodeInspector({ node, controls = true, onClose }: { node: Inspec
         {vt === "text-filter" && (
           <>
             <label style={row}>mode:
-              <select value={(config?.mode as string) ?? "diff-added"} onChange={(e) => onConfig(id, { mode: e.target.value })} style={sel}>
+              <SelectOmnibox value={(config?.mode as string) ?? "diff-added"} onChange={(e) => onConfig(id, { mode: e.target.value })} style={sel}>
                 <option value="diff-added">diff added only (A)</option>
                 <option value="diff-removed">diff removed only (D)</option>
                 <option value="regex-keep">regex keep lines</option>
                 <option value="regex-drop">regex drop lines</option>
                 <option value="regex-replace">regex replace</option>
-              </select>
+              </SelectOmnibox>
             </label>
             {String(config?.mode ?? "diff-added").startsWith("diff-") && (
               <label style={{ ...row, justifyContent: "flex-start", gap: 6 }}>
@@ -739,9 +1097,9 @@ export function NodeInspector({ node, controls = true, onClose }: { node: Inspec
 
         {vt === "vosk" && (
           <label style={row}>model:
-            <select value={(config?.model as string) ?? DEFAULT_VOSK_MODEL} onChange={(e) => onConfig(id, { model: e.target.value })} style={sel}>
+            <SelectOmnibox value={(config?.model as string) ?? DEFAULT_VOSK_MODEL} onChange={(e) => onConfig(id, { model: e.target.value })} style={sel}>
               {VOSK_MODELS.map((m) => <option key={m.id} value={m.url}>{m.name}</option>)}
-            </select>
+            </SelectOmnibox>
           </label>
         )}
 
@@ -755,6 +1113,99 @@ export function NodeInspector({ node, controls = true, onClose }: { node: Inspec
           </>
         )}
 
+        {vt === "vibevoice-asr" && (
+          <>
+            {(() => {
+              const backend = (config?.backend as string | undefined) ?? "mlx";
+              const defaultModel = backend === "mlx" ? DEFAULT_VIBEVOICE_MLX_MODEL : DEFAULT_VIBEVOICE_VLLM_MODEL;
+              return <>
+            <label style={row}>backend:
+              <SelectOmnibox value={backend} onChange={(e) => {
+                const next = e.target.value;
+                onConfig(id, { backend: next, apiModel: next === "mlx" ? DEFAULT_VIBEVOICE_MLX_MODEL : DEFAULT_VIBEVOICE_VLLM_MODEL });
+              }} style={sel}>
+                <option value="mlx">MLX (Apple Silicon)</option>
+                <option value="vllm">vLLM (NVIDIA)</option>
+              </SelectOmnibox>
+            </label>
+            <label style={row}>server:
+              <input value={(config?.serverUrl as string) ?? DEFAULT_VIBEVOICE_SERVER} onChange={(e) => onConfig(id, { serverUrl: e.target.value })}
+                placeholder={DEFAULT_VIBEVOICE_SERVER} spellCheck={false} style={sel} />
+            </label>
+            <label style={row}>API model:
+              <SelectOmnibox value={modelInputConnected && controlledModel ? controlledModel : (config?.apiModel as string) ?? defaultModel} disabled={modelInputConnected} aria-readonly={modelInputConnected} title={modelInputConnected ? `Controlled by ${controlledModel ?? "Model provider"}` : undefined} onChange={(e) => onConfig(id, { apiModel: e.target.value })} style={{ ...sel, ...readonlyModelStyle }}>
+                {modelInputConnected && controlledModel && <option value={controlledModel}>{controlledModel}</option>}
+                <option value={defaultModel}>{defaultModel}</option>
+                {backend === "mlx" && defaultModel !== DEFAULT_VIBEVOICE_MLX_MODEL && <option value={DEFAULT_VIBEVOICE_MLX_MODEL}>{DEFAULT_VIBEVOICE_MLX_MODEL}</option>}
+                {backend === "vllm" && defaultModel !== DEFAULT_VIBEVOICE_VLLM_MODEL && <option value={DEFAULT_VIBEVOICE_VLLM_MODEL}>{DEFAULT_VIBEVOICE_VLLM_MODEL}</option>}
+              </SelectOmnibox>
+            </label>
+            <label style={{ display: "block", color: "#718096", marginTop: 6 }}>hotwords:
+              <input value={(config?.hotwords as string) ?? ""} onChange={(e) => onConfig(id, { hotwords: e.target.value })}
+                placeholder="names, terms, context" style={{ ...sel, width: "100%", marginTop: 2, boxSizing: "border-box" }} />
+            </label>
+            <div style={{ fontSize: 9.5, color: "#a0aec0", marginTop: 4 }}>
+              {modelInputConnected ? "Provider-controlled. " : "Fallback model. "}{backend === "mlx" ? "Run mlx_audio.server locally; the first transcription downloads the model." : "Requires the Microsoft VibeVoice vLLM server."}
+            </div>
+              </>;
+            })()}
+          </>
+        )}
+
+        {vt === "model-source" && (
+          <>
+            {(() => {
+              const sourceProvider = ((config?.provider as ModelSourceProvider | undefined) ?? "huggingface");
+              const filters: ModelSearchFilters = {
+                format: (config?.formatFilter as ModelFormat | "any" | undefined) ?? "any",
+                runtime: (config?.runtimeFilter as ModelRuntime | "any" | undefined) ?? (sourceProvider === "civitai" ? "diffusers" : "browser"),
+                task: (config?.taskFilter as ModelTaskGroup | "any" | undefined) ?? (sourceProvider === "webllm" ? "text" : "any"),
+              };
+              return <>
+            <label style={row}>source:
+              <EnumOmnibox
+                ariaLabel="Model source provider"
+                value={sourceProvider}
+                options={MODEL_PROVIDER_OPTIONS}
+                onChange={(provider) => onConfig(id, {
+                  provider,
+                  ref: undefined,
+                  resolveSeq: undefined,
+                  formatFilter: provider === "webllm" ? "mlc" : "any",
+                  runtimeFilter: provider === "civitai" ? "diffusers" : "browser",
+                  taskFilter: provider === "webllm" ? "text" : "any",
+                })}
+                style={{ width: 140 }}
+              />
+            </label>
+            <label style={{ display: "block", color: "#718096", marginTop: 6 }}>model:
+              {sourceProvider === "webllm" ? (
+                <WebLlmModelOmnibox
+                  value={(config?.ref as string | undefined) ?? ""}
+                  onChange={(ref) => onConfig(id, { ref, formatFilter: "mlc", runtimeFilter: "browser", taskFilter: "text", resolveSeq: Date.now() })}
+                />
+              ) : (
+                <ModelSourceOmnibox
+                  provider={sourceProvider}
+                  value={config?.ref as string | undefined}
+                  onCommit={(ref) => onConfig(id, { ref, resolveSeq: Date.now() })}
+                  filters={filters}
+                  onFilters={(next) => onConfig(id, {
+                    formatFilter: next.format ?? "any",
+                    runtimeFilter: next.runtime ?? "any",
+                    taskFilter: next.task ?? "any",
+                  })}
+                />
+              )}
+            </label>
+            <div style={{ fontSize: 9.5, color: "#a0aec0", marginTop: 4 }}>
+              Emits model metadata to Custom model, LLM agent, Vision model, Qwen Image, or Neural TTS.
+            </div>
+              </>;
+            })()}
+          </>
+        )}
+
         {vt === "model" && (
           <>
             {(() => {
@@ -762,7 +1213,7 @@ export function NodeInspector({ node, controls = true, onClose }: { node: Inspec
               return (
                 <>
             <label style={row}>task:
-              <select
+              <SelectOmnibox
                 value={modelTask}
                 onChange={(e) => {
                   const nextTask = e.target.value;
@@ -772,7 +1223,7 @@ export function NodeInspector({ node, controls = true, onClose }: { node: Inspec
                 style={sel}
               >
                 {MODEL_TASKS.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
-              </select>
+              </SelectOmnibox>
             </label>
             <label style={{ display: "block", color: "#718096", marginTop: 6 }}>model (HF repo id or URL):
               <ModelRepoInput
@@ -781,15 +1232,17 @@ export function NodeInspector({ node, controls = true, onClose }: { node: Inspec
                 task={modelTask}
                 placeholder={defaultModelForTask(modelTask)}
                 onCommit={(model) => onConfig(id, { model })}
+                disabled={modelInputConnected}
+                controlledValue={controlledModel}
               />
             </label>
                 </>
               );
             })()}
             <label style={row}>dtype:
-              <select value={(config?.dtype as string) ?? DEFAULT_MODEL_DTYPE} onChange={(e) => onConfig(id, { dtype: e.target.value })} style={sel}>
+              <SelectOmnibox value={(config?.dtype as string) ?? DEFAULT_MODEL_DTYPE} onChange={(e) => onConfig(id, { dtype: e.target.value })} style={sel}>
                 {MODEL_DTYPES.map((dt) => <option key={dt} value={dt}>{dt}</option>)}
-              </select>
+              </SelectOmnibox>
             </label>
           </>
         )}
@@ -797,41 +1250,78 @@ export function NodeInspector({ node, controls = true, onClose }: { node: Inspec
         {vt === "llm-agent" && (
           <>
             {(() => {
+              const agentBackend = controlledBackend ?? (config?.backend === "webllm" ? "webllm" : "transformers");
               const agentTask = ((config?.task as string | undefined) === "text-generation" ? "text-generation" : "text2text");
               return (
                 <>
-                  <label style={row}>task:
-                    <select
-                      value={agentTask}
+                  <label style={row}>backend:
+                    <SelectOmnibox
+                      value={agentBackend}
+                      disabled={modelInputConnected && !!controlledBackend}
+                      aria-readonly={modelInputConnected && !!controlledBackend}
+                      title={modelInputConnected && controlledBackend ? `Controlled by connected ${controlledBackend} provider` : undefined}
                       onChange={(e) => {
-                        const nextTask = e.target.value;
-                        const current = (config?.model as string | undefined)?.trim();
-                        const wasDefaultish = !current || TEXT2TEXT_MODEL_OPTIONS.some((m) => m.id === current) || modelOptionsFor("text-generation").some((m) => m.id === current);
-                        onConfig(id, { task: nextTask, model: wasDefaultish ? defaultModelForTask(nextTask) : current });
+                        const backend = e.target.value;
+                        onConfig(id, backend === "webllm"
+                          ? { backend, task: "text-generation", model: TRANSLATE_MODELS[0]!.id, dtype: undefined }
+                          : { backend, task: "text-generation", model: defaultModelForTask("text-generation") });
                       }}
-                      style={sel}
+                      style={{ ...sel, ...(modelInputConnected && controlledBackend ? readonlyModelStyle : {}) }}
                     >
-                      <option value="text2text">Text → Text</option>
-                      <option value="text-generation">Text generation (Gemma/SmolLM/Qwen)</option>
-                    </select>
+                      <option value="webllm">WebLLM (WebGPU)</option>
+                      <option value="transformers">Transformers.js (ONNX/WASM)</option>
+                    </SelectOmnibox>
                   </label>
-                  <label style={{ display: "block", color: "#718096", marginTop: 6 }}>model (HF repo id or URL):
-                    <ModelRepoInput
-                      value={config?.model as string | undefined}
-                      listId={`${text2textModelListId}-agent`}
-                      task={agentTask}
-                      placeholder={defaultModelForTask(agentTask)}
-                      onCommit={(model) => onConfig(id, { model })}
-                    />
-                  </label>
+                  {agentBackend === "webllm" ? (
+                    <label style={row}>model:
+                      <WebLlmModelOmnibox
+                        value={modelInputConnected ? (controlledModel ?? (config?.model as string | undefined) ?? TRANSLATE_MODELS[0]!.id) : ((config?.model as string | undefined) ?? TRANSLATE_MODELS[0]!.id)}
+                        onChange={(model) => onConfig(id, { model })}
+                        disabled={modelInputConnected}
+                      />
+                    </label>
+                  ) : (
+                    <>
+                      <label style={row}>task:
+                        <SelectOmnibox
+                          value={agentTask}
+                          onChange={(e) => {
+                            const nextTask = e.target.value;
+                            const current = (config?.model as string | undefined)?.trim();
+                            const wasDefaultish = !current || TEXT2TEXT_MODEL_OPTIONS.some((m) => m.id === current) || modelOptionsFor("text-generation").some((m) => m.id === current);
+                            onConfig(id, { task: nextTask, model: wasDefaultish ? defaultModelForTask(nextTask) : current });
+                          }}
+                          style={sel}
+                        >
+                          <option value="text2text">Text → Text</option>
+                          <option value="text-generation">Text generation (Gemma/SmolLM/Qwen)</option>
+                        </SelectOmnibox>
+                      </label>
+                      <label style={{ display: "block", color: "#718096", marginTop: 6 }}>model (search Hugging Face):
+                        {modelInputConnected ? (
+                          <ModelRepoInput value={config?.model as string | undefined} listId={`${text2textModelListId}-agent`} task={agentTask}
+                            placeholder={defaultModelForTask(agentTask)} onCommit={(model) => onConfig(id, { model })} disabled controlledValue={controlledModel} />
+                        ) : (
+                          <ModelSourceOmnibox
+                            provider="huggingface"
+                            value={config?.model as string | undefined}
+                            filters={{ runtime: "browser", task: "text", format: "any" }}
+                            onFilters={() => {}}
+                            onCommit={(model) => onConfig(id, { model })}
+                          />
+                        )}
+                      </label>
+                      <label style={row}>dtype:
+                        <SelectOmnibox value={(config?.dtype as string) ?? DEFAULT_MODEL_DTYPE} onChange={(e) => onConfig(id, { dtype: e.target.value })} style={sel}>
+                          {MODEL_DTYPES.map((dt) => <option key={dt} value={dt}>{dt}</option>)}
+                        </SelectOmnibox>
+                      </label>
+                    </>
+                  )}
+                  {modelInputConnected && <div style={{ fontSize: 9.5, color: "#3182ce", marginTop: 3 }}>Provider-controlled · disconnect model input to edit</div>}
                 </>
               );
             })()}
-            <label style={row}>dtype:
-              <select value={(config?.dtype as string) ?? DEFAULT_MODEL_DTYPE} onChange={(e) => onConfig(id, { dtype: e.target.value })} style={sel}>
-                {MODEL_DTYPES.map((dt) => <option key={dt} value={dt}>{dt}</option>)}
-              </select>
-            </label>
             <label style={{ display: "block", color: "#718096", marginTop: 6 }}>system prompt:
               <textarea defaultValue={(config?.instruction as string) ?? ""} placeholder={DEFAULT_LLM_AGENT_INSTRUCTION}
                 onBlur={(e) => onConfig(id, { instruction: e.target.value.trim() || undefined })}
@@ -855,16 +1345,34 @@ export function NodeInspector({ node, controls = true, onClose }: { node: Inspec
           );
         })()}
 
-        {(vt === "file-audio" || vt === "file-text") && (() => {
+        {(vt === "file-audio" || vt === "file-image" || vt === "file-text") && (() => {
           const url = config?.url as string | undefined;
           const useUrl = (u: string | undefined) => { fileStore.delete(id); onConfig(id, { url: u || undefined, file: undefined }); };
+          const title = (config?.title as string | undefined) ?? fileName ?? spec.label;
+          const latestAudio = vt === "file-audio" ? getRecords(id).at(-1) : undefined;
+          const accept = vt === "file-audio" ? "audio/*" : vt === "file-image" ? "image/*" : ".md,.txt,.srt,.vtt,text/*";
           return (
             <div style={{ marginTop: 6, fontSize: 11, color: "#718096" }}>
+              <label style={row}>title:
+                <input type="text" defaultValue={title} aria-label={`${spec.label} title`}
+                  onBlur={(event) => onConfig(id, { title: event.target.value.trim() || undefined })}
+                  onKeyDown={(event) => { if (event.key === "Enter") (event.currentTarget as HTMLInputElement).blur(); }}
+                  style={{ fontSize: 10, flex: 1, minWidth: 0 }} />
+              </label>
               <div style={{ marginBottom: 2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{fileName ? `📄 ${fileName}` : url ? `🔗 ${url}` : "no file"}</div>
-              <input type="file" accept={vt === "file-audio" ? "audio/*" : ".md,.txt,.srt,.vtt,text/*"} onChange={(e) => { const f = e.target.files?.[0]; if (f) setFile(id, f); }} style={{ fontSize: 10, width: "100%" }} />
+              <input type="file" accept={accept} onChange={(e) => { const f = e.target.files?.[0]; if (f) setFile(id, f); }} style={{ fontSize: 10, width: "100%" }} />
               <input type="text" defaultValue={url ?? ""} placeholder="…or paste a URL"
                 onBlur={(e) => useUrl(e.target.value.trim())}
                 onKeyDown={(e) => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); }} style={{ fontSize: 10, width: "100%", marginTop: 3, boxSizing: "border-box" }} />
+              {vt === "file-audio" && <AudioSeedPreview nodeId={id} fallbackUrl={url} fileKey={fileName} />}
+              {latestAudio && <RecordingPlayer rec={latestAudio} index={0} />}
+              <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 5 }}>
+                <button type="button" onClick={() => replayNode(id)} style={{ fontSize: 10 }}>▶ send current</button>
+                {vt === "file-audio" && <label style={{ display: "flex", alignItems: "center", gap: 3, fontSize: 10 }}>
+                  <input type="checkbox" checked={(config?.loop as boolean | undefined) ?? false} onChange={(event) => onConfig(id, { loop: event.target.checked })} />
+                  loop output
+                </label>}
+              </div>
             </div>
           );
         })()}
@@ -950,9 +1458,16 @@ export function NodeInspector({ node, controls = true, onClose }: { node: Inspec
         {vt === "video-clip" && (() => {
           const clipId = config?.clipId as string | undefined;
           const clip = getVideoClip(clipId);
+          const title = (config?.title as string | undefined) ?? fileName ?? spec.label;
           return (
             <div style={{ marginTop: 6 }}>
-              <div style={{ fontSize: 11, color: "#718096", marginBottom: 4 }}>generated clip source</div>
+              <label style={row}>title:
+                <input type="text" defaultValue={title} aria-label="Video title"
+                  onBlur={(event) => onConfig(id, { title: event.target.value.trim() || undefined })}
+                  onKeyDown={(event) => { if (event.key === "Enter") (event.currentTarget as HTMLInputElement).blur(); }}
+                  style={{ fontSize: 10, flex: 1, minWidth: 0 }} />
+              </label>
+              <input type="file" accept="video/*" onChange={(event) => { const file = event.target.files?.[0]; if (file) setFile(id, file); }} style={{ fontSize: 10, width: "100%", marginBottom: 4 }} />
               {clip ? (
                 <VideoClipPlayer clip={clip} index={0} />
               ) : (
@@ -961,7 +1476,7 @@ export function NodeInspector({ node, controls = true, onClose }: { node: Inspec
               <button
                 type="button"
                 disabled={!clipId}
-                onClick={() => onConfig(id, { playSeq: Date.now() })}
+                onClick={() => replayNode(id)}
                 style={{ fontSize: 11, marginTop: 6, border: "1px solid #cbd5e0", borderRadius: 4, background: "#fff", cursor: clipId ? "pointer" : "default" }}
               >
                 replay to outputs
@@ -978,13 +1493,25 @@ export function NodeInspector({ node, controls = true, onClose }: { node: Inspec
           );
         })()}
 
-        {vt === "srt-out" && (
-          <button style={{ fontSize: 11, marginTop: 6 }} disabled={getRecords(id).length === 0}
-            onClick={() => {
-              const srt = buildSrt(getRecords(id).map((r) => ({ text: r.text, durationMs: r.durationMs, startMs: r.tStartMs, endMs: r.tEndMs })));
-              download(new Blob([srt], { type: "text/plain" }), "otoji.srt");
-            }}>⬇ download .srt ({getRecords(id).length})</button>
-        )}
+        {vt === "srt-out" && (() => {
+          const records = getRecords(id);
+          const srt = buildSrt(records.map((r) => ({ text: r.text, durationMs: r.durationMs, startMs: r.tStartMs, endMs: r.tEndMs })));
+          return (
+            <div style={{ marginTop: 6 }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: 11, color: "#718096" }}>
+                <span>captions ({records.length})</span>
+                {records.length > 0 && <button style={{ fontSize: 10 }} onClick={() => clearRecords?.(id)}>Clear</button>}
+              </div>
+              <pre style={{ maxHeight: 160, overflow: "auto", whiteSpace: "pre-wrap", fontSize: 10, lineHeight: 1.35, color: "#4a5568", background: "#f7fafc", padding: 6, borderRadius: 4 }}>
+                {srt || "Run the graph to collect captions."}
+              </pre>
+              <button style={{ fontSize: 11, width: "100%" }} disabled={records.length === 0}
+                onClick={() => download(new Blob([srt], { type: "application/x-subrip;charset=utf-8" }), "otoji-transcript.srt")}>
+                Download .srt
+              </button>
+            </div>
+          );
+        })()}
 
         {vt === "tracker" && (
           <div style={{ marginTop: 6 }}>

@@ -29,6 +29,15 @@ describe("signal declarations", () => {
     expect(SIGNAL.control.ownership).toBe("copy");
     expect(SIGNAL.environment.ownership).toBe("copy");
     expect(SIGNAL.spatial.ownership).toBe("clone");
+    expect(SIGNAL.model.ownership).toBe("copy");
+  });
+
+  it("keeps model weights local while allowing common media across devices", () => {
+    expect(SIGNAL.model.transport).toBe("reference");
+    expect(SIGNAL.environment.transport).toBe("reference");
+    expect(SIGNAL.transcript.transport).toBe("json");
+    expect(SIGNAL.segment.transport).toBe("pcm");
+    expect(SIGNAL.image.transport).toBe("latest-image");
   });
 
   it("copy/clone are duplicable, share is aliasable-only, move is neither", () => {

@@ -2,6 +2,7 @@ import React, { useEffect, useState } from "react";
 import { generateRoomCode, isRoomCode } from "../lib/roomcode";
 import { generateDeviceName } from "../lib/device-id";
 import { ROLES, type DeviceRole } from "../lib/device-role";
+import { SelectOmnibox } from "./EnumOmnibox";
 
 // Shared "join a room" gate. Rendered both as the landing page (Lobby, at "/")
 // and as the pre-connect screen inside GraphEditor (the `!joined` branch). It is
@@ -215,13 +216,13 @@ export function JoinGate({ room, onRoomChange, name, onNameChange, role, onRoleC
         {role !== undefined && onRoleChange && (
           <label style={{ display: "block", fontSize: 12, color: colors.muted, marginBottom: 16 }}>
             this device's role
-            <select
+            <SelectOmnibox
               value={role}
               onChange={(e) => onRoleChange(e.target.value as DeviceRole)}
               style={{ ...fieldStyle, width: "100%", boxSizing: "border-box", fontSize: 14, padding: "8px 10px", borderRadius: 8, outline: "none", marginTop: 3 }}
             >
               {ROLES.map((r) => <option key={r.id} value={r.id}>{r.label}</option>)}
-            </select>
+            </SelectOmnibox>
           </label>
         )}
 

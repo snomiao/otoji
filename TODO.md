@@ -187,6 +187,50 @@
   per-edge throughput above). Agreed with rgui-agent 2026-07-09 (rgui TODO.md
   `[2026-07-09 20:55]` + Inbox reply `[21:05]` below).
 
+## Brainstorm backlog (2026-07-18)
+
+Ideas ranked by fun × implementation cost. Quick wins are being picked up first.
+
+### Quick wins (hours–1 day)
+- [ ] **Downscale depth input** — `depth.ts` still round-trips a full-res
+  `toDataURL("image/png")` per frame; pre-downscale to ~518 px (model input
+  size) before handing to the pipeline to shave the 360 ms/frame further.
+- [ ] **Graph snapshot in URL** — `otoji.org/#g=<lz-string>` so a whole
+  pipeline can be shared as one link, no room needed. Great for demo handouts.
+- [ ] **Node search omnibox** — `/` (or Cmd+K) opens fuzzy search over all
+  node types → Enter adds at cursor. Accordion palette is fine for browsing
+  but slow for the 42-type catalog; reuse `EnumOmnibox.tsx`.
+- [ ] **Recorder node** — capture canvas / spatial-renderer output to webm via
+  `MediaRecorder` (start/stop + download). Makes demo clips trivial.
+- [ ] **Per-node latency/FPS HUD** — badge each node with its processing time
+  (depth 360 ms, STT 1.2 s, …) so the bottleneck is visible on the graph
+  itself. Natural extension of the debug-runtime panel.
+
+### Medium bets (days)
+- [ ] **AR sticky notes** — the flagship spatial demo: pinch to place a
+  note/image in 3-D space (hand + depth + calibration already exist), synced
+  through the room so other devices see it. Turns the spatial pipeline from a
+  feature into an experience; federation groundwork is done.
+- [ ] **Voice→graph editing** — STT + webllm node that edits the graph from
+  speech ("connect the camera to depth"). Dogfooding otoji with otoji.
+- [ ] **Subgraph / group node** — select → group collapses a pipeline into one
+  node; unify with template save.
+- [ ] **Vision narrator pipeline** — camera → qwen-image caption → translate →
+  TTS: "describe what I'm looking at, out loud". Accessibility angle.
+- [ ] **CLI node recipes** — document `npx otoji node <room> --exec 'claude -p'`
+  style patterns: hang any local LLM/agent off the graph as a node
+  (generalizes the codex federation experiment).
+
+### Big bets
+- [ ] **Cloudflare TURN + real mobile testing** — phase 2 of NAT traversal;
+  needed before P2P mesh works reliably outside one LAN.
+- [ ] **Interpreter-booth mode** — two people in a room, each hears the other
+  via STT→translate→TTS in their own language. Pure composition of existing
+  nodes and the closest thing to the README's headline vision.
+- [ ] **rgui as a standalone graph OS** — palette/overlay-cutout/panel
+  persistence made rgui broadly useful; keep pushing it as a general
+  canvas-native node editor (npm published, releases automated).
+
 ## Open questions / risks
 - ~~**Pages + Worker on same host**: confirm `otoji.org/signal/*` route overrides
   Pages.~~ ✅ Resolved — Workers routes win over Pages; `/signal` served by the Worker.

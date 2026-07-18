@@ -14,6 +14,55 @@ const WEBLLM_URL = "https://esm.run/@mlc-ai/web-llm";
 const importWebLLM = () =>
   (new Function("u", "return import(u)")(WEBLLM_URL) as Promise<any>);
 
+export interface WebLlmModelOption {
+  id: string;
+  label: string;
+  keywords?: string;
+}
+
+export const DEFAULT_TRANSLATE_PROMPT_TEMPLATE = `Translate the following text from {source_language} into {target_language}.
+Output only the translation, with no quotes, notes, or explanations.
+If the text is already in {target_language}, return it unchanged.
+
+Text:
+{text}`;
+
+export function renderTranslatePrompt(
+  template: string | undefined,
+  values: { text: string; sourceLanguage: string; targetLanguage: string },
+): string {
+  const source = template?.trim() || DEFAULT_TRANSLATE_PROMPT_TEMPLATE;
+  const includesText = source.includes("{text}");
+  const rendered = source
+    .split("{source_language}").join(values.sourceLanguage)
+    .split("{target_language}").join(values.targetLanguage)
+    .split("{text}").join(values.text);
+  return includesText ? rendered : `${rendered}\n\nText:\n${values.text}`;
+}
+
+export function webLlmModelOptionsFromConfig(config: any): WebLlmModelOption[] {
+  const records = Array.isArray(config?.model_list) ? config.model_list : [];
+  const seen = new Set<string>();
+  return records.flatMap((record: any): WebLlmModelOption[] => {
+    const id = String(record?.model_id ?? "").trim();
+    if (!id || seen.has(id)) return [];
+    seen.add(id);
+    const bytes = Number(record?.estimated_vram_bytes ?? 0);
+    const size = Number.isFinite(bytes) && bytes > 0 ? ` · ~${Math.max(1, Math.round(bytes / 1024 / 1024))} MB VRAM` : "";
+    return [{
+      id,
+      label: `${id}${size}`,
+      keywords: [record?.model, record?.model_lib, ...(Array.isArray(record?.required_features) ? record.required_features : [])].filter(Boolean).join(" "),
+    }];
+  });
+}
+
+let catalogPromise: Promise<WebLlmModelOption[]> | null = null;
+export function listWebLlmModels(): Promise<WebLlmModelOption[]> {
+  catalogPromise ??= importWebLLM().then((webllm) => webLlmModelOptionsFromConfig(webllm.prebuiltAppConfig));
+  return catalogPromise;
+}
+
 // `navigator.gpu` can exist while `requestAdapter()` still yields no compatible
 // adapter (headless / VM Chrome, or a machine with no supported GPU). WebLLM only
 // discovers this deep inside CreateMLCEngine, where it throws a scary "Unable to
@@ -81,24 +130,33 @@ export class WebLLMTranslateProvider implements TranslateProvider {
     await getEngine(modelId, onProgress);
   }
 
-  async translate(text: string, targetLang: string, modelId = DEFAULT_TRANSLATE_MODEL, sourceLang?: string): Promise<string> {
+  async translate(text: string, targetLang: string, modelId = DEFAULT_TRANSLATE_MODEL, sourceLang?: string, promptTemplate?: string): Promise<string> {
     const src = text.trim();
     if (!src) return "";
     const engine = await getEngine(modelId);
-    const srcName = sourceLang ? codeToLangName(sourceLang) : null;
+    const srcName = sourceLang ? (codeToLangName(sourceLang) ?? sourceLang) : "the detected source language";
+    const prompt = renderTranslatePrompt(promptTemplate, {
+      text: src,
+      sourceLanguage: srcName,
+      targetLanguage: targetLang,
+    });
     const reply = await engine.chat.completions.create({
       // temperature 0 → deterministic; we want a faithful translation, not prose.
       temperature: 0,
+      messages: [{ role: "user", content: prompt }],
+    });
+    return (reply.choices?.[0]?.message?.content ?? "").trim();
+  }
+
+  async chat(text: string, instruction: string, modelId: string): Promise<string> {
+    const src = text.trim();
+    if (!src) return "";
+    const engine = await getEngine(modelId);
+    const reply = await engine.chat.completions.create({
+      temperature: 0,
+      max_tokens: 96,
       messages: [
-        {
-          role: "system",
-          content:
-            `You are a translation engine. Translate the user's text` +
-            (srcName ? ` from ${srcName}` : "") +
-            ` into ${targetLang}. ` +
-            `Output ONLY the translation, with no quotes, notes, or explanations. ` +
-            `If the text is already in ${targetLang}, return it unchanged.`,
-        },
+        { role: "system", content: instruction },
         { role: "user", content: src },
       ],
     });

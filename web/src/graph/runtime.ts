@@ -7,14 +7,16 @@ import { startMicVad, startMicRaw, segmentSamples, MIC_VAD_SR, type MicVadHandle
 import { clusterSegments, mixCluster, type TimedSegment } from "../lib/audio-mix";
 import { fileStore } from "./file-store";
 import { sttRecognize, warmSenseVoice } from "../providers/stt/sensevoice";
+import { SENSEVOICE_MODELS } from "../providers/stt/sensevoice-models";
 import { webllmTranslate } from "../providers/translate/webllm";
 import { browserTranslate } from "../providers/translate/browser-translator";
 import { DEFAULT_TRANSLATE_LANG, DEFAULT_TRANSLATE_MODEL, langNameToCode } from "../providers/translate/translate-config";
 import { neuralTts } from "../providers/tts/neural";
 import { DEFAULT_NEURAL_TTS_MODEL, AUTO_TTS_MODEL, AUTO_TTS_VOICE, langToTtsModel, voiceMatchesLang } from "../providers/tts/tts-config";
-import { runAsr, runText, runTts, warmPipe, type ModelTask } from "../providers/model/transformers-pipeline";
+import { runAsr, runImageToText, runText, runTts, warmPipe, type ModelTask } from "../providers/model/transformers-pipeline";
 import { createVoskStream, warmVosk, DEFAULT_VOSK_MODEL, type VoskStream } from "../providers/stt/vosk";
 import { createSherpaNativeStream, DEFAULT_SHERPA_SERVER_URL, type SherpaNativeStream } from "../providers/stt/sherpa_native";
+import { checkVibeVoiceServer, transcribeVibeVoice, DEFAULT_VIBEVOICE_MLX_MODEL, DEFAULT_VIBEVOICE_SERVER, DEFAULT_VIBEVOICE_VLLM_MODEL, type VibeVoiceBackend } from "../providers/stt/vibevoice";
 import { startCamera, clampFps, DEFAULT_CAMERA_FPS, type CameraCaptureInfo, type CameraHandle } from "../providers/vision/camera";
 import { startScreenShare, type ScreenHandle } from "../providers/vision/screen";
 import { ocrRecognize, warmOcr } from "../providers/vision/paddleocr";
@@ -22,17 +24,20 @@ import { detect, drawDetections, warmDetect, DEFAULT_DETECT_MODEL } from "../pro
 import { estimateDepth, estimateDepthField, warmDepth } from "../providers/vision/depth";
 import { landmarks, drawLandmarks, drawSpatialMonkey, formatLandmarksLabels, formatLandmarksJson, warmMediapipe, prewarmMediapipe, type MpTask } from "../providers/vision/mediapipe";
 import { matchTemplate, drawMatches, formatMatchLabels, formatMatchJson, type Match } from "../providers/vision/match";
+import { generateQwenImage } from "../providers/vision/qwen-image";
 import { SpatialSceneRenderer, type CalibratedSpace, type DepthField, type RgbdPointCloud, type SpatialObjectDescriptor } from "../providers/vision/spatial-renderer";
 import { calibrateSpatialCursor, SpatialCursorPublisher, type DepthFieldData, type HandSpaceData, type SpatialCalibrationOptions } from "./spatial-cursor";
 import { formatLabels, formatJsonl, type Detection } from "../lib/detect-format";
 import { diffText, type DiffStyle, DEFAULT_DIFF_STYLE } from "../lib/textdiff";
 import { isPreviewShown } from "../lib/prefs";
 import type { SttLevel } from "../providers/types";
-import { buildControlFrame, buildImageFrame, buildSegmentFrame, buildSpatialFrame, buildTranscriptFrame, frameToMessage, type EdgeFrame } from "./frames";
+import { buildControlFrame, buildImageFrame, buildModelFrame, buildSegmentFrame, buildSpatialFrame, buildTranscriptFrame, frameToMessage, type EdgeFrame } from "./frames";
 import { videoClipsDB, type VideoClip } from "../lib/video-clips-db";
+import { modelSourceToText, resolveModelSource, type ModelRuntime, type ModelSourceMsg } from "../providers/model/model-source";
 
 const DEFAULT_LLM_AGENT_MODEL = "Xenova/flan-t5-small";
 const DEFAULT_LLM_AGENT_TEXT_GENERATION_MODEL = "onnx-community/gemma-3-1b-it-ONNX";
+const DEFAULT_WEBLLM_AGENT_MODEL = "Qwen2.5-0.5B-Instruct-q4f16_1-MLC";
 const DEFAULT_LLM_AGENT_INSTRUCTION =
   "You are an assistant watching a shared screen and listening to its audio. Summarize what changed, answer any spoken request, and keep the response concise.";
 
@@ -42,6 +47,16 @@ function llmAgentTask(task: unknown): "text2text" | "text-generation" {
 
 function defaultLlmAgentModel(task: "text2text" | "text-generation"): string {
   return task === "text-generation" ? DEFAULT_LLM_AGENT_TEXT_GENERATION_MODEL : DEFAULT_LLM_AGENT_MODEL;
+}
+
+export function incompatibleModelRuntime(source: ModelSourceMsg, runtime: ModelRuntime): Error | null {
+  const compatibility = source.compatibility;
+  if (!compatibility || compatibility.runtimes.includes(runtime)) return null;
+  const formats = compatibility.formats.join(", ") || "unknown format";
+  const runtimes = compatibility.runtimes.join(", ") || "no compatible runtime inferred";
+  const reason = compatibility.issues?.length ? ` ${compatibility.issues.join("; ")}.` : "";
+  const runtimeLabel = runtime === "browser" ? "Browser" : runtime === "diffusers" ? "Diffusers" : runtime === "remote" ? "Remote" : runtime;
+  return new Error(`${source.title || source.id} is not ${runtime}-runnable (${formats}; ${runtimes}).${reason} Choose the ${runtimeLabel} runtime filter or bind a compatible Environment.`);
 }
 
 type TextNormalizeMode = "light" | "ocr-stable" | "llm-filter";
@@ -205,6 +220,7 @@ interface RuntimeNode {
   start?(): Promise<void> | void;
   stop?(): Promise<void> | void;
   input?(port: string, msg: unknown): void;
+  replay?(): Promise<void> | void;
   dims?(): { width: number; height: number } | null; // camera: live stream size
 }
 
@@ -239,6 +255,10 @@ export class GraphRuntime {
     private hooks: RuntimeHooks = {},
   ) {}
 
+  replay(nodeId: string): Promise<void> | void {
+    return this.nodes.get(nodeId)?.replay?.();
+  }
+
   private isLocal(nodeId: string): boolean {
     const node = this.graph.nodes[nodeId];
     if (!node) return false;
@@ -263,9 +283,10 @@ export class GraphRuntime {
     if (!self) return;
     const owner = nodeOwner(this.graph.nodes[target.node], self.deviceIds);
     if (!owner) return;
-    const m = msg as Partial<TranscriptMsg> & Partial<SegmentMsg> & Partial<ImageMsg> & Partial<ControlMsg> & Partial<SpatialMsg>;
+    const m = msg as Partial<TranscriptMsg> & Partial<SegmentMsg> & Partial<ImageMsg> & Partial<ControlMsg> & Partial<SpatialMsg> & Partial<ModelSourceMsg>;
     let frame: EdgeFrame | null = null;
     if (m.data !== undefined) frame = buildSpatialFrame(target.node, target.port, m as SpatialMsg);
+    else if (m.provider && m.model) frame = buildModelFrame(target.node, target.port, m as ModelSourceMsg);
     else if (m.text !== undefined) frame = buildTranscriptFrame(target.node, target.port, m as TranscriptMsg);
     else if (m.samples instanceof Float32Array) frame = buildSegmentFrame(target.node, target.port, m as SegmentMsg);
     else if (m.bitmap instanceof ImageBitmap) frame = await buildImageFrame(target.node, target.port, m as ImageMsg);
@@ -430,15 +451,23 @@ export class GraphRuntime {
 
     // Generic "Custom model" nodes — preload their transformers.js pipelines.
     const customModels: { task: ModelTask; model: string; dtype?: string }[] = [];
+    const webllmAgentModels = new Set<string>();
     for (const n of Object.values(this.graph.nodes)) {
       if (!this.isLocal(n.id)) continue;
       const m = (n.config?.model as string | undefined)?.trim();
       if (n.type === "llm-agent") {
+        // A connected provider is authoritative and may select a different
+        // backend/model after startup. Do not preload the stale fallback.
+        if (this.hasIncoming(n.id, "model")) continue;
+        if (n.config?.backend === "webllm") {
+          webllmAgentModels.add(m || DEFAULT_WEBLLM_AGENT_MODEL);
+          continue;
+        }
         const task = llmAgentTask(n.config?.task);
         customModels.push({ task, model: m || defaultLlmAgentModel(task), dtype: n.config?.dtype as string | undefined });
       }
       else if (n.type === "text-normalize" && n.config?.mode === "llm-filter") customModels.push({ task: "text2text", model: m || DEFAULT_LLM_AGENT_MODEL, dtype: n.config?.dtype as string | undefined });
-      else if (n.type === "model" && m) customModels.push({ task: (n.config?.task as ModelTask | undefined) ?? "asr", model: m, dtype: n.config?.dtype as string | undefined });
+      else if (n.type === "model" && m && !this.hasIncoming(n.id, "model")) customModels.push({ task: (n.config?.task as ModelTask | undefined) ?? "asr", model: m, dtype: n.config?.dtype as string | undefined });
     }
     if (customModels.length) {
       this.hooks.onStatus?.("loading custom model…");
@@ -450,6 +479,15 @@ export class GraphRuntime {
           }).catch((e) => this.hooks.onError?.(e instanceof Error ? e : new Error(String(e)))),
         ),
       );
+    }
+    if (webllmAgentModels.size) {
+      this.hooks.onStatus?.("loading Qwen WebLLM model…");
+      await Promise.all([...webllmAgentModels].map((model) =>
+        webllmTranslate.warm(model, (progress) => {
+          if (progress.progress !== undefined) this.hooks.onStatus?.(`Qwen model ${Math.round(progress.progress * 100)}%`);
+          else if (progress.text) this.hooks.onStatus?.(progress.text);
+        }).catch((error) => this.hooks.onError?.(error instanceof Error ? error : new Error(String(error)))),
+      ));
     }
 
     for (const node of this.nodes.values()) await node.start?.();
@@ -803,6 +841,83 @@ export class GraphRuntime {
       };
     }
 
+    if (type === "vibevoice-asr") {
+      const cfg = this.graph.nodes[id]?.config ?? {};
+      const baseUrl = (cfg.serverUrl as string | undefined)?.trim() || DEFAULT_VIBEVOICE_SERVER;
+      const backend = ((cfg.backend as VibeVoiceBackend | undefined) ?? "mlx") as VibeVoiceBackend;
+      let apiModel = (cfg.apiModel as string | undefined)?.trim()
+        || (backend === "mlx" ? DEFAULT_VIBEVOICE_MLX_MODEL : DEFAULT_VIBEVOICE_VLLM_MODEL);
+      const hotwords = cfg.hotwords as string | undefined;
+      let sourceModel = "microsoft/VibeVoice-ASR";
+      const q = this.makeQueue(id);
+      let pending: SegmentMsg[] = [];
+      let flushTimer: ReturnType<typeof setTimeout> | null = null;
+      const flush = () => {
+        if (flushTimer) clearTimeout(flushTimer);
+        flushTimer = null;
+        const segments = pending;
+        pending = [];
+        if (!segments.length) return;
+        const sampleRate = segments[0]?.sampleRate || MIC_VAD_SR;
+        let appendAt = 0;
+        const placements = segments.map((seg) => {
+          const at = seg.offsetMs !== undefined ? Math.max(0, Math.round((seg.offsetMs / 1000) * sampleRate)) : appendAt;
+          appendAt = Math.max(appendAt, at + seg.samples.length);
+          return { at, samples: seg.samples };
+        });
+        const samples = new Float32Array(appendAt);
+        for (const placement of placements) samples.set(placement.samples, placement.at);
+        const merged: SegmentMsg = {
+          samples,
+          sampleRate,
+          durationMs: (samples.length / sampleRate) * 1000,
+          offsetMs: 0,
+        };
+        q.run(`VibeVoice · ${(merged.durationMs / 1000).toFixed(1)}s`, async () => {
+          try {
+            const text = await transcribeVibeVoice(merged.samples, merged.sampleRate, { baseUrl, model: apiModel, hotwords, backend });
+            this.hooks.onRecognized?.(id, text);
+            const caption = { text, audio: merged } as TranscriptMsg;
+            this.emit(id, "out", caption);
+            if (this.hasOutgoing(id, "caption")) this.emit(id, "caption", caption);
+            if (this.hasOutgoing(id, "audio")) this.emit(id, "audio", merged);
+          } catch (e) {
+            const error = e instanceof Error ? e : new Error(String(e));
+            this.hooks.onError?.(new Error(`${error.message}. Start the VibeVoice vLLM server for ${sourceModel}`));
+          }
+        });
+      };
+      return {
+        start: async () => {
+          try {
+            await checkVibeVoiceServer(baseUrl);
+            this.hooks.onRecognized?.(id, `${backend} runner ready · ${apiModel}`);
+          } catch (e) {
+            const detail = e instanceof Error ? e.message : String(e);
+            const command = backend === "mlx" ? "mlx_audio.server --host 127.0.0.1 --port 8000" : "start the VibeVoice vLLM server";
+            this.hooks.onError?.(new Error(`vibevoice: runner unavailable (${detail}). Run: ${command}`));
+          }
+        },
+        input: (port, msg) => {
+          if (port === "env") return;
+          if (port === "model") {
+            const src = msg as ModelSourceMsg;
+            sourceModel = src.model || sourceModel;
+            apiModel = src.model || apiModel;
+            this.hooks.onRecognized?.(id, `model override · ${apiModel}`);
+            return;
+          }
+          if (port === "env") return;
+          const seg = msg as SegmentMsg;
+          if (!seg.samples?.length) return;
+          pending.push(seg);
+          if (flushTimer) clearTimeout(flushTimer);
+          flushTimer = setTimeout(flush, 400);
+        },
+        stop: async () => { flush(); await q.drain(); },
+      };
+    }
+
     if (type === "mic-raw") {
       let handle: MicVadHandle | null = null;
       const inputDeviceId = this.graph.nodes[id]?.config?.inputDeviceId as string | undefined;
@@ -863,6 +978,27 @@ export class GraphRuntime {
 
     if (type === "file-audio") {
       const url = (this.graph.nodes[id]?.config?.url as string | undefined)?.trim();
+      const loop = (this.graph.nodes[id]?.config?.loop as boolean | undefined) ?? false;
+      let current: SegmentMsg | null = null;
+      let timer: ReturnType<typeof setTimeout> | null = null;
+      let stopped = false;
+      const emitCurrent = () => {
+        if (!current || stopped) return;
+        this.hooks.onSegment?.(id);
+        this.emit(id, "out", current);
+        if (loop) timer = setTimeout(emitCurrent, Math.max(16, current.durationMs));
+      };
+      const replace = (audio: SegmentMsg) => {
+        if (!audio.samples?.length) return;
+        if (timer) clearTimeout(timer);
+        current = audio;
+        this.hooks.onAudio?.(id, audio);
+        emitCurrent();
+      };
+      const replay = () => {
+        if (timer) clearTimeout(timer);
+        emitCurrent();
+      };
       return {
         start: async () => {
           const entry = fileStore.get(id);
@@ -878,19 +1014,31 @@ export class GraphRuntime {
               const d = decoded.getChannelData(c);
               for (let i = 0; i < len; i++) mono[i] += d[i] / decoded.numberOfChannels;
             }
-            segmentSamples(mono, (s, durationMs, offsetMs) => {
-              this.hooks.onSegment?.(id);
-              this.emit(id, "out", { samples: s, sampleRate: MIC_VAD_SR, durationMs, offsetMs } as SegmentMsg);
-            });
+            replace({ samples: mono, sampleRate: MIC_VAD_SR, durationMs: (mono.length / MIC_VAD_SR) * 1000, offsetMs: 0 });
           } catch (e) {
             this.hooks.onError?.(e instanceof Error ? e : new Error(String(e)));
           }
         },
+        input: (_port, msg) => replace(msg as SegmentMsg),
+        replay,
+        stop: () => { stopped = true; if (timer) clearTimeout(timer); },
       };
     }
 
     if (type === "file-image") {
       const url = (this.graph.nodes[id]?.config?.url as string | undefined)?.trim();
+      const maxUpdates = Math.max(0, Number(this.graph.nodes[id]?.config?.maxUpdates ?? 0));
+      let updates = 0;
+      let current: ImageBitmap | null = null;
+      let currentMessage: ImageMsg | null = null;
+      const replace = (image: ImageMsg, count = true) => {
+        if (image.bitmap === current || (count && maxUpdates > 0 && updates >= maxUpdates)) return;
+        if (count) updates += 1;
+        current = image.bitmap;
+        currentMessage = image;
+        this.hooks.onImage?.(id, image.bitmap);
+        this.emit(id, "out", image);
+      };
       return {
         start: async () => {
           const entry = fileStore.get(id);
@@ -898,35 +1046,39 @@ export class GraphRuntime {
           try {
             const blob = entry?.file ?? await (await fetch(url!)).blob();
             const bitmap = await createImageBitmap(blob);
-            this.hooks.onImage?.(id, bitmap);
-            this.emit(id, "out", { bitmap, width: bitmap.width, height: bitmap.height, ts: Date.now() } as ImageMsg);
+            replace({ bitmap, width: bitmap.width, height: bitmap.height, ts: Date.now() } as ImageMsg, false);
           } catch (e) {
             this.hooks.onError?.(e instanceof Error ? e : new Error(String(e)));
           }
         },
+        input: (_port, msg) => replace(msg as ImageMsg),
+        replay: () => { if (currentMessage) this.emit(id, "out", currentMessage); },
       };
     }
 
     if (type === "file-text") {
       const url = (this.graph.nodes[id]?.config?.url as string | undefined)?.trim();
+      let current: TranscriptMsg | null = null;
+      const replace = (value: TranscriptMsg) => {
+        if (!value.text?.trim()) return;
+        current = value;
+        this.hooks.onRecognized?.(id, value.text);
+        this.emit(id, "out", value);
+      };
       return {
         start: async () => {
           try {
             const entry = fileStore.get(id);
             const text = entry?.text ?? (entry?.file ? await entry.file.text() : url ? await (await fetch(url)).text() : "");
             if (!text) return;
-            for (const para of text.split(/\n\s*\n/).map((s) => s.trim()).filter(Boolean)) {
-              this.hooks.onRecognized?.(id, para);
-              this.emit(id, "out", {
-                text: para,
-                audio: { samples: new Float32Array(0), sampleRate: MIC_VAD_SR, durationMs: 0 },
-              } as TranscriptMsg);
-            }
+            replace({ text, audio: { samples: new Float32Array(0), sampleRate: MIC_VAD_SR, durationMs: 0 } });
           } catch (e) {
             // Non-fatal: a failed URL fetch only disables this node, not the graph.
             this.hooks.onError?.(e instanceof Error ? e : new Error(String(e)));
           }
         },
+        input: (_port, msg) => replace(msg as TranscriptMsg),
+        replay: () => { if (current) this.emit(id, "out", current); },
       };
     }
 
@@ -960,25 +1112,56 @@ export class GraphRuntime {
       // part of the auto-run signature, so the runtime restarts and start()
       // re-emits — the editor never has to reach into a live runtime.
       const text = ((this.graph.nodes[id]?.config?.text as string | undefined) ?? "").trim();
+      const maxUpdates = Math.max(0, Number(this.graph.nodes[id]?.config?.maxUpdates ?? 0));
+      let updates = 0;
+      let current = "";
+      let currentAudio: SegmentMsg = { samples: new Float32Array(0), sampleRate: MIC_VAD_SR, durationMs: 0 };
+      const replay = () => {
+        if (!current) return;
+        this.hooks.onRecognized?.(id, current);
+        this.emit(id, "out", { text: current, audio: currentAudio } as TranscriptMsg);
+      };
+      const replace = (value: string, audio: SegmentMsg = { samples: new Float32Array(0), sampleRate: MIC_VAD_SR, durationMs: 0 }, count = true) => {
+        const next = value.trim();
+        if (!next || next === current || (count && maxUpdates > 0 && updates >= maxUpdates)) return;
+        if (count) updates += 1;
+        current = next;
+        currentAudio = audio;
+        replay();
+      };
       return {
         start: () => {
           if (!text) return;
-          for (const para of text.split(/\n\s*\n/).map((s) => s.trim()).filter(Boolean)) {
-            this.hooks.onRecognized?.(id, para);
-            this.emit(id, "out", {
-              text: para,
-              audio: { samples: new Float32Array(0), sampleRate: MIC_VAD_SR, durationMs: 0 },
-            } as TranscriptMsg);
-          }
+          replace(text, undefined, false);
         },
+        input: (_port, msg) => {
+          const transcript = msg as TranscriptMsg;
+          replace(transcript.text, transcript.audio);
+        },
+        replay,
       };
     }
 
     if (type === "stt") {
       const q = this.makeQueue(id);
-      const modelId = (this.graph.nodes[id]?.config?.model as string | undefined) ?? this.hooks.modelId;
+      let modelId = (this.graph.nodes[id]?.config?.model as string | undefined) ?? this.hooks.modelId;
       return {
-        input: (_port, msg) => {
+        input: (port, msg) => {
+          if (port === "model") {
+            const source = msg as ModelSourceMsg;
+            const direct = SENSEVOICE_MODELS.find((candidate) => candidate.id === source.model)?.id;
+            const int8 = source.files?.some((file) => /(^|\/)model\.int8\.onnx$/i.test(file.name));
+            const fp32 = source.files?.some((file) => /(^|\/)model\.onnx$/i.test(file.name));
+            const compatible = direct || (int8 ? "sensevoice-small-int8" : fp32 ? "sensevoice-small-fp32" : undefined);
+            if (compatible) {
+              modelId = compatible;
+              this.hooks.onRecognized?.(id, `model override · ${modelId}`);
+            } else {
+              this.hooks.onRecognized?.(id, `model provider is not browser-ASR compatible; using ${modelId}`);
+            }
+            return;
+          }
+          if (port === "env") return;
           const seg = msg as SegmentMsg;
           if (!seg.samples || seg.samples.length < MIN_STT_SAMPLES) return; // skip empty/too-short audio
           q.run(`🔊 ${Math.round(seg.durationMs / 100) / 10}s`, async () => {
@@ -991,7 +1174,7 @@ export class GraphRuntime {
               const base = seg.offsetMs;
               const tStartMs = base !== undefined && res.startMs !== undefined ? base + res.startMs : undefined;
               const tEndMs = base !== undefined && res.endMs !== undefined ? base + res.endMs : undefined;
-              this.emit(id, "out", {
+              const caption = {
                 text: res.text,
                 audio: seg,
                 lang: res.lang,
@@ -999,7 +1182,10 @@ export class GraphRuntime {
                 event: res.event,
                 tStartMs,
                 tEndMs,
-              } as TranscriptMsg);
+              } as TranscriptMsg;
+              this.emit(id, "out", caption);
+              if (this.hasOutgoing(id, "caption")) this.emit(id, "caption", caption);
+              if (this.hasOutgoing(id, "audio")) this.emit(id, "audio", seg);
             } catch (e) {
               this.hooks.onError?.(e instanceof Error ? e : new Error(String(e)));
             }
@@ -1016,6 +1202,7 @@ export class GraphRuntime {
       const cfg = this.graph.nodes[id]?.config ?? {};
       const modelId = (cfg.model as string | undefined) ?? DEFAULT_TRANSLATE_MODEL;
       const targetLang = (cfg.lang as string | undefined) ?? DEFAULT_TRANSLATE_LANG;
+      const promptTemplate = cfg.promptTemplate as string | undefined;
       const provider = type === "browser-translate-api" || (cfg.provider as string | undefined) === "browser" ? browserTranslate : webllmTranslate;
       return {
         input: (_port, msg) => {
@@ -1028,7 +1215,7 @@ export class GraphRuntime {
             try {
               // Feed SenseVoice's detected source language so the provider can skip
               // its own detection (browser API) / steer the prompt (LLM).
-              if (provider.isAvailable()) text = await provider.translate(tr.text, targetLang, modelId, tr.lang);
+              if (provider.isAvailable()) text = await provider.translate(tr.text, targetLang, modelId, tr.lang, promptTemplate);
             } catch (e) {
               this.hooks.onError?.(e instanceof Error ? e : new Error(String(e)));
             }
@@ -1211,6 +1398,17 @@ export class GraphRuntime {
       const fps = clampFps((cfg.fps as number | undefined) ?? DEFAULT_CAMERA_FPS);
       const loop = (cfg.loop as boolean | undefined) ?? false;
       let stopped = false;
+      let currentClip: VideoClip | undefined;
+      let currentImage: ImageMsg | undefined;
+      let currentAudio: SegmentMsg | undefined;
+      const replay = async () => {
+        if (currentClip) {
+          await this.emitVideoClip(id, currentClip, fps);
+          return;
+        }
+        if (currentImage) this.emit(id, "video", currentImage);
+        if (currentAudio) this.emit(id, "audio", currentAudio);
+      };
       return {
         start: async () => {
           if (!clipId && !url) return;
@@ -1230,10 +1428,30 @@ export class GraphRuntime {
             this.hooks.onError?.(new Error(`video clip not found: ${clipId}`));
             return;
           }
+          currentClip = clip;
           do {
-            await this.emitVideoClip(id, clip, fps);
+            await replay();
           } while (loop && !stopped);
         },
+        input: (port, msg) => {
+          if (port === "video") {
+            const image = msg as ImageMsg;
+            currentClip = undefined;
+            currentImage = image;
+            this.hooks.onImage?.(id, image.bitmap);
+            this.emit(id, "video", image);
+            return;
+          }
+          if (port === "audio") {
+            const audio = msg as SegmentMsg;
+            if (!audio.samples?.length) return;
+            currentClip = undefined;
+            currentAudio = audio;
+            this.hooks.onAudio?.(id, audio);
+            this.emit(id, "audio", audio);
+          }
+        },
+        replay,
         stop: () => {
           stopped = true;
         },
@@ -1350,10 +1568,18 @@ export class GraphRuntime {
     if (type === "tts-model") {
       // Synthesize each transcript to PCM with an on-device ONNX model and emit it
       // as a segment, so it can feed a (device-targetable) speaker / audio-out.
-      const configured = (this.graph.nodes[id]?.config?.model as string | undefined) ?? AUTO_TTS_MODEL;
+      let configured = (this.graph.nodes[id]?.config?.model as string | undefined) ?? AUTO_TTS_MODEL;
       const q = this.makeQueue(id);
       return {
-        input: (_port, msg) => {
+        input: (port, msg) => {
+          if (port === "model") {
+            const src = msg as ModelSourceMsg;
+            const incompatibility = incompatibleModelRuntime(src, "browser");
+            if (incompatibility) { this.hooks.onError?.(incompatibility); return; }
+            configured = src.model || src.url || configured;
+            this.hooks.onRecognized?.(id, `model=${configured}`);
+            return;
+          }
           const tr = msg as TranscriptMsg;
           const text = tr.text?.trim();
           if (!text) return;
@@ -1405,6 +1631,25 @@ export class GraphRuntime {
           if (!out) return;
           this.hooks.onRecognized?.(id, out);
           this.emit(id, "out", { text: out, audio: empty } as TranscriptMsg);
+        },
+      };
+    }
+
+    if (type === "model-source") {
+      const cfg = this.graph.nodes[id]?.config ?? {};
+      const empty = { samples: new Float32Array(0), sampleRate: MIC_VAD_SR, durationMs: 0 };
+      return {
+        start: async () => {
+          if (!(cfg.ref as string | undefined)?.trim()) return;
+          try {
+            const model = await resolveModelSource(cfg);
+            const text = modelSourceToText(model);
+            this.hooks.onRecognized?.(id, text);
+            this.emit(id, "model", model);
+            if (this.hasOutgoing(id, "info")) this.emit(id, "info", { text, audio: empty } as TranscriptMsg);
+          } catch (e) {
+            this.hooks.onError?.(e instanceof Error ? e : new Error(String(e)));
+          }
         },
       };
     }
@@ -1463,26 +1708,62 @@ export class GraphRuntime {
 
     if (type === "llm-agent") {
       const cfg = this.graph.nodes[id]?.config ?? {};
+      let backend = cfg.backend === "webllm" ? "webllm" : "transformers";
       const task = llmAgentTask(cfg.task);
-      const model = ((cfg.model as string | undefined)?.trim() || defaultLlmAgentModel(task));
+      let model = ((cfg.model as string | undefined)?.trim() || (backend === "webllm" ? DEFAULT_WEBLLM_AGENT_MODEL : defaultLlmAgentModel(task)));
       const dtype = cfg.dtype as string | undefined;
       const instruction = ((cfg.instruction as string | undefined)?.trim() || DEFAULT_LLM_AGENT_INSTRUCTION);
       const q = this.makeQueue(id);
       const empty = { samples: new Float32Array(0), sampleRate: MIC_VAD_SR, durationMs: 0 };
+      const providerConnected = this.hasIncoming(id, "model");
+      let providerReady = !providerConnected;
+      let pendingTranscript: TranscriptMsg | null = null;
+      const processTranscript = (tr: TranscriptMsg) => {
+        const text = tr.text?.trim();
+        if (!text) return;
+        const prompt = `${instruction}\n\nInput:\n${text}\n\nOutput:`;
+        q.run(snippet(text), async () => {
+          try {
+            const out = backend === "webllm"
+              ? await webllmTranslate.chat(text, instruction, model)
+              : await runText(task, model, prompt, dtype);
+            this.hooks.onRecognized?.(id, out);
+            this.emit(id, "out", { text: out, audio: empty } as TranscriptMsg);
+          } catch (e) {
+            this.hooks.onError?.(e instanceof Error ? e : new Error(String(e)));
+          }
+        });
+      };
       return {
-        input: (_port, msg) => {
-          const text = (msg as TranscriptMsg).text?.trim();
-          if (!text) return;
-          const prompt = `${instruction}\n\nInput:\n${text}\n\nOutput:`;
-          q.run(snippet(text), async () => {
-            try {
-              const out = await runText(task, model, prompt, dtype);
-              this.hooks.onRecognized?.(id, out);
-              this.emit(id, "out", { text: out, audio: empty } as TranscriptMsg);
-            } catch (e) {
-              this.hooks.onError?.(e instanceof Error ? e : new Error(String(e)));
+        input: (port, msg) => {
+          if (port === "model") {
+            const src = msg as ModelSourceMsg;
+            const incompatibility = incompatibleModelRuntime(src, "browser");
+            if (incompatibility) { this.hooks.onError?.(incompatibility); return; }
+            const formats = src.compatibility?.formats ?? [];
+            if (src.provider === "webllm" || formats.includes("mlc")) backend = "webllm";
+            else if (formats.includes("onnx") || src.provider === "huggingface") backend = "transformers";
+            else {
+              this.hooks.onError?.(new Error(`${src.title || src.id} cannot run in LLM Agent. Connect an MLC/WebLLM or ONNX/Transformers.js text model.`));
+              return;
             }
-          });
+            model = src.model || src.url || model;
+            providerReady = true;
+            this.hooks.onRecognized?.(id, `model=${model} (${backend})`);
+            if (pendingTranscript) {
+              const pending = pendingTranscript;
+              pendingTranscript = null;
+              processTranscript(pending);
+            }
+            return;
+          }
+          const transcript = msg as TranscriptMsg;
+          if (!transcript.text?.trim()) return;
+          if (!providerReady) {
+            pendingTranscript = transcript;
+            return;
+          }
+          processTranscript(transcript);
         },
         stop: () => q.drain(),
       };
@@ -1492,42 +1773,77 @@ export class GraphRuntime {
       // Generic transformers.js node — the configured task decides the I/O shape.
       const cfg = this.graph.nodes[id]?.config ?? {};
       const task = ((cfg.task as ModelTask | undefined) ?? "asr") as ModelTask;
-      const model = (cfg.model as string | undefined)?.trim();
+      let model = (cfg.model as string | undefined)?.trim();
       const dtype = cfg.dtype as string | undefined;
       const q = this.makeQueue(id);
-      return {
-        input: (_port, msg) => {
-          if (!model) return;
-          // Skip empty inputs (empty audio / blank text) — avoids ORT shape errors.
-          if (task === "asr") {
-            if (!(msg as SegmentMsg).samples || (msg as SegmentMsg).samples.length < MIN_STT_SAMPLES) return;
-          } else if (!(msg as TranscriptMsg).text?.trim()) return;
-          const label = task === "asr" ? "🔊 audio" : snippet((msg as TranscriptMsg).text ?? "");
-          q.run(label, async () => {
-            try {
-              if (task === "asr") {
-                const seg = msg as SegmentMsg;
-                const text = await runAsr(model, seg.samples, dtype);
-                this.hooks.onRecognized?.(id, text);
-                this.emit(id, "out_txt", { text, audio: seg } as TranscriptMsg);
-              } else if (task === "tts") {
-                const tr = msg as TranscriptMsg;
-                if (!tr.text?.trim()) return;
-                const { samples, sampleRate } = await runTts(model, tr.text, dtype);
-                if (samples.length)
-                  this.emit(id, "out_seg", { samples, sampleRate, durationMs: (samples.length / sampleRate) * 1000 } as SegmentMsg);
-              } else {
-                const tr = msg as TranscriptMsg;
-                if (!tr.text?.trim()) return;
-                const text = await runText(task, model, tr.text, dtype);
-                this.hooks.onRecognized?.(id, text);
-                // Carry audio/timing through so a downstream sink/SRT still works.
-                this.emit(id, "out_txt", { text, audio: tr.audio, lang: tr.lang, tStartMs: tr.tStartMs, tEndMs: tr.tEndMs } as TranscriptMsg);
-              }
-            } catch (e) {
-              this.hooks.onError?.(e instanceof Error ? e : new Error(String(e)));
+      const providerConnected = this.hasIncoming(id, "model");
+      let providerReady = !providerConnected;
+      let pendingInput: { port: string; msg: unknown } | null = null;
+      const processInput = (port: string, msg: unknown) => {
+        if (port === "env") return;
+        const activeModel = model;
+        if (!activeModel) return;
+        // Skip empty inputs (empty audio / blank text) — avoids ORT shape errors.
+        if (task === "asr") {
+          if (!(msg as SegmentMsg).samples || (msg as SegmentMsg).samples.length < MIN_STT_SAMPLES) return;
+        } else if (task === "image-to-text") {
+          if (port !== "in_img" || !(msg as ImageMsg).bitmap) return;
+        } else if (!(msg as TranscriptMsg).text?.trim()) return;
+        const label = task === "asr" ? "🔊 audio" : task === "image-to-text" ? "image" : snippet((msg as TranscriptMsg).text ?? "");
+        q.run(label, async () => {
+          try {
+            if (task === "asr") {
+              const seg = msg as SegmentMsg;
+              const text = await runAsr(activeModel, seg.samples, dtype);
+              this.hooks.onRecognized?.(id, text);
+              this.emit(id, "out_txt", { text, audio: seg } as TranscriptMsg);
+            } else if (task === "image-to-text") {
+              const image = msg as ImageMsg;
+              const text = await runImageToText(activeModel, image.bitmap, dtype);
+              if (!text) return;
+              this.hooks.onRecognized?.(id, text);
+              this.emit(id, "out_txt", { text, audio: { samples: new Float32Array(0), sampleRate: MIC_VAD_SR, durationMs: 0 } } as TranscriptMsg);
+            } else if (task === "tts") {
+              const tr = msg as TranscriptMsg;
+              if (!tr.text?.trim()) return;
+              const { samples, sampleRate } = await runTts(activeModel, tr.text, dtype);
+              if (samples.length)
+                this.emit(id, "out_seg", { samples, sampleRate, durationMs: (samples.length / sampleRate) * 1000 } as SegmentMsg);
+            } else {
+              const tr = msg as TranscriptMsg;
+              if (!tr.text?.trim()) return;
+              const text = await runText(task, activeModel, tr.text, dtype);
+              this.hooks.onRecognized?.(id, text);
+              // Carry audio/timing through so a downstream sink/SRT still works.
+              this.emit(id, "out_txt", { text, audio: tr.audio, lang: tr.lang, tStartMs: tr.tStartMs, tEndMs: tr.tEndMs } as TranscriptMsg);
             }
-          });
+          } catch (e) {
+            this.hooks.onError?.(e instanceof Error ? e : new Error(String(e)));
+          }
+        });
+      };
+      return {
+        input: (port, msg) => {
+          if (port === "model") {
+            const src = msg as ModelSourceMsg;
+            const incompatibility = incompatibleModelRuntime(src, "browser");
+            if (incompatibility) { this.hooks.onError?.(incompatibility); return; }
+            model = src.model || src.url || model;
+            providerReady = true;
+            this.hooks.onRecognized?.(id, `model=${model}`);
+            if (pendingInput) {
+              const pending = pendingInput;
+              pendingInput = null;
+              processInput(pending.port, pending.msg);
+            }
+            return;
+          }
+          if (port === "env") return;
+          if (!providerReady) {
+            pendingInput = { port, msg };
+            return;
+          }
+          processInput(port, msg);
         },
         stop: () => q.drain(),
       };
@@ -1843,11 +2159,19 @@ export class GraphRuntime {
       const w = this.makeLatest(id);
       const cfg = this.graph.nodes[id]?.config ?? {};
       const task = (cfg.task as string | undefined) ?? "detect";
-      const model = cfg.model as string | undefined;
+      let model = cfg.model as string | undefined;
       const threshold = typeof cfg.threshold === "number" ? (cfg.threshold as number) : 0.5;
       const emptyAudio = () => ({ samples: new Float32Array(0), sampleRate: MIC_VAD_SR, durationMs: 0 });
       return {
-        input: (_port, msg) => {
+        input: (port, msg) => {
+          if (port === "model") {
+            const src = msg as ModelSourceMsg;
+            const incompatibility = incompatibleModelRuntime(src, "browser");
+            if (incompatibility) { this.hooks.onError?.(incompatibility); return; }
+            model = src.model || src.url || model;
+            this.hooks.onRecognized?.(id, `model=${model}`);
+            return;
+          }
           const img = msg as ImageMsg;
           const wantImg = this.hasOutgoing(id, "out");
           const wantLabels = this.hasOutgoing(id, "labels");
@@ -1895,6 +2219,98 @@ export class GraphRuntime {
             this.emit(id, "rate", { pulse: true, ts: Date.now() } as ControlMsg);
           });
         },
+      };
+    }
+
+    if (type === "qwen-image") {
+      const q = this.makeQueue(id);
+      const cfg = this.graph.nodes[id]?.config ?? {};
+      let latestImage: ImageBitmap | undefined;
+      let sourceModel = cfg.model as string | undefined;
+      const backend = ((cfg.backend as string | undefined) ?? "diffusers") as "diffusers" | "diffsynth" | "mlx" | "gguf" | "remote";
+      const requiredRuntime: ModelRuntime = backend === "mlx" ? "mlx" : backend === "gguf" ? "llama.cpp" : backend === "remote" ? "remote" : "diffusers";
+      const providerConnected = this.hasIncoming(id, "model");
+      const imageConnected = this.hasIncoming(id, "image");
+      const imageRequired = cfg.mode === "edit" || imageConnected;
+      let providerReady = !providerConnected;
+      let imageReady = !imageRequired;
+      let pendingPrompt = "";
+      const emptyAudio = () => ({ samples: new Float32Array(0), sampleRate: MIC_VAD_SR, durationMs: 0 });
+      const runReady = (prompt: string) => {
+        const clean = prompt.trim();
+        if (!clean) return;
+        q.run(`🎨 ${snippet(clean)}`, async () => {
+          try {
+            const result = await generateQwenImage({
+              serverUrl: cfg.serverUrl as string | undefined,
+              prompt: clean,
+              image: latestImage,
+              mode: (cfg.mode as "generate" | "edit" | undefined) ?? (latestImage ? "edit" : "generate"),
+              backend,
+              model: sourceModel,
+              width: typeof cfg.width === "number" ? cfg.width : undefined,
+              height: typeof cfg.height === "number" ? cfg.height : undefined,
+              steps: typeof cfg.steps === "number" ? cfg.steps : undefined,
+              seed: typeof cfg.seed === "number" ? cfg.seed : undefined,
+              strength: typeof cfg.strength === "number" ? cfg.strength : undefined,
+            });
+            this.hooks.onImage?.(id, result.bitmap);
+            this.emit(id, "out", { bitmap: result.bitmap, width: result.width, height: result.height, ts: Date.now() } as ImageMsg);
+            this.hooks.onRecognized?.(id, result.info);
+            if (this.hasOutgoing(id, "info")) this.emit(id, "info", { text: result.info, audio: emptyAudio() } as TranscriptMsg);
+          } catch (e) {
+            this.hooks.onError?.(e instanceof Error ? e : new Error(String(e)));
+          }
+        });
+      };
+      const run = (prompt: string) => {
+        const clean = prompt.trim();
+        if (!clean) return;
+        if (!providerReady || !imageReady) {
+          pendingPrompt = clean;
+          return;
+        }
+        pendingPrompt = "";
+        runReady(clean);
+      };
+      const releasePending = () => {
+        if (providerReady && imageReady && pendingPrompt) run(pendingPrompt);
+      };
+      return {
+        start: () => {
+          if ((cfg.autoRun as boolean | undefined) === false) return;
+          if (cfg.mode === "edit" && !imageConnected) {
+            this.hooks.onError?.(new Error("image generation: edit mode requires an image input"));
+            return;
+          }
+          run((cfg.prompt as string | undefined) ?? "");
+        },
+        input: (port, msg) => {
+          if (port === "model") {
+            const src = msg as ModelSourceMsg;
+            const incompatibility = incompatibleModelRuntime(src, requiredRuntime);
+            if (incompatibility) { this.hooks.onError?.(incompatibility); return; }
+            const tasks = src.compatibility?.tasks ?? [];
+            if (tasks.length && !tasks.some((task) => task === "image" || task === "text-to-image" || task === "image-to-image")) {
+              this.hooks.onError?.(new Error(`${src.title || src.id} is not an image generation model.`));
+              return;
+            }
+            sourceModel = src.model || src.url || sourceModel;
+            providerReady = true;
+            this.hooks.onRecognized?.(id, `model=${sourceModel}`);
+            releasePending();
+            return;
+          }
+          if (port === "image") {
+            latestImage = (msg as ImageMsg).bitmap;
+            imageReady = true;
+            this.hooks.onImage?.(id, latestImage);
+            releasePending();
+            return;
+          }
+          run((msg as TranscriptMsg).text);
+        },
+        stop: () => q.drain(),
       };
     }
 
