@@ -437,6 +437,32 @@ export const BUILTIN_TEMPLATES: GraphTemplate[] = [
     ],
   },
   {
+    id: "vision-narrator",
+    name: "Vision narrator",
+    desc: "Describe what the camera sees, out loud — caption → translate → speech",
+    builtin: true,
+    nodes: [
+      // 0.5 fps: vit-gpt2 captioning takes ~1–2s/frame, keep the queue drained.
+      { key: "cam", type: "camera", dx: 0, dy: 0, config: { fps: 0.5 } },
+      { key: "cap", type: "model", dx: COL, dy: 0, config: { task: "image-to-text", model: "Xenova/vit-gpt2-image-captioning", dtype: "fp32" } },
+      // diff+filter gate: speak only when the caption actually changes, and
+      // strip the git-diff markup down to the fresh caption text.
+      { key: "diff", type: "text-diff", dx: COL * 2, dy: 0, config: { style: "gitdiff" } },
+      { key: "fresh", type: "text-filter", dx: COL * 3, dy: 0, config: { mode: "diff-added", stripPrefix: true } },
+      { key: "tr", type: "browser-translate-api", dx: COL * 4, dy: 0, config: { lang: "ja", sourceLang: "en" } },
+      { key: "tts", type: "tts", dx: COL * 5, dy: 0 },
+      { key: "sink", type: "sink", dx: COL * 5, dy: ROW },
+    ],
+    edges: [
+      { from: "cam", fromHandle: "out", to: "cap", toHandle: "in_img" },
+      { from: "cap", fromHandle: "out_txt", to: "diff", toHandle: "in" },
+      { from: "diff", fromHandle: "out", to: "fresh", toHandle: "in" },
+      { from: "fresh", fromHandle: "out", to: "tr", toHandle: "in" },
+      { from: "tr", fromHandle: "out", to: "tts", toHandle: "in" },
+      { from: "tr", fromHandle: "out", to: "sink", toHandle: "in" },
+    ],
+  },
+  {
     id: "gesture-speak",
     name: "Gesture → speech",
     desc: "Camera → hand gesture recognition → spoken when the gesture changes",

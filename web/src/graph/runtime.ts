@@ -1206,6 +1206,9 @@ export class GraphRuntime {
       const cfg = this.graph.nodes[id]?.config ?? {};
       const modelId = (cfg.model as string | undefined) ?? DEFAULT_TRANSLATE_MODEL;
       const targetLang = (cfg.lang as string | undefined) ?? DEFAULT_TRANSLATE_LANG;
+      // Config fallback for inputs with no detected language (e.g. captions):
+      // the message's own lang (SenseVoice LID) still wins when present.
+      const cfgSourceLang = cfg.sourceLang as string | undefined;
       const promptTemplate = cfg.promptTemplate as string | undefined;
       const provider = type === "browser-translate-api" || (cfg.provider as string | undefined) === "browser" ? browserTranslate : webllmTranslate;
       return {
@@ -1219,7 +1222,7 @@ export class GraphRuntime {
             try {
               // Feed SenseVoice's detected source language so the provider can skip
               // its own detection (browser API) / steer the prompt (LLM).
-              if (provider.isAvailable()) text = await provider.translate(tr.text, targetLang, modelId, tr.lang, promptTemplate);
+              if (provider.isAvailable()) text = await provider.translate(tr.text, targetLang, modelId, tr.lang ?? cfgSourceLang, promptTemplate);
             } catch (e) {
               this.hooks.onError?.(e instanceof Error ? e : new Error(String(e)));
             }

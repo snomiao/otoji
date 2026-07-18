@@ -980,6 +980,8 @@ function Editor({ initialRoom, local, federationDemo }: { initialRoom?: string; 
   // --- Templates: drop a subgraph onto the canvas (fresh ids, auto-selected). ---
   const [userTemplates, setUserTemplates] = useState<GraphTemplate[]>(() => loadUserTemplates());
   const allTemplates = useMemo(() => [...BUILTIN_TEMPLATES, ...userTemplates], [userTemplates]);
+  const allTemplatesRef = useRef(allTemplates);
+  allTemplatesRef.current = allTemplates;
 
   const addTemplate = useCallback(
     (tpl: GraphTemplate, screen?: { x: number; y: number }, worldPos?: { x: number; y: number }) => {
@@ -1381,9 +1383,22 @@ function Editor({ initialRoom, local, federationDemo }: { initialRoom?: string; 
     return () => window.removeEventListener("keydown", onKey);
   }, [joined, setNodes, removeNodes, useRgui]);
 
-  const nodeSearchOptions = useMemo(() => NODE_CATEGORIES.flatMap(paletteOptions), []);
+  // Omnibox catalog: every node type plus the templates (id "tpl:<id>" so the
+  // pick handler can tell them apart — the `type` on a template row is unused).
+  const nodeSearchOptions = useMemo(
+    () => [
+      ...NODE_CATEGORIES.flatMap(paletteOptions),
+      ...allTemplates.map((tpl) => ({
+        id: `tpl:${tpl.id}`,
+        type: tpl.nodes[0]?.type ?? ("sink" as NodeType),
+        label: `★ ${tpl.name}`,
+        detail: `template · ${tpl.desc ?? `${tpl.nodes.length} nodes`}`,
+      })),
+    ],
+    [allTemplates],
+  );
 
-  const addNodeFromSearch = useCallback((type: NodeType, config?: Record<string, unknown>) => {
+  const addNodeFromSearch = useCallback((type: NodeType, config?: Record<string, unknown>, optionId?: string) => {
     const api = rguiApiRef.current;
     const view = api?.getView();
     const center = api && view
@@ -1392,9 +1407,14 @@ function Editor({ initialRoom, local, federationDemo }: { initialRoom?: string; 
           y: (window.innerHeight / 2 - view.y) / view.k,
         })
       : undefined;
-    addNode(type, center, config);
+    if (optionId?.startsWith("tpl:")) {
+      const tpl = allTemplatesRef.current.find((t) => t.id === optionId.slice(4));
+      if (tpl) addTemplate(tpl, undefined, center);
+    } else {
+      addNode(type, center, config);
+    }
     setNodeSearchOpen(false);
-  }, [addNode]);
+  }, [addNode, addTemplate]);
 
   // One-click pre-wired Mic+VAD -> STT -> Sink, assigned to me. Removes the
   // manual add+connect friction (the usual reason "no transcript" appears).
@@ -2694,7 +2714,7 @@ function Editor({ initialRoom, local, federationDemo }: { initialRoom?: string; 
             x={window.innerWidth / 2 - Math.max(320, Math.min(560, Math.floor(window.innerWidth / 3))) / 2}
             y={Math.max(48, window.innerHeight * 0.18)}
             options={nodeSearchOptions}
-            placeholder="Search nodes…"
+            placeholder="Search nodes & templates…"
             emptyLabel="no matching node"
             onPick={addNodeFromSearch}
             onClose={() => setNodeSearchOpen(false)}
@@ -2751,7 +2771,7 @@ function ConnectMenu({
   options: Array<{ id?: string; type: NodeType; label: string; detail?: string; config?: Record<string, unknown> }>;
   placeholder?: string;
   emptyLabel?: string;
-  onPick: (t: NodeType, config?: Record<string, unknown>) => void;
+  onPick: (t: NodeType, config?: Record<string, unknown>, id?: string) => void;
   onClose: () => void;
 }) {
   const [q, setQ] = useState("");
@@ -2783,7 +2803,7 @@ function ConnectMenu({
         onKeyDown={(e) => {
           if (e.key === "ArrowDown") { e.preventDefault(); setActive((i) => Math.min(filtered.length - 1, i + 1)); }
           else if (e.key === "ArrowUp") { e.preventDefault(); setActive((i) => Math.max(0, i - 1)); }
-          else if (e.key === "Enter") { e.preventDefault(); const sel = filtered[active]; if (sel) onPick(sel.type, sel.config); }
+          else if (e.key === "Enter") { e.preventDefault(); const sel = filtered[active]; if (sel) onPick(sel.type, sel.config, sel.id); }
           else if (e.key === "Escape") { e.preventDefault(); onClose(); }
         }}
         placeholder={placeholder}
@@ -2797,7 +2817,7 @@ function ConnectMenu({
             <div
               key={o.id ?? o.type}
               onMouseEnter={() => setActive(idx)}
-              onMouseDown={(e) => { e.preventDefault(); onPick(o.type, o.config); }}
+              onMouseDown={(e) => { e.preventDefault(); onPick(o.type, o.config, o.id); }}
               style={{ fontSize: 13, padding: "7px 8px", borderRadius: 5, cursor: "pointer", background: idx === active ? "#ebf4ff" : "transparent" }}
             >
               <div>{o.label}</div>
