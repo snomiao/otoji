@@ -943,12 +943,14 @@ export class GraphRuntime {
       let handle: MicVadHandle | null = null;
       const inputDeviceId = this.graph.nodes[id]?.config?.inputDeviceId as string | undefined;
       const aec = (this.graph.nodes[id]?.config?.aec as boolean | undefined) ?? true;
+      const frameMs = this.graph.nodes[id]?.config?.frameMs as number | undefined;
       return {
         start: async () => {
           const startEpoch = Date.now(); // wall clock of sample 0, for mix alignment
           handle = await startMicRaw({
             deviceId: inputDeviceId,
             aec,
+            frameMs,
             onLevel: (l) => this.hooks.onLevel?.(id, l),
             onFrame: (samples, offsetMs) => {
               this.emit(id, "out", { samples, sampleRate: MIC_VAD_SR, durationMs: (samples.length / MIC_VAD_SR) * 1000, offsetMs, ts: startEpoch + (offsetMs ?? 0) } as SegmentMsg);

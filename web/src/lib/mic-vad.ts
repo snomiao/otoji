@@ -131,6 +131,48 @@ export interface MicRawOptions {
   aec?: boolean; // browser echo cancellation + noise suppression + AGC (default on)
 }
 
+export interface MicFrameChunkResult {
+  frames: { samples: Float32Array; offsetSamples: number }[];
+  carry: Float32Array;
+  cursor: number;
+}
+
+/** Append samples, emit fixed-size frames, and retain the trailing remainder. */
+export function appendMicFrames(
+  carry: Float32Array,
+  samples: Float32Array,
+  frameSize: number,
+  cursor: number,
+): MicFrameChunkResult {
+  if (!Number.isInteger(frameSize) || frameSize <= 0) throw new RangeError("frameSize must be a positive integer");
+  const combined = new Float32Array(carry.length + samples.length);
+  combined.set(carry);
+  combined.set(samples, carry.length);
+
+  const frames: MicFrameChunkResult["frames"] = [];
+  let offset = 0;
+  while (offset + frameSize <= combined.length) {
+    frames.push({ samples: combined.slice(offset, offset + frameSize), offsetSamples: cursor });
+    offset += frameSize;
+    cursor += frameSize;
+  }
+  return { frames, carry: combined.slice(offset), cursor };
+}
+
+const MIC_CAPTURE_WORKLET = `
+class MicCaptureProcessor extends AudioWorkletProcessor {
+  process(inputs) {
+    const channel = inputs[0] && inputs[0][0];
+    if (channel) {
+      const samples = channel.slice();
+      this.port.postMessage(samples, [samples.buffer]);
+    }
+    return true;
+  }
+}
+registerProcessor("mic-capture-processor", MicCaptureProcessor);
+`;
+
 /**
  * Raw mic capture WITHOUT VAD: emit fixed-size 16 kHz mono frames continuously
  * (for streaming consumers that do their own endpointing). No segmentation.
@@ -143,25 +185,61 @@ export async function startMicRaw(opts: MicRawOptions): Promise<MicVadHandle> {
   const audioCtx = new AudioCtor({ sampleRate: MIC_VAD_SR });
   const srcRate = audioCtx.sampleRate;
   const source = audioCtx.createMediaStreamSource(stream);
-  const proc = audioCtx.createScriptProcessor(4096, 1, 1);
-  const FRAME = Math.max(VAD_WIN, Math.round((MIC_VAD_SR * (opts.frameMs ?? 250)) / 1000));
-  let carry: number[] = [];
+  const FRAME = Math.round((MIC_VAD_SR * Math.max(20, opts.frameMs ?? 250)) / 1000);
+  let carry: Float32Array = new Float32Array(0);
   let cursor = 0; // absolute samples emitted since start
 
-  proc.onaudioprocess = (e) => {
-    const ds = downsample(new Float32Array(e.inputBuffer.getChannelData(0)), srcRate);
-    let sum = 0;
-    for (let i = 0; i < ds.length; i++) { carry.push(ds[i]); sum += ds[i] * ds[i]; }
-    opts.onLevel?.({ rms: Math.sqrt(sum / Math.max(1, ds.length)), active: true });
-    while (carry.length >= FRAME) {
-      const chunk = Float32Array.from(carry.splice(0, FRAME));
-      opts.onFrame(chunk, (cursor / MIC_VAD_SR) * 1000);
-      cursor += FRAME;
+  // Worklet quanta arrive ~125×/s (128 samples); level consumers feed the live
+  // store and cross-device preview sync, so aggregate RMS to ~10 Hz like the
+  // old 4096-sample ScriptProcessor cadence instead of spamming per quantum.
+  let levelSum = 0;
+  let levelCount = 0;
+  let lastLevelAt = 0;
+  const ingest = (input: Float32Array) => {
+    const ds = downsample(input, srcRate);
+    for (let i = 0; i < ds.length; i++) levelSum += ds[i] * ds[i];
+    levelCount += ds.length;
+    const now = performance.now();
+    if (levelCount > 0 && now - lastLevelAt >= 100) {
+      opts.onLevel?.({ rms: Math.sqrt(levelSum / levelCount), active: true });
+      levelSum = 0;
+      levelCount = 0;
+      lastLevelAt = now;
+    }
+    const chunked = appendMicFrames(carry, ds, FRAME, cursor);
+    carry = chunked.carry;
+    cursor = chunked.cursor;
+    for (const frame of chunked.frames) {
+      opts.onFrame(frame.samples, (frame.offsetSamples / MIC_VAD_SR) * 1000);
     }
   };
 
-  source.connect(proc);
-  proc.connect(audioCtx.destination);
+  let captureNode: AudioWorkletNode | ScriptProcessorNode;
+  let workletNode: AudioWorkletNode | null = null;
+  if (audioCtx.audioWorklet) {
+    const url = URL.createObjectURL(new Blob([MIC_CAPTURE_WORKLET], { type: "text/javascript" }));
+    try {
+      await audioCtx.audioWorklet.addModule(url);
+      const worklet = new AudioWorkletNode(audioCtx, "mic-capture-processor");
+      worklet.port.onmessage = (event: MessageEvent<Float32Array>) => ingest(event.data);
+      workletNode = worklet;
+      captureNode = worklet;
+    } catch {
+      console.warn("AudioWorklet mic capture unavailable; using ScriptProcessor fallback.");
+      const proc = audioCtx.createScriptProcessor(4096, 1, 1);
+      proc.onaudioprocess = (e) => ingest(new Float32Array(e.inputBuffer.getChannelData(0)));
+      captureNode = proc;
+    } finally {
+      URL.revokeObjectURL(url);
+    }
+  } else {
+    const proc = audioCtx.createScriptProcessor(4096, 1, 1);
+    proc.onaudioprocess = (e) => ingest(new Float32Array(e.inputBuffer.getChannelData(0)));
+    captureNode = proc;
+  }
+
+  source.connect(captureNode);
+  captureNode.connect(audioCtx.destination);
   if (audioCtx.state === "suspended") audioCtx.resume().catch(() => {});
 
   let stopped = false;
@@ -169,7 +247,8 @@ export async function startMicRaw(opts: MicRawOptions): Promise<MicVadHandle> {
     stop: async () => {
       if (stopped) return;
       stopped = true;
-      proc.disconnect();
+      if (workletNode) workletNode.port.onmessage = null;
+      captureNode.disconnect();
       source.disconnect();
       stream.getTracks().forEach((t) => t.stop());
       await audioCtx.close().catch(() => {});
