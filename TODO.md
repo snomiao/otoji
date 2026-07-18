@@ -253,7 +253,10 @@ Order revised per codex-cli review (2026-07-19): feasibility spike first, then
 protocol, then backend; consolidation last. The `vibevoice-asr` unbounded-flush
 hazard is a standalone immediate fix, not part of any milestone.
 
-- [ ] **M6.-1 — feasibility spike (gate for everything below).**
+- [ ] **M6.-1 — feasibility spike (gate for everything below).** Progress
+  2026-07-19: AudioWorklet capture shipped (#114), streaming fbank shipped
+  (#115), bench harness shipped (#116) — the actual measurement run on a
+  mid-range laptop is what remains before the gate opens.
   - AudioWorklet capture: `startMicRaw` uses deprecated
     `ScriptProcessorNode(4096)` — at 16 kHz the callback itself is a ~256 ms
     cadence, so `frameMs: 100` would burst, not stream. Replace with an
@@ -266,7 +269,7 @@ hazard is a standalone immediate fix, not part of any milestone.
   - Streaming fbank: current `lib/fbank.ts` is batch-only; the spike must prove
     an incremental frontend (waveform carry, frame boundaries, CMVN/cache
     lifecycle), not just reuse it.
-- [ ] **M6.0 — transcript revision protocol.** Extend `TranscriptMsg` with
+- [x] **M6.0 — transcript revision protocol** (#112, 2026-07-19). Extend `TranscriptMsg` with
   `{segmentId, revision (monotonic), status: "partial" | "provisional" |
   "final", replacesRevision?, tStartMs/tEndMs}` (+ frames.ts wire encoding).
   A plain `{partial?: true}` flag can't express corrections, pass-2
@@ -313,7 +316,7 @@ hazard is a standalone immediate fix, not part of any milestone.
 
 ### Immediate fixes (no milestone)
 
-- [ ] `vibevoice-asr` unbounded buffer: its "flush 400 ms after last input"
+- [x] `vibevoice-asr` unbounded buffer (#113, 2026-07-19): its "flush 400 ms after last input"
   timer never fires under continuous frame input — cap pending duration and
   force-flush. Known memory hazard, ship independently.
 
