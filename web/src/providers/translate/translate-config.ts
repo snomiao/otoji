@@ -54,9 +54,12 @@ const NAME_TO_CODE: Record<string, string> = Object.fromEntries(
 );
 
 /** Map a target-language name ("Chinese") to a BCP-47 code ("zh") for the
- *  browser Translator API. Returns null for unknown names. */
+ *  browser Translator API. Already-a-code inputs ("ja", "zh-TW") pass through
+ *  (graph configs store either form). Returns null for unknown names. */
 export function langNameToCode(name: string): string | null {
-  return NAME_TO_CODE[name] ?? null;
+  const mapped = NAME_TO_CODE[name];
+  if (mapped) return mapped;
+  return /^[a-z]{2,3}(-[A-Za-z0-9]{2,8})?$/.test(name) ? name : null;
 }
 
 /** Map a BCP-47 code (incl. SenseVoice's "yue") to a language name for prompts. */
