@@ -800,7 +800,9 @@ export function NodeInspector({ node, controls = true, onClose }: { node: Inspec
   return (
     <div
       className="rgui-node-cfg"
-      style={{ width: 190, fontSize: 12, fontFamily: "system-ui, sans-serif" }}
+      // Fill the node's width (the rgui overlay wrapper is exactly the node
+      // rect); 190 is only a floor so controls stay usable on tiny nodes.
+      style={{ width: "100%", minWidth: 190, boxSizing: "border-box", fontSize: 12, fontFamily: "system-ui, sans-serif" }}
     >
       <div style={{ padding: "2px 10px 6px" }}>
         <label style={row}>
