@@ -6,6 +6,8 @@ import { GraphEditor } from "./ui/GraphEditor";
 import { Lobby } from "./ui/Lobby";
 import { isRoomCode } from "./lib/roomcode";
 
+if (import.meta.env.DEV) void import("./bench/zipformer-bench");
+
 const el = document.getElementById("root");
 const params = new URLSearchParams(location.search);
 const path = location.pathname.replace(/^\/+/, "");
