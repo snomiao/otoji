@@ -187,6 +187,152 @@
   per-edge throughput above). Agreed with rgui-agent 2026-07-09 (rgui TODO.md
   `[2026-07-09 20:55]` + Inbox reply `[21:05]` below).
 
+## M6 — Realtime streaming pipeline (direction set 2026-07-19)
+
+> **The shift:** from a *batch-recognition toolbox* to a *realtime pipeline where
+> partial/final transcripts flow through the graph*. The README's headline is
+> "realtime speech ⇄ text", yet the core ASR path is VAD-segment → batch
+> SenseVoice — structurally, no text appears until an utterance *ends*. North
+> star: **Interpreter-booth mode** (two people, each hearing the other in their
+> own language) — it is only physically possible with sub-second latency, so its
+> latency budget drives every priority below.
+
+### What surfaced this (2026-07-19)
+
+- `mic-raw → stt` is unusable: mic-raw emits fixed ~250 ms frames (by design, for
+  streaming consumers like Vosk), but the `stt` node runs one full SenseVoice
+  inference *per incoming segment* (`MIN_STT_SAMPLES` = 16 ms only) → 4 inferences
+  /sec, queue backlog, word-fragment transcripts.
+- `vibevoice-asr` has the same trap: its "flush 400 ms after last input" timer
+  never fires under a continuous 250 ms frame stream → unbounded buffer growth.
+- OCR node was hardcoded to PaddleOCR (fixed in PR #110 with a Model-provider
+  override) — symptom of the same architectural gap: engines baked into nodes.
+
+### Design principles
+
+1. **Node = capability, model = injectable implementation.** Every AI node is a
+   task node with a sane default engine plus a `model` input port that overrides
+   it (ASR done for compat models, OCR done in PR #110; TTS/vision to follow).
+   Without this the catalog keeps sprouting one node per engine (stt / vosk /
+   sherpa / vibevoice / web-speech are already that symptom).
+2. **partial/final as first-class transcript semantics.** The protocol already
+   exists in-repo: `sherpa_native.ts` speaks `{partial, seg_id}` / `{final,
+   seg_id}` events. Promote it from a WebSocket-bridge detail to the shared wire
+   contract of the `transcript` port. Downstream nodes default to final-only, so
+   existing graphs keep working; partial-aware sinks render live captions.
+3. **Two-pass recognition: fast partial + smart final.** Precedent in-repo: the
+   Rust server's PTT path already rewrites SenseVoice's instant result with a
+   whisper-cli re-transcription (`whisper_cli_upgrade`). Generalize: a streaming
+   model emits partials in <300 ms; on endpoint, SenseVoice (emotion/LID tags) or
+   a native/heavy model rewrites the final. No more speed-vs-accuracy tradeoff —
+   and the distributed graph means pass 2 can run **on a different device**,
+   which no competing tool can do.
+4. **Real streaming needs a streaming model, not smaller batches.** SenseVoice /
+   Whisper / Paraformer-offline can only fake it via re-decode. True streaming
+   families in sherpa-onnx (research 2026-07-19):
+
+   | family | languages | size / latency |
+   |---|---|---|
+   | Streaming Zipformer transducer | en, zh, zh+en, ko, bn, fr | en int8 **68 MB**, chunk-16-left-128 ≈ **320 ms** |
+   | Kroko ASR (Zipformer2) | en, de, es, fr, it, pt, tr | int8, low-latency, packaged for sherpa-onnx |
+   | Streaming Paraformer | zh+en, zh+yue+en | |
+   | NeMo cache-aware FastConformer | en | selectable lookahead **80 ms–1 s** |
+   | T-one CTC | ru | ~300 ms chunks |
+
+   No streaming Japanese model in the official list (ja is offline-only:
+   zipformer-ja, SenseVoice; streaming ja today = Vosk small). The models are
+   plain ONNX (encoder/decoder/joiner + tokens) with explicit cache tensors, so
+   they run on **onnxruntime-web directly** — no emscripten/WASM bundle needed;
+   we already run raw ORT sessions + our own fbank for SenseVoice (though the
+   fbank is batch-only today — the streaming frontend is part of the M6.-1
+   spike, not free).
+
+### Milestones
+
+Order revised per codex-cli review (2026-07-19): feasibility spike first, then
+protocol, then backend; consolidation last. The `vibevoice-asr` unbounded-flush
+hazard is a standalone immediate fix, not part of any milestone.
+
+- [ ] **M6.-1 — feasibility spike (gate for everything below).**
+  - AudioWorklet capture: `startMicRaw` uses deprecated
+    `ScriptProcessorNode(4096)` — at 16 kHz the callback itself is a ~256 ms
+    cadence, so `frameMs: 100` would burst, not stream. Replace with an
+    AudioWorklet + ring buffer before any latency KPI is measurable.
+  - ORT-web benchmark on target devices: streaming-zipformer encoder chunk
+    compute p50/p95, RTF, memory, GC pauses, first-load time; run in a Worker
+    (not main thread). Acceptance: sustained RTF < 0.5 at 320 ms cadence on a
+    mid-range laptop, else fall back to WebGPU/WebNN or keep Vosk/native as the
+    streaming default.
+  - Streaming fbank: current `lib/fbank.ts` is batch-only; the spike must prove
+    an incremental frontend (waveform carry, frame boundaries, CMVN/cache
+    lifecycle), not just reuse it.
+- [ ] **M6.0 — transcript revision protocol.** Extend `TranscriptMsg` with
+  `{segmentId, revision (monotonic), status: "partial" | "provisional" |
+  "final", replacesRevision?, tStartMs/tEndMs}` (+ frames.ts wire encoding).
+  A plain `{partial?: true}` flag can't express corrections, pass-2
+  replacements, or empty endpoints; the native protocol already has `seg_id`
+  but `sherpa_native.ts` currently drops it — stop dropping it. Routing:
+  transcript *ports* declare `acceptsPartial`; the runtime filters at the
+  adjacency layer (one policy for local and remote edges, tested both ways).
+  Sink/caption opt in; text-diff / LLM / TTS stay final-only and existing
+  graphs keep working.
+- [ ] **M6.1 — in-browser streaming ASR backend.** Streaming zipformer (or
+  Kroko) on onnxruntime-web in a Worker: 3 sessions (encoder w/ explicit cache
+  in/out tensors, decoder, joiner) + greedy transducer search in TS; model
+  manifest abstracts per-model I/O names and cache shapes; Cache API storage;
+  Model-provider override resolves an encoder/decoder/joiner/tokens quartet
+  (same pattern as OCR's det/rec/dict trio, PR #110). Default:
+  `streaming-zipformer-en int8` (68 MB). Emits `partial` per chunk,
+  `provisional`/`final` on endpoint. Mesh gate (same milestone): separate audio
+  and transcript data channels, bounded send queue with latest-only partials,
+  PCM16 (or Opus) wire encoding instead of Float32→base64 JSON — raw-audio
+  head-of-line blocking on the single ordered channel would eat any latency win.
+- [ ] **M6.2 — ASR node UX for continuous input.** `stt` (SenseVoice) detects
+  continuous streams (contiguous `offsetMs`) and either applies its own
+  VAD-endpoint buffering or surfaces a smart-link hint to insert the streaming
+  backend / mic-vad. No more silent 4-inferences-per-second failure mode.
+- [ ] **M6.3 — two-pass as an explicit graph structure.** The streaming ASR
+  node retains the full audio buffer per endpoint and exposes it on an
+  `utterance` output port (today Vosk/sherpa attach *empty* audio to finals, so
+  cross-device pass 2 has nothing to re-transcribe). Pass 2 = an ordinary ASR
+  node (SenseVoice tags / sherpa-native / cloud) wired from `utterance`, placed
+  on any device; its result emits as a `final` revision with `replacesRevision`
+  pointing at the pass-1 provisional. No hidden `upgrade` enum inside the node —
+  the graph *is* the coordinator.
+- [ ] **M6.5 — Interpreter-booth demo (the README vision).** Template: mic →
+  streaming ASR → translate → TTS, both directions, two devices. Split KPIs:
+  **caption partial p50 < 500 ms capture-to-glass** (model lookahead alone is
+  ~320 ms, so < 300 ms was fantasy) and **spoken translation < 2 s** with a
+  stable-prefix commit policy for TTS (speech can't retract; only translate
+  committed prefixes). Must address barge-in/AEC, echo loop (TTS output
+  re-entering the mic), and turn detection. Measure, don't estimate.
+- [ ] **M6.4 — ASR node consolidation (breaking, last).** Fold stt / vosk /
+  sherpa / vibevoice-asr / web-speech into one ASR node with a backend enum +
+  model override; keep old types as deserialization aliases. Only after the
+  streaming backend proves the shape.
+
+### Immediate fixes (no milestone)
+
+- [ ] `vibevoice-asr` unbounded buffer: its "flush 400 ms after last input"
+  timer never fires under continuous frame input — cap pending duration and
+  force-flush. Known memory hazard, ship independently.
+
+### Risks / open questions
+
+- ORT-web single-thread wasm may simply not keep up — that's why M6.-1 is a
+  gate, not a checkbox. Fallback ladder: WebGPU/WebNN → 320→640 ms cadence →
+  Vosk/native remains the streaming path.
+- Partial flood over the mesh is real but secondary to raw-audio head-of-line
+  blocking (see M6.1 mesh gate).
+- Japanese streaming gap: no streaming ja model in the sherpa-onnx catalog;
+  interpreter-booth ja-side = Vosk-ja partials + SenseVoice pass-2 finals until
+  one appears.
+- Model licensing: Kroko models are Banafo-published — verify license before
+  shipping one as a default.
+- DataChannel ordering: separate channels lose cross-stream ordering between
+  audio and transcript frames; revision protocol must tolerate reordered
+  arrivals (monotonic `revision` handles it, but test it).
+
 ## Brainstorm backlog (2026-07-18)
 
 Ideas ranked by fun × implementation cost. Quick wins are being picked up first.
@@ -226,7 +372,8 @@ Ideas ranked by fun × implementation cost. Quick wins are being picked up first
   needed before P2P mesh works reliably outside one LAN.
 - [ ] **Interpreter-booth mode** — two people in a room, each hears the other
   via STT→translate→TTS in their own language. Pure composition of existing
-  nodes and the closest thing to the README's headline vision.
+  nodes and the closest thing to the README's headline vision. → Promoted to
+  **M6.5** with a concrete latency KPI (see M6 above).
 - [ ] **rgui as a standalone graph OS** — palette/overlay-cutout/panel
   persistence made rgui broadly useful; keep pushing it as a general
   canvas-native node editor (npm published, releases automated).
