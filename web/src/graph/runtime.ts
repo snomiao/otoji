@@ -19,7 +19,7 @@ import { createSherpaNativeStream, DEFAULT_SHERPA_SERVER_URL, type SherpaNativeS
 import { checkVibeVoiceServer, transcribeVibeVoice, DEFAULT_VIBEVOICE_MLX_MODEL, DEFAULT_VIBEVOICE_SERVER, DEFAULT_VIBEVOICE_VLLM_MODEL, type VibeVoiceBackend } from "../providers/stt/vibevoice";
 import { startCamera, clampFps, DEFAULT_CAMERA_FPS, type CameraCaptureInfo, type CameraHandle } from "../providers/vision/camera";
 import { startScreenShare, type ScreenHandle } from "../providers/vision/screen";
-import { ocrRecognize, warmOcr } from "../providers/vision/paddleocr";
+import { ocrModelFromSource, ocrRecognize, warmOcr, type OcrModelRef } from "../providers/vision/paddleocr";
 import { detect, drawDetections, warmDetect, DEFAULT_DETECT_MODEL } from "../providers/vision/detect";
 import { estimateDepth, estimateDepthField, warmDepth } from "../providers/vision/depth";
 import { landmarks, drawLandmarks, drawSpatialMonkey, formatLandmarksLabels, formatLandmarksJson, warmMediapipe, prewarmMediapipe, type MpTask } from "../providers/vision/mediapipe";
@@ -395,7 +395,9 @@ export class GraphRuntime {
     // local. Non-fatal: a failure only disables OCR, never aborts the rest.
     const ocrBases = new Set<string | undefined>();
     for (const n of Object.values(this.graph.nodes)) {
-      if (n.type === "paddle-ocr" && this.isLocal(n.id)) ocrBases.add(n.config?.modelsBase as string | undefined);
+      // A connected Model provider overrides the default at runtime — don't
+      // preload the stale fallback for those nodes.
+      if (n.type === "paddle-ocr" && this.isLocal(n.id) && !this.hasIncoming(n.id, "model")) ocrBases.add(n.config?.modelsBase as string | undefined);
     }
     if (ocrBases.size) {
       this.hooks.onStatus?.("loading OCR model…");
@@ -1952,14 +1954,28 @@ export class GraphRuntime {
     if (type === "paddle-ocr") {
       const w = this.makeLatest(id);
       const cfg = this.graph.nodes[id]?.config ?? {};
-      const modelsBase = (cfg.modelsBase as string | undefined) ?? undefined;
+      // PaddleOCR default (optionally from a mirror via `modelsBase`); a
+      // connected Model provider with Paddle-format det/rec/dict assets wins.
+      let model: OcrModelRef | undefined = (cfg.modelsBase as string | undefined) ?? undefined;
       return {
-        input: (_port, msg) => {
+        input: (port, msg) => {
+          if (port === "model") {
+            const src = msg as ModelSourceMsg;
+            const override = ocrModelFromSource(src);
+            if (override) {
+              model = override;
+              this.hooks.onRecognized?.(id, `model override · ${src.title ?? src.model}`);
+              warmOcr(model).catch((e) => this.hooks.onError?.(e instanceof Error ? e : new Error(String(e))));
+            } else {
+              this.hooks.onRecognized?.(id, `model provider is not Paddle-OCR compatible; using default`);
+            }
+            return;
+          }
           const img = msg as ImageMsg;
           w.submit("🖼️ OCR", async () => {
             let text = "";
             try {
-              text = await ocrRecognize(img.bitmap, modelsBase);
+              text = await ocrRecognize(img.bitmap, model);
             } catch (e) {
               this.hooks.onError?.(e instanceof Error ? e : new Error(String(e)));
             }
