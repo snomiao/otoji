@@ -585,7 +585,7 @@ export function NodeInspector({ node, controls = true, onClose }: { node: Inspec
     );
   }
 
-  if (vt === "screen-share" || vt === "camera" || vt === "vision-model" || vt === "qwen-image" || vt === "depth-field" || vt === "hand-space" || vt === "spatial-renderer" || vt === "image-match") {
+  if (vt === "screen-share" || vt === "camera" || vt === "vision-model" || vt === "qwen-image" || vt === "depth-field" || vt === "hand-space" || vt === "spatial-renderer" || vt === "image-match" || vt === "ar-notes") {
     const stacked = displayMode === "stack";
     const pickState = config?.screenPickState as string | undefined;
     const pickError = (config?.screenPickError as string | undefined) ?? "";
@@ -700,6 +700,20 @@ export function NodeInspector({ node, controls = true, onClose }: { node: Inspec
                   onBlur={(e) => onConfig(id, { height: Math.max(256, Math.min(2048, Number(e.target.value) || 1024)) })}
                   onKeyDown={(e) => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); }}
                   style={{ fontSize: 11, width: 50 }} />
+              </>
+            )}
+            {vt === "ar-notes" && (
+              <>
+                <input type="text" defaultValue={(config?.text as string) ?? ""} placeholder="📌 note text"
+                  title="text placed on the next pinch"
+                  onBlur={(e) => onConfig(id, { text: e.target.value.trim() || undefined })}
+                  onKeyDown={(e) => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); }}
+                  style={{ fontSize: 11, flex: 1, minWidth: 60 }} />
+                <button type="button" style={{ fontSize: 10, flex: "0 0 auto" }}
+                  title={`remove all ${(Array.isArray(config?.notes) ? (config!.notes as unknown[]).length : 0)} notes`}
+                  onClick={() => onConfig(id, { notes: [], notesSeq: Date.now() })}>
+                  clear
+                </button>
               </>
             )}
             {vt === "image-match" && (

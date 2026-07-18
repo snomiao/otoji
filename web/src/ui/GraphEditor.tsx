@@ -148,12 +148,12 @@ const CONTROL_ROWS: Partial<Record<NodeType, number>> = {
   translate: 5, "browser-translate-api": 3, "text-aggregate": 3, "text-normalize": 8, "text-filter": 7, "llm-agent": 8, sink: 7, "video-recorder": 8, "video-clip": 6, url: 0, tts: 4, "tts-model": 5, "model-source": 12, model: 5,
   // Visual nodes are full-bleed: controls live in the overlay's title bar, so
   // the whole body is preview.
-  camera: 0, "screen-share": 0, "vision-model": 0, "qwen-image": 0, "depth-field": 0, "hand-space": 0, "spatial-calibration": 3, "rgbd-point-cloud": 4, "spatial-renderer": 0, "model-3d": 3, "image-match": 0, "paddle-ocr": 2, "text-diff": 3,
+  camera: 0, "screen-share": 0, "vision-model": 0, "qwen-image": 0, "depth-field": 0, "hand-space": 0, "spatial-calibration": 3, "rgbd-point-cloud": 4, "spatial-renderer": 0, "model-3d": 3, "image-match": 0, "ar-notes": 0, "paddle-ocr": 2, "text-diff": 3,
 };
 
 type DisplayMode = "full-bleed" | "fit" | "stack";
 const DISPLAY_MODES: DisplayMode[] = ["full-bleed", "fit", "stack"];
-const VISUAL_DISPLAY_NODES = new Set<NodeType>(["camera", "screen-share", "vision-model", "qwen-image", "depth-field", "hand-space", "spatial-renderer", "image-match", "file-image", "video-recorder", "video-clip", "url"]);
+const VISUAL_DISPLAY_NODES = new Set<NodeType>(["camera", "screen-share", "vision-model", "qwen-image", "depth-field", "hand-space", "spatial-renderer", "image-match", "ar-notes", "file-image", "video-recorder", "video-clip", "url"]);
 const TEXT_DISPLAY_NODES = new Set<NodeType>(["environment", "stt", "web-speech", "vosk", "sherpa", "vibevoice-asr", "translate", "browser-translate-api", "text-aggregate", "text-normalize", "text-filter", "llm-agent", "model-source", "model", "tts", "tts-model", "sink", "srt-out", "paddle-ocr", "text-diff"]);
 
 type SmartLinkOption = {
@@ -1052,6 +1052,10 @@ function Editor({ initialRoom, local, federationDemo }: { initialRoom?: string; 
     },
     [setNodes, broadcast],
   );
+  // Ref so runtime hooks (built inside startRuntime) reach the current
+  // onConfig without startRuntime depending on it.
+  const onConfigRef = useRef<typeof onConfig | null>(null);
+  onConfigRef.current = onConfig;
 
   const removeNodes = useCallback(
     (nodeIds: string[], edgeIds: string[] = []) => {
@@ -1630,6 +1634,9 @@ function Editor({ initialRoom, local, federationDemo }: { initialRoom?: string; 
       onNodeBusy: (id, b) => { live.setBusy(id, b); pv?.onLocalPreview(id, "busy", b); },
       onQueue: (id, processing, queued) => { live.setQueue(id, processing, queued); pv?.onLocalPreview(id, "queue", { processing, queued }); },
       onNodeMetric: (id, metric) => live.recordMetric(id, metric),
+      // Node-initiated config persistence (ar-notes): broadcast like any edit.
+      // `notes` is excluded from runtimeSig, so this does not restart the run.
+      onConfigPatch: (id, patch) => onConfigRef.current?.(id, patch),
       hasPreviewConsumer: (id) => isPreviewShown(id) || (pv?.hasSubscriber(id) ?? false),
       onPipeOut: (id, text) => sigRef.current?.pipe(id, text, "node"), // pipe node input → CLI stdout
       onEdgeBytes: (eid, bytes) => edgeBytesRef.current.set(eid, (edgeBytesRef.current.get(eid) ?? 0) + bytes),
@@ -1716,7 +1723,12 @@ function Editor({ initialRoom, local, federationDemo }: { initialRoom?: string; 
   // node drags), so we can auto-(re)start without thrashing on every edit.
   const runtimeSig = useMemo(() => {
     const ns = nodes
-      .map((n) => `${n.id}:${(n.data as any).voiceType}@${(n.data as any).device ?? ""}#${JSON.stringify((n.data as any).config ?? {})}`)
+      .map((n) => {
+        // ar-notes `notes` is runtime-written state (pinch placements) — keep
+        // it out of the signature so placing a note doesn't restart the run.
+        const { notes: _notes, ...config } = ((n.data as any).config ?? {}) as Record<string, unknown>;
+        return `${n.id}:${(n.data as any).voiceType}@${(n.data as any).device ?? ""}#${JSON.stringify(config)}`;
+      })
       .sort()
       .join("|");
     const es = edges.map((e) => `${e.source}.${e.sourceHandle}->${e.target}.${e.targetHandle}`).sort().join("|");
@@ -1818,7 +1830,7 @@ function Editor({ initialRoom, local, federationDemo }: { initialRoom?: string; 
     const n = nodesRef.current.find((x) => x.id === id);
     if (!n) return null;
     const vt = (n.data as any).voiceType as NodeType;
-    const visual = vt === "camera" || vt === "screen-share" || vt === "vision-model" || vt === "qwen-image" || vt === "depth-field" || vt === "hand-space" || vt === "spatial-renderer" || vt === "image-match" || vt === "url";
+    const visual = vt === "camera" || vt === "screen-share" || vt === "vision-model" || vt === "qwen-image" || vt === "depth-field" || vt === "hand-space" || vt === "spatial-renderer" || vt === "image-match" || vt === "ar-notes" || vt === "url";
     const controls = controlNodeId === id;
     const modelEdge = edgesRef.current.find((edge) => edge.target === id && (edge.targetHandle ?? "in") === "model");
     const modelSource = modelEdge ? nodesRef.current.find((candidate) => candidate.id === modelEdge.source) : undefined;
@@ -2006,7 +2018,7 @@ function Editor({ initialRoom, local, federationDemo }: { initialRoom?: string; 
   const nodeBody = useCallback((node: { id: string; type: NodeType }) => {
     const t = node.type;
     const isMic = t === "mic-vad" || t === "mic-raw";
-    const isImg = t === "camera" || t === "screen-share" || t === "file-image" || t === "paddle-ocr" || t === "vision-model" || t === "qwen-image" || t === "depth-field" || t === "hand-space" || t === "spatial-renderer" || t === "image-match" || t === "video-recorder" || t === "video-clip";
+    const isImg = t === "camera" || t === "screen-share" || t === "file-image" || t === "paddle-ocr" || t === "vision-model" || t === "qwen-image" || t === "depth-field" || t === "hand-space" || t === "spatial-renderer" || t === "image-match" || t === "ar-notes" || t === "video-recorder" || t === "video-clip";
     const isText = TEXT_DISPLAY_NODES.has(t);
     const id = node.id;
     // The body hosts BOTH the config-controls overlay (upper zone, HTML, shown
@@ -2024,7 +2036,7 @@ function Editor({ initialRoom, local, federationDemo }: { initialRoom?: string; 
         const displayMode = displayModeOf((graphNode?.data as any)?.config);
         // overlay (controls) visible above minScale 0.5 → keep to the bottom
         // strip; full-bleed screen-share has no control zone, use it all
-        const fullBleedVisual = t === "camera" || t === "screen-share" || t === "vision-model" || t === "qwen-image" || t === "depth-field" || t === "hand-space" || t === "spatial-renderer" || t === "image-match";
+        const fullBleedVisual = t === "camera" || t === "screen-share" || t === "vision-model" || t === "qwen-image" || t === "depth-field" || t === "hand-space" || t === "spatial-renderer" || t === "image-match" || t === "ar-notes";
         const stackTop = displayMode === "stack" ? Math.min(rect.height, (fullBleedVisual ? 26 : controlRows * 22) * k) : 0;
         const top = fullBleedVisual
           ? stackTop
@@ -2141,7 +2153,7 @@ function Editor({ initialRoom, local, federationDemo }: { initialRoom?: string; 
         }
         const metric = live.getMetric(id);
         if (metric && (metric.emitHz > 0 || metric.hz > 0 || metric.p95Ms > 0)) {
-          const isFrameLike = t === "camera" || t === "screen-share" || t === "file-image" || t === "vision-model" || t === "qwen-image" || t === "depth-field" || t === "hand-space" || t === "spatial-renderer" || t === "paddle-ocr" || t === "image-match" || t === "video-recorder" || t === "video-clip";
+          const isFrameLike = t === "camera" || t === "screen-share" || t === "file-image" || t === "vision-model" || t === "qwen-image" || t === "depth-field" || t === "hand-space" || t === "spatial-renderer" || t === "paddle-ocr" || t === "image-match" || t === "ar-notes" || t === "video-recorder" || t === "video-clip";
           const rate = isFrameLike ? metric.emitHz || metric.hz : metric.hz || metric.emitHz;
           const rateLabel = `${rate.toFixed(rate >= 10 ? 0 : 1)}${isFrameLike ? "fps" : "Hz"}`;
           const ms = metric.p95Ms ? ` p95 ${metric.p95Ms.toFixed(metric.p95Ms >= 10 ? 0 : 1)}ms` : "";
@@ -2352,6 +2364,53 @@ function Editor({ initialRoom, local, federationDemo }: { initialRoom?: string; 
     const ok = "#48bb78", warn = "#f6ad55", bad = "#fc8181", dim = "#8b949e";
     const gpuColor = gpuDebug.status === "ready" ? ok : gpuDebug.status === "probing" ? warn : bad;
     const spatialCount = nodes.filter((n) => ["depth-field", "hand-space", "spatial-calibration", "rgbd-point-cloud", "model-3d", "spatial-renderer"].includes((n.data as any)?.voiceType)).length;
+    // With exactly one node selected the panel becomes that node's profiler:
+    // rate, processing time, queue, p2p traffic, and a bottleneck verdict.
+    // (`tick` refreshes it every second while running.)
+    void tick;
+    const selId = selected.length === 1 ? selected[0] : null;
+    const selNode = selId ? nodesRef.current.find((n) => n.id === selId) : null;
+    if (selId && selNode) {
+      const t = (selNode.data as any).voiceType as NodeType;
+      const live = liveRef.current;
+      const metric = live.getMetric(selId);
+      const queue = live.getQueue(selId);
+      const busy = live.getBusy(selId);
+      const ms = (v?: number) => (v == null || !Number.isFinite(v) ? "—" : v >= 100 ? v.toFixed(0) : v.toFixed(1));
+      const hz = (v?: number) => (v == null || !Number.isFinite(v) ? "—" : v.toFixed(v >= 10 ? 0 : 1));
+      const bps = (edges: Edge[]) => {
+        const total = edges.reduce((a, e) => a + (edgeRates[e.id] ?? 0), 0);
+        return total >= 1e6 ? `${(total / 1e6).toFixed(1)}MB/s` : total >= 1e3 ? `${(total / 1e3).toFixed(1)}kB/s` : total ? `${total}B/s` : "0";
+      };
+      const inEdges = edgesRef.current.filter((e) => e.target === selId);
+      const outEdges = edgesRef.current.filter((e) => e.source === selId);
+      // Processing-bound when p95 eats ≥90% of the output frame budget.
+      const budgetMs = metric?.emitHz ? 1000 / metric.emitHz : 0;
+      const bottleneck = !metric
+        ? "no samples yet"
+        : queue.queued.length
+          ? `backlogged · ${queue.queued.length} queued`
+          : budgetMs && metric.p95Ms > budgetMs * 0.9
+            ? `processing-bound · p95 ${ms(metric.p95Ms)}ms ≥ ${ms(budgetMs)}ms budget`
+            : "none";
+      const bottleneckColor = bottleneck === "none" ? ok : bottleneck === "no samples yet" ? dim : warn;
+      return {
+        id: "debug-runtime",
+        title: `debug · ${NODE_SPECS[t]?.label ?? t}`,
+        anchor: panelAnchorsRef.current["debug-runtime"] ?? "right",
+        collapsed: panelCollapsedRef.current["debug-runtime"] ?? false,
+        w: 290,
+        items: [
+          { id: "sel-id", label: `${selId}  ·  ${(selNode.data as any).device ?? "unassigned"}`, color: "#60a5fa" },
+          { id: "sel-rate", label: `rate  in ${hz(metric?.hz)}Hz · out ${hz(metric?.emitHz)}Hz`, color: dim },
+          { id: "sel-time", label: `time  last ${ms(metric?.lastMs)} · avg ${ms(metric?.avgMs)} · p95 ${ms(metric?.p95Ms)}ms`, color: metric && metric.p95Ms > 100 ? warn : dim },
+          { id: "sel-state", label: `state  ${busy ? `busy${queue.processing ? ` · ${queue.processing}` : ""}` : "idle"} · ${queue.queued.length} queued`, color: busy ? warn : dim },
+          { id: "sel-net", label: `p2p net  in ${bps(inEdges)} · out ${bps(outEdges)}`, color: dim },
+          { id: "sel-bottleneck", label: `bottleneck  ${bottleneck}`, color: bottleneckColor },
+          { id: "sel-hint", label: "deselect to show system debug", color: dim },
+        ],
+      };
+    }
     return {
       id: "debug-runtime",
       title: "Runtime debug",
@@ -2369,7 +2428,7 @@ function Editor({ initialRoom, local, federationDemo }: { initialRoom?: string; 
         { id: "status", label: `status  ${lastError || runStatus || "ok"}`, color: lastError ? bad : dim },
       ],
     };
-  }, [gpuDebug, cameraPermission, running, paused, nodes, lastError, runStatus]);
+  }, [gpuDebug, cameraPermission, running, paused, nodes, lastError, runStatus, selected, tick, edgeRates]);
   const allPanels = useMemo<Panel[]>(
     () => compactPanels ? [...rguiPanels, toolbarPanel] : [...rguiPanels, toolbarPanel, debugPanel],
     [rguiPanels, toolbarPanel, debugPanel, compactPanels],

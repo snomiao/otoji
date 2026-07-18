@@ -416,6 +416,27 @@ export const BUILTIN_TEMPLATES: GraphTemplate[] = [
     ],
   },
   {
+    id: "ar-notes",
+    name: "AR sticky notes",
+    desc: "Pinch to place sticky notes in 3D space (synced to the room)",
+    builtin: true,
+    nodes: [
+      { key: "cam", type: "camera", dx: 0, dy: 0 },
+      { key: "depth", type: "depth-field", dx: COL, dy: -ROW, config: {} },
+      { key: "hand", type: "hand-space", dx: COL, dy: 0, config: {} },
+      { key: "cal", type: "spatial-calibration", dx: COL * 2, dy: -ROW / 2, config: { nearMeters: 0.2, farMeters: 2.5, fovDegrees: 60 } },
+      { key: "notes", type: "ar-notes", dx: COL * 3, dy: 0, config: { text: "📌 note" } },
+    ],
+    edges: [
+      { from: "cam", fromHandle: "out", to: "depth", toHandle: "in" },
+      { from: "cam", fromHandle: "out", to: "hand", toHandle: "in" },
+      { from: "cam", fromHandle: "out", to: "notes", toHandle: "frame" },
+      { from: "depth", fromHandle: "depth", to: "cal", toHandle: "depth" },
+      { from: "hand", fromHandle: "hand", to: "cal", toHandle: "hand" },
+      { from: "cal", fromHandle: "space", to: "notes", toHandle: "space" },
+    ],
+  },
+  {
     id: "gesture-speak",
     name: "Gesture → speech",
     desc: "Camera → hand gesture recognition → spoken when the gesture changes",

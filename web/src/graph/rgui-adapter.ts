@@ -187,7 +187,7 @@ export function voiceGraphToRgui(graph: VoiceGraph, meta: RguiMeta = {}): RgGrap
     const scale = Math.min(MAX_SCALE, Math.max(MIN_SCALE, n.scale ?? 1));
     // full-bleed content nodes (Monaco editor / visual previews) get a
     // content-sized default box
-    const fullBleed = n.type === "textarea" || n.type === "screen-share" || n.type === "camera" || n.type === "vision-model" || n.type === "qwen-image" || n.type === "depth-field" || n.type === "hand-space" || n.type === "spatial-renderer" || n.type === "image-match";
+    const fullBleed = n.type === "textarea" || n.type === "screen-share" || n.type === "camera" || n.type === "vision-model" || n.type === "qwen-image" || n.type === "depth-field" || n.type === "hand-space" || n.type === "spatial-renderer" || n.type === "image-match" || n.type === "ar-notes";
     const textPreview = TEXT_PREVIEW_TYPES.has(n.type);
     const defW = fullBleed ? 320 : textPreview ? 260 : DEFAULT_W;
     const w = Math.max(NODE_MIN_W * scale, n.size?.w ?? defW);
