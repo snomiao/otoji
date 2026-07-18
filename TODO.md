@@ -215,7 +215,7 @@ Ideas ranked by fun × implementation cost. Quick wins are being picked up first
   speech ("connect the camera to depth"). Dogfooding otoji with otoji.
 - [ ] **Subgraph / group node** — select → group collapses a pipeline into one
   node; unify with template save.
-- [ ] **Vision narrator pipeline** — camera → qwen-image caption → translate →
+- [x] **Vision narrator pipeline** — camera → qwen-image caption → translate →
   TTS: "describe what I'm looking at, out loud". Accessibility angle.
 - [ ] **CLI node recipes** — document `npx otoji node <room> --exec 'claude -p'`
   style patterns: hang any local LLM/agent off the graph as a node
