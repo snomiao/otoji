@@ -23,6 +23,7 @@ interface PeerConn {
   makingOffer: boolean;
   ignoreOffer: boolean;
   channels: Map<string, RTCDataChannel>;
+  pendingCandidates: RTCIceCandidateInit[];
 }
 
 export interface MeshCallbacks {
@@ -57,7 +58,7 @@ export class PeerMesh {
     if (p) return p;
 
     const pc = new RTCPeerConnection({ iceServers: ICE_SERVERS });
-    p = { pc, polite: !initiator, makingOffer: false, ignoreOffer: false, channels: new Map() };
+    p = { pc, polite: !initiator, makingOffer: false, ignoreOffer: false, channels: new Map(), pendingCandidates: [] };
     this.peers.set(remoteId, p);
 
     pc.onicecandidate = ({ candidate }) => {
@@ -108,16 +109,14 @@ export class PeerMesh {
         p.ignoreOffer = !p.polite && offerCollision;
         if (p.ignoreOffer) return;
         await pc.setRemoteDescription(data.description);
+        for (const candidate of p.pendingCandidates.splice(0)) await pc.addIceCandidate(candidate);
         if (data.description.type === "offer") {
           await pc.setLocalDescription();
           this.signaling.signal(from, { description: pc.localDescription });
         }
       } else if (data.candidate) {
-        try {
-          await pc.addIceCandidate(data.candidate);
-        } catch {
-          if (!p.ignoreOffer) throw new Error("ice");
-        }
+        if (pc.remoteDescription) await pc.addIceCandidate(data.candidate);
+        else p.pendingCandidates.push(data.candidate);
       }
     } catch {
       /* negotiation error — connection-state handler will clean up */

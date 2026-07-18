@@ -28,6 +28,7 @@ const KIND: Record<PortType, SignalKind> = {
   control: "ctl",
   environment: "ctl",
   spatial: "ctl",
+  model: "ctl",
 };
 
 const PUBLIC_CONFIG: Partial<Record<NodeType, string[]>> = {

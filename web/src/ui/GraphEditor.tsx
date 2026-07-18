@@ -35,6 +35,7 @@ import {
   templateFromSelection,
   type GraphTemplate,
 } from "../lib/templates";
+import { graphShareUrl, takeSharedGraph } from "../lib/share-url";
 import { LiveStore } from "../graph/live-store";
 import { fileStore, fileKindForMetadata } from "../graph/file-store";
 import { PeerMeshTransport } from "../graph/mesh-transport";
@@ -89,7 +90,30 @@ function activeTrackers(approved: string[]): string[] {
 }
 
 /** Port/signal-type accent colors (palette dots, etc.). */
-const PORT_COLOR: Record<PortType, string> = { segment: "#dd6b20", transcript: "#2b6cb0", image: "#319795", control: "#d69e2e", environment: "#805ad5", spatial: "#d53f8c" };
+const PORT_COLOR: Record<PortType, string> = { segment: "#dd6b20", transcript: "#2b6cb0", image: "#319795", control: "#d69e2e", environment: "#805ad5", spatial: "#d53f8c", model: "#38a169" };
+
+type NodePaletteOption = {
+  id: string;
+  type: NodeType;
+  label: string;
+  detail?: string;
+  config?: Record<string, unknown>;
+};
+
+function paletteOptions(category: (typeof NODE_CATEGORIES)[number]): NodePaletteOption[] {
+  return category.types.reduce<NodePaletteOption[]>((options, type) => {
+    if (type !== "model-source") {
+      options.push({ id: type, type, label: NODE_SPECS[type].label, detail: `${category.label} · ${type}` });
+      return options;
+    }
+    options.push(
+      { id: "model-source:webllm", type, label: "WebLLM Models", detail: `${category.label} · searchable browser WebGPU models`, config: { provider: "webllm", formatFilter: "mlc", runtimeFilter: "browser", taskFilter: "text" } },
+      { id: "model-source:huggingface", type, label: "Hugging Face Models", detail: `${category.label} · searchable Hugging Face source`, config: { provider: "huggingface", formatFilter: "any", runtimeFilter: "browser", taskFilter: "any" } },
+      { id: "model-source:civitai", type, label: "Civitai Models", detail: `${category.label} · searchable Civitai source`, config: { provider: "civitai", formatFilter: "any", runtimeFilter: "diffusers", taskFilter: "any" } },
+    );
+    return options;
+  }, []);
+}
 
 /** localStorage key for the persisted local-mode graph (rooms use the DO). */
 const LOCAL_GRAPH_KEY = "otoji.local.graph";
@@ -120,17 +144,17 @@ function loadPanelCollapsed(): Record<string, boolean> {
 // scrolls (overlay is clip:"node" + overflow:"auto"), it never covers the preview.
 const CONTROL_ROWS: Partial<Record<NodeType, number>> = {
   environment: 7,
-  "mic-vad": 3, "mic-raw": 2, stt: 3, "web-speech": 3, vosk: 3, sherpa: 3,
-  translate: 5, "browser-translate-api": 3, "text-aggregate": 3, "text-normalize": 8, "text-filter": 7, "llm-agent": 8, sink: 7, "video-recorder": 8, "video-clip": 6, url: 0, tts: 4, "tts-model": 5, model: 5,
+  "mic-vad": 3, "mic-raw": 2, stt: 3, "web-speech": 3, vosk: 3, sherpa: 3, "vibevoice-asr": 5,
+  translate: 5, "browser-translate-api": 3, "text-aggregate": 3, "text-normalize": 8, "text-filter": 7, "llm-agent": 8, sink: 7, "video-recorder": 8, "video-clip": 6, url: 0, tts: 4, "tts-model": 5, "model-source": 12, model: 5,
   // Visual nodes are full-bleed: controls live in the overlay's title bar, so
   // the whole body is preview.
-  camera: 0, "screen-share": 0, "vision-model": 0, "depth-field": 0, "hand-space": 0, "spatial-calibration": 3, "rgbd-point-cloud": 4, "spatial-renderer": 0, "model-3d": 3, "image-match": 0, "paddle-ocr": 2, "text-diff": 3,
+  camera: 0, "screen-share": 0, "vision-model": 0, "qwen-image": 0, "depth-field": 0, "hand-space": 0, "spatial-calibration": 3, "rgbd-point-cloud": 4, "spatial-renderer": 0, "model-3d": 3, "image-match": 0, "paddle-ocr": 2, "text-diff": 3,
 };
 
 type DisplayMode = "full-bleed" | "fit" | "stack";
 const DISPLAY_MODES: DisplayMode[] = ["full-bleed", "fit", "stack"];
-const VISUAL_DISPLAY_NODES = new Set<NodeType>(["camera", "screen-share", "vision-model", "depth-field", "hand-space", "spatial-renderer", "image-match", "file-image", "video-recorder", "video-clip", "url"]);
-const TEXT_DISPLAY_NODES = new Set<NodeType>(["environment", "stt", "web-speech", "vosk", "sherpa", "translate", "browser-translate-api", "text-aggregate", "text-normalize", "text-filter", "llm-agent", "model", "tts", "tts-model", "sink", "paddle-ocr", "text-diff"]);
+const VISUAL_DISPLAY_NODES = new Set<NodeType>(["camera", "screen-share", "vision-model", "qwen-image", "depth-field", "hand-space", "spatial-renderer", "image-match", "file-image", "video-recorder", "video-clip", "url"]);
+const TEXT_DISPLAY_NODES = new Set<NodeType>(["environment", "stt", "web-speech", "vosk", "sherpa", "vibevoice-asr", "translate", "browser-translate-api", "text-aggregate", "text-normalize", "text-filter", "llm-agent", "model-source", "model", "tts", "tts-model", "sink", "srt-out", "paddle-ocr", "text-diff"]);
 
 type SmartLinkOption = {
   id: string;
@@ -329,7 +353,14 @@ function Editor({ initialRoom, local, federationDemo }: { initialRoom?: string; 
   }, []);
 
   const [nodes, setNodes] = useState<Node[]>([]);
+  const [compactPanels, setCompactPanels] = useState(() => window.innerWidth < 640);
   const [edges, setEdges] = useState<Edge[]>([]);
+
+  useEffect(() => {
+    const update = () => setCompactPanels(window.innerWidth < 640);
+    window.addEventListener("resize", update);
+    return () => window.removeEventListener("resize", update);
+  }, []);
 
   const [running, setRunning] = useState(false);
   const [runStatus, setRunStatus] = useState("");
@@ -352,6 +383,7 @@ function Editor({ initialRoom, local, federationDemo }: { initialRoom?: string; 
         world?: { x: number; y: number }; // rgui: drop point in world coords
       }
   >(null);
+  const [nodeSearchOpen, setNodeSearchOpen] = useState(false);
   const [smartLinkMenu, setSmartLinkMenu] = useState<null | { x: number; y: number; options: SmartLinkOption[]; placeholder?: string }>(null);
   // Per-node context menu (right-click / long-press): duplicate/replace/remove/visibility.
   const [nodeMenu, setNodeMenu] = useState<null | { x: number; y: number; nodeId: string }>(null);
@@ -551,6 +583,40 @@ function Editor({ initialRoom, local, federationDemo }: { initialRoom?: string; 
     // Remember the local layout across refreshes: restore a saved graph if any,
     // otherwise seed a demo. Federation demo intentionally bypasses saved local
     // state so the requested chain is reproducible.
+    // A #g= share link wins over the saved layout and the demo seed: expand it
+    // as this device's graph, then drop the hash so a reload keeps the result.
+    const shared = federationDemo ? null : takeSharedGraph();
+    if (shared) {
+      const idOf = new Map<string, string>();
+      const ns: Node[] = shared.nodes.map((tn) => {
+        const id = `${tn.type}-${Math.random().toString(36).slice(2, 8)}`;
+        idOf.set(tn.key, id);
+        return {
+          id,
+          type: "voice",
+          position: { x: 80 + tn.dx, y: 80 + tn.dy },
+          data: { voiceType: tn.type, device: myDeviceId, config: tn.config ? { ...tn.config } : {} },
+        };
+      });
+      const es: Edge[] = shared.edges
+        .filter((te) => idOf.has(te.from) && idOf.has(te.to))
+        .map((te) => {
+          const source = idOf.get(te.from)!;
+          const target = idOf.get(te.to)!;
+          return {
+            id: edgeId({ source, sourceHandle: te.fromHandle, target, targetHandle: te.toHandle }),
+            source,
+            sourceHandle: te.fromHandle,
+            target,
+            targetHandle: te.toHandle,
+          };
+        });
+      nodesRef.current = ns;
+      edgesRef.current = es;
+      setNodes(ns);
+      setEdges(es);
+      return;
+    }
     try {
       const saved = federationDemo ? null : localStorage.getItem(LOCAL_GRAPH_KEY);
       if (saved) {
@@ -817,6 +883,26 @@ function Editor({ initialRoom, local, federationDemo }: { initialRoom?: string; 
       .catch(() => {});
   }
 
+  // Share the graph itself (not the room): whole graph → template → #g= URL.
+  const [graphCopied, setGraphCopied] = useState(false);
+  function shareGraph() {
+    const ns = nodesRef.current;
+    if (ns.length === 0) return;
+    const tpl = templateFromSelection(
+      "shared graph",
+      ns.map((n) => ({ id: n.id, type: (n.data as any).voiceType, x: n.position.x, y: n.position.y, config: (n.data as any).config })),
+      edgesRef.current.map((e) => ({ source: e.source, sourceHandle: e.sourceHandle, target: e.target, targetHandle: e.targetHandle })),
+      "share",
+    );
+    navigator.clipboard
+      ?.writeText(graphShareUrl(tpl))
+      .then(() => {
+        setGraphCopied(true);
+        setTimeout(() => setGraphCopied(false), 1500);
+      })
+      .catch(() => {});
+  }
+
   const onAssign = useCallback(
     (nodeId: string, device: string | null) => {
       const next = nodesRef.current.map((n) =>
@@ -856,7 +942,7 @@ function Editor({ initialRoom, local, federationDemo }: { initialRoom?: string; 
   }, [caps.hasMic, local, myDeviceId, name, role, room]);
 
   const addNode = useCallback(
-    (type: NodeType, worldPos?: { x: number; y: number }) => {
+    (type: NodeType, worldPos?: { x: number; y: number }, presetConfig?: Record<string, unknown>) => {
       const id = `${type}-${Math.random().toString(36).slice(2, 8)}`;
       // worldPos (from the rgui canvas drop) is in world coords; else a random spot.
       const position = worldPos ? snapWorld(worldPos) : { x: 80 + Math.random() * 120, y: 80 + Math.random() * 160 };
@@ -864,7 +950,7 @@ function Editor({ initialRoom, local, federationDemo }: { initialRoom?: string; 
         id,
         type: "voice",
         position,
-        data: { voiceType: type, device: myDeviceId, config: defaultConfigFor(type) },
+        data: { voiceType: type, device: myDeviceId, config: { ...defaultConfigFor(type), ...presetConfig } },
       };
       let nextNodes = [...nodesRef.current, n];
       let nextEdges = edgesRef.current;
@@ -1068,11 +1154,35 @@ function Editor({ initialRoom, local, federationDemo }: { initialRoom?: string; 
   const setFile = useCallback(
     (nodeId: string, file: File) => {
       const kind = fileKindForMetadata(file.name, file.type) ?? "audio";
+      if (kind === "video") {
+        void (async () => {
+          const at = Date.now();
+          const durationMs = await new Promise<number>((resolve) => {
+            const url = URL.createObjectURL(file);
+            const video = document.createElement("video");
+            const done = (ms: number) => { URL.revokeObjectURL(url); resolve(ms); };
+            video.onloadedmetadata = () => done(Number.isFinite(video.duration) ? video.duration * 1000 : 0);
+            video.onerror = () => done(0);
+            video.src = url;
+          });
+          const clip: VideoClip = { id: `vf-${at}-${Math.random().toString(36).slice(2, 8)}`, nodeId, at, durationMs, mimeType: file.type || "video/webm", blob: file };
+          const clips = videoClipsByNodeRef.current.get(nodeId) ?? [];
+          clips.push(clip);
+          videoClipsByNodeRef.current.set(nodeId, clips);
+          if (videoClipsDB.available()) await videoClipsDB.put(clip);
+          onConfig(nodeId, { clipId: clip.id, file: file.name, mimeType: clip.mimeType, size: file.size, playSeq: Date.now(), url: undefined });
+          setTick((x) => x + 1);
+        })().catch((error) => setLastError(error instanceof Error ? error.message : String(error)));
+        return;
+      }
       fileStore.set(nodeId, { kind, name: file.name, file });
       onConfig(nodeId, { file: file.name, fileSeq: ++fileSeqRef.current, url: undefined }); // local file wins; clear any URL
     },
     [onConfig],
   );
+  const replayNode = useCallback((nodeId: string) => {
+    void runtimeRef.current?.replay(nodeId);
+  }, []);
 
   // Drag-drop a media/text file onto the canvas -> create a file-source node here.
   const addFileNodeAt = useCallback(
@@ -1203,8 +1313,25 @@ function Editor({ initialRoom, local, federationDemo }: { initialRoom?: string; 
   useEffect(() => {
     if (!joined) return;
     const onKey = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && (e.key === "k" || e.key === "K")) {
+        e.preventDefault();
+        setConnectMenu(null);
+        setSmartLinkMenu(null);
+        setNodeMenu(null);
+        setNodeSearchOpen(true);
+        return;
+      }
       const el = document.activeElement as HTMLElement | null;
       if (el && (/^(INPUT|TEXTAREA|SELECT|BUTTON)$/.test(el.tagName) || el.isContentEditable)) return;
+      if (e.key === "/" && !e.ctrlKey && !e.metaKey && !e.altKey) {
+        // "/" opens the same node-search omnibox as Cmd+K (when not typing).
+        e.preventDefault();
+        setConnectMenu(null);
+        setSmartLinkMenu(null);
+        setNodeMenu(null);
+        setNodeSearchOpen(true);
+        return;
+      }
       if ((e.ctrlKey || e.metaKey) && (e.key === "a" || e.key === "A")) {
         e.preventDefault();
         if (useRgui) setSelected(nodesRef.current.map((n) => n.id));
@@ -1249,6 +1376,21 @@ function Editor({ initialRoom, local, federationDemo }: { initialRoom?: string; 
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [joined, setNodes, removeNodes, useRgui]);
+
+  const nodeSearchOptions = useMemo(() => NODE_CATEGORIES.flatMap(paletteOptions), []);
+
+  const addNodeFromSearch = useCallback((type: NodeType, config?: Record<string, unknown>) => {
+    const api = rguiApiRef.current;
+    const view = api?.getView();
+    const center = api && view
+      ? api.snapWorld({
+          x: (window.innerWidth / 2 - view.x) / view.k,
+          y: (window.innerHeight / 2 - view.y) / view.k,
+        })
+      : undefined;
+    addNode(type, center, config);
+    setNodeSearchOpen(false);
+  }, [addNode]);
 
   // One-click pre-wired Mic+VAD -> STT -> Sink, assigned to me. Removes the
   // manual add+connect friction (the usual reason "no transcript" appears).
@@ -1676,14 +1818,26 @@ function Editor({ initialRoom, local, federationDemo }: { initialRoom?: string; 
     const n = nodesRef.current.find((x) => x.id === id);
     if (!n) return null;
     const vt = (n.data as any).voiceType as NodeType;
-    const visual = vt === "camera" || vt === "screen-share" || vt === "vision-model" || vt === "depth-field" || vt === "hand-space" || vt === "spatial-renderer" || vt === "image-match" || vt === "url";
+    const visual = vt === "camera" || vt === "screen-share" || vt === "vision-model" || vt === "qwen-image" || vt === "depth-field" || vt === "hand-space" || vt === "spatial-renderer" || vt === "image-match" || vt === "url";
     const controls = controlNodeId === id;
-    if (!visual && !controls) return null;
+    const modelEdge = edgesRef.current.find((edge) => edge.target === id && (edge.targetHandle ?? "in") === "model");
+    const modelSource = modelEdge ? nodesRef.current.find((candidate) => candidate.id === modelEdge.source) : undefined;
+    const modelSourceConfig = (modelSource?.data as any)?.config as Record<string, unknown> | undefined;
+    const controlledModel = [modelSourceConfig?.ref, modelSourceConfig?.model, modelSourceConfig?.apiModel]
+      .find((value) => typeof value === "string" && value.trim()) as string | undefined;
+    const controlledBackend = modelSourceConfig?.provider === "webllm"
+      ? "webllm" as const
+      : modelSourceConfig?.provider === "huggingface"
+        ? "transformers" as const
+        : undefined;
     const node = {
       id: n.id,
       voiceType: vt,
       device: ((n.data as any).device ?? null) as string | null,
       config: (n.data as any).config as Record<string, unknown> | undefined,
+      connectedInputs: edgesRef.current.filter((edge) => edge.target === id).map((edge) => edge.targetHandle ?? "in"),
+      controlledModel,
+      controlledBackend,
     };
     return <NodeInspector node={node} controls={controls || !visual} />;
   }, [controlNodeId]);
@@ -1729,6 +1883,16 @@ function Editor({ initialRoom, local, federationDemo }: { initialRoom?: string; 
         if (!canConnect(g, from.node, from.port, to.node, to.port)) return;
         const id = edgeId({ source: from.node, sourceHandle: from.port, target: to.node, targetHandle: to.port });
         const next = [...edgesRef.current, { id, source: from.node, sourceHandle: from.port, target: to.node, targetHandle: to.port }];
+        const source = nodesRef.current.find((node) => node.id === from.node);
+        const sourceType = (source?.data as any)?.voiceType as NodeType | undefined;
+        if (sourceType === "environment" && from.port === "env" && to.port === "env") {
+          const device = (source?.data as any)?.device as string | undefined;
+          if (device) {
+            const assigned = nodesRef.current.map((node) => node.id === to.node ? { ...node, data: { ...node.data, device } } : node);
+            nodesRef.current = assigned;
+            setNodes(assigned);
+          }
+        }
         edgesRef.current = next;
         setEdges(next);
         broadcast(nodesRef.current, next);
@@ -1842,7 +2006,7 @@ function Editor({ initialRoom, local, federationDemo }: { initialRoom?: string; 
   const nodeBody = useCallback((node: { id: string; type: NodeType }) => {
     const t = node.type;
     const isMic = t === "mic-vad" || t === "mic-raw";
-    const isImg = t === "camera" || t === "screen-share" || t === "file-image" || t === "paddle-ocr" || t === "vision-model" || t === "depth-field" || t === "hand-space" || t === "spatial-renderer" || t === "image-match" || t === "video-recorder" || t === "video-clip";
+    const isImg = t === "camera" || t === "screen-share" || t === "file-image" || t === "paddle-ocr" || t === "vision-model" || t === "qwen-image" || t === "depth-field" || t === "hand-space" || t === "spatial-renderer" || t === "image-match" || t === "video-recorder" || t === "video-clip";
     const isText = TEXT_DISPLAY_NODES.has(t);
     const id = node.id;
     // The body hosts BOTH the config-controls overlay (upper zone, HTML, shown
@@ -1860,7 +2024,7 @@ function Editor({ initialRoom, local, federationDemo }: { initialRoom?: string; 
         const displayMode = displayModeOf((graphNode?.data as any)?.config);
         // overlay (controls) visible above minScale 0.5 → keep to the bottom
         // strip; full-bleed screen-share has no control zone, use it all
-        const fullBleedVisual = t === "camera" || t === "screen-share" || t === "vision-model" || t === "depth-field" || t === "hand-space" || t === "spatial-renderer" || t === "image-match";
+        const fullBleedVisual = t === "camera" || t === "screen-share" || t === "vision-model" || t === "qwen-image" || t === "depth-field" || t === "hand-space" || t === "spatial-renderer" || t === "image-match";
         const stackTop = displayMode === "stack" ? Math.min(rect.height, (fullBleedVisual ? 26 : controlRows * 22) * k) : 0;
         const top = fullBleedVisual
           ? stackTop
@@ -1977,7 +2141,7 @@ function Editor({ initialRoom, local, federationDemo }: { initialRoom?: string; 
         }
         const metric = live.getMetric(id);
         if (metric && (metric.emitHz > 0 || metric.hz > 0 || metric.p95Ms > 0)) {
-          const isFrameLike = t === "camera" || t === "screen-share" || t === "file-image" || t === "vision-model" || t === "depth-field" || t === "hand-space" || t === "spatial-renderer" || t === "paddle-ocr" || t === "image-match" || t === "video-recorder" || t === "video-clip";
+          const isFrameLike = t === "camera" || t === "screen-share" || t === "file-image" || t === "vision-model" || t === "qwen-image" || t === "depth-field" || t === "hand-space" || t === "spatial-renderer" || t === "paddle-ocr" || t === "image-match" || t === "video-recorder" || t === "video-clip";
           const rate = isFrameLike ? metric.emitHz || metric.hz : metric.hz || metric.emitHz;
           const rateLabel = `${rate.toFixed(rate >= 10 ? 0 : 1)}${isFrameLike ? "fps" : "Hz"}`;
           const ms = metric.p95Ms ? ` p95 ${metric.p95Ms.toFixed(metric.p95Ms >= 10 ? 0 : 1)}ms` : "";
@@ -2080,31 +2244,38 @@ function Editor({ initialRoom, local, federationDemo }: { initialRoom?: string; 
       id: "nodes",
       title: "＋ Nodes",
       // default below the canvas wordmark HUD (top-left) instead of under it
-      anchor: panelAnchorsRef.current["nodes"] ?? { x: 12, y: 56 },
-      collapsed: panelCollapsedRef.current["nodes"] ?? true,
+      anchor: compactPanels ? { x: 12, y: 56 } : (panelAnchorsRef.current["nodes"] ?? { x: 12, y: 56 }),
+      collapsed: compactPanels || (panelCollapsedRef.current["nodes"] ?? true),
       items: NODE_CATEGORIES.flatMap((cat) => [
         { id: `hdr-${cat.id}`, label: `${openCategory === cat.id ? "▾" : "▸"} ${cat.label}`, color: "#a0aec0" },
         ...(openCategory === cat.id
-          ? cat.types.map((t) => ({ id: t, label: `　${NODE_SPECS[t].label}`, color: kindColor(t) }))
+          ? paletteOptions(cat).map((option) => ({ id: option.id, label: `　${option.label}`, color: kindColor(option.type) }))
           : []),
       ]),
       onItemClick: (it) => {
         if (isHeading(it.id)) setOpenCategory((cur) => (cur === it.id.slice(4) ? null : it.id.slice(4)));
-        else addNode(it.id as NodeType);
+        else {
+          const option = NODE_CATEGORIES.flatMap(paletteOptions).find((candidate) => candidate.id === it.id);
+          if (option) addNode(option.type, undefined, option.config);
+        }
       },
-      onItemDrop: (it, at) => { if (!isHeading(it.id)) addNode(it.id as NodeType, at.world); },
+      onItemDrop: (it, at) => {
+        if (isHeading(it.id)) return;
+        const option = NODE_CATEGORIES.flatMap(paletteOptions).find((candidate) => candidate.id === it.id);
+        if (option) addNode(option.type, at.world, option.config);
+      },
     };
     const tplPanel: Panel = {
       id: "templates",
       title: "Templates",
-      anchor: anchorOf("templates", "right"),
-      collapsed: panelCollapsedRef.current["templates"] ?? true,
-      items: allTemplates.map((tpl) => ({ id: tpl.id, label: tpl.name })),
+      anchor: compactPanels ? { x: 12, y: 100 } : anchorOf("templates", "right"),
+      collapsed: compactPanels || (panelCollapsedRef.current["templates"] ?? true),
+      items: allTemplates.map((tpl) => ({ id: tpl.id, label: tpl.area === "advanced" ? `Advanced / ${tpl.name}` : tpl.name })),
       onItemClick: (it) => { const tpl = allTemplates.find((x) => x.id === it.id); if (tpl) addTemplate(tpl); },
       onItemDrop: (it, at) => { const tpl = allTemplates.find((x) => x.id === it.id); if (tpl) addTemplate(tpl, undefined, at.world); },
     };
     return [nodePanel, tplPanel];
-  }, [allTemplates, addNode, addTemplate, openCategory]);
+  }, [allTemplates, addNode, addTemplate, openCategory, compactPanels]);
 
   // Canvas-native toolbar: the floating HTML toolbar as an rgui panel. Items
   // are one-shot actions; live state shows as the row dot + label (active view,
@@ -2112,8 +2283,8 @@ function Editor({ initialRoom, local, federationDemo }: { initialRoom?: string; 
   // whenever displayed state changes. share/reportIssue are plain function
   // declarations (new identity per render), so they route through a ref to keep
   // this memo's deps to real state.
-  const tbActionsRef = useRef({ share, reportIssue });
-  tbActionsRef.current = { share, reportIssue };
+  const tbActionsRef = useRef({ share, reportIssue, shareGraph });
+  tbActionsRef.current = { share, reportIssue, shareGraph };
   const toolbarPanel = useMemo<Panel>(() => {
     const dim = "#8b949e";
     const items: Panel["items"] = [
@@ -2130,6 +2301,7 @@ function Editor({ initialRoom, local, federationDemo }: { initialRoom?: string; 
             { id: "pipeline", label: "＋ Pipeline", color: "#48bb78" },
             { id: "arrange", label: "⤢ Arrange", color: dim },
             { id: "save-tpl", label: "★ Save template", color: dim },
+            { id: "share-graph", label: graphCopied ? "✓ graph link copied" : "🔗 Share graph", color: dim },
             { id: "zoom-in", label: "＋ Zoom in", color: dim },
             { id: "zoom-out", label: "－ Zoom out", color: dim },
             { id: "fit", label: "⤢ Fit view", color: dim },
@@ -2143,8 +2315,8 @@ function Editor({ initialRoom, local, federationDemo }: { initialRoom?: string; 
     return {
       id: "toolbar",
       title: `otoji · ${running ? "live" : paused ? "paused" : "idle"}`,
-      anchor: panelAnchorsRef.current["toolbar"] ?? { x: 210, y: 12 },
-      collapsed: panelCollapsedRef.current["toolbar"] ?? false,
+      anchor: compactPanels ? { x: 198, y: 56 } : (panelAnchorsRef.current["toolbar"] ?? { x: 210, y: 12 }),
+      collapsed: compactPanels || (panelCollapsedRef.current["toolbar"] ?? false),
       items,
       onItemClick: (it) => {
         const api = rguiApiRef.current;
@@ -2157,6 +2329,7 @@ function Editor({ initialRoom, local, federationDemo }: { initialRoom?: string; 
           case "pipeline": addPipeline(); break;
           case "arrange": autoArrange(); break;
           case "save-tpl": saveSelectionAsTemplate(); break;
+          case "share-graph": tbActionsRef.current.shareGraph(); break;
           case "zoom-in": api?.zoomBy(1.25); break;
           case "zoom-out": api?.zoomBy(0.8); break;
           case "fit": api?.fitView(48); break;
@@ -2174,7 +2347,7 @@ function Editor({ initialRoom, local, federationDemo }: { initialRoom?: string; 
         }
       },
     };
-  }, [local, view, paused, running, peerBadgeShown, lastError, copied, addPipeline, autoArrange, saveSelectionAsTemplate]);
+  }, [local, view, paused, running, peerBadgeShown, lastError, copied, graphCopied, addPipeline, autoArrange, saveSelectionAsTemplate, compactPanels]);
   const debugPanel = useMemo<Panel>(() => {
     const ok = "#48bb78", warn = "#f6ad55", bad = "#fc8181", dim = "#8b949e";
     const gpuColor = gpuDebug.status === "ready" ? ok : gpuDebug.status === "probing" ? warn : bad;
@@ -2197,7 +2370,10 @@ function Editor({ initialRoom, local, federationDemo }: { initialRoom?: string; 
       ],
     };
   }, [gpuDebug, cameraPermission, running, paused, nodes, lastError, runStatus]);
-  const allPanels = useMemo<Panel[]>(() => [...rguiPanels, toolbarPanel, debugPanel], [rguiPanels, toolbarPanel, debugPanel]);
+  const allPanels = useMemo<Panel[]>(
+    () => compactPanels ? [...rguiPanels, toolbarPanel] : [...rguiPanels, toolbarPanel, debugPanel],
+    [rguiPanels, toolbarPanel, debugPanel, compactPanels],
+  );
 
   // DEV-only QA handle (like window.__rgui): drive add/inspect/connect from e2e.
   useEffect(() => {
@@ -2247,7 +2423,7 @@ function Editor({ initialRoom, local, federationDemo }: { initialRoom?: string; 
         const micIds = rgNodes.map((n) => n.id).filter((id) => { const t = vtOf(id); return t === "mic-vad" || t === "mic-raw"; });
         // image-preview members: their frames are the fast-changing part that
         // says what the block is handling, so they survive the contraction
-        const IMG_TYPES: NodeType[] = ["camera", "screen-share", "paddle-ocr", "vision-model", "depth-field", "hand-space", "spatial-renderer", "image-match"];
+        const IMG_TYPES: NodeType[] = ["camera", "screen-share", "paddle-ocr", "vision-model", "qwen-image", "depth-field", "hand-space", "spatial-renderer", "image-match"];
         const imgIds = rgNodes.map((n) => n.id).filter((id) => { const t = vtOf(id); return !!t && IMG_TYPES.includes(t); });
         // signal-flow display order for text-bearing nodes
         const TEXT_ORDER: NodeType[] = ["stt", "web-speech", "vosk", "paddle-ocr", "text-normalize", "text-diff", "text-filter", "text-aggregate", "llm-agent", "model", "translate", "browser-translate-api", "sink"];
@@ -2376,8 +2552,8 @@ function Editor({ initialRoom, local, federationDemo }: { initialRoom?: string; 
     broadcast(nextNodes, edgesRef.current);
   }, [broadcast, myDeviceId, setNodes, snapWorld]);
   const ctx = useMemo(
-    () => ({ devices, myDeviceId, onAssign, onConfig, onDelete, getRecords, getVideoClips, getVideoClip, spawnVideoClipNode, clearRecords, clearVideoClips, setFile, counts, live: liveRef.current, openNodeMenu, trackerState }),
-    [devices, myDeviceId, onAssign, onConfig, onDelete, getRecords, getVideoClips, getVideoClip, spawnVideoClipNode, clearRecords, clearVideoClips, setFile, counts, openNodeMenu, trackerState],
+    () => ({ devices, myDeviceId, onAssign, onConfig, onDelete, getRecords, getVideoClips, getVideoClip, spawnVideoClipNode, clearRecords, clearVideoClips, setFile, replayNode, counts, live: liveRef.current, openNodeMenu, trackerState }),
+    [devices, myDeviceId, onAssign, onConfig, onDelete, getRecords, getVideoClips, getVideoClip, spawnVideoClipNode, clearRecords, clearVideoClips, setFile, replayNode, counts, openNodeMenu, trackerState],
   );
 
   if (!joined) {
@@ -2454,6 +2630,18 @@ function Editor({ initialRoom, local, federationDemo }: { initialRoom?: string; 
           />
         )}
 
+        {nodeSearchOpen && (
+          <ConnectMenu
+            x={window.innerWidth / 2 - Math.max(320, Math.min(560, Math.floor(window.innerWidth / 3))) / 2}
+            y={Math.max(48, window.innerHeight * 0.18)}
+            options={nodeSearchOptions}
+            placeholder="Search nodes…"
+            emptyLabel="no matching node"
+            onPick={addNodeFromSearch}
+            onClose={() => setNodeSearchOpen(false)}
+          />
+        )}
+
         {smartLinkMenu && (
           <SmartLinkMenu
             x={smartLinkMenu.x}
@@ -2495,20 +2683,25 @@ function ConnectMenu({
   y,
   options,
   placeholder = "connect to…",
+  emptyLabel = "no compatible node",
   onPick,
   onClose,
 }: {
   x: number;
   y: number;
-  options: { type: NodeType; label: string }[];
+  options: Array<{ id?: string; type: NodeType; label: string; detail?: string; config?: Record<string, unknown> }>;
   placeholder?: string;
-  onPick: (t: NodeType) => void;
+  emptyLabel?: string;
+  onPick: (t: NodeType, config?: Record<string, unknown>) => void;
   onClose: () => void;
 }) {
   const [q, setQ] = useState("");
   const [active, setActive] = useState(0);
   const filtered = useMemo(
-    () => options.filter((o) => o.label.toLowerCase().includes(q.trim().toLowerCase())),
+    () => options.filter((o) => {
+      const query = q.trim().toLowerCase();
+      return !query || o.label.toLowerCase().includes(query) || o.detail?.toLowerCase().includes(query);
+    }),
     [q, options],
   );
   useEffect(() => { setActive(0); }, [q]);
@@ -2531,7 +2724,7 @@ function ConnectMenu({
         onKeyDown={(e) => {
           if (e.key === "ArrowDown") { e.preventDefault(); setActive((i) => Math.min(filtered.length - 1, i + 1)); }
           else if (e.key === "ArrowUp") { e.preventDefault(); setActive((i) => Math.max(0, i - 1)); }
-          else if (e.key === "Enter") { e.preventDefault(); const sel = filtered[active]; if (sel) onPick(sel.type); }
+          else if (e.key === "Enter") { e.preventDefault(); const sel = filtered[active]; if (sel) onPick(sel.type, sel.config); }
           else if (e.key === "Escape") { e.preventDefault(); onClose(); }
         }}
         placeholder={placeholder}
@@ -2539,16 +2732,17 @@ function ConnectMenu({
       />
       <div style={{ marginTop: 6, maxHeight: menuH - 52, overflow: "auto" }}>
         {filtered.length === 0 ? (
-          <div style={{ fontSize: 12, color: "#a0aec0", padding: "6px 7px" }}>no compatible node</div>
+          <div style={{ fontSize: 12, color: "#a0aec0", padding: "6px 7px" }}>{emptyLabel}</div>
         ) : (
           filtered.map((o, idx) => (
             <div
-              key={o.type}
+              key={o.id ?? o.type}
               onMouseEnter={() => setActive(idx)}
-              onMouseDown={(e) => { e.preventDefault(); onPick(o.type); }}
+              onMouseDown={(e) => { e.preventDefault(); onPick(o.type, o.config); }}
               style={{ fontSize: 13, padding: "7px 8px", borderRadius: 5, cursor: "pointer", background: idx === active ? "#ebf4ff" : "transparent" }}
             >
-              {o.label}
+              <div>{o.label}</div>
+              {o.detail && <div style={{ marginTop: 2, fontSize: 10, color: "#718096" }}>{o.detail}</div>}
             </div>
           ))
         )}
@@ -2656,7 +2850,7 @@ function NodeMenu({
   const [mode, setMode] = useState<"actions" | "replace" | "display">("actions");
   const [hover, setHover] = useState<string>("");
   const canDisplayMode = !!nodeType && (VISUAL_DISPLAY_NODES.has(nodeType) || TEXT_DISPLAY_NODES.has(nodeType));
-  const canLoop = nodeType === "video-clip";
+  const canLoop = nodeType === "video-clip" || nodeType === "file-audio";
   const canAdvancedRender = nodeType === "url";
   const left = Math.min(x, (typeof window !== "undefined" ? window.innerWidth : x + 200) - 200);
   const top = Math.min(y, (typeof window !== "undefined" ? window.innerHeight : y + 280) - 280);

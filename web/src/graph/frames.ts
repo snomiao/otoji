@@ -6,12 +6,13 @@
 import { bytesToBase64, base64ToBytes } from "../lib/base64";
 import type { ControlMsg, ImageMsg, SegmentMsg, SpatialMsg, TranscriptMsg } from "./runtime";
 import type { CameraCaptureInfo } from "../providers/vision/camera";
+import type { ModelSourceMsg } from "../providers/model/model-source";
 
 export interface EdgeFrame {
   kind: "edge";
   target: string; // node id
   port: string; // target input handle
-  mtype: "segment" | "transcript" | "image" | "control" | "spatial";
+  mtype: "segment" | "transcript" | "image" | "control" | "spatial" | "model";
   sampleRate?: number;
   durationMs?: number;
   offsetMs?: number; // segment offset in source timeline
@@ -28,6 +29,7 @@ export interface EdgeFrame {
   ts?: number;
   pulse?: boolean;
   spatial?: unknown;
+  model?: ModelSourceMsg;
   capture?: CameraCaptureInfo;
 }
 
@@ -36,6 +38,7 @@ export type TranscriptFrame = EdgeFrame & { mtype: "transcript"; sampleRate: num
 export type ImageFrame = EdgeFrame & { mtype: "image"; imageDataUrl: string; width: number; height: number; ts: number };
 export type ControlFrame = EdgeFrame & { mtype: "control"; ts: number };
 export type SpatialFrame = EdgeFrame & { mtype: "spatial"; spatial: unknown; ts: number };
+export type ModelFrame = EdgeFrame & { mtype: "model"; model: ModelSourceMsg; ts: number };
 
 function encodeSamples(samples: Float32Array): string {
   return bytesToBase64(new Uint8Array(samples.buffer, samples.byteOffset, samples.byteLength));
@@ -101,6 +104,10 @@ export function buildSpatialFrame(target: string, port: string, msg: SpatialMsg)
   return { kind: "edge", target, port, mtype: "spatial", spatial: msg.data, ts: msg.ts };
 }
 
+export function buildModelFrame(target: string, port: string, model: ModelSourceMsg): ModelFrame {
+  return { kind: "edge", target, port, mtype: "model", model, ts: Date.now() };
+}
+
 async function dataUrlToImageBitmap(dataUrl: string): Promise<ImageBitmap> {
   const res = await fetch(dataUrl);
   const blob = await res.blob();
@@ -112,8 +119,9 @@ export function frameToMessage(f: TranscriptFrame): TranscriptMsg;
 export function frameToMessage(f: ControlFrame): ControlMsg;
 export function frameToMessage(f: ImageFrame): Promise<ImageMsg>;
 export function frameToMessage(f: SpatialFrame): SpatialMsg;
-export function frameToMessage(f: EdgeFrame): SegmentMsg | TranscriptMsg | ControlMsg | SpatialMsg | Promise<ImageMsg>;
-export function frameToMessage(f: EdgeFrame): SegmentMsg | TranscriptMsg | ControlMsg | SpatialMsg | Promise<ImageMsg> {
+export function frameToMessage(f: ModelFrame): ModelSourceMsg;
+export function frameToMessage(f: EdgeFrame): SegmentMsg | TranscriptMsg | ControlMsg | SpatialMsg | ModelSourceMsg | Promise<ImageMsg>;
+export function frameToMessage(f: EdgeFrame): SegmentMsg | TranscriptMsg | ControlMsg | SpatialMsg | ModelSourceMsg | Promise<ImageMsg> {
   if (f.mtype === "image") {
     return dataUrlToImageBitmap(f.imageDataUrl ?? "").then((bitmap) => ({
       bitmap,
@@ -125,6 +133,7 @@ export function frameToMessage(f: EdgeFrame): SegmentMsg | TranscriptMsg | Contr
   }
   if (f.mtype === "control") return { pulse: f.pulse, ts: f.ts ?? Date.now() };
   if (f.mtype === "spatial") return { data: f.spatial, ts: f.ts ?? Date.now() };
+  if (f.mtype === "model") return f.model!;
   const samples = decodeSamples(f.samplesB64 ?? "");
   const seg: SegmentMsg = { samples, sampleRate: f.sampleRate ?? 16000, durationMs: f.durationMs ?? 0, offsetMs: f.offsetMs };
   if (f.mtype === "transcript")

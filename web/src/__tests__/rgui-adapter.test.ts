@@ -94,6 +94,30 @@ describe("voiceGraphToRgui", () => {
     expect(rg2.nodes[0].h).toBe(300);
   });
 
+  it("presents model-source providers as distinct source nodes", () => {
+    const g = emptyGraph();
+    g.nodes["hf"] = { id: "hf", type: "model-source", device: null, pos: { x: 0, y: 0 }, config: { provider: "huggingface" } };
+    g.nodes["cv"] = { id: "cv", type: "model-source", device: null, pos: { x: 300, y: 0 }, config: { provider: "civitai" } };
+    g.nodes["wl"] = { id: "wl", type: "model-source", device: null, pos: { x: 600, y: 0 }, config: { provider: "webllm" } };
+    const byId = Object.fromEntries(voiceGraphToRgui(g).nodes.map((node) => [node.id, node]));
+    expect(byId["hf"].title).toBe("Hugging Face Models");
+    expect(byId["cv"].title).toBe("Civitai Models");
+    expect(byId["wl"].title).toBe("WebLLM Models");
+  });
+
+  it("uses editable media titles and exposes state input/output ports", () => {
+    const g = emptyGraph();
+    g.nodes.audio = { id: "audio", type: "file-audio", device: null, pos: { x: 0, y: 0 }, config: { title: "Interview.wav" } };
+    g.nodes.video = { id: "video", type: "video-clip", device: null, pos: { x: 300, y: 0 }, config: { file: "demo.webm" } };
+    const byId = Object.fromEntries(voiceGraphToRgui(g).nodes.map((node) => [node.id, node]));
+    expect(byId.audio.title).toBe("Interview.wav");
+    expect(byId.audio.inputs.map((port) => port.id)).toEqual(["in", "env"]);
+    expect(byId.audio.outputs.map((port) => port.id)).toEqual(["out"]);
+    expect(byId.video.title).toBe("demo.webm");
+    expect(byId.video.inputs.map((port) => port.id)).toEqual(["video", "audio", "env"]);
+    expect(byId.video.outputs.map((port) => port.id)).toEqual(["video", "audio"]);
+  });
+
   it("is deterministic", () => {
     expect(voiceGraphToRgui(graph())).toEqual(voiceGraphToRgui(graph()));
   });

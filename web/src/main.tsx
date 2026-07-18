@@ -21,6 +21,9 @@ if (params.has("mesh")) {
 } else if (isRoomCode(path)) {
   // Shareable join URL: otoji.org/kru-dfmq-atg
   view = <GraphEditor initialRoom={path} />;
+} else if (location.hash.startsWith("#g=")) {
+  // Shared-graph link (see lib/share-url.ts): expand it in the local editor.
+  view = <GraphEditor local />;
 } else if (params.has("simple") || params.has("classic")) {
   // Classic single-page transcription app.
   view = <App />;

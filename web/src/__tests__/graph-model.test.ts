@@ -21,6 +21,10 @@ function graph(): VoiceGraph {
     vrec: { id: "vrec", type: "video-recorder", device: null, pos: { x: 0, y: 0 } },
     vclip: { id: "vclip", type: "video-clip", device: null, pos: { x: 0, y: 0 } },
     env: { id: "env", type: "environment", device: null, pos: { x: 0, y: 0 } },
+    source: { id: "source", type: "model-source", device: null, pos: { x: 0, y: 0 } },
+    vibe: { id: "vibe", type: "vibevoice-asr", device: null, pos: { x: 0, y: 0 } },
+    text: { id: "text", type: "textarea", device: null, pos: { x: 0, y: 0 } },
+    qwen: { id: "qwen", type: "qwen-image", device: null, pos: { x: 0, y: 0 } },
   };
   return g;
 }
@@ -33,6 +37,8 @@ describe("canConnect", () => {
     // translate sits inline on the transcript stream: stt -> translate -> sink
     expect(canConnect(g, "stt", "out", "translate", "in")).toBe(true);
     expect(canConnect(g, "translate", "out", "sink", "in")).toBe(true);
+    expect(canConnect(g, "stt", "caption", "sink", "in")).toBe(true);
+    expect(canConnect(g, "stt", "audio", "spk", "seg")).toBe(true);
   });
 
   it("rejects audio feeding straight into translate", () => {
@@ -45,6 +51,21 @@ describe("canConnect", () => {
     expect(canConnect(g, "env", "env", "stt", "env")).toBe(true);
     expect(canConnect(g, "env", "env", "cam", "rate")).toBe(false);
     expect(canConnect(g, "stt", "out", "env", "env")).toBe(false);
+  });
+
+  it("lets a Model provider override browser and native ASR selections", () => {
+    const g = graph();
+    expect(canConnect(g, "source", "model", "stt", "model")).toBe(true);
+    expect(canConnect(g, "source", "model", "vibe", "model")).toBe(true);
+    expect(canConnect(g, "source", "info", "stt", "model")).toBe(false);
+  });
+
+  it("supports replaceable Text and Image state loops", () => {
+    const g = graph();
+    expect(canConnect(g, "translate", "out", "text", "in")).toBe(true);
+    expect(canConnect(g, "text", "out", "qwen", "prompt")).toBe(true);
+    expect(canConnect(g, "qwen", "out", "img", "in")).toBe(true);
+    expect(canConnect(g, "img", "out", "qwen", "image")).toBe(true);
   });
 
   it("rejects mismatched port types", () => {

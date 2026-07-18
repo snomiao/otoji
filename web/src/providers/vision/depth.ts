@@ -8,6 +8,9 @@ import { buildPipeline } from "./tfjs-pipe";
 export const DEPTH_MODELS = [{ id: "onnx-community/depth-anything-v2-small", name: "Depth-Anything v2 (small)" }];
 export const DEFAULT_DEPTH_MODEL = DEPTH_MODELS[0].id;
 
+// Depth-Anything v2 (small) letterboxes its input to 518px on the long side.
+const INFER_MAX_DIM = 518;
+
 const pipes = new Map<string, Promise<any>>();
 
 function getPipe(model: string, onProgress?: (p: { progress?: number; text?: string }) => void): Promise<any> {
@@ -53,10 +56,13 @@ export interface DepthFieldResult {
 /** Estimate depth and retain both normalized samples and a color preview. */
 export async function estimateDepthField(bitmap: ImageBitmap, model = DEFAULT_DEPTH_MODEL): Promise<DepthFieldResult> {
   const pipe = await getPipe(model);
+  // The model resizes to ~518px internally — downscale here so the PNG encode
+  // and transfer are over ~0.3MP instead of the full camera frame.
+  const scale = Math.min(1, INFER_MAX_DIM / Math.max(bitmap.width, bitmap.height));
   const src = document.createElement("canvas");
-  src.width = bitmap.width;
-  src.height = bitmap.height;
-  src.getContext("2d")!.drawImage(bitmap, 0, 0);
+  src.width = Math.max(1, Math.round(bitmap.width * scale));
+  src.height = Math.max(1, Math.round(bitmap.height * scale));
+  src.getContext("2d")!.drawImage(bitmap, 0, 0, src.width, src.height);
   const out = await pipe(src.toDataURL("image/png"));
   // out.depth is a RawImage (grayscale): { data, width, height, channels }.
   const d = out.depth as { data: Uint8Array | Uint8ClampedArray; width: number; height: number; channels: number };

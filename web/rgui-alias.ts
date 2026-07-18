@@ -16,8 +16,8 @@ const url = (rel: string) => fileURLToPath(new URL(rel, import.meta.url));
 
 const rguiCandidates = [
   process.env.RGUI_PATH,
-  url("../../../../rgui/tree/main/src/index.ts"), // sibling worktree (live)
   url("../lib/rgui/src/index.ts"), // git submodule (pinned)
+  url("../../../../rgui/tree/main/src/index.ts"), // sibling worktree (live)
 ].filter((p): p is string => !!p && existsSync(p));
 
 export const rguiStub = url("./src/vendor/rgui-stub.ts");

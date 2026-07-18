@@ -21,6 +21,7 @@ import { OpenAiTtsProvider } from "../providers/tts/openai_tts";
 import { SpeechSynthesisTtsProvider } from "../providers/tts/speechsynthesis";
 import { AnthropicPolishProvider } from "../providers/polish/anthropic";
 import { NoopPolishProvider } from "../providers/polish/noop";
+import { SelectOmnibox } from "./EnumOmnibox";
 
 function buildRouters(keys: OtojiKeys) {
   const stt: SttProvider[] = [
@@ -261,26 +262,26 @@ export function App() {
         <button onClick={speak} disabled={!segments.length && !polished}>Speak</button>
         <label style={{ marginLeft: "auto", fontSize: 12, display: "flex", gap: 6, alignItems: "center" }}>
           Model:
-          <select
+          <SelectOmnibox
             value={keys.STT_PROVIDER ?? "sensevoice"}
             onChange={(e) => saveKeys({ ...keys, STT_PROVIDER: e.target.value })}
           >
             {routers.stt.all().map((p) => (
               <option key={p.id} value={p.id}>{p.name}</option>
             ))}
-          </select>
+          </SelectOmnibox>
         </label>
         {(keys.STT_PROVIDER ?? "sensevoice") === "sensevoice" && (
           <label style={{ fontSize: 12, display: "flex", gap: 6, alignItems: "center" }}>
             Variant:
-            <select
+            <SelectOmnibox
               value={selectedModel}
               onChange={(e) => saveKeys({ ...keys, SENSEVOICE_MODEL: e.target.value })}
             >
               {SENSEVOICE_MODELS.map((m) => (
                 <option key={m.id} value={m.id}>{m.name}</option>
               ))}
-            </select>
+            </SelectOmnibox>
           </label>
         )}
       </div>

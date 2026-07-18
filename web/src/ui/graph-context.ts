@@ -27,6 +27,8 @@ export interface GraphCtx {
   clearVideoClips?: (nodeId: string) => void;
   /** Associate a local file with a file-source node (audio decoded at runtime). */
   setFile: (nodeId: string, file: File) => void;
+  /** Re-emit a state node's current cached value without restarting the graph. */
+  replayNode: (nodeId: string) => void;
   /** Stored-data count per node id (badge), e.g. sink transcript/recording count. */
   counts: Record<string, number>;
   /** Per-device ephemeral live preview state (not synced). */
@@ -53,6 +55,7 @@ export const GraphContext = createContext<GraphCtx>({
   getVideoClips: () => [],
   getVideoClip: () => undefined,
   setFile: () => {},
+  replayNode: () => {},
   counts: {},
   live: new LiveStore(),
 });

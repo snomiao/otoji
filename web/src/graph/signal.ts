@@ -16,20 +16,32 @@ import { NODE_SPECS, type PortType, type VoiceEdge, type VoiceGraph, type VoiceN
 export type Measure = "extensive" | "intensive";
 export type Ownership = "copy" | "clone" | "share" | "move";
 export type Fanout = "broadcast" | "split" | "route";
+export type WireTransport = "json" | "pcm" | "latest-image" | "binary" | "reference";
+
+export interface SignalPolicy {
+  measure: Measure;
+  ownership: Ownership;
+  /** Cross-device wire representation. `reference` explicitly excludes model weights. */
+  transport: WireTransport;
+}
 
 /** Per-signal declarations (mapping agreed with rgui, 2026-07-09). */
-export const SIGNAL: Record<PortType, { measure: Measure; ownership: Ownership }> = {
+export const SIGNAL: Record<PortType, SignalPolicy> = {
   // A transcript is a fact — duplicate freely to every consumer.
-  transcript: { measure: "extensive", ownership: "copy" },
+  transcript: { measure: "extensive", ownership: "copy", transport: "json" },
   // PCM is duplicable but costly: remote fan-out = N serializations + N sends.
-  segment: { measure: "extensive", ownership: "clone" },
-  // ImageBitmap handles are cloned by encoding the frame for transport.
-  image: { measure: "intensive", ownership: "clone" },
+  segment: { measure: "extensive", ownership: "clone", transport: "pcm" },
+  // Image streams are latest-frame traffic. Full video should use a WebRTC
+  // media track rather than serializing every frame through the data channel.
+  image: { measure: "intensive", ownership: "clone", transport: "latest-image" },
   // Feedback pulses are tiny JSON messages and can cross device boundaries.
-  control: { measure: "intensive", ownership: "copy" },
+  control: { measure: "intensive", ownership: "copy", transport: "json" },
   // Environment links are metadata/capability references, not media payloads.
-  environment: { measure: "intensive", ownership: "copy" },
-  spatial: { measure: "intensive", ownership: "clone" },
+  environment: { measure: "intensive", ownership: "copy", transport: "reference" },
+  spatial: { measure: "intensive", ownership: "clone", transport: "binary" },
+  // Only provider/id/files metadata crosses devices. The selected Environment
+  // resolves and caches weights locally according to its CPU/GPU capabilities.
+  model: { measure: "intensive", ownership: "copy", transport: "reference" },
 };
 
 /** Can the signal be turned into a wire frame? (copy/clone) */

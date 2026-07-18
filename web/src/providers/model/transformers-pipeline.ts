@@ -17,6 +17,7 @@ export const MODEL_TASKS = [
   { id: "translation", name: "Translate", tfjs: "translation" },
   { id: "text2text", name: "Text → Text", tfjs: "text2text-generation" },
   { id: "text-generation", name: "Text generation", tfjs: "text-generation" },
+  { id: "image-to-text", name: "Image → Text", tfjs: "image-to-text" },
   { id: "tts", name: "Text → Speech (TTS)", tfjs: "text-to-speech" },
 ] as const;
 
@@ -27,6 +28,7 @@ const TFJS_TASK: Record<ModelTask, string> = {
   translation: "translation",
   text2text: "text2text-generation",
   "text-generation": "text-generation",
+  "image-to-text": "image-to-text",
   tts: "text-to-speech",
 };
 
@@ -88,6 +90,20 @@ export async function runText(task: ModelTask, model: string, text: string, dtyp
   const out = await pipe(text);
   const first = Array.isArray(out) ? out[0] : out;
   return (first?.translation_text ?? first?.generated_text ?? first?.summary_text ?? "") || text;
+}
+
+/** Image captioning: browser bitmap -> generated text. */
+export async function runImageToText(model: string, image: ImageBitmap, dtype?: string): Promise<string> {
+  const canvas = document.createElement("canvas");
+  canvas.width = image.width;
+  canvas.height = image.height;
+  const ctx = canvas.getContext("2d");
+  if (!ctx) throw new Error("image-to-text: no 2d canvas context");
+  ctx.drawImage(image, 0, 0);
+  const pipe = await getPipe("image-to-text", model, dtype);
+  const out = await pipe(canvas.toDataURL("image/png"));
+  const first = Array.isArray(out) ? out[0] : out;
+  return String(first?.generated_text ?? first?.caption ?? first?.text ?? "").trim();
 }
 
 /** TTS: text -> { samples, sampleRate }. */

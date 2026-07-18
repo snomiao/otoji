@@ -63,5 +63,5 @@ export interface TranslateProvider {
   /** Translate `text` into `targetLang` (a human language name, e.g. "English").
    *  `sourceLang` is an optional BCP-47 code (e.g. SenseVoice's detected "zh");
    *  when given, providers skip their own detection. */
-  translate(text: string, targetLang: string, modelId?: string, sourceLang?: string): Promise<string>;
+  translate(text: string, targetLang: string, modelId?: string, sourceLang?: string, promptTemplate?: string): Promise<string>;
 }
