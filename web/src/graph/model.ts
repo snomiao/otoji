@@ -58,7 +58,11 @@ export type NodeType =
 export interface NodeSpec {
   type: NodeType;
   label: string;
-  inputs: { id: string; type: PortType }[];
+  // acceptsPartial: this transcript input wants high-rate partial revisions
+  // (live captions). Ports without it only ever see provisional/final
+  // transcripts — the runtime filters partials out at the adjacency layer, for
+  // local and cross-device edges alike.
+  inputs: { id: string; type: PortType; acceptsPartial?: boolean }[];
   outputs: { id: string; type: PortType }[];
 }
 
@@ -235,7 +239,9 @@ const RAW_NODE_SPECS: Record<NodeType, NodeSpec> = {
   sink: {
     type: "sink",
     label: "Transcript + Recordings",
-    inputs: [{ id: "in", type: "transcript" }],
+    // Partials render as the node's live preview; only provisional/final
+    // transcripts append recordings.
+    inputs: [{ id: "in", type: "transcript", acceptsPartial: true }],
     outputs: [],
   },
   "audio-out": {
@@ -560,6 +566,11 @@ function portType(nodeType: NodeType, handleId: string, dir: "in" | "out"): Port
   const spec = NODE_SPECS[nodeType];
   const list = dir === "in" ? spec.inputs : spec.outputs;
   return list.find((p) => p.id === handleId)?.type ?? null;
+}
+
+/** Whether a node's input port opted into receiving partial transcript revisions. */
+export function acceptsPartialInput(nodeType: NodeType, handleId: string): boolean {
+  return NODE_SPECS[nodeType]?.inputs.find((p) => p.id === handleId)?.acceptsPartial === true;
 }
 
 /** An edge is valid iff the output port type equals the input port type. */

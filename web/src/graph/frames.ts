@@ -22,6 +22,10 @@ export interface EdgeFrame {
   event?: string; // AED tag (transcript)
   tStartMs?: number; // CTC speech start (transcript, absolute)
   tEndMs?: number; // CTC speech end (transcript, absolute)
+  segmentId?: number; // revision protocol (transcript): utterance id
+  revision?: number; // revision protocol: monotonic within segmentId
+  status?: "partial" | "provisional" | "final"; // revision protocol; absent = final
+  replacesRevision?: number; // revision protocol: pass-2 supersede pointer
   samplesB64?: string; // Float32 PCM bytes, base64
   imageDataUrl?: string; // compressed image frame
   width?: number;
@@ -77,6 +81,10 @@ export function buildTranscriptFrame(target: string, port: string, tr: Transcrip
     event: tr.event,
     tStartMs: tr.tStartMs,
     tEndMs: tr.tEndMs,
+    segmentId: tr.segmentId,
+    revision: tr.revision,
+    status: tr.status,
+    replacesRevision: tr.replacesRevision,
     samplesB64: encodeSamples(tr.audio.samples),
   };
 }
@@ -137,6 +145,6 @@ export function frameToMessage(f: EdgeFrame): SegmentMsg | TranscriptMsg | Contr
   const samples = decodeSamples(f.samplesB64 ?? "");
   const seg: SegmentMsg = { samples, sampleRate: f.sampleRate ?? 16000, durationMs: f.durationMs ?? 0, offsetMs: f.offsetMs };
   if (f.mtype === "transcript")
-    return { text: f.text ?? "", audio: seg, lang: f.lang, emotion: f.emotion, event: f.event, tStartMs: f.tStartMs, tEndMs: f.tEndMs };
+    return { text: f.text ?? "", audio: seg, lang: f.lang, emotion: f.emotion, event: f.event, tStartMs: f.tStartMs, tEndMs: f.tEndMs, segmentId: f.segmentId, revision: f.revision, status: f.status, replacesRevision: f.replacesRevision };
   return seg;
 }

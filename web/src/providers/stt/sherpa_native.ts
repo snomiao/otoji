@@ -54,8 +54,8 @@ function floatToPcm16(samples: Float32Array): ArrayBuffer {
  */
 export function createSherpaNativeStream(
   url: string,
-  onPartial: (text: string) => void,
-  onFinal: (text: string) => void,
+  onPartial: (text: string, segId?: number) => void,
+  onFinal: (text: string, segId?: number) => void,
   onError?: (e: Error) => void,
 ): SherpaNativeStream {
   let ws: WebSocket | null = null;
@@ -142,14 +142,15 @@ export function createSherpaNativeStream(
     ws.onmessage = (ev) => {
       if (closed) return;
       if (typeof ev.data !== "string") return; // only text AsrEvent frames
-      let msg: { type?: string; text?: string };
+      let msg: { type?: string; text?: string; seg_id?: number };
       try {
         msg = JSON.parse(ev.data);
       } catch {
         return;
       }
-      if (msg.type === "partial" && msg.text) onPartial(msg.text);
-      else if (msg.type === "final" && msg.text) onFinal(msg.text);
+      const segId = typeof msg.seg_id === "number" ? msg.seg_id : undefined;
+      if (msg.type === "partial" && msg.text) onPartial(msg.text, segId);
+      else if (msg.type === "final" && msg.text) onFinal(msg.text, segId);
     };
     ws.onerror = () => {
       if (!open) fail(new Error(`otoji server not reachable at ${url}`));

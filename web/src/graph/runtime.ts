@@ -2,7 +2,7 @@
 // and wire them per edges. Messages flow in-process; cross-device edges (M4)
 // will later be realized over data channels.
 
-import type { VoiceGraph, NodeType, VoiceNode } from "./model";
+import { acceptsPartialInput, type VoiceGraph, type NodeType, type VoiceNode } from "./model";
 import { startMicVad, startMicRaw, segmentSamples, MIC_VAD_SR, type MicVadHandle } from "../lib/mic-vad";
 import { clusterSegments, mixCluster, type TimedSegment } from "../lib/audio-mix";
 import { fileStore } from "./file-store";
@@ -136,6 +136,15 @@ export interface TranscriptMsg {
   event?: string; // SenseVoice AED tag (e.g. "Applause"/"BGM")
   tStartMs?: number; // absolute speech start in the source timeline (CTC-derived)
   tEndMs?: number; // absolute speech end
+  // --- revision protocol (M6.0). All optional; absent = a plain final. ---
+  // A streaming recognizer emits many revisions of one utterance: rising
+  // `revision` numbers under one `segmentId`, ending in provisional/final. A
+  // later revision REPLACES earlier text for the same segmentId; consumers
+  // that don't track segments can simply ignore everything but finals.
+  segmentId?: number; // utterance id, stable across revisions of one utterance
+  revision?: number; // monotonic within a segmentId; higher supersedes lower
+  status?: "partial" | "provisional" | "final"; // absent = "final" (back-compat)
+  replacesRevision?: number; // pass-2 rewrite: the revision this final supersedes
 }
 /** A captured video/image frame flowing on an "image" edge (single-device). */
 export interface ImageMsg {
@@ -280,7 +289,15 @@ export class GraphRuntime {
 
   private emit(nodeId: string, port: string, msg: unknown): void {
     this.hooks.onNodeMetric?.(nodeId, { event: "emit", port, ts: Date.now() });
+    // Partial transcript revisions are high-rate replace-events; deliver them
+    // only to input ports that opted in (acceptsPartial). One policy for local
+    // and cross-device targets — non-opted nodes never see partials at all.
+    const isPartial = (msg as Partial<TranscriptMsg>)?.status === "partial";
     for (const t of this.adj.get(`${nodeId}:${port}`) ?? []) {
+      if (isPartial) {
+        const targetType = this.graph.nodes[t.node]?.type;
+        if (!targetType || !acceptsPartialInput(targetType, t.port)) continue;
+      }
       if (this.isLocal(t.node)) {
         this.nodes.get(t.node)?.input?.(t.port, msg);
       } else if (this.hooks.self) {
@@ -837,12 +854,28 @@ export class GraphRuntime {
       // be dropped. Creating it now means the provider's pre-open buffer catches
       // them; the socket connects in the background.
       const url = (this.graph.nodes[id]?.config?.serverUrl as string | undefined)?.trim() || DEFAULT_SHERPA_SERVER_URL;
+      // Revision protocol: each server seg_id is one utterance; count revisions
+      // locally so partial → final forms a monotonic replace-chain (M6.0). The
+      // emit() layer only delivers partials to acceptsPartial ports.
+      const revisions = new Map<number, number>();
+      const nextRevision = (segId: number | undefined): { segmentId: number; revision: number } => {
+        const segmentId = segId ?? 0;
+        const revision = (revisions.get(segmentId) ?? 0) + 1;
+        revisions.set(segmentId, revision);
+        return { segmentId, revision };
+      };
+      const emptyAudio = () => ({ samples: new Float32Array(0), sampleRate: MIC_VAD_SR, durationMs: 0 });
       const stream: SherpaNativeStream = createSherpaNativeStream(
         url,
-        (partial) => this.hooks.onRecognized?.(id, partial),
-        (text) => {
+        (partial, segId) => {
+          this.hooks.onRecognized?.(id, partial);
+          this.emit(id, "out", { text: partial, audio: emptyAudio(), status: "partial", ...nextRevision(segId) } as TranscriptMsg);
+        },
+        (text, segId) => {
           this.hooks.onRecognized?.(id, text);
-          this.emit(id, "out", { text, audio: { samples: new Float32Array(0), sampleRate: MIC_VAD_SR, durationMs: 0 } } as TranscriptMsg);
+          const rev = nextRevision(segId);
+          revisions.delete(rev.segmentId); // utterance closed
+          this.emit(id, "out", { text, audio: emptyAudio(), status: "final", ...rev } as TranscriptMsg);
         },
         // Non-fatal: an unreachable server only disables this node. Point the
         // user at the one command that fixes it.
@@ -2460,7 +2493,16 @@ export class GraphRuntime {
 
     // sink / srt-out
     return {
-      input: (_port, msg) => this.hooks.onSink?.(id, msg as TranscriptMsg),
+      input: (_port, msg) => {
+        const tr = msg as TranscriptMsg;
+        // Partial revisions drive the live preview only; recordings append on
+        // provisional/final so the sink list isn't flooded with replace-events.
+        if (tr.status === "partial") {
+          this.hooks.onRecognized?.(id, tr.text);
+          return;
+        }
+        this.hooks.onSink?.(id, tr);
+      },
     };
   }
 
