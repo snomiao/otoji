@@ -52,6 +52,7 @@ export type NodeType =
   | "model-3d"
   | "spatial-renderer"
   | "image-match"
+  | "ar-notes"
   | "audio-mix";
 
 export interface NodeSpec {
@@ -464,6 +465,17 @@ const RAW_NODE_SPECS: Record<NodeType, NodeSpec> = {
     ],
     outputs: [{ id: "out", type: "image" }],
   },
+  "ar-notes": {
+    type: "ar-notes",
+    label: "AR notes",
+    // Pinch to place a sticky note at the calibrated fingertip position; notes
+    // persist in config (synced to the room) and render into the frame.
+    inputs: [
+      { id: "frame", type: "image" },
+      { id: "space", type: "spatial" },
+    ],
+    outputs: [{ id: "out", type: "image" }],
+  },
   "image-match": {
     type: "image-match",
     label: "Image match",
@@ -505,7 +517,7 @@ export const NODE_CATEGORIES: { id: string; label: string; types: NodeType[] }[]
   { id: "tts", label: "Text → Speech", types: ["tts", "tts-model"] },
   { id: "output", label: "Output", types: ["sink", "audio-out", "video-recorder", "srt-out", "speaker"] },
   { id: "model", label: "Custom model", types: ["model-source", "llm-agent", "model"] },
-  { id: "vision", label: "Vision", types: ["camera", "screen-share", "paddle-ocr", "vision-model", "depth-field", "hand-space", "spatial-calibration", "rgbd-point-cloud", "model-3d", "spatial-renderer", "image-match"] },
+  { id: "vision", label: "Vision", types: ["camera", "screen-share", "paddle-ocr", "vision-model", "depth-field", "hand-space", "spatial-calibration", "rgbd-point-cloud", "model-3d", "spatial-renderer", "image-match", "ar-notes"] },
   { id: "text", label: "Text", types: ["text-diff"] },
   { id: "net", label: "Network", types: ["environment", "tracker"] },
   { id: "advanced", label: "Advanced / Native", types: ["sherpa", "vibevoice-asr", "qwen-image", "pipe"] },

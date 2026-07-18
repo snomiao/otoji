@@ -26,6 +26,7 @@ import { landmarks, drawLandmarks, drawSpatialMonkey, formatLandmarksLabels, for
 import { matchTemplate, drawMatches, formatMatchLabels, formatMatchJson, type Match } from "../providers/vision/match";
 import { generateQwenImage } from "../providers/vision/qwen-image";
 import { SpatialSceneRenderer, type CalibratedSpace, type DepthField, type RgbdPointCloud, type SpatialObjectDescriptor } from "../providers/vision/spatial-renderer";
+import { ArNotesRenderer, PinchTracker, placeNote, type ArNote } from "../providers/vision/ar-notes";
 import { calibrateSpatialCursor, SpatialCursorPublisher, type DepthFieldData, type HandSpaceData, type SpatialCalibrationOptions } from "./spatial-cursor";
 import { formatLabels, formatJsonl, type Detection } from "../lib/detect-format";
 import { diffText, type DiffStyle, DEFAULT_DIFF_STYLE } from "../lib/textdiff";
@@ -189,6 +190,9 @@ export interface RuntimeHooks {
   onPipeOut?: (nodeId: string, text: string) => void; // pipe node input -> external CLI stdout
   onEdgeBytes?: (edgeId: string, bytes: number) => void; // payload bytes sent over a cross-device edge
   onNodeMetric?: (nodeId: string, metric: NodeMetricSample) => void;
+  // A node wants to persist state into its own config (broadcast like any
+  // graph edit). Used by ar-notes to store pinch-placed notes.
+  onConfigPatch?: (nodeId: string, patch: Record<string, unknown>) => void;
   onStatus?: (s: string) => void;
   onError?: (e: Error) => void;
 }
@@ -2150,6 +2154,42 @@ export class GraphRuntime {
             const overlay = await scene.render(img.bitmap, space!, object, depth);
             this.hooks.onImage?.(id, overlay);
             if (this.hasOutgoing(id, "out")) this.emit(id, "out", { bitmap: overlay, width: overlay.width, height: overlay.height, ts: Date.now() } as ImageMsg);
+          });
+        },
+      };
+    }
+
+    if (type === "ar-notes") {
+      const cfg = this.graph.nodes[id]?.config ?? {};
+      // Notes live in config so they persist + sync to the room, but the
+      // editor excludes `notes` from the runtime signature — placing one must
+      // not restart the whole pipeline.
+      let notes: ArNote[] = Array.isArray(cfg.notes) ? [...(cfg.notes as ArNote[])] : [];
+      let space: CalibratedSpace | null = null;
+      let pinching = false;
+      const pinch = new PinchTracker();
+      const scene = new ArNotesRenderer();
+      const latest = this.makeLatest(id);
+      return {
+        stop: () => scene.dispose(),
+        input: (port, msg) => {
+          if (port === "space") {
+            space = (msg as SpatialMsg<CalibratedSpace>).data;
+            const event = pinch.update(space?.landmarks);
+            pinching = event === "start" || event === "hold";
+            if (event === "start" && space?.finger) {
+              notes = placeNote(notes, ((cfg.text as string | undefined) || "📌 note").trim(), space.finger, Date.now());
+              this.hooks.onConfigPatch?.(id, { notes });
+              this.hooks.onRecognized?.(id, `${notes.length} note${notes.length === 1 ? "" : "s"}`);
+            }
+            return;
+          }
+          if (port !== "frame") return;
+          const img = msg as ImageMsg;
+          latest.submit("AR notes", async () => {
+            const overlay = await scene.render(img.bitmap, notes, space, pinching);
+            this.hooks.onImage?.(id, overlay);
+            if (this.hasOutgoing(id, "out")) this.emit(id, "out", { bitmap: overlay, width: overlay.width, height: overlay.height, ts: img.ts } as ImageMsg);
           });
         },
       };

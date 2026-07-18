@@ -192,22 +192,22 @@
 Ideas ranked by fun × implementation cost. Quick wins are being picked up first.
 
 ### Quick wins (hours–1 day)
-- [ ] **Downscale depth input** — `depth.ts` still round-trips a full-res
+- [x] **Downscale depth input** — `depth.ts` still round-trips a full-res
   `toDataURL("image/png")` per frame; pre-downscale to ~518 px (model input
   size) before handing to the pipeline to shave the 360 ms/frame further.
-- [ ] **Graph snapshot in URL** — `otoji.org/#g=<lz-string>` so a whole
+- [x] **Graph snapshot in URL** — `otoji.org/#g=<lz-string>` so a whole
   pipeline can be shared as one link, no room needed. Great for demo handouts.
-- [ ] **Node search omnibox** — `/` (or Cmd+K) opens fuzzy search over all
+- [x] **Node search omnibox** — `/` (or Cmd+K) opens fuzzy search over all
   node types → Enter adds at cursor. Accordion palette is fine for browsing
   but slow for the 42-type catalog; reuse `EnumOmnibox.tsx`.
-- [ ] **Recorder node** — capture canvas / spatial-renderer output to webm via
+- [x] **Recorder node** — capture canvas / spatial-renderer output to webm via
   `MediaRecorder` (start/stop + download). Makes demo clips trivial.
-- [ ] **Per-node latency/FPS HUD** — badge each node with its processing time
+- [x] **Per-node latency/FPS HUD** — badge each node with its processing time
   (depth 360 ms, STT 1.2 s, …) so the bottleneck is visible on the graph
   itself. Natural extension of the debug-runtime panel.
 
 ### Medium bets (days)
-- [ ] **AR sticky notes** — the flagship spatial demo: pinch to place a
+- [x] **AR sticky notes** — the flagship spatial demo: pinch to place a
   note/image in 3-D space (hand + depth + calibration already exist), synced
   through the room so other devices see it. Turns the spatial pipeline from a
   feature into an experience; federation groundwork is done.
