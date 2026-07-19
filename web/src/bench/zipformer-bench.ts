@@ -81,13 +81,11 @@ function metadataShape(metadata: any): readonly (number | string)[] | undefined 
 function concreteShape(metadata: any, label: string): number[] {
   const shape = metadataShape(metadata);
   if (!shape?.length) throw new Error(`No tensor shape metadata for ${label}`);
-  return shape.map((dim, i) => {
+  return shape.map((dim) => {
     if (typeof dim === "number" && dim >= 0) return dim;
-    if (i === 0) return 1; // The exported models use a dynamic batch axis.
-    throw new Error(
-      `Cannot initialize dynamic dimension ${String(dim)} of ${label}; ` +
-        "this harness requires static cache dimensions in ORT inputMetadata.",
-    );
+    // The only dynamic axis in these exports is the batch ("N"), and it is not
+    // always axis 0 (cache tensors carry it mid-shape). Bench runs batch-1.
+    return 1;
   });
 }
 
