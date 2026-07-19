@@ -253,10 +253,19 @@ Order revised per codex-cli review (2026-07-19): feasibility spike first, then
 protocol, then backend; consolidation last. The `vibevoice-asr` unbounded-flush
 hazard is a standalone immediate fix, not part of any milestone.
 
-- [ ] **M6.-1 — feasibility spike (gate for everything below).** Progress
-  2026-07-19: AudioWorklet capture shipped (#114), streaming fbank shipped
-  (#115), bench harness shipped (#116) — the actual measurement run on a
-  mid-range laptop is what remains before the gate opens.
+- [x] **M6.-1 — feasibility spike ✅ GATE PASSED (2026-07-20).** AudioWorklet
+  capture (#114), streaming fbank (#115), bench harness (#116). Measured
+  (Chrome, Apple M5 Max, `streaming-zipformer-en-2023-06-26` int8,
+  encoder+decoder+joiner per 320 ms chunk, 100 chunks, warmup excluded):
+  - **wasm (simd, single-thread): p50 72 ms, p95 90 ms → RTF 0.23** — well
+    under the 0.5 acceptance bar; first load 1.6 s from cache.
+  - webgpu: p50 171 ms → RTF 0.54 — *slower* than wasm for this int8 model
+    (quantized ops largely fall back / transfer overhead); not the default.
+  - Decision: **M6.1 proceeds on the wasm EP**, main-thread numbers already
+    pass so the planned Worker move is margin, not a requirement. Re-measure
+    on a mid-range x86 laptop when one is at hand (M5 Max is the fast end).
+  Caveat: dynamic cache dims ("N", mid-shape) must be concretized to batch-1 —
+  harness fixed accordingly.
   - AudioWorklet capture: `startMicRaw` uses deprecated
     `ScriptProcessorNode(4096)` — at 16 kHz the callback itself is a ~256 ms
     cadence, so `frameMs: 100` would burst, not stream. Replace with an
