@@ -4,6 +4,21 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+## [0.1.58] - 2026-07-19
+
+### Bug Fixes
+- Cap the vibevoice-asr pending buffer under continuous input ([#113](https://github.com/snomiao/otoji/pull/113)) *(web)*
+
+### Documentation
+- M6.-1 gate PASSED — zipformer RTF 0.23 on wasm; concretize dynamic cache dims ([#119](https://github.com/snomiao/otoji/pull/119)) *(web)*
+- Check off M6.0 + vibevoice cap, note M6.-1 spike progress ([#117](https://github.com/snomiao/otoji/pull/117))
+
+### Features
+- M6.0 transcript revision protocol (partial/provisional/final) ([#112](https://github.com/snomiao/otoji/pull/112)) *(web)*
+- ORT-web streaming-zipformer benchmark harness (M6.-1 spike) ([#116](https://github.com/snomiao/otoji/pull/116)) *(web)*
+- Streaming incremental fbank frontend (createStreamingFbank) ([#115](https://github.com/snomiao/otoji/pull/115)) *(web)*
+- AudioWorklet mic capture for mic-raw (steady sub-250ms frames) ([#114](https://github.com/snomiao/otoji/pull/114)) *(web)*
+
 ## [0.1.57] - 2026-07-18
 
 ### Bug Fixes
