@@ -383,7 +383,7 @@ function Editor({ initialRoom, local, federationDemo }: { initialRoom?: string; 
   const [nodeSearchOpen, setNodeSearchOpen] = useState(false);
   const [smartLinkMenu, setSmartLinkMenu] = useState<null | { x: number; y: number; options: SmartLinkOption[]; placeholder?: string }>(null);
   // Per-node context menu (right-click / long-press): duplicate/replace/remove/visibility.
-  const [nodeMenu, setNodeMenu] = useState<null | { x: number; y: number; nodeId: string }>(null);
+  const [nodeMenu, setNodeMenu] = useState<null | { x: number; y: number; nodeId: string; ids?: string[] }>(null);
   const [controlNodeId, setControlNodeId] = useState<string | null>(null);
   // rgui-owned selection (click / shift-drag box). Mirrored to the canvas and
   // used by Ctrl/Cmd+A and Delete when rgui is the renderer.
@@ -1963,8 +1963,18 @@ function Editor({ initialRoom, local, federationDemo }: { initialRoom?: string; 
       },
       // Right-click opens the node actions menu and reveals that node's inline
       // controls (device assignment + per-type settings).
-      onNodeContextMenu: (id, screen) => {
+      onNodeContextMenu: (id, screen, ids) => {
         if (!nodesRef.current.some((n) => n.id === id)) return;
+        // rgui passes the whole selection when the pressed node is part of a
+        // multi-selection (right-click AND touch long-press): one shared menu
+        // with only the actions that apply to every selected node.
+        const all = (ids ?? [id]).filter((x) => nodesRef.current.some((n) => n.id === x));
+        if (all.length > 1) {
+          setSelected(all);
+          setControlNodeId(null);
+          setNodeMenu({ nodeId: id, ids: all, x: screen.x, y: screen.y });
+          return;
+        }
         setSelected([id]);
         setControlNodeId(id);
         setNodeMenu({ nodeId: id, x: screen.x, y: screen.y });
@@ -2797,7 +2807,18 @@ function Editor({ initialRoom, local, federationDemo }: { initialRoom?: string; 
           />
         )}
 
-        {nodeMenu && (
+        {nodeMenu && (nodeMenu.ids?.length ?? 0) > 1 && (
+          <MultiNodeMenu
+            x={nodeMenu.x}
+            y={nodeMenu.y}
+            count={nodeMenu.ids!.length}
+            onDuplicate={() => { for (const nid of nodeMenu.ids!) duplicateNode(nid); setNodeMenu(null); }}
+            onSaveTemplate={() => { saveSelectionAsTemplate(); setNodeMenu(null); }}
+            onRemove={() => { removeNodes(nodeMenu.ids!); setNodeMenu(null); }}
+            onClose={() => setNodeMenu(null)}
+          />
+        )}
+        {nodeMenu && (nodeMenu.ids?.length ?? 0) <= 1 && (
           <NodeMenu
             x={nodeMenu.x}
             y={nodeMenu.y}
@@ -2957,6 +2978,50 @@ function SmartLinkMenu({
         )}
       </div>
     </div>
+  );
+}
+
+// One menu for a whole multi-selection: only actions valid for EVERY selected
+// node (the per-type entries live in the single-node NodeMenu).
+function MultiNodeMenu({
+  x,
+  y,
+  count,
+  onDuplicate,
+  onSaveTemplate,
+  onRemove,
+  onClose,
+}: {
+  x: number;
+  y: number;
+  count: number;
+  onDuplicate: () => void;
+  onSaveTemplate: () => void;
+  onRemove: () => void;
+  onClose: () => void;
+}) {
+  const [hover, setHover] = useState<string>("");
+  const left = Math.min(x, (typeof window !== "undefined" ? window.innerWidth : x + 200) - 210);
+  const top = Math.min(y, (typeof window !== "undefined" ? window.innerHeight : y + 160) - 160);
+  const Item = ({ k, label, onClick, color }: { k: string; label: string; onClick: () => void; color?: string }) => (
+    <div
+      onMouseDown={(e) => { e.preventDefault(); onClick(); }}
+      onMouseEnter={() => setHover(k)}
+      style={{ padding: "8px 10px", borderRadius: 5, cursor: "pointer", fontSize: 13, color, background: hover === k ? "#ebf4ff" : "transparent" }}
+    >
+      {label}
+    </div>
+  );
+  return (
+    <>
+      <div onMouseDown={onClose} onTouchStart={onClose} style={{ position: "fixed", inset: 0, zIndex: 29 }} />
+      <div onMouseDown={(e) => e.stopPropagation()} style={{ ...CARD, position: "fixed", left, top, width: 200, padding: 4, zIndex: 30 }}>
+        <div style={{ padding: "4px 10px", fontSize: 11, color: "#a0aec0" }}>{count} nodes selected</div>
+        <Item k="dup" label={`⧉ Duplicate ${count} nodes`} onClick={onDuplicate} />
+        <Item k="tpl" label="★ Save as template" onClick={onSaveTemplate} />
+        <Item k="rm" label={`✕ Remove ${count} nodes`} onClick={onRemove} color="#e53e3e" />
+      </div>
+    </>
   );
 }
 
