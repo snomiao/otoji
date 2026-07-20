@@ -434,6 +434,10 @@ Ideas ranked by fun × implementation cost. Quick wins are being picked up first
     touch-action none; d3 touch disabled. Verified by exact-math unit tests +
     synthetic touch events in the live editor. Long-press rows of the matrix
     land with the context-menu work. Original spec below.
+  - [x] **Double-tap / double-click a node = maximize** (rgui#8, 2026-07-22):
+    fits the viewport to the tapped node's snapped stack (48px pad), doubling
+    again restores the pre-fit view. Chosen over two-finger tap after
+    comparison — two-finger tap stays reserved for the shared context menu.
     (requested 2026-07-22). Today a second finger starts another
     drag/marquee — rgui's input pipeline (`rgui.ts` pointerdown/move/up +
     `setPointerCapture`) models a single pointer, so touch #2 is treated as a
