@@ -1665,6 +1665,27 @@ function Editor({ initialRoom, local, federationDemo }: { initialRoom?: string; 
       onSink: (sinkId, tr: TranscriptMsg) => {
         if (!isReadableTranscript(tr.text)) return;
         live.pushText(sinkId, tr.text);
+        const arr = recordsByNodeRef.current.get(sinkId) ?? [];
+        // Two-pass (M6.3): a final that supersedes an earlier revision updates
+        // the existing row in place instead of appending a duplicate.
+        if (tr.segmentId !== undefined && tr.replacesRevision !== undefined) {
+          const prev = [...arr].reverse().find((r) => r.segmentId === tr.segmentId && r.provisional);
+          if (prev) {
+            prev.text = tr.text;
+            prev.provisional = false;
+            prev.lang = tr.lang ?? prev.lang;
+            prev.emotion = tr.emotion ?? prev.emotion;
+            prev.event = tr.event ?? prev.event;
+            if (tr.audio.samples.length) {
+              prev.samples = tr.audio.samples;
+              prev.sampleRate = tr.audio.sampleRate;
+              prev.durationMs = tr.audio.durationMs;
+              prev.peaks = computePeaks(tr.audio.samples, 400);
+            }
+            setSinkRecs((cur) => cur.map((r) => (r.id === prev.id ? { ...prev } : r)));
+            return;
+          }
+        }
         const rec: Recording = {
           id: `g-${recCounter.current++}`,
           nodeId: sinkId,
@@ -1679,8 +1700,9 @@ function Editor({ initialRoom, local, federationDemo }: { initialRoom?: string; 
           event: tr.event,
           tStartMs: tr.tStartMs,
           tEndMs: tr.tEndMs,
+          segmentId: tr.segmentId,
+          provisional: tr.status === "provisional",
         };
-        const arr = recordsByNodeRef.current.get(sinkId) ?? [];
         arr.push(rec);
         recordsByNodeRef.current.set(sinkId, arr);
         setSinkRecs((prev) => [rec, ...prev].slice(0, 100));

@@ -173,7 +173,13 @@ const RAW_NODE_SPECS: Record<NodeType, NodeSpec> = {
       { id: "in", type: "segment" },
       { id: "model", type: "model" },
     ],
-    outputs: [{ id: "out", type: "transcript" }],
+    outputs: [
+      { id: "out", type: "transcript" },
+      // Two-pass: each finalized utterance's raw audio, tagged with the
+      // provisional's segmentId/revision — wire into an offline ASR (stt) to
+      // get an accuracy-upgraded final that supersedes the streaming text.
+      { id: "utterance", type: "segment" },
+    ],
   },
   vosk: {
     type: "vosk",

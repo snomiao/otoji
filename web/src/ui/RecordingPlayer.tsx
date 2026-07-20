@@ -20,6 +20,9 @@ export interface Recording {
   /** Absolute speech window in the source timeline (CTC-derived), for SRT. */
   tStartMs?: number;
   tEndMs?: number;
+  /** Two-pass revision identity: a later final with the same segmentId replaces this row. */
+  segmentId?: number;
+  provisional?: boolean;
   /** Compressed source (persisted). */
   opus?: StoredOpus;
   /** Optional in-memory PCM (live session, before/instead of decode). */

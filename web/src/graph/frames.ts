@@ -62,6 +62,8 @@ export function buildSegmentFrame(target: string, port: string, seg: SegmentMsg)
     sampleRate: seg.sampleRate,
     durationMs: seg.durationMs,
     offsetMs: seg.offsetMs,
+    segmentId: seg.segmentId,
+    revision: seg.revision,
     samplesB64: encodeSamples(seg.samples),
   };
 }
@@ -143,7 +145,7 @@ export function frameToMessage(f: EdgeFrame): SegmentMsg | TranscriptMsg | Contr
   if (f.mtype === "spatial") return { data: f.spatial, ts: f.ts ?? Date.now() };
   if (f.mtype === "model") return f.model!;
   const samples = decodeSamples(f.samplesB64 ?? "");
-  const seg: SegmentMsg = { samples, sampleRate: f.sampleRate ?? 16000, durationMs: f.durationMs ?? 0, offsetMs: f.offsetMs };
+  const seg: SegmentMsg = { samples, sampleRate: f.sampleRate ?? 16000, durationMs: f.durationMs ?? 0, offsetMs: f.offsetMs, segmentId: f.mtype === "segment" ? f.segmentId : undefined, revision: f.mtype === "segment" ? f.revision : undefined };
   if (f.mtype === "transcript")
     return { text: f.text ?? "", audio: seg, lang: f.lang, emotion: f.emotion, event: f.event, tStartMs: f.tStartMs, tEndMs: f.tEndMs, segmentId: f.segmentId, revision: f.revision, status: f.status, replacesRevision: f.replacesRevision };
   return seg;

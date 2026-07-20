@@ -291,8 +291,10 @@ export interface ZipformerStream {
 export function createZipformerStream(
   opts: {
     paths?: ZipformerModelPaths;
+    endpointMs?: number; // trailing-silence to finalize (default TRAIL_SIL_MS)
     onPartial: (text: string, segId: number) => void;
-    onFinal: (text: string, segId: number) => void;
+    /** `audio` is the utterance's raw 16 kHz samples (for a second, offline pass). */
+    onFinal: (text: string, segId: number, audio: Float32Array) => void;
     onError?: (e: Error) => void;
     onProgress?: (stage: string, received: number, total: number) => void;
   },
@@ -300,6 +302,11 @@ export function createZipformerStream(
   const paths = opts.paths ?? zipformerPathsFromBase(DEFAULT_REPO);
   const fbank = createStreamingFbank(ZIPFORMER_FBANK);
   const frames: Float32Array[] = []; // FIFO of [numBins] fbank frames
+  // Raw samples of the utterance in progress, for two-pass consumers. Capped so
+  // an endless no-endpoint stream can't grow without bound.
+  const MAX_UTTERANCE_SAMPLES = 30 * 16000;
+  let utterance: Float32Array[] = [];
+  let utteranceLen = 0;
   let engine: Engine | null = null;
   let caches: Record<string, any> = {};
   let context: number[] = [];
@@ -325,10 +332,20 @@ export function createZipformerStream(
     return out[e.decoder.outputNames[0]];
   };
 
+  const takeUtterance = (): Float32Array => {
+    const buf = new Float32Array(utteranceLen);
+    let off = 0;
+    for (const c of utterance) { buf.set(c, off); off += c.length; }
+    utterance = [];
+    utteranceLen = 0;
+    return buf;
+  };
+
   const finalize = (why: "endpoint" | "flush") => {
     if (!engine) return;
     const text = decodeTokens(hyp, engine.tokens);
-    if (text) opts.onFinal(text, segId);
+    const audio = takeUtterance();
+    if (text) opts.onFinal(text, segId, audio);
     if (text || why === "endpoint") segId += 1;
     hyp = [];
     lastPartial = "";
@@ -381,7 +398,7 @@ export function createZipformerStream(
           lastPartial = text;
           opts.onPartial(text, segId);
         }
-        if (hyp.length && trailingSilMs >= TRAIL_SIL_MS) finalize("endpoint");
+        if (hyp.length && trailingSilMs >= (opts.endpointMs ?? TRAIL_SIL_MS)) finalize("endpoint");
       }
     } catch (err) {
       opts.onError?.(err instanceof Error ? err : new Error(String(err)));
@@ -395,6 +412,9 @@ export function createZipformerStream(
       if (freed || !samples?.length) return;
       const scaled = new Float32Array(samples.length);
       for (let i = 0; i < samples.length; i++) scaled[i] = samples[i] * SAMPLE_SCALE;
+      utterance.push(samples.slice());
+      utteranceLen += samples.length;
+      while (utteranceLen > MAX_UTTERANCE_SAMPLES && utterance.length > 1) utteranceLen -= utterance.shift()!.length;
       const { feats, numFrames, numBins } = fbank.push(scaled);
       for (let f = 0; f < numFrames; f++) frames.push(feats.slice(f * numBins, (f + 1) * numBins));
       void pump();
