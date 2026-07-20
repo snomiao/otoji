@@ -417,8 +417,11 @@ Ideas ranked by fun × implementation cost. Quick wins are being picked up first
   partly handled in index.html), finger-sized hit targets on the rgui canvas,
   and pointer-events unification (mouse/touch/pen). Test matrix: iPad Safari,
   Android Chrome, Windows touch.
-  - [ ] **Mobile multi-select + shared long-press menu** (requested
-    2026-07-22). Concrete spec: (1) a touch multi-select gesture (tap-to-add
+  - [x] **Mobile multi-select + shared long-press menu** (rgui#9 + this
+    bump, 2026-07-22): one-finger lasso already multi-selects; a 500ms
+    long-press (or right-click) on a selected node opens ONE shared menu —
+    Duplicate N / Save as template / Remove N (single graph patch, edges
+    included). Desktop right-click shares the same path. Original spec: Concrete spec: (1) a touch multi-select gesture (tap-to-add
     in a select mode, or lasso) that visibly marks selected nodes; (2)
     long-press with a selection active opens ONE context menu common to all
     selected nodes — only actions valid for every node in the selection

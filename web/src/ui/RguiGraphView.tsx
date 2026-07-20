@@ -24,7 +24,7 @@ export interface RguiHandlers {
   /** left-click a node (screen = canvas-relative px) */
   onNodeClick?: (nodeId: string, screen: { x: number; y: number }) => void;
   /** right-click a node */
-  onNodeContextMenu?: (nodeId: string, screen: { x: number; y: number }) => void;
+  onNodeContextMenu?: (nodeId: string, screen: { x: number; y: number }, nodeIds?: string[]) => void;
   /** something dropped on the canvas at a world position (palette / file / template) */
   onCanvasDrop?: (world: { x: number; y: number }, dataTransfer: DataTransfer) => void;
   /** clipboard data pasted into the canvas at a world position */
@@ -439,7 +439,7 @@ async function createViewer(
     isValidConnection: (from, to) => hRef.current?.isValidConnection?.(from, to) ?? true,
     onConnect: (from, to) => hRef.current?.onConnect?.(from, to),
     onNodeClick: (id, screen) => hRef.current?.onNodeClick?.(id, screen),
-    onNodeContextMenu: (id, screen) => hRef.current?.onNodeContextMenu?.(id, screen),
+    onNodeContextMenu: (id, screen, ids) => hRef.current?.onNodeContextMenu?.(id, screen, ids),
     onSelectionChange: (ids) => hRef.current?.onSelectionChange?.(ids),
     onEdgeClick: (edge, screen) => hRef.current?.onEdgeClick?.(edge, screen),
     onEdgeContextMenu: (edge, screen) => hRef.current?.onEdgeContextMenu?.(edge, screen),
