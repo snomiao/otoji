@@ -427,7 +427,13 @@ Ideas ranked by fun × implementation cost. Quick wins are being picked up first
     single graph patch (one undo step once undo exists). Desktop parity:
     marquee/shift-click selection should reuse the same shared-menu + bulk
     action path so the behavior is identical across inputs.
-  - [ ] **Two-finger = canvas pan + pinch zoom; one-finger drag = select**
+  - [x] **Two-finger = canvas pan + pinch zoom; one-finger drag = select**
+    — shipped 2026-07-22 (rgui#6, otoji #133): pointer-event state machine in
+    rgui.ts; promotion discards a live marquee selection-intact; nav latches
+    until all fingers lift; 3-finger re-pair; pointercancel cleanup;
+    touch-action none; d3 touch disabled. Verified by exact-math unit tests +
+    synthetic touch events in the live editor. Long-press rows of the matrix
+    land with the context-menu work. Original spec below.
     (requested 2026-07-22). Today a second finger starts another
     drag/marquee — rgui's input pipeline (`rgui.ts` pointerdown/move/up +
     `setPointerCapture`) models a single pointer, so touch #2 is treated as a
