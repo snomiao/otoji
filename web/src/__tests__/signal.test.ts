@@ -107,3 +107,14 @@ describe("adapter signal passthrough", () => {
     expect(ocrIn.ownership).toBe("clone");
   });
 });
+
+import { isDuplicable as rguiDuplicable, isAliasable as rguiAliasable } from "@snomiao/rgui";
+
+describe("signal predicates come from rgui (no drift)", () => {
+  it("re-exports agree with rgui for every ownership value", () => {
+    for (const o of ["copy", "clone", "share", "move"] as const) {
+      expect(isDuplicable(o)).toBe(rguiDuplicable(o));
+      expect(isAliasable(o)).toBe(rguiAliasable(o));
+    }
+  });
+});
