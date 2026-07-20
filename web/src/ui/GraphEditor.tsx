@@ -53,7 +53,7 @@ import { videoClipsDB, type VideoClip } from "../lib/video-clips-db";
 import { isReadableTranscript } from "../lib/text";
 import { isRoomCode, joinUrl } from "../lib/roomcode";
 import { getDeviceId, getDeviceName, setDeviceName } from "../lib/device-id";
-import { getRole, setRole, detectCaps, type DeviceRole } from "../lib/device-role";
+import { canHostNode, getRole, setRole, detectCaps, type DeviceCaps, type DeviceRole } from "../lib/device-role";
 import { NetworkView } from "./NetworkView";
 import { JoinGate } from "./JoinGate";
 import { RguiGraphView, type RguiHandlers, type RguiApi } from "./RguiGraphView";
@@ -316,11 +316,23 @@ function Editor({ initialRoom, local, federationDemo }: { initialRoom?: string; 
   const [joined, setJoined] = useState(!!local); // local mode: no room, runs single-device
   const myDeviceId = useMemo(() => getDeviceId(), []);
   const [myPeerId, setMyPeerId] = useState<string | null>(null);
-  const [present, setPresent] = useState<Record<string, { peerId: string; name: string; role: string; hasMic: boolean; runtime?: string; net?: string }>>({});
+  const [present, setPresent] = useState<Record<string, { peerId: string; name: string; role: string; hasMic?: boolean; runtime?: string; net?: string }>>({});
   const [status, setStatus] = useState("not connected");
   const [paused, setPaused] = useState(!!local); // local demo starts paused (don't grab the mic until asked)
   const [role, setRoleState] = useState<DeviceRole>(() => getRole());
-  const caps = useMemo(() => detectCaps(), []);
+  const [caps, setCaps] = useState<DeviceCaps>({});
+  useEffect(() => {
+    let cancelled = false;
+    void detectCaps().then((detected) => { if (!cancelled) setCaps(detected); });
+    return () => { cancelled = true; };
+  }, []);
+  useEffect(() => {
+    if (!local) return;
+    setPresent((current) => {
+      const mine = current[myDeviceId];
+      return mine ? { ...current, [myDeviceId]: { ...mine, hasMic: caps.hasMic } } : current;
+    });
+  }, [caps.hasMic, local, myDeviceId]);
   const [gpuDebug, setGpuDebug] = useState<{ status: "probing" | "ready" | "unavailable" | "error"; adapter?: string; features?: string; error?: string }>({ status: "probing" });
   const [cameraPermission, setCameraPermission] = useState("unknown");
 
@@ -732,21 +744,23 @@ function Editor({ initialRoom, local, federationDemo }: { initialRoom?: string; 
     loadedTypesRef.current = new Set(HEAVY_NODE_TYPES.filter((t) => present.has(t)));
   }, [nodes]);
 
-  function join() {
+  async function join() {
     if (joined || !room.trim()) return;
+    const joinCaps = caps.hasMic == null ? await detectCaps() : caps;
+    if (caps.hasMic == null) setCaps(joinCaps);
     const dn = name.trim() || "device";
     setDeviceName(dn);
     const appr = loadApproved(room.trim());
     setApproved(appr);
-    const sig = new MultiSignalingClient(room.trim(), dn, myDeviceId, role, caps.hasMic, activeTrackers(appr));
+    const sig = new MultiSignalingClient(room.trim(), dn, myDeviceId, role, joinCaps.hasMic, activeTrackers(appr));
     sigRef.current = sig;
     sig.on("open", () => setStatus("connected"));
     sig.on("close", () => setStatus("reconnecting…"));
     sig.on("hello", (m) => {
       setMyPeerId(m.peerId);
       setPresent(() => {
-        const p: Record<string, { peerId: string; name: string; role: string; hasMic: boolean; runtime?: string; net?: string }> = {
-          [myDeviceId]: { peerId: m.peerId, name: dn, role, hasMic: caps.hasMic, runtime: "browser" },
+        const p: Record<string, { peerId: string; name: string; role: string; hasMic?: boolean; runtime?: string; net?: string }> = {
+          [myDeviceId]: { peerId: m.peerId, name: dn, role, hasMic: joinCaps.hasMic, runtime: "browser" },
         };
         for (const peer of m.peers as Peer[]) p[peer.deviceId] = { peerId: peer.peerId, name: peer.name, role: peer.role, hasMic: peer.hasMic, runtime: peer.runtime, net: peer.net };
         return p;
@@ -1428,9 +1442,14 @@ function Editor({ initialRoom, local, federationDemo }: { initialRoom?: string; 
     const mic = `mic-vad-${sfx}`, stt = `stt-${sfx}`, sink = `sink-${sfx}`;
     // Distribute across devices by role (falls back to this device).
     const online = devices.filter((d) => d.online);
-    const pickFor = (t: NodeType): string => {
-      if (t === "mic-vad")
-        return online.find((d) => d.role === "mic" && d.hasMic)?.deviceId ?? (caps.hasMic ? myDeviceId : online.find((d) => d.hasMic)?.deviceId ?? myDeviceId);
+    const pickFor = (t: NodeType): string | null => {
+      if (t === "mic-vad") {
+        const eligible = online.filter((d) => canHostNode(t, d));
+        return eligible.find((d) => d.role === "mic")?.deviceId
+          ?? eligible.find((d) => d.deviceId === myDeviceId)?.deviceId
+          ?? eligible[0]?.deviceId
+          ?? null;
+      }
       if (t === "stt") return online.find((d) => d.role === "model")?.deviceId ?? myDeviceId;
       if (t === "sink") return online.find((d) => d.role === "viewer")?.deviceId ?? myDeviceId;
       return myDeviceId;
@@ -1951,7 +1970,10 @@ function Editor({ initialRoom, local, federationDemo }: { initialRoom?: string; 
         const sourceType = (source?.data as any)?.voiceType as NodeType | undefined;
         if (sourceType === "environment" && from.port === "env" && to.port === "env") {
           const device = (source?.data as any)?.device as string | undefined;
-          if (device) {
+          const target = nodesRef.current.find((node) => node.id === to.node);
+          const targetType = (target?.data as any)?.voiceType as NodeType | undefined;
+          const targetDevice = devices.find((candidate) => candidate.deviceId === device);
+          if (device && targetType && canHostNode(targetType, targetDevice)) {
             const assigned = nodesRef.current.map((node) => node.id === to.node ? { ...node, data: { ...node.data, device } } : node);
             nodesRef.current = assigned;
             setNodes(assigned);
@@ -2042,7 +2064,7 @@ function Editor({ initialRoom, local, federationDemo }: { initialRoom?: string; 
       },
       onCanvasPaste: (world, dt) => void addClipboardNodesAt(dt, world),
     }),
-    [setNodes, setEdges, broadcast, addNode, addTemplate, addClipboardNodesAt, allTemplates, removeEdge, controlNodeId, smartLinkPairs, smartLinkNodeOptions, applySmartLink],
+    [setNodes, setEdges, broadcast, addNode, addTemplate, addClipboardNodesAt, allTemplates, removeEdge, controlNodeId, smartLinkPairs, smartLinkNodeOptions, applySmartLink, devices],
   );
 
   // Edges whose signal lacks a duplicable wire format and crosses devices.

@@ -40,6 +40,7 @@ import { samplesToWavBlob, concatSamples } from "../lib/peaks";
 import { buildSrt } from "../lib/srt";
 import { MonacoText } from "./MonacoText";
 import { EnumOmnibox, SelectOmnibox, type EnumOption } from "./EnumOmnibox";
+import { canHostNode } from "../lib/device-role";
 
 // Node inspector: the config surface for the currently-selected node, replacing
 // the inline controls React Flow's VoiceNode rendered. rgui draws nodes on a
@@ -502,6 +503,7 @@ export function NodeInspector({ node, controls = true, onClose }: { node: Inspec
   );
   const warn = !node.device ? "unassigned" : assigned && !assigned.online ? `● ${assigned.name} offline` : null;
   const warnColor = !node.device ? "#e53e3e" : "#c05621";
+  const micWarning = assigned && !canHostNode(vt, assigned) ? `● ${assigned.name} reports no microphone` : null;
 
   // ---- full-bleed cards: content fills the node rect, no padding ----------
   if (vt === "textarea") {
@@ -1577,6 +1579,7 @@ export function NodeInspector({ node, controls = true, onClose }: { node: Inspec
 
         {!node.device && <div style={{ color: "#e53e3e", fontSize: 10, marginTop: 4 }}>unassigned</div>}
         {assigned && !assigned.online && <div style={{ color: "#c05621", fontSize: 10, marginTop: 4 }}>● {assigned.name} offline</div>}
+        {micWarning && <div style={{ color: "#c05621", fontSize: 10, marginTop: 4 }}>{micWarning}</div>}
         {/* Live preview (waveform / image / text) is drawn natively by rgui on
             the node body — the inspector holds only the editable controls, plus
             the <video> live feed for camera/screen nodes (see LiveVideo). */}
