@@ -8,6 +8,7 @@ import { clusterSegments, mixCluster, type TimedSegment } from "../lib/audio-mix
 import { fileStore } from "./file-store";
 import { sttRecognize, warmSenseVoice } from "../providers/stt/sensevoice";
 import { SENSEVOICE_MODELS } from "../providers/stt/sensevoice-models";
+import { createZipformerStream, zipformerModelFromSource, zipformerPathsFromBase, type ZipformerStream } from "../providers/stt/zipformer";
 import { webllmTranslate } from "../providers/translate/webllm";
 import { browserTranslate } from "../providers/translate/browser-translator";
 import { DEFAULT_TRANSLATE_LANG, DEFAULT_TRANSLATE_MODEL, langNameToCode } from "../providers/translate/translate-config";
@@ -814,6 +815,69 @@ export class GraphRuntime {
           try { rec.start(); } catch (e) { this.hooks.onError?.(e instanceof Error ? e : new Error(String(e))); }
         },
         stop: () => { stopped = true; try { rec?.stop(); } catch { /* ignore */ } },
+      };
+    }
+
+    if (type === "stream-asr") {
+      // In-browser streaming transducer (M6.1): continuous audio in, revision-
+      // protocol transcripts out. Partials ride the same `out` port — the emit
+      // layer only delivers them to acceptsPartial consumers (e.g. the sink's
+      // live caption); finals reach everyone.
+      const cfg = this.graph.nodes[id]?.config ?? {};
+      let paths = ((cfg.modelsBase as string | undefined)?.trim())
+        ? zipformerPathsFromBase((cfg.modelsBase as string).trim())
+        : undefined;
+      const revisions = new Map<number, number>();
+      const nextRevision = (segId: number): { segmentId: number; revision: number } => {
+        const revision = (revisions.get(segId) ?? 0) + 1;
+        revisions.set(segId, revision);
+        return { segmentId: segId, revision };
+      };
+      const emptyAudio = () => ({ samples: new Float32Array(0), sampleRate: MIC_VAD_SR, durationMs: 0 });
+      let stream: ZipformerStream | null = null;
+      const openStream = () => {
+        stream?.free();
+        stream = createZipformerStream({
+          paths,
+          onPartial: (text, segId) => {
+            this.hooks.onRecognized?.(id, text);
+            this.emit(id, "out", { text, audio: emptyAudio(), status: "partial", ...nextRevision(segId) } as TranscriptMsg);
+          },
+          onFinal: (text, segId) => {
+            this.hooks.onRecognized?.(id, text);
+            const rev = nextRevision(segId);
+            revisions.delete(segId);
+            this.emit(id, "out", { text, audio: emptyAudio(), status: "final", ...rev } as TranscriptMsg);
+          },
+          onError: (e) => this.hooks.onError?.(e),
+          onProgress: (stage, received, total) => {
+            if (total) this.hooks.onStatus?.(`streaming ASR: ${stage} ${Math.round((received / total) * 100)}%`);
+          },
+        });
+      };
+      return {
+        start: async () => openStream(),
+        input: (port, msg) => {
+          if (port === "model") {
+            const src = msg as ModelSourceMsg;
+            const override = zipformerModelFromSource(src);
+            if (override) {
+              paths = override;
+              this.hooks.onRecognized?.(id, `model override · ${src.title ?? src.model}`);
+              openStream(); // restart on the new model (fresh utterance state)
+            } else {
+              this.hooks.onRecognized?.(id, "model provider is not a sherpa streaming-transducer export; using default");
+            }
+            return;
+          }
+          const seg = msg as SegmentMsg;
+          if (seg.samples?.length) stream?.accept(seg.samples);
+        },
+        stop: async () => {
+          await stream?.flush();
+          stream?.free();
+          stream = null;
+        },
       };
     }
 

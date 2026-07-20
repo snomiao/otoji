@@ -288,7 +288,7 @@ hazard is a standalone immediate fix, not part of any milestone.
   adjacency layer (one policy for local and remote edges, tested both ways).
   Sink/caption opt in; text-diff / LLM / TTS stay final-only and existing
   graphs keep working.
-- [ ] **M6.1 — in-browser streaming ASR backend.** Streaming zipformer (or
+- [x] **M6.1 — in-browser streaming ASR backend** (shipped 2026-07-21). Streaming zipformer (or
   Kroko) on onnxruntime-web in a Worker: 3 sessions (encoder w/ explicit cache
   in/out tensors, decoder, joiner) + greedy transducer search in TS; model
   manifest abstracts per-model I/O names and cache shapes; Cache API storage;
@@ -299,6 +299,16 @@ hazard is a standalone immediate fix, not part of any milestone.
   and transcript data channels, bounded send queue with latest-only partials,
   PCM16 (or Opus) wire encoding instead of Float32→base64 JSON — raw-audio
   head-of-line blocking on the single ordered channel would eat any latency win.
+  **Shipped:** `providers/stt/zipformer.ts` + `stream-asr` node + "Streaming
+  captions (live)" template. Default model changed to
+  `streaming-zipformer-en-20M-2023-02-17` int8 (~27 MB): the 2023-06-26
+  zipformer2 int8 export emits all-NaN encoder output on onnxruntime-web 1.27
+  wasm (quantized-op bug) — zipformer(1) exports work. Two pipeline lessons:
+  icefall features are lhotse-style ([-1,1] floats, povey window, NO int16
+  rescale — unlike SenseVoice's ×32768), and the decoder context must re-init
+  after each endpoint. Verified in Chrome against the repo test wav: partials
+  stream and the final matches the reference transcript. Mesh-transport gates
+  (channel separation, PCM16 wire) remain open — tracked under M6.5 risks.
 - [ ] **M6.2 — ASR node UX for continuous input.** `stt` (SenseVoice) detects
   continuous streams (contiguous `offsetMs`) and either applies its own
   VAD-endpoint buffering or surfaces a smart-link hint to insert the streaming
