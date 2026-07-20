@@ -134,6 +134,16 @@ export interface SegmentMsg {
   segmentId?: number;
   revision?: number; // revision of the provisional this audio corresponds to
 }
+
+const CONTINUOUS_FRAME_MAX_MS = 400;
+const CONTINUOUS_OFFSET_TOLERANCE_MS = 50;
+
+/** True when two short audio frames belong to the same continuous timeline. */
+export function isContinuationSegment(prev: SegmentMsg | undefined, next: SegmentMsg): boolean {
+  if (!prev || prev.offsetMs === undefined || next.offsetMs === undefined) return false;
+  if (prev.durationMs >= CONTINUOUS_FRAME_MAX_MS || next.durationMs >= CONTINUOUS_FRAME_MAX_MS) return false;
+  return Math.abs(next.offsetMs - (prev.offsetMs + prev.durationMs)) <= CONTINUOUS_OFFSET_TOLERANCE_MS;
+}
 export interface TranscriptMsg {
   text: string;
   audio: SegmentMsg;
@@ -1284,6 +1294,80 @@ export class GraphRuntime {
     if (type === "stt") {
       const q = this.makeQueue(id);
       let modelId = (this.graph.nodes[id]?.config?.model as string | undefined) ?? this.hooks.modelId;
+      let previousSegment: SegmentMsg | undefined;
+      let bufferingContinuousInput = false;
+      let continuousNoticeShown = false;
+      let pendingSegments: SegmentMsg[] = [];
+
+      const recognize = (seg: SegmentMsg) => {
+        q.run(`🔊 ${Math.round(seg.durationMs / 100) / 10}s`, async () => {
+          try {
+            const res = await sttRecognize(seg.samples, modelId);
+            this.hooks.onRecognized?.(id, res.text);
+            // Promote CTC speech extent to absolute timeline using the segment
+            // offset (file/mic). Without an offset, leave times undefined so the
+            // SRT builder falls back to sequential timing.
+            const base = seg.offsetMs;
+            const tStartMs = base !== undefined && res.startMs !== undefined ? base + res.startMs : undefined;
+            const tEndMs = base !== undefined && res.endMs !== undefined ? base + res.endMs : undefined;
+            const caption = {
+              text: res.text,
+              audio: seg,
+              lang: res.lang,
+              emotion: res.emotion,
+              event: res.event,
+              tStartMs,
+              tEndMs,
+              // Two-pass (M6.3): audio tagged with a provisional's identity
+              // makes this result the final revision that supersedes it.
+              ...(seg.segmentId !== undefined && seg.revision !== undefined
+                ? { segmentId: seg.segmentId, revision: seg.revision + 1, replacesRevision: seg.revision, status: "final" as const }
+                : {}),
+            } as TranscriptMsg;
+            this.emit(id, "out", caption);
+            if (this.hasOutgoing(id, "caption")) this.emit(id, "caption", caption);
+            if (this.hasOutgoing(id, "audio")) this.emit(id, "audio", seg);
+          } catch (e) {
+            this.hooks.onError?.(e instanceof Error ? e : new Error(String(e)));
+          }
+        });
+      };
+
+      const flushContinuous = (force = false) => {
+        if (!pendingSegments.length) return;
+        const sampleCount = pendingSegments.reduce((sum, item) => sum + item.samples.length, 0);
+        const sampleRate = pendingSegments[0].sampleRate || MIC_VAD_SR;
+        const bufferedMs = (sampleCount / sampleRate) * 1000;
+        if (!force && bufferedMs < 1_000) return;
+
+        const samples = new Float32Array(sampleCount);
+        let writeOffset = 0;
+        for (const item of pendingSegments) {
+          samples.set(item.samples, writeOffset);
+          writeOffset += item.samples.length;
+        }
+
+        // Wait for roughly the same 600 ms trailing silence used by mic-vad,
+        // checking from 1 s onward. Continuous speech is force-cut at 20 s so
+        // a stuck-open microphone cannot grow this buffer without bound.
+        let tailEnergy = 0;
+        const tailSamples = Math.min(samples.length, Math.round(sampleRate * 0.6));
+        for (let i = samples.length - tailSamples; i < samples.length; i++) tailEnergy += samples[i] * samples[i];
+        const hasTrailingSilence = Math.sqrt(tailEnergy / Math.max(1, tailSamples)) <= 0.012;
+        if (!force && !hasTrailingSilence && bufferedMs < 20_000) return;
+
+        const first = pendingSegments[0];
+        segmentSamples(samples, (utteranceSamples, durationMs, offsetMs) => {
+          recognize({
+            samples: utteranceSamples,
+            sampleRate,
+            durationMs,
+            offsetMs: first.offsetMs === undefined ? undefined : first.offsetMs + offsetMs,
+            ts: first.ts === undefined ? undefined : first.ts + offsetMs,
+          });
+        });
+        pendingSegments = [];
+      };
       return {
         input: (port, msg) => {
           if (port === "model") {
@@ -1303,41 +1387,27 @@ export class GraphRuntime {
           if (port === "env") return;
           const seg = msg as SegmentMsg;
           if (!seg.samples || seg.samples.length < MIN_STT_SAMPLES) return; // skip empty/too-short audio
-          q.run(`🔊 ${Math.round(seg.durationMs / 100) / 10}s`, async () => {
-            try {
-              const res = await sttRecognize(seg.samples, modelId);
-              this.hooks.onRecognized?.(id, res.text);
-              // Promote CTC speech extent to absolute timeline using the segment
-              // offset (file/mic). Without an offset, leave times undefined so the
-              // SRT builder falls back to sequential timing.
-              const base = seg.offsetMs;
-              const tStartMs = base !== undefined && res.startMs !== undefined ? base + res.startMs : undefined;
-              const tEndMs = base !== undefined && res.endMs !== undefined ? base + res.endMs : undefined;
-              const caption = {
-                text: res.text,
-                audio: seg,
-                lang: res.lang,
-                emotion: res.emotion,
-                event: res.event,
-                tStartMs,
-                tEndMs,
-                // Two-pass (M6.3): audio tagged with a provisional's identity
-                // makes this result the final revision that supersedes it.
-                ...(seg.segmentId !== undefined && seg.revision !== undefined
-                  ? { segmentId: seg.segmentId, revision: seg.revision + 1, replacesRevision: seg.revision, status: "final" as const }
-                  : {}),
-              } as TranscriptMsg;
-              this.emit(id, "out", caption);
-              if (this.hasOutgoing(id, "caption")) this.emit(id, "caption", caption);
-              if (this.hasOutgoing(id, "audio")) this.emit(id, "audio", seg);
-            } catch (e) {
-              this.hooks.onError?.(e instanceof Error ? e : new Error(String(e)));
+          if (!bufferingContinuousInput && isContinuationSegment(previousSegment, seg)) {
+            bufferingContinuousInput = true;
+            if (!continuousNoticeShown) {
+              continuousNoticeShown = true;
+              this.hooks.onRecognized?.(id, "continuous input detected — buffering utterances (consider the Streaming ASR node)");
             }
-          });
+          }
+          previousSegment = seg;
+          if (bufferingContinuousInput) {
+            pendingSegments.push(seg);
+            flushContinuous();
+          } else {
+            recognize(seg);
+          }
         },
         // Wait for in-flight recognition so a just-spoken / stop-time segment
         // isn't dropped before its result reaches the sink.
-        stop: () => q.drain(),
+        stop: () => {
+          flushContinuous(true);
+          return q.drain();
+        },
       };
     }
 
