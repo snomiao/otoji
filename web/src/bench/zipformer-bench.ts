@@ -178,13 +178,19 @@ export async function runZipformerBench(opts: ZipformerBenchOptions = {}): Promi
       for (const { input, output } of cachePairs) cacheFeeds[input] = encoderResult[output];
 
       const decoderResult = await decoder.run(decoderFeeds);
+      // Production greedy search runs the joiner once per ENCODER OUTPUT
+      // frame (~16 per 320 ms chunk) plus a decoder step per emitted token —
+      // a single joiner call under-reports RTF several-fold. Replicate the
+      // per-frame joiner loop; the decoder is re-run once per chunk as a
+      // stand-in for the occasional token-triggered step.
+      const tOut = (encoderResult[encoderOutputName]?.dims?.[1] as number | undefined) ?? 16;
       const joinerFeeds: Record<string, any> = {};
       const sources = [encoderResult[encoderOutputName], decoderResult[decoder.outputNames[0]]];
       for (let i = 0; i < joiner.inputNames.length; i++) {
         const name = joiner.inputNames[i];
         joinerFeeds[name] = fitTensor(ort, sources[i], metadataFor(joiner, name), name);
       }
-      await joiner.run(joinerFeeds);
+      for (let t = 0; t < tOut; t++) await joiner.run(joinerFeeds);
       times.push(performance.now() - started);
     }
   } finally {

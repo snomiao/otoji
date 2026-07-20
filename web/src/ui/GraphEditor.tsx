@@ -38,6 +38,7 @@ import {
   type GraphTemplate,
 } from "../lib/templates";
 import { graphShareUrl, takeSharedGraph } from "../lib/share-url";
+import { applySinkRevision } from "../graph/sink-revisions";
 import { LiveStore } from "../graph/live-store";
 import { fileStore, fileKindForMetadata } from "../graph/file-store";
 import { PeerMeshTransport } from "../graph/mesh-transport";
@@ -417,6 +418,8 @@ function Editor({ initialRoom, local, federationDemo }: { initialRoom?: string; 
   const recordsByNodeRef = useRef(new Map<string, Recording[]>()); // uncapped, for file export
   const videoClipsByNodeRef = useRef(new Map<string, VideoClip[]>());
   const edgeBytesRef = useRef(new Map<string, number>()); // cumulative remote payload bytes per edge
+  const liveEdgeIdsRef = useRef<Set<string>>(new Set()); // current edge ids, for counter pruning
+  liveEdgeIdsRef.current = new Set(edges.map((e) => e.id));
   const [edgeRates, setEdgeRates] = useState<Record<string, number>>({}); // per-edge bytes/sec
   const [lastError, setLastError] = useState<string>(""); // most recent runtime error, for bug reports
   const peerBadgeShown = useSyncExternalStore(subscribePrefs, isPeerBadgeShown, () => true);
@@ -560,6 +563,11 @@ function Editor({ initialRoom, local, federationDemo }: { initialRoom?: string; 
     let previousAt = performance.now();
     const t = setInterval(() => {
       setTick((x) => x + 1);
+      // counters for deleted/renamed edges can never emit again — prune them
+      // so a long editing session doesn't grow the map without bound
+      const liveEdges = liveEdgeIdsRef.current;
+      for (const key of edgeBytesRef.current.keys())
+        if (!liveEdges.has(key)) edgeBytesRef.current.delete(key);
       const now = performance.now();
       const current = new Map(edgeBytesRef.current);
       const rates = computeRates(previous, current, now - previousAt);
@@ -1661,25 +1669,28 @@ function Editor({ initialRoom, local, federationDemo }: { initialRoom?: string; 
         if (!isReadableTranscript(tr.text)) return;
         live.pushText(sinkId, tr.text);
         const arr = recordsByNodeRef.current.get(sinkId) ?? [];
-        // Two-pass (M6.3): a final that supersedes an earlier revision updates
-        // the existing row in place instead of appending a duplicate.
-        if (tr.segmentId !== undefined && tr.replacesRevision !== undefined) {
-          const prev = [...arr].reverse().find((r) => r.segmentId === tr.segmentId && r.provisional);
-          if (prev) {
-            prev.text = tr.text;
-            prev.provisional = false;
-            prev.lang = tr.lang ?? prev.lang;
-            prev.emotion = tr.emotion ?? prev.emotion;
-            prev.event = tr.event ?? prev.event;
-            if (tr.audio.samples.length) {
-              prev.samples = tr.audio.samples;
-              prev.sampleRate = tr.audio.sampleRate;
-              prev.durationMs = tr.audio.durationMs;
-              prev.peaks = computePeaks(tr.audio.samples, 400);
-            }
-            setSinkRecs((cur) => cur.map((r) => (r.id === prev.id ? { ...prev } : r)));
-            return;
+        // Two-pass (M6.3): revisions are keyed on (sourceId, segmentId) and
+        // ordered by revision number, so two recognizers can't replace each
+        // other's rows and a straggling provisional can't resurrect a row its
+        // final already settled (cross-device arrival order is untrusted).
+        const action = applySinkRevision(arr, tr);
+        if (action.type === "drop") return;
+        if (action.type === "replace") {
+          const prev = arr[action.index];
+          prev.text = tr.text;
+          prev.provisional = tr.status === "provisional";
+          prev.revision = tr.revision;
+          prev.lang = tr.lang ?? prev.lang;
+          prev.emotion = tr.emotion ?? prev.emotion;
+          prev.event = tr.event ?? prev.event;
+          if (tr.audio.samples.length) {
+            prev.samples = tr.audio.samples;
+            prev.sampleRate = tr.audio.sampleRate;
+            prev.durationMs = tr.audio.durationMs;
+            prev.peaks = computePeaks(tr.audio.samples, 400);
           }
+          setSinkRecs((cur) => cur.map((r) => (r.id === prev.id ? { ...prev } : r)));
+          return;
         }
         const rec: Recording = {
           id: `g-${recCounter.current++}`,
@@ -1696,6 +1707,8 @@ function Editor({ initialRoom, local, federationDemo }: { initialRoom?: string; 
           tStartMs: tr.tStartMs,
           tEndMs: tr.tEndMs,
           segmentId: tr.segmentId,
+          sourceId: tr.sourceId,
+          revision: tr.revision,
           provisional: tr.status === "provisional",
         };
         arr.push(rec);
