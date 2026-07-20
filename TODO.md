@@ -438,6 +438,39 @@ Ideas ranked by fun × implementation cost. Quick wins are being picked up first
   needed before P2P mesh works reliably outside one LAN.
 - [x] **Interpreter-booth mode** → shipped as the M6.5 template (see above);
   only the 2-device KPI measurement remains (blocked on hardware).
+- [ ] **Research → design: otoji interconnect over Bluetooth / offline mesh**
+  (requested 2026-07-22). Initial research done (2026-07-22); design + prototype
+  remain. Findings:
+  - **Browsers cannot do BT peer-to-peer, full stop.** Web Bluetooth is BLE
+    *central-role only* — no peripheral/advertise mode, no GATT server hosting
+    in any browser as of 2026, and Safari/iOS ship none of it. Two phones'
+    browsers can never link over BT directly; any BT path must run through the
+    native binary (`otoji` CLI/tray), with the browser talking to it over
+    localhost WebSocket (the existing `sherpa`/`otoji server` pattern).
+  - **Bandwidth reality:** BLE GATT single link ≈ 0.2–1 Mbps practical — fine
+    for transcripts/control/SDP, marginal for raw PCM (256 kbps), fine for
+    Opus (~24 kbps). SIG *Bluetooth Mesh* proper is flooding-relay for
+    ~11-byte sensor payloads — unusable for audio, and mostly unexposed on
+    phone OSes anyway. BT Classic RFCOMM (~1–2 Mbps) exists but cross-platform
+    peripheral/RFCOMM support in Rust is patchy (bluer = Linux/BlueZ only;
+    btleplug = central only; macOS/Windows peripheral APIs each bespoke).
+  - **Recommendation ladder** (offline, no internet):
+    1. *No new tech:* hotspot/LAN + the existing signaling — ship an offline
+       `otoji signal` mode in the native binary (the Worker's DO protocol is
+       small); browsers WebRTC over the local network as usual. Highest
+       bandwidth, zero browser changes.
+    2. *Serverless browser-only:* QR-code / copy-paste SDP exchange (reuse the
+       `#g=` share-URL machinery for an offer/answer blob) — works with zero
+       infrastructure, two taps, no BT at all.
+    3. *BT as signaling carrier only:* native helper exchanges SDP/ICE over
+       BLE GATT (central↔peripheral via OS APIs), then hands the browser a
+       normal WebRTC session on hotspot/LAN. BT never carries media.
+    4. *BT as transport* (last resort, CLI↔CLI only): Opus frames over RFCOMM
+       between native nodes; browser participation stays via localhost. Only
+       worth it where no WiFi/hotspot is possible at all.
+  - Next steps: [ ] pick ladder rung 1+2 as the target design; [ ] prototype
+    `otoji signal --offline` (native DO-protocol relay); [ ] QR SDP exchange
+    spike in the lobby.
 - [ ] **rgui as a standalone graph OS** — palette/overlay-cutout/panel
   persistence made rgui broadly useful; keep pushing it as a general
   canvas-native node editor (npm published, releases automated).
