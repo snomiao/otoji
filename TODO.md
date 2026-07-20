@@ -404,9 +404,9 @@ Ideas ranked by fun × implementation cost. Quick wins are being picked up first
   note/image in 3-D space (hand + depth + calibration already exist), synced
   through the room so other devices see it. Turns the spatial pipeline from a
   feature into an experience; federation groundwork is done.
-- [ ] **Voice→graph editing** — STT + webllm node that edits the graph from
+- [x] **Voice→graph editing** (#150, 2026-07-22) — graph-edit node + strict-JSON command pipeline + voice-graph-editing template. orig: STT + webllm node that edits the graph from
   speech ("connect the camera to depth"). Dogfooding otoji with otoji.
-- [ ] **Subgraph / group node** — select → group collapses a pipeline into one
+- [x] **Subgraph / group node — v1** (#151, 2026-07-22): multi-select menu "⧈ Group" snaps the selection into one rgui pseudo-block (drag out = ungroup); template save shares the same menu. A dedicated collapsible group NODE with its own ports stays future work. orig: select → group collapses a pipeline into one
   node; unify with template save.
 - [ ] **Touch-screen support — full gesture coverage** (requested 2026-07-21).
   Status 2026-07-22: two-finger nav (rgui#6/#7), double-tap maximize (rgui#8),
