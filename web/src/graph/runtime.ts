@@ -36,6 +36,7 @@ import type { SttLevel } from "../providers/types";
 import { buildControlFrame, buildImageFrame, buildModelFrame, buildSegmentFrame, buildSpatialFrame, buildTranscriptFrame, frameToMessage, type EdgeFrame } from "./frames";
 import { videoClipsDB, type VideoClip } from "../lib/video-clips-db";
 import { modelSourceToText, resolveModelSource, type ModelRuntime, type ModelSourceMsg } from "../providers/model/model-source";
+import { parseGraphCommands, type GraphCommand } from "./graph-commands";
 
 const DEFAULT_LLM_AGENT_MODEL = "Xenova/flan-t5-small";
 const DEFAULT_LLM_AGENT_TEXT_GENERATION_MODEL = "onnx-community/gemma-3-1b-it-ONNX";
@@ -214,6 +215,7 @@ export interface RuntimeHooks {
   // this node's preview — keeps a lazy vision node running for cross-device viewers.
   hasPreviewConsumer?: (nodeId: string) => boolean;
   onSink?: (nodeId: string, tr: TranscriptMsg) => void;
+  onGraphCommands?: (nodeId: string, commands: GraphCommand[]) => string[];
   onAudio?: (nodeId: string, audio: SegmentMsg) => void; // raw audio collected at audio-out
   onVideoClip?: (nodeId: string, clip: VideoClip) => void; // encoded video+audio collected at video-recorder
   onPipeOut?: (nodeId: string, text: string) => void; // pipe node input -> external CLI stdout
@@ -2033,6 +2035,19 @@ export class GraphRuntime {
           processTranscript(transcript);
         },
         stop: () => q.drain(),
+      };
+    }
+
+    if (type === "graph-edit") {
+      const empty = { samples: new Float32Array(0), sampleRate: MIC_VAD_SR, durationMs: 0 };
+      return {
+        input: (_port, msg) => {
+          const parsed = parseGraphCommands((msg as TranscriptMsg).text ?? "");
+          const results = "error" in parsed ? [`error: ${parsed.error}`] : this.hooks.onGraphCommands?.(id, parsed) ?? ["error: graph editing is unavailable"];
+          const text = results.length ? results.join(" · ") : "no graph commands";
+          this.hooks.onRecognized?.(id, text);
+          this.emit(id, "out", { text, audio: empty } as TranscriptMsg);
+        },
       };
     }
 
