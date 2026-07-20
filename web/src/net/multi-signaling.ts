@@ -38,7 +38,7 @@ export class MultiSignalingClient implements Signaling {
     private name: string,
     private deviceId: string = "",
     private role: string = "general",
-    private hasMic: boolean = true,
+    private hasMic?: boolean,
     private bases: string[] = envTrackers(),
   ) {
     // One stable identity reused on every tracker.
