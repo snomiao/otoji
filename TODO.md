@@ -503,7 +503,7 @@ Ideas ranked by fun × implementation cost. Quick wins are being picked up first
   needed before P2P mesh works reliably outside one LAN.
 - [x] **Interpreter-booth mode** → shipped as the M6.5 template (see above);
   only the 2-device KPI measurement remains (blocked on hardware).
-- [ ] **Research → design: otoji interconnect over Bluetooth / offline mesh**
+- [x] **Research → design → shipped: otoji interconnect offline** (relay #145 + serverless direct pairing; see next steps below)
   (requested 2026-07-22). Initial research done (2026-07-22); design + prototype
   remain. Findings:
   - **Browsers cannot do BT peer-to-peer, full stop.** Web Bluetooth is BLE
@@ -537,8 +537,12 @@ Ideas ranked by fun × implementation cost. Quick wins are being picked up first
     relay + serverless QR/copy-paste SDP) are the target; BT-as-carrier stays
     a non-goal until a concrete no-WiFi scenario appears. [x] `otoji signal`
     native DO-protocol relay shipped (#145, LAN join URLs printed, protocol
-    integration-tested). [ ] QR SDP exchange spike in the lobby (serverless
-    two-tap join; reuse the #g= machinery for offer/answer blobs).
+    integration-tested). [x] QR SDP exchange spike shipped (this PR: `?direct`
+    page — offer/answer as copy-paste blobs, share URLs, AND QR codes
+    (lean-qr); non-trickle ICE so one blob carries everything; loopback
+    E2E-verified in a real browser, data channel live at RTT 1 ms).
+    Follow-up (design, not blocked): route the graph mesh transport over a
+    direct link so a full room works serverless.
 - [ ] **rgui as a standalone graph OS** — palette/overlay-cutout/panel
   persistence made rgui broadly useful; keep pushing it as a general
   canvas-native node editor (npm published, releases automated).
