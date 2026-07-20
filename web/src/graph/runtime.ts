@@ -342,7 +342,7 @@ export class GraphRuntime {
     if (!frame) return;
     const ok = self.transport.send(owner, frame);
     if (ok) {
-      const bytes = (frame.samplesB64?.length ?? 0) + (frame.imageDataUrl?.length ?? 0) + (frame.text?.length ?? 0) + (frame.spatial ? JSON.stringify(frame.spatial).length : 0) + 80;
+      const bytes = (frame.samplesPcm16B64?.length ?? frame.samplesB64?.length ?? 0) + (frame.imageDataUrl?.length ?? 0) + (frame.text?.length ?? 0) + (frame.spatial ? JSON.stringify(frame.spatial).length : 0) + 80;
       this.hooks.onEdgeBytes?.(`${nodeId}:${port}->${target.node}:${target.port}`, bytes);
     }
   }

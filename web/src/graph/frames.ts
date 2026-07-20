@@ -1,5 +1,5 @@
 // Wire frames for cross-device graph edges (sent over RTCDataChannel).
-// Audio is carried as raw 16 kHz mono Float32 (base64) — kept at 16 kHz so the
+// Audio is carried as raw 16 kHz mono PCM16 (base64) — kept at 16 kHz so the
 // receiving STT node's fbank sees the rate it expects. (Opus-on-the-wire is a
 // future bandwidth optimization; it decodes to 48 kHz and would need a resample.)
 
@@ -28,6 +28,7 @@ export interface EdgeFrame {
   replacesRevision?: number; // revision protocol: pass-2 supersede pointer
   sourceId?: string; // revision protocol: node that minted segmentId
   samplesB64?: string; // Float32 PCM bytes, base64
+  samplesPcm16B64?: string; // little-endian signed PCM16 bytes, base64
   imageDataUrl?: string; // compressed image frame
   width?: number;
   height?: number;
@@ -38,15 +39,29 @@ export interface EdgeFrame {
   capture?: CameraCaptureInfo;
 }
 
-export type SegmentFrame = EdgeFrame & { mtype: "segment"; sampleRate: number; durationMs: number; samplesB64: string };
-export type TranscriptFrame = EdgeFrame & { mtype: "transcript"; sampleRate: number; durationMs: number; samplesB64: string; text?: string };
+export type SegmentFrame = EdgeFrame & { mtype: "segment"; sampleRate: number; durationMs: number; samplesPcm16B64: string };
+export type TranscriptFrame = EdgeFrame & { mtype: "transcript"; sampleRate: number; durationMs: number; samplesPcm16B64: string; text?: string };
 export type ImageFrame = EdgeFrame & { mtype: "image"; imageDataUrl: string; width: number; height: number; ts: number };
 export type ControlFrame = EdgeFrame & { mtype: "control"; ts: number };
 export type SpatialFrame = EdgeFrame & { mtype: "spatial"; spatial: unknown; ts: number };
 export type ModelFrame = EdgeFrame & { mtype: "model"; model: ModelSourceMsg; ts: number };
 
-function encodeSamples(samples: Float32Array): string {
-  return bytesToBase64(new Uint8Array(samples.buffer, samples.byteOffset, samples.byteLength));
+export function encodePcm16(samples: Float32Array): string {
+  const bytes = new Uint8Array(samples.length * 2);
+  const view = new DataView(bytes.buffer);
+  for (let i = 0; i < samples.length; i++) {
+    const sample = Math.max(-1, Math.min(1, samples[i]));
+    view.setInt16(i * 2, Math.round(sample * 32767), true);
+  }
+  return bytesToBase64(bytes);
+}
+
+export function decodePcm16(b64: string): Float32Array {
+  const bytes = base64ToBytes(b64);
+  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  const samples = new Float32Array(Math.floor(bytes.byteLength / 2));
+  for (let i = 0; i < samples.length; i++) samples[i] = view.getInt16(i * 2, true) / 32767;
+  return samples;
 }
 
 function decodeSamples(b64: string): Float32Array {
@@ -66,7 +81,7 @@ export function buildSegmentFrame(target: string, port: string, seg: SegmentMsg)
     segmentId: seg.segmentId,
     revision: seg.revision,
     sourceId: seg.sourceId,
-    samplesB64: encodeSamples(seg.samples),
+    samplesPcm16B64: encodePcm16(seg.samples),
   };
 }
 
@@ -90,7 +105,7 @@ export function buildTranscriptFrame(target: string, port: string, tr: Transcrip
     status: tr.status,
     replacesRevision: tr.replacesRevision,
     sourceId: tr.sourceId,
-    samplesB64: encodeSamples(tr.audio.samples),
+    samplesPcm16B64: encodePcm16(tr.audio.samples),
   };
 }
 
@@ -147,7 +162,7 @@ export function frameToMessage(f: EdgeFrame): SegmentMsg | TranscriptMsg | Contr
   if (f.mtype === "control") return { pulse: f.pulse, ts: f.ts ?? Date.now() };
   if (f.mtype === "spatial") return { data: f.spatial, ts: f.ts ?? Date.now() };
   if (f.mtype === "model") return f.model!;
-  const samples = decodeSamples(f.samplesB64 ?? "");
+  const samples = f.samplesPcm16B64 !== undefined ? decodePcm16(f.samplesPcm16B64) : decodeSamples(f.samplesB64 ?? "");
   const seg: SegmentMsg = { samples, sampleRate: f.sampleRate ?? 16000, durationMs: f.durationMs ?? 0, offsetMs: f.offsetMs, segmentId: f.mtype === "segment" ? f.segmentId : undefined, revision: f.mtype === "segment" ? f.revision : undefined, sourceId: f.mtype === "segment" ? f.sourceId : undefined };
   if (f.mtype === "transcript")
     return { text: f.text ?? "", audio: seg, lang: f.lang, emotion: f.emotion, event: f.event, tStartMs: f.tStartMs, tEndMs: f.tEndMs, segmentId: f.segmentId, revision: f.revision, status: f.status, replacesRevision: f.replacesRevision, sourceId: f.sourceId };
