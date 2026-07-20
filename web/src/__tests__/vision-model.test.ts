@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { formatLabels, formatJsonl, type Detection } from "../lib/detect-format";
-import { templateFromSelection, BUILTIN_TEMPLATES } from "../lib/templates";
+import { templateFromSelection, BUILTIN_TEMPLATES, TEMPLATE_CATEGORIES } from "../lib/templates";
 import { NODE_SPECS } from "../graph/model";
 
 const dets: Detection[] = [
@@ -50,6 +50,14 @@ describe("builtin templates", () => {
         expect(keys.has(e.from)).toBe(true);
         expect(keys.has(e.to)).toBe(true);
       }
+    }
+  });
+
+  it("every builtin template belongs to a known category", () => {
+    const known = new Set(TEMPLATE_CATEGORIES.map((c) => c.id));
+    for (const t of BUILTIN_TEMPLATES) {
+      expect(t.category, `template ${t.id} needs a category`).toBeDefined();
+      expect(known.has(t.category!), `template ${t.id} has unknown category ${t.category}`).toBe(true);
     }
   });
 
