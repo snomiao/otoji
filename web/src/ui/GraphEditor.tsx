@@ -70,6 +70,7 @@ import {
   type NodeType,
   type VoiceGraph,
 } from "../graph/model";
+import { computeRates, formatRate } from "../graph/edge-throughput";
 
 
 /** Trackers ADVERTISED by Signaling nodes in the synced graph. These are
@@ -223,13 +224,6 @@ function wrapTextTailLines(ctx: CanvasRenderingContext2D, text: string, maxW: nu
   if (maxLines <= 0) return [];
   const lines = wrapTextLines(ctx, text, maxW, 1000);
   return lines.length > maxLines ? lines.slice(-maxLines) : lines;
-}
-
-/** Human-readable throughput, e.g. 1536 -> "1.5 KB/s". */
-function formatRate(bytesPerSec: number): string {
-  if (bytesPerSec >= 1024 * 1024) return `${(bytesPerSec / 1024 / 1024).toFixed(1)} MB/s`;
-  if (bytesPerSec >= 1024) return `${(bytesPerSec / 1024).toFixed(1)} KB/s`;
-  return `${Math.round(bytesPerSec)} B/s`;
 }
 
 // Floating overlay card shared by the toolbar, palette, sink and view panels.
@@ -422,7 +416,7 @@ function Editor({ initialRoom, local, federationDemo }: { initialRoom?: string; 
   if (!previewSyncRef.current) previewSyncRef.current = new PreviewSync(liveRef.current);
   const recordsByNodeRef = useRef(new Map<string, Recording[]>()); // uncapped, for file export
   const videoClipsByNodeRef = useRef(new Map<string, VideoClip[]>());
-  const edgeBytesRef = useRef(new Map<string, number>()); // per-edge bytes accumulated this second
+  const edgeBytesRef = useRef(new Map<string, number>()); // cumulative remote payload bytes per edge
   const [edgeRates, setEdgeRates] = useState<Record<string, number>>({}); // per-edge bytes/sec
   const [lastError, setLastError] = useState<string>(""); // most recent runtime error, for bug reports
   const peerBadgeShown = useSyncExternalStore(subscribePrefs, isPeerBadgeShown, () => true);
@@ -558,22 +552,23 @@ function Editor({ initialRoom, local, federationDemo }: { initialRoom?: string; 
   useEffect(() => () => { meshRef.current?.destroy(); sigRef.current?.close(); }, []);
 
   useEffect(() => {
-    if (!joined) return;
+    if (!running) {
+      setEdgeRates((prev) => (Object.keys(prev).length ? {} : prev));
+      return;
+    }
+    let previous = new Map(edgeBytesRef.current);
+    let previousAt = performance.now();
     const t = setInterval(() => {
       setTick((x) => x + 1);
-      // Snapshot per-edge bytes/sec over the last second, then reset the window.
-      const acc = edgeBytesRef.current;
-      if (acc.size) {
-        const rates: Record<string, number> = {};
-        for (const [k, v] of acc) rates[k] = v;
-        acc.clear();
-        setEdgeRates(rates);
-      } else {
-        setEdgeRates((prev) => (Object.keys(prev).length ? {} : prev));
-      }
+      const now = performance.now();
+      const current = new Map(edgeBytesRef.current);
+      const rates = computeRates(previous, current, now - previousAt);
+      previous = current;
+      previousAt = now;
+      setEdgeRates((prev) => Object.keys(rates).length || Object.keys(prev).length ? rates : prev);
     }, 1000);
     return () => clearInterval(t);
-  }, [joined]);
+  }, [running]);
 
   // Local "try it" mode: seed a runnable demo pipeline, or the read-only
   // cross-app federation chain when ?federationDemo is present.
@@ -2042,7 +2037,12 @@ function Editor({ initialRoom, local, federationDemo }: { initialRoom?: string; 
     (e: { id: string; source: string; target: string }) => {
       const selected = e.id === selectedEdge;
       const illegal = illegalEdges.has(e.id);
-      const rate = edgeRates[e.id];
+      const source = currentGraph.nodes[e.source];
+      const target = currentGraph.nodes[e.target];
+      const remote = source && target
+        ? nodeOwner(source, onlineDeviceIds) !== nodeOwner(target, onlineDeviceIds)
+        : false;
+      const rate = remote ? edgeRates[e.id] : undefined;
       return {
         dashed: running || undefined,
         style: selected
@@ -2053,7 +2053,7 @@ function Editor({ initialRoom, local, federationDemo }: { initialRoom?: string; 
         label: illegal ? "⚠ can't cross devices" : rate ? formatRate(rate) : undefined,
       };
     },
-    [selectedEdge, illegalEdges, edgeRates, running],
+    [selectedEdge, illegalEdges, edgeRates, running, currentGraph, onlineDeviceIds],
   );
 
   // Live node body drawn on the rgui canvas (screen-space, clipped to the body
