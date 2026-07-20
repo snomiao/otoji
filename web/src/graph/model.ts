@@ -19,6 +19,7 @@ export type NodeType =
   | "stt"
   | "web-speech"
   | "vosk"
+  | "stream-asr"
   | "sherpa"
   | "vibevoice-asr"
   | "translate"
@@ -158,6 +159,20 @@ const RAW_NODE_SPECS: Record<NodeType, NodeSpec> = {
     // Browser-native streaming ASR with live interim results; opens its own mic on
     // the device it runs on (no audio input port).
     inputs: [],
+    outputs: [{ id: "out", type: "transcript" }],
+  },
+  "stream-asr": {
+    type: "stream-asr",
+    label: "Streaming ASR (browser)",
+    // True streaming transducer (zipformer via onnxruntime-web): feed continuous
+    // audio (mic-raw at a small frameMs), partial revisions stream out per
+    // chunk and a silence endpoint finalizes each utterance (M6.1). A connected
+    // Model provider with a sherpa encoder/decoder/joiner/tokens export
+    // overrides the default model.
+    inputs: [
+      { id: "in", type: "segment" },
+      { id: "model", type: "model" },
+    ],
     outputs: [{ id: "out", type: "transcript" }],
   },
   vosk: {
@@ -523,7 +538,7 @@ export const NODE_SPECS: Record<NodeType, NodeSpec> = Object.fromEntries(
 /** Palette grouping for the node types. */
 export const NODE_CATEGORIES: { id: string; label: string; types: NodeType[] }[] = [
   { id: "input", label: "Input", types: ["mic-vad", "mic-raw", "audio-mix", "file-audio", "file-image", "file-text", "url", "textarea", "video-clip"] },
-  { id: "stt", label: "Speech → Text", types: ["stt", "web-speech", "vosk"] },
+  { id: "stt", label: "Speech → Text", types: ["stt", "stream-asr", "web-speech", "vosk"] },
   { id: "translate", label: "Text → Text", types: ["translate", "browser-translate-api", "text-aggregate", "text-normalize", "text-filter"] },
   { id: "tts", label: "Text → Speech", types: ["tts", "tts-model"] },
   { id: "output", label: "Output", types: ["sink", "audio-out", "video-recorder", "srt-out", "speaker"] },

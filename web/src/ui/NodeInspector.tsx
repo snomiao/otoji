@@ -1119,6 +1119,16 @@ export function NodeInspector({ node, controls = true, onClose }: { node: Inspec
           </label>
         )}
 
+        {vt === "stream-asr" && (
+          <>
+            <label style={row}>models base:
+              <input value={(config?.modelsBase as string) ?? ""} onChange={(e) => onConfig(id, { modelsBase: e.target.value })}
+                placeholder="default: streaming-zipformer-en int8" spellCheck={false} style={sel} />
+            </label>
+            <div style={{ fontSize: 9.5, color: "#a0aec0", marginTop: 2 }}>true streaming transducer — feed Mic (raw); partials stream live, silence finalizes</div>
+          </>
+        )}
+
         {vt === "sherpa" && (
           <>
             <label style={row}>server:

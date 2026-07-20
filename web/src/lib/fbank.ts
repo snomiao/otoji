@@ -14,6 +14,7 @@ export interface FbankOptions {
   highFreq: number; // <= 0 means Nyquist + highFreq
   preemph: number;
   removeDcOffset: boolean;
+  window?: "hamming" | "povey"; // default hamming (FunASR/SenseVoice); kaldi/icefall models use povey
 }
 
 export const SENSEVOICE_FBANK: FbankOptions = {
@@ -41,6 +42,14 @@ function hammingWindow(n: number): Float32Array {
   const w = new Float32Array(n);
   const a = (2 * Math.PI) / (n - 1);
   for (let i = 0; i < n; i++) w[i] = 0.54 - 0.46 * Math.cos(a * i);
+  return w;
+}
+
+/** Kaldi's "povey" window: hann^0.85 (the default for icefall/zipformer models). */
+function poveyWindow(n: number): Float32Array {
+  const w = new Float32Array(n);
+  const a = (2 * Math.PI) / (n - 1);
+  for (let i = 0; i < n; i++) w[i] = Math.pow(0.5 - 0.5 * Math.cos(a * i), 0.85);
   return w;
 }
 
@@ -134,7 +143,7 @@ function createFbankComputer(opts: FbankOptions): FbankComputer {
   const frameLength = Math.round((opts.frameLengthMs * opts.sampleRate) / 1000); // 400
   const frameShift = Math.round((opts.frameShiftMs * opts.sampleRate) / 1000); // 160
   const fftSize = roundUpToPow2(frameLength); // 512
-  const window = hammingWindow(frameLength);
+  const window = opts.window === "povey" ? poveyWindow(frameLength) : hammingWindow(frameLength);
   const melBank = buildMelBank(opts, fftSize);
 
   return {

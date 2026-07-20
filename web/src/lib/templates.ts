@@ -84,6 +84,22 @@ export const BUILTIN_TEMPLATES: GraphTemplate[] = [
     ],
   },
   {
+    id: "streaming-captions",
+    category: "voice",
+    name: "Streaming captions (live)",
+    desc: "Raw mic → streaming ASR → live partial captions, finals on silence",
+    builtin: true,
+    nodes: [
+      { key: "mic", type: "mic-raw", dx: 0, dy: 0, config: { frameMs: 100 } },
+      { key: "asr", type: "stream-asr", dx: COL, dy: 0 },
+      { key: "sink", type: "sink", dx: COL * 2, dy: 0 },
+    ],
+    edges: [
+      { from: "mic", fromHandle: "out", to: "asr", toHandle: "in" },
+      { from: "asr", fromHandle: "out", to: "sink", toHandle: "in" },
+    ],
+  },
+  {
     id: "live-captions",
     category: "voice",
     name: "Live captions",
