@@ -1,5 +1,6 @@
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
+import { VitePWA } from "vite-plugin-pwa";
 import { dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { rguiAlias, rguiAliases } from "./rgui-alias";
@@ -22,7 +23,65 @@ const dropWasmAssets = {
 const url = (rel: string) => fileURLToPath(new URL(rel, import.meta.url));
 
 export default defineConfig({
-  plugins: [react(), dropWasmAssets],
+  plugins: [
+    react(),
+    dropWasmAssets,
+    VitePWA({
+      registerType: "autoUpdate",
+      injectRegister: "auto",
+      manifest: {
+        name: "otoji",
+        short_name: "otoji",
+        description: "realtime speech ⇄ text — wire mic → STT → translate → speech as a voice graph",
+        start_url: "/",
+        display: "standalone",
+        theme_color: "#0d1117",
+        background_color: "#0d1117",
+        icons: [
+          {
+            src: "/otoji.svg",
+            sizes: "any",
+            type: "image/svg+xml",
+            purpose: "any maskable",
+          },
+        ],
+      },
+      workbox: {
+        maximumFileSizeToCacheInBytes: 30 * 1024 * 1024,
+        navigateFallback: "/index.html",
+        navigateFallbackDenylist: [/^\/signal(?:\/|$)/, /\/[^/?]+\.[^/?]+(?:\?.*)?$/],
+        runtimeCaching: [
+          {
+            urlPattern: /^https:\/\/cdn\.jsdelivr\.net\//,
+            handler: "CacheFirst",
+            options: {
+              cacheName: "otoji-cdn-assets-v1",
+              cacheableResponse: { statuses: [0, 200] },
+              expiration: { maxEntries: 80, maxAgeSeconds: 60 * 60 * 24 * 30 },
+            },
+          },
+          {
+            urlPattern: /^https:\/\/unpkg\.com\//,
+            handler: "CacheFirst",
+            options: {
+              cacheName: "otoji-cdn-assets-v1",
+              cacheableResponse: { statuses: [0, 200] },
+              expiration: { maxEntries: 80, maxAgeSeconds: 60 * 60 * 24 * 30 },
+            },
+          },
+          {
+            urlPattern: /^https:\/\/huggingface\.co\/.*\/resolve\//,
+            handler: "CacheFirst",
+            options: {
+              cacheName: "otoji-cdn-assets-v1",
+              cacheableResponse: { statuses: [0, 200] },
+              expiration: { maxEntries: 40, maxAgeSeconds: 60 * 60 * 24 * 30 },
+            },
+          },
+        ],
+      },
+    }),
+  ],
   resolve: { alias: rguiAliases },
   // rgui source lives outside web/ (submodule / sibling worktree); let the dev
   // server read it.
