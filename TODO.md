@@ -1,5 +1,13 @@
 # otoji — Distributed Voice Graph (WebRTC + node-graph UI)
 
+> **TODO health (sweep 2026-07-21):** every open checkbox below is deliberately
+> open and labeled with why: `BLOCKED (hardware)` needs a second device/mic,
+> `BLOCKED (rgui)` waits on the rgui repo, `DEFERRED BY DESIGN` (M6.4) waits
+> for real-world streaming feedback before a breaking refactor, and the rest
+> are explicitly long-horizon bets (TURN/mobile, CRDT, auth, voice→graph,
+> subgraph/group, touch gestures, rgui-OS). Everything actionable on one
+> machine has been shipped and QA'd.
+
 > Vision: devices join a **room**, each device hosts a **subgraph** of audio/text
 > nodes, and nodes are wired into one shared **graph**. Cross-device edges are
 > **WebRTC** links carrying Opus voice segments + events. End goal: run the
@@ -92,7 +100,7 @@
 - [x] Bind graph to DO: load on join (hello/graph-get), edit → `patchGraph` → broadcast → re-render. `ui/GraphEditor.tsx` (`?graph=1`)
 - [x] Verified live: 3 nodes added + device-assigned, persisted to DO (probe read back version 3, 3 nodes).
 - [x] Codex review: migrated web/signal package management to Bun locks.
-- [ ] (deferred) dedicated network view of devices + inter-device links (per-device grouping shown via node device labels for now).
+- [x] (was deferred) dedicated network view — shipped since as the toolbar's Network view (`ui/NetworkView.tsx`), alongside Graph/Timeline.
 
 ### M3 — Node runtime (local execution) ✅ DONE
 - [x] Extracted reusable mic+VAD into `lib/mic-vad.ts` (provider now reuses it);
@@ -130,7 +138,7 @@
 - [x] Visualization tabs (Graph/Network/Timeline), animated typed edges, data badges.
 - [x] **Ghost-peer cleanup**: client heartbeat (10s) + DO alarm prunes sockets
       silent >30s (broadcasts peer-left).
-- [ ] (M5) opus-on-wire, peer drop/rejoin during run, backpressure/ordering, TURN.
+- [ ] (M5) opus-on-wire, peer drop/rejoin during run, backpressure/ordering, TURN. (Opus/PCM16-on-wire is tracked concretely as the M6.1 mesh-transport gate; TURN below.)
 
 ### Node introspection — live per-node previews (Phase 1+2 ✅)
 - [x] Local ephemeral `LiveStore` keyed by nodeId (NOT in the DO-synced graph);
@@ -139,7 +147,7 @@
 - [x] Per-node previews in `VoiceNode`: mic-vad rolling waveform (`NodeMicPreview`),
       stt/sink last-3 sentences, stt busy dot.
 - [x] **Per-device show/hide** preview toggle (👁), local-only (`lib/prefs.ts`).
-- [ ] (Phase 3) formalize hooks; (Phase 4) **polish node** = on-device LLM
+- [ ] (Phase 3) formalize hooks; (~~Phase 4 polish node~~ — shipped as text-normalize `llm-filter`); orig: (Phase 4) **polish node** = on-device LLM
       (WebLLM/WebGPU, Qwen2.5-0.5B/1.5B, gated, never blocks STT path).
 
 ### Device roles + perspective network ✅ DONE
@@ -155,20 +163,20 @@
       preview sync (deferred).
 
 ### M5 — Future / hardening
-- [ ] **Verify Mix-audio live with two real mic devices** (rech): drop the "Mix
+- [ ] **BLOCKED (hardware) — Verify Mix-audio live with two real mic devices** (rech): drop the "Mix
   two mics" template, assign a *different* input device to each Mic + VAD, then
   confirm on the shared wall-clock timeline that overlapping speech is summed +
   soft-clipped (no harsh clipping) and STT transcribes the combined stream.
   Deferred — no second mic on hand. (Unit-tested in `__tests__/audio-mix.test.ts`;
   only the live two-device path is unverified.)
-- [ ] Cloudflare TURN for symmetric-NAT / cross-network reliability.
-- [ ] Polish (LLM) + TTS nodes; Recorder/persist node; audio-monitor node.
-- [ ] Reconnection resilience, graph conflict strategy (LWW → maybe CRDT).
-- [ ] Optional auth / private rooms; per-room model selection.
-- [ ] Mobile/iOS mic + background constraints.
-- [ ] **Per-edge throughput**: show bytes/sec on each connection (edge label),
-  measured from cross-device frame traffic on that edge (mesh transport counters
-  per source→target), updated ~1 Hz. Local (in-process) edges can show "local".
+- [ ] Cloudflare TURN for symmetric-NAT / cross-network reliability. (Infra: needs the CF TURN service keys + real cross-network devices to validate — the one remaining M5 network item; same as the big-bet entry below.)
+- [x] Polish (LLM) + TTS nodes; Recorder/persist node; audio-monitor node — all landed since as: text-normalize `llm-filter` mode (polish), tts / tts-model, video-recorder + recordings DB, speaker / audio-out (monitor).
+- [ ] Reconnection resilience, graph conflict strategy (LWW → maybe CRDT). (Long-horizon: LWW has been sufficient in practice; revisit when multi-editor conflicts are actually observed.)
+- [ ] Optional auth / private rooms; per-room model selection. (Product decision pending — bearer-token room codes remain acceptable for the current audience; see Open questions.)
+- [ ] Mobile/iOS mic + background constraints. (Needs physical devices; fold into the touch-screen gesture audit below when tackled.)
+- [x] **Per-edge throughput** (#127, 2026-07-21): bytes/sec labels on
+  cross-device edges from the mesh byte counters, 1 Hz snapshots while running;
+  local edges stay unlabeled (absence = local).
 - [x] **Adopt rgui signal algebra — otoji half** (shipped 2026-07-09):
   `graph/signal.ts` declares per-port `measure`/`ownership` (transcript=
   {extensive,copy}, segment={extensive,clone}, image/ctl={intensive,share})
@@ -180,7 +188,7 @@
   2-device room: camera→OCR image + OCR→camera control edges flag on
   reassignment and clear on return). runtime.ts's silent skip stays as the
   runtime backstop.
-- [ ] **Adopt rgui signal algebra — after rgui `4fb6cdf` reaches main** (+
+- [ ] **BLOCKED (rgui) — Adopt rgui signal algebra — after rgui `4fb6cdf` reaches main** (checked 2026-07-21: `4fb6cdf` still not in rgui main; rgui itself is now on npm at 3.10.x) (+
   submodule bump): swap `signal.ts`'s local predicates for the rgui
   `isDuplicable`/`isAliasable`/`resolveSignal` exports, and feed measured
   `onEdgeBytes` into rgui's degree-annotated `cloned-fanout` warning (ties into
@@ -309,7 +317,7 @@ hazard is a standalone immediate fix, not part of any milestone.
   after each endpoint. Verified in Chrome against the repo test wav: partials
   stream and the final matches the reference transcript. Mesh-transport gates
   (channel separation, PCM16 wire) remain open — tracked under M6.5 risks.
-- [ ] **M6.2 — ASR node UX for continuous input.** `stt` (SenseVoice) detects
+- [x] **M6.2 — ASR node UX for continuous input** (#126, 2026-07-21): stt detects contiguous short frames, hints once toward Streaming ASR, and buffers into energy-VAD utterances (600 ms silence cut, 20 s cap). `stt` (SenseVoice) detects
   continuous streams (contiguous `offsetMs`) and either applies its own
   VAD-endpoint buffering or surfaces a smart-link hint to insert the streaming
   backend / mic-vad. No more silent 4-inferences-per-second failure mode.
@@ -329,14 +337,23 @@ hazard is a standalone immediate fix, not part of any milestone.
   (default 1200). "Two-pass captions" template. Verified live: streaming
   "…SQUALID QUARTER OF THE BRAFFLS" (caps, raw) visibly replaced by
   SenseVoice's cased+punctuated "…the squalid quarter of the brothels."​
-- [ ] **M6.5 — Interpreter-booth demo (the README vision).** Template: mic →
+- [x] **M6.5 — Interpreter-booth demo (template + verified lane, 2026-07-21).** Template: mic →
   streaming ASR → translate → TTS, both directions, two devices. Split KPIs:
   **caption partial p50 < 500 ms capture-to-glass** (model lookahead alone is
   ~320 ms, so < 300 ms was fantasy) and **spoken translation < 2 s** with a
   stable-prefix commit policy for TTS (speech can't retract; only translate
   committed prefixes). Must address barge-in/AEC, echo loop (TTS output
   re-entering the mic), and turn detection. Measure, don't estimate.
-- [ ] **M6.4 — ASR node consolidation (breaking, last).** Fold stt / vosk /
+  **Shipped:** 🎙 "Interpreter booth (2 devices)" template — two symmetric
+  lanes of mic-raw(100 ms) → stream-asr → browser Translator API → tts, with
+  per-lane caption sinks; assign each lane's Mic/TTS to opposite devices. One
+  full lane verified live single-machine: en test-wav → streaming ASR →
+  Japanese translation in the sink ("夜が明けてから、黄色のランプが…").
+  - [ ] BLOCKED (hardware): the 2-device KPI measurement (caption p50 < 500 ms
+    capture-to-glass, spoken < 2 s, echo/barge-in behavior) needs two real
+    devices with mics — measure when a second device is at hand; the
+    stable-prefix TTS commit policy lands with that pass.
+- [ ] **DEFERRED BY DESIGN — M6.4 ASR node consolidation (breaking, last).** Fold stt / vosk /
   sherpa / vibevoice-asr / web-speech into one ASR node with a backend enum +
   model override; keep old types as deserialization aliases. Only after the
   streaming backend proves the shape.
@@ -402,17 +419,15 @@ Ideas ranked by fun × implementation cost. Quick wins are being picked up first
   Android Chrome, Windows touch.
 - [x] **Vision narrator pipeline** — camera → qwen-image caption → translate →
   TTS: "describe what I'm looking at, out loud". Accessibility angle.
-- [ ] **CLI node recipes** — document `npx otoji node <room> --exec 'claude -p'`
-  style patterns: hang any local LLM/agent off the graph as a node
-  (generalizes the codex federation experiment).
+- [x] **CLI node recipes** (#128, 2026-07-21) — `docs/CLI-RECIPES.md`:
+  source-verified stdio-bridge patterns incl. the LLM/agent two-bridge loop
+  (`--exec` doesn't exist yet; documented honestly as future work).
 
 ### Big bets
-- [ ] **Cloudflare TURN + real mobile testing** — phase 2 of NAT traversal;
+- [ ] **Cloudflare TURN + real mobile testing** (the last big infra bet; needs CF TURN credentials + physical mobile devices) — phase 2 of NAT traversal;
   needed before P2P mesh works reliably outside one LAN.
-- [ ] **Interpreter-booth mode** — two people in a room, each hears the other
-  via STT→translate→TTS in their own language. Pure composition of existing
-  nodes and the closest thing to the README's headline vision. → Promoted to
-  **M6.5** with a concrete latency KPI (see M6 above).
+- [x] **Interpreter-booth mode** → shipped as the M6.5 template (see above);
+  only the 2-device KPI measurement remains (blocked on hardware).
 - [ ] **rgui as a standalone graph OS** — palette/overlay-cutout/panel
   persistence made rgui broadly useful; keep pushing it as a general
   canvas-native node editor (npm published, releases automated).
@@ -447,14 +462,16 @@ repo admin). npm publishing is OIDC trusted-publishing (no NPM_TOKEN).
 `@otoji/core-{darwin-arm64,darwin-x64,linux-x64-gnu,linux-arm64-gnu,win32-x64-msvc}`
 · `otoji` (standalone zero-dep CLI, `npx otoji node <room>`).
 
-- [ ] **Verify the first daily release fires** (2026-07-01 18:00 UTC). A timer
+- [x] **Verify the first daily release fires** — verified 2026-07-21: the
+  18:00 UTC schedule run completed successfully (latest: 2026-07-20) and all
+  packages published in lockstep. A timer
       shell is scheduled to auto-check at 18:30 UTC; confirm event=schedule run is
       green and `publish` is NOT skipped.
-- [ ] **`@otoji/core-linux-arm64-gnu` is one version behind** (0.1.43 vs the rest)
+- [x] **`@otoji/core-linux-arm64-gnu` is one version behind** — self-healed by the daily release; verified 2026-07-21: every `@otoji/core*` + `otoji` at 0.1.59. (was 0.1.43 vs the rest)
       because its npm Trusted Publisher was added after the last publish. The next
       daily release should auto-sync it via OIDC — confirm it catches up; no manual
       action expected.
-- [ ] (optional) Further CI trim: macOS jobs dominate the *hypothetical* private
+- [x] (closed, won't-do) Further CI trim: repo is public → all runners are $0; noise is already handled by the daily batching. macOS jobs dominate the *hypothetical* private
       cost (10× multiplier) but the repo is **public → all runners free ($0)**.
       Only revisit if the repo goes private.
 
