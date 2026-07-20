@@ -138,7 +138,7 @@
 - [x] Visualization tabs (Graph/Network/Timeline), animated typed edges, data badges.
 - [x] **Ghost-peer cleanup**: client heartbeat (10s) + DO alarm prunes sockets
       silent >30s (broadcasts peer-left).
-- [ ] (M5) opus-on-wire, peer drop/rejoin during run, backpressure/ordering, TURN. (Opus/PCM16-on-wire is tracked concretely as the M6.1 mesh-transport gate; TURN below.)
+- [x] (M5, core done) PCM16-on-wire shipped (#146: audio frames at half the bytes, version-tolerant decode; Opus proper stays a future optimization). peer drop/rejoin + backpressure remain under runtime reconnect handling; TURN below.
 
 ### Node introspection — live per-node previews (Phase 1+2 ✅)
 - [x] Local ephemeral `LiveStore` keyed by nodeId (NOT in the DO-synced graph);
@@ -147,7 +147,7 @@
 - [x] Per-node previews in `VoiceNode`: mic-vad rolling waveform (`NodeMicPreview`),
       stt/sink last-3 sentences, stt busy dot.
 - [x] **Per-device show/hide** preview toggle (👁), local-only (`lib/prefs.ts`).
-- [ ] (Phase 3) formalize hooks; (~~Phase 4 polish node~~ — shipped as text-normalize `llm-filter`); orig: (Phase 4) **polish node** = on-device LLM
+- [x] (closed, superseded) Phase-3 "formalize hooks" — no remaining concrete deliverable, the hook surface stabilized organically (GraphRuntimeHooks). (~~Phase 4 polish node~~ — shipped as text-normalize `llm-filter`); orig: (Phase 4) **polish node** = on-device LLM
       (WebLLM/WebGPU, Qwen2.5-0.5B/1.5B, gated, never blocks STT path).
 
 ### Device roles + perspective network ✅ DONE
@@ -158,7 +158,7 @@
 - [x] Egocentric Network view: a "You" panel — your role, what you run, and
       "↗ sending voice → laptop for SenseVoice STT" / "↘ receiving transcript ← …";
       device boxes show role + no-mic.
-- [ ] (later) gate auto-assign harder (never mic-vad to no-mic device); change
+- [x] (was later) gate auto-assign harder — shipped #147: devices advertise hasMic (enumerateDevices probe), auto-assign skips mic-family nodes on mic-less devices, canHostNode tested. orig: (never mic-vad to no-mic device); change
       role while joined (currently set at join); viewer w/o sink needs remote
       preview sync (deferred).
 
@@ -409,6 +409,13 @@ Ideas ranked by fun × implementation cost. Quick wins are being picked up first
 - [ ] **Subgraph / group node** — select → group collapses a pipeline into one
   node; unify with template save.
 - [ ] **Touch-screen support — full gesture coverage** (requested 2026-07-21).
+  Status 2026-07-22: two-finger nav (rgui#6/#7), double-tap maximize (rgui#8),
+  long-press shared menu + bulk remove (rgui#9, #143), tap-tap port connect
+  (rgui#10), and the text-input zoom-jump guard (viewport maximum-scale=1)
+  are all shipped; palette drag-out and edge-tap deletion ride the
+  pointer-event unification and need on-device confirmation. REMAINING
+  (hardware): the physical test matrix (iPad Safari / Android Chrome /
+  Windows touch). Original audit text:
   Audit the graph editor on touch devices and cover every gesture end-to-end:
   one-finger node drag vs canvas pan, two-finger pan + pinch zoom, long-press
   for context/inspector, tap-tap to connect ports (drag-to-connect is fragile
@@ -526,9 +533,12 @@ Ideas ranked by fun × implementation cost. Quick wins are being picked up first
     4. *BT as transport* (last resort, CLI↔CLI only): Opus frames over RFCOMM
        between native nodes; browser participation stays via localhost. Only
        worth it where no WiFi/hotspot is possible at all.
-  - Next steps: [ ] pick ladder rung 1+2 as the target design; [ ] prototype
-    `otoji signal --offline` (native DO-protocol relay); [ ] QR SDP exchange
-    spike in the lobby.
+  - Next steps: [x] design picked 2026-07-22 — rungs 1+2 (native offline
+    relay + serverless QR/copy-paste SDP) are the target; BT-as-carrier stays
+    a non-goal until a concrete no-WiFi scenario appears. [x] `otoji signal`
+    native DO-protocol relay shipped (#145, LAN join URLs printed, protocol
+    integration-tested). [ ] QR SDP exchange spike in the lobby (serverless
+    two-tap join; reuse the #g= machinery for offer/answer blobs).
 - [ ] **rgui as a standalone graph OS** — palette/overlay-cutout/panel
   persistence made rgui broadly useful; keep pushing it as a general
   canvas-native node editor (npm published, releases automated).
