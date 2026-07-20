@@ -38,12 +38,12 @@ export default defineConfig({
         theme_color: "#0d1117",
         background_color: "#0d1117",
         icons: [
-          {
-            src: "/otoji.svg",
-            sizes: "any",
-            type: "image/svg+xml",
-            purpose: "any maskable",
-          },
+          { src: "/otoji.svg", sizes: "any", type: "image/svg+xml", purpose: "any" },
+          { src: "/icon-192.png", sizes: "192x192", type: "image/png", purpose: "any" },
+          { src: "/icon-512.png", sizes: "512x512", type: "image/png", purpose: "any" },
+          // full-bleed variant: the artwork sits in the 80% safe zone so
+          // Android mask shapes never clip it
+          { src: "/icon-maskable-512.png", sizes: "512x512", type: "image/png", purpose: "maskable" },
         ],
       },
       workbox: {
