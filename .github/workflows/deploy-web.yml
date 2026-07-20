@@ -54,4 +54,9 @@ jobs:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           workingDirectory: web
+          # npm here is ONLY for the action's own wrangler install: with bun
+          # on PATH it runs `bun i wrangler` and intermittently dies on
+          # "Fail extracting tarball" (bun tarball race). The app itself is
+          # built with bun above.
+          packageManager: npm
           command: pages deploy dist --project-name=otoji --branch=main
