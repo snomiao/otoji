@@ -427,6 +427,51 @@ Ideas ranked by fun × implementation cost. Quick wins are being picked up first
     single graph patch (one undo step once undo exists). Desktop parity:
     marquee/shift-click selection should reuse the same shared-menu + bulk
     action path so the behavior is identical across inputs.
+  - [ ] **Two-finger = canvas pan + pinch zoom; one-finger drag = select**
+    (requested 2026-07-22). Today a second finger starts another
+    drag/marquee — rgui's input pipeline (`rgui.ts` pointerdown/move/up +
+    `setPointerCapture`) models a single pointer, so touch #2 is treated as a
+    fresh gesture. One-finger marquee select is correct and stays. Target
+    mapping: two fingers anywhere = pan (midpoint delta) + pinch zoom (about
+    the finger midpoint, matching ctrl+wheel semantics); finger count wins
+    over hit-target (two fingers over a node still navigates).
+    **Edge-case matrix (decide before implementing):**
+    1. *Promotion:* finger 1 starts marquee, finger 2 lands later → cancel the
+       marquee, restore the pre-gesture selection, promote to nav. No
+       selection change may leak from a promoted gesture.
+    2. *Demotion:* lifting back to one finger does NOT resume marquee — the
+       gesture latches as nav until all fingers lift (prevents accidental
+       selects at pinch end).
+    3. *Node drag + second finger:* a drag that started ON a node keeps
+       moving that node; the extra finger is ignored (no promotion mid node
+       move).
+    4. *Long-press pending* (context-menu timer): any second finger cancels
+       the long-press timer.
+    5. *≥3 fingers:* use the first two, ignore the rest (palm rejection);
+       never crash on pointer-id churn.
+    6. *Two-finger tap* (no movement): reserved / no-op for now (candidate:
+       context menu, i.e. touch right-click) — do not select.
+    7. *Port/edge precedence:* one-finger drag starting on a port =
+       drag-to-connect with a fat-finger hit radius; starting on empty canvas
+       = marquee; starting on a node body = move node.
+    8. *Browser defaults:* `touch-action: none` on the canvas so the PAGE
+       never pinch-zooms or double-tap-zooms; overscroll/back-swipe already
+       suppressed in index.html. Text inputs inside node overlays must still
+       focus without viewport zoom-jump.
+    9. *Panels:* a gesture starting on an rgui panel belongs to the panel
+       (scroll/drag panel), not the canvas; two fingers starting on a panel
+       still pan the canvas? → decide: panel-first (consistent with mouse).
+    10. *Pointer unification:* trackpad pinch arrives as ctrl+wheel (already
+        figma-mapped) — leave untouched; `pointerType: "pen"` behaves like
+        mouse; only `"touch"` enters the finger state machine.
+    11. *Thresholds:* ~8 px slop before tap becomes marquee/move; pinch needs
+        both pointers alive ≥1 frame; zoom clamps identical to wheel zoom.
+    12. *Mid-gesture graph updates* (remote patch moves/deletes a node being
+        touched): drop the gesture gracefully, never operate on a stale node
+        id.
+    Implementation home: rgui's pointer pipeline (needs a pointerId map +
+    two-finger state machine), coordinated with the rgui repo like the signal
+    algebra work.
 - [x] **Vision narrator pipeline** — camera → qwen-image caption → translate →
   TTS: "describe what I'm looking at, out loud". Accessibility angle.
 - [x] **CLI node recipes** (#128, 2026-07-21) — `docs/CLI-RECIPES.md`:
