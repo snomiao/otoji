@@ -73,6 +73,8 @@ import {
 } from "../graph/model";
 import { computeRates, formatRate } from "../graph/edge-throughput";
 import { resolveGraphNodeReference, type GraphCommand } from "../graph/graph-commands";
+import { voiceGraphToRgui } from "../graph/rgui-adapter";
+import { packSelectionFlush } from "../lib/group-pack";
 
 
 /** Trackers ADVERTISED by Signaling nodes in the synced graph. These are
@@ -2342,6 +2344,35 @@ function Editor({ initialRoom, local, federationDemo }: { initialRoom?: string; 
     };
   }, []);
 
+  const groupSelection = useCallback((ids: string[]) => {
+    const selectedIds = ids.filter((id) => nodesRef.current.some((node) => node.id === id));
+    if (selectedIds.length < 2) return;
+    const graph = fromRF(nodesRef.current, edgesRef.current, versionRef.current);
+    const rgNodes = voiceGraphToRgui(graph, { nodeBody }).nodes;
+    const rects = rgNodes.map((node) => {
+      const scale = node.scale ?? 1;
+      const rows = Math.max(node.fields.length, node.inputs.length, node.outputs.length) + (node.bodyRows ?? 0);
+      const minHeight = (26 + 10 + rows * 22 + 10) * scale;
+      return {
+        id: node.id,
+        x: node.x,
+        y: node.y,
+        width: node.w,
+        height: Math.max(minHeight, node.h ?? 0),
+      };
+    });
+    const packed = packSelectionFlush(rects, selectedIds, rguiApiRef.current?.gridStep() ?? 1);
+    const next = nodesRef.current.map((node) => {
+      const position = packed[node.id];
+      return position ? { ...node, position } : node;
+    });
+    nodesRef.current = next;
+    setNodes(next);
+    broadcast(next, edgesRef.current);
+    setSelected(selectedIds);
+    // Ungroup by dragging any child away; rgui splits the pseudo block on drag.
+  }, [broadcast, nodeBody, setNodes]);
+
   const nodeBusy = useCallback((node: { id: string; type: NodeType }) => liveRef.current.getBusy(node.id), []);
   const nodeRemote = useCallback((node: { id: string; type: NodeType }) => {
     if (local) return false;
@@ -2914,6 +2945,7 @@ function Editor({ initialRoom, local, federationDemo }: { initialRoom?: string; 
             x={nodeMenu.x}
             y={nodeMenu.y}
             count={nodeMenu.ids!.length}
+            onGroup={() => { groupSelection(nodeMenu.ids!); setNodeMenu(null); }}
             onDuplicate={() => { for (const nid of nodeMenu.ids!) duplicateNode(nid); setNodeMenu(null); }}
             onSaveTemplate={() => { saveSelectionAsTemplate(); setNodeMenu(null); }}
             onRemove={() => { removeNodes(nodeMenu.ids!); setNodeMenu(null); }}
@@ -3089,6 +3121,7 @@ function MultiNodeMenu({
   x,
   y,
   count,
+  onGroup,
   onDuplicate,
   onSaveTemplate,
   onRemove,
@@ -3097,6 +3130,7 @@ function MultiNodeMenu({
   x: number;
   y: number;
   count: number;
+  onGroup: () => void;
   onDuplicate: () => void;
   onSaveTemplate: () => void;
   onRemove: () => void;
@@ -3119,6 +3153,7 @@ function MultiNodeMenu({
       <div onMouseDown={onClose} onTouchStart={onClose} style={{ position: "fixed", inset: 0, zIndex: 29 }} />
       <div onMouseDown={(e) => e.stopPropagation()} style={{ ...CARD, position: "fixed", left, top, width: 200, padding: 4, zIndex: 30 }}>
         <div style={{ padding: "4px 10px", fontSize: 11, color: "#a0aec0" }}>{count} nodes selected</div>
+        <Item k="group" label="⧈ Group (snap into stack)" onClick={onGroup} />
         <Item k="dup" label={`⧉ Duplicate ${count} nodes`} onClick={onDuplicate} />
         <Item k="tpl" label="★ Save as template" onClick={onSaveTemplate} />
         <Item k="rm" label={`✕ Remove ${count} nodes`} onClick={onRemove} color="#e53e3e" />

@@ -56,6 +56,8 @@ export interface RguiApi {
   setView: (view: ViewTransform) => void;
   /** snap a world position to the current readable grid (for tidy drops) */
   snapWorld: (pos: { x: number; y: number }) => { x: number; y: number };
+  /** current minor readable-grid step in world units */
+  gridStep: () => number;
   /** snap ALL nodes to the main grid (tidy a freshly generated/expanded graph) */
   snapGraph: (opts?: { silent?: boolean }) => void;
   /** rgui-owned workflow layout; host persists through normal move/resize callbacks. */
@@ -520,6 +522,10 @@ function makeApi(viewer: Awaited<ReturnType<typeof createViewer>>, canvas: HTMLC
       const r = viewer.rule;
       const step = gridLevels(viewer.view.k, r.minGridPx, r.radix)[1]!.step;
       return { x: snap(pos.x, step), y: snap(pos.y, step) };
+    },
+    gridStep: () => {
+      const r = viewer.rule;
+      return gridLevels(viewer.view.k, r.minGridPx, r.radix)[1]!.step;
     },
     rotation3: () => viewer.rotation3,
     setRotation3: (target, opts) => viewer.setRotation3(target, opts),
