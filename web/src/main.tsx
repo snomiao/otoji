@@ -5,6 +5,7 @@ import { MeshPanel } from "./ui/MeshPanel";
 import { GraphEditor } from "./ui/GraphEditor";
 import { Lobby } from "./ui/Lobby";
 import { isRoomCode } from "./lib/roomcode";
+import { InstallPrompt } from "./ui/InstallPrompt";
 
 if (import.meta.env.DEV) void import("./bench/zipformer-bench");
 
@@ -34,4 +35,10 @@ if (params.has("mesh")) {
   view = <Lobby />;
 }
 
-if (el) createRoot(el).render(<React.StrictMode>{view}</React.StrictMode>);
+if (el)
+  createRoot(el).render(
+    <React.StrictMode>
+      {view}
+      <InstallPrompt />
+    </React.StrictMode>,
+  );
