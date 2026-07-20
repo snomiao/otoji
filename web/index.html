@@ -2,7 +2,9 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0" />
+    <!-- maximum-scale=1 suppresses iOS's auto-zoom on focusing <16px inputs;
+         Safari >=10 still allows the user's own pinch-zoom regardless. -->
     <meta name="theme-color" content="#0d1117" />
     <link rel="icon" href="/otoji.svg" type="image/svg+xml" />
     <!-- iOS ignores the manifest icons; it wants a plain PNG at this magic name -->
