@@ -28,6 +28,7 @@ export type NodeType =
   | "text-normalize"
   | "text-filter"
   | "llm-agent"
+  | "graph-edit"
   | "sink"
   | "audio-out"
   | "video-recorder"
@@ -255,6 +256,12 @@ const RAW_NODE_SPECS: Record<NodeType, NodeSpec> = {
     label: "LLM agent",
     // Prompt-shaped text2text generation via the generic transformers.js runner.
     inputs: [{ id: "in", type: "transcript" }, { id: "model", type: "model" }, { id: "env", type: "environment" }],
+    outputs: [{ id: "out", type: "transcript" }],
+  },
+  "graph-edit": {
+    type: "graph-edit",
+    label: "Graph editor (agent)",
+    inputs: [{ id: "in", type: "transcript" }],
     outputs: [{ id: "out", type: "transcript" }],
   },
   sink: {
@@ -548,7 +555,7 @@ export const NODE_CATEGORIES: { id: string; label: string; types: NodeType[] }[]
   { id: "translate", label: "Text → Text", types: ["translate", "browser-translate-api", "text-aggregate", "text-normalize", "text-filter"] },
   { id: "tts", label: "Text → Speech", types: ["tts", "tts-model"] },
   { id: "output", label: "Output", types: ["sink", "audio-out", "video-recorder", "srt-out", "speaker"] },
-  { id: "model", label: "Custom model", types: ["model-source", "llm-agent", "model"] },
+  { id: "model", label: "Custom model", types: ["model-source", "llm-agent", "graph-edit", "model"] },
   { id: "vision", label: "Vision", types: ["camera", "screen-share", "paddle-ocr", "vision-model", "depth-field", "hand-space", "spatial-calibration", "rgbd-point-cloud", "model-3d", "spatial-renderer", "image-match", "ar-notes"] },
   { id: "text", label: "Text", types: ["text-diff"] },
   { id: "net", label: "Network", types: ["environment", "tracker"] },

@@ -34,6 +34,43 @@ describe("buildAdjacency", () => {
   });
 });
 
+describe("graph-edit node", () => {
+  it("applies parsed commands through the host hook and echoes the summary", async () => {
+    const graph = emptyGraph();
+    graph.nodes.editor = { id: "editor", type: "graph-edit", device: null, pos: { x: 0, y: 0 } };
+    graph.nodes.sink = { id: "sink", type: "sink", device: null, pos: { x: 0, y: 0 } };
+    graph.edges = [{ id: "e", source: "editor", sourceHandle: "out", target: "sink", targetHandle: "in" }];
+    const applied: unknown[] = [];
+    const output: string[] = [];
+    const rt = new GraphRuntime(graph, {
+      onGraphCommands: (_id, commands) => { applied.push(...commands); return ["added stt"]; },
+      onSink: (_id, transcript) => output.push(transcript.text),
+    });
+    await rt.start();
+    const internal = rt as unknown as { nodes: Map<string, { input?: (port: string, message: unknown) => void }> };
+    internal.nodes.get("editor")?.input?.("in", { text: '[{"op":"add","type":"stt"}]' });
+    expect(applied).toEqual([{ op: "add", type: "stt" }]);
+    expect(output).toEqual(["added stt"]);
+    await rt.stop();
+  });
+
+  it("echoes parser errors without calling the host hook", async () => {
+    const graph = emptyGraph();
+    graph.nodes.editor = { id: "editor", type: "graph-edit", device: null, pos: { x: 0, y: 0 } };
+    graph.nodes.sink = { id: "sink", type: "sink", device: null, pos: { x: 0, y: 0 } };
+    graph.edges = [{ id: "e", source: "editor", sourceHandle: "out", target: "sink", targetHandle: "in" }];
+    const hook = vi.fn(() => []);
+    const output: string[] = [];
+    const rt = new GraphRuntime(graph, { onGraphCommands: hook, onSink: (_id, transcript) => output.push(transcript.text) });
+    await rt.start();
+    const internal = rt as unknown as { nodes: Map<string, { input?: (port: string, message: unknown) => void }> };
+    internal.nodes.get("editor")?.input?.("in", { text: "not JSON" });
+    expect(hook).not.toHaveBeenCalled();
+    expect(output[0]).toContain("error: expected a JSON array");
+    await rt.stop();
+  });
+});
+
 describe("textarea node", () => {
   function textGraph(text?: string): VoiceGraph {
     const g = emptyGraph();

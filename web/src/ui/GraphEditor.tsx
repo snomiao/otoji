@@ -72,6 +72,7 @@ import {
   type VoiceGraph,
 } from "../graph/model";
 import { computeRates, formatRate } from "../graph/edge-throughput";
+import { resolveGraphNodeReference, type GraphCommand } from "../graph/graph-commands";
 
 
 /** Trackers ADVERTISED by Signaling nodes in the synced graph. These are
@@ -149,7 +150,7 @@ function loadPanelCollapsed(): Record<string, boolean> {
 const CONTROL_ROWS: Partial<Record<NodeType, number>> = {
   environment: 7,
   "mic-vad": 3, "mic-raw": 2, stt: 3, "stream-asr": 2, "web-speech": 3, vosk: 3, sherpa: 3, "vibevoice-asr": 5,
-  translate: 5, "browser-translate-api": 3, "text-aggregate": 3, "text-normalize": 8, "text-filter": 7, "llm-agent": 8, sink: 7, "video-recorder": 8, "video-clip": 6, url: 0, tts: 4, "tts-model": 5, "model-source": 12, model: 5,
+  translate: 5, "browser-translate-api": 3, "text-aggregate": 3, "text-normalize": 8, "text-filter": 7, "llm-agent": 8, "graph-edit": 2, sink: 7, "video-recorder": 8, "video-clip": 6, url: 0, tts: 4, "tts-model": 5, "model-source": 12, model: 5,
   // Visual nodes are full-bleed: controls live in the overlay's title bar, so
   // the whole body is preview.
   camera: 0, "screen-share": 0, "vision-model": 0, "qwen-image": 0, "depth-field": 0, "hand-space": 0, "spatial-calibration": 3, "rgbd-point-cloud": 4, "spatial-renderer": 0, "model-3d": 3, "image-match": 0, "ar-notes": 0, "paddle-ocr": 2, "text-diff": 3,
@@ -158,7 +159,7 @@ const CONTROL_ROWS: Partial<Record<NodeType, number>> = {
 type DisplayMode = "full-bleed" | "fit" | "stack";
 const DISPLAY_MODES: DisplayMode[] = ["full-bleed", "fit", "stack"];
 const VISUAL_DISPLAY_NODES = new Set<NodeType>(["camera", "screen-share", "vision-model", "qwen-image", "depth-field", "hand-space", "spatial-renderer", "image-match", "ar-notes", "file-image", "video-recorder", "video-clip", "url"]);
-const TEXT_DISPLAY_NODES = new Set<NodeType>(["environment", "stt", "stream-asr", "web-speech", "vosk", "sherpa", "vibevoice-asr", "translate", "browser-translate-api", "text-aggregate", "text-normalize", "text-filter", "llm-agent", "model-source", "model", "tts", "tts-model", "sink", "srt-out", "paddle-ocr", "text-diff"]);
+const TEXT_DISPLAY_NODES = new Set<NodeType>(["environment", "stt", "stream-asr", "web-speech", "vosk", "sherpa", "vibevoice-asr", "translate", "browser-translate-api", "text-aggregate", "text-normalize", "text-filter", "llm-agent", "graph-edit", "model-source", "model", "tts", "tts-model", "sink", "srt-out", "paddle-ocr", "text-diff"]);
 
 type SmartLinkOption = {
   id: string;
@@ -1096,6 +1097,84 @@ function Editor({ initialRoom, local, federationDemo }: { initialRoom?: string; 
 
   const onDelete = useCallback((nodeId: string) => removeNodes([nodeId]), [removeNodes]);
 
+  const onGraphCommands = useCallback((editorId: string, commands: GraphCommand[]): string[] => {
+    let workingNodes = [...nodesRef.current];
+    let workingEdges = [...edgesRef.current];
+    const originalIds = new Set(workingNodes.map((node) => node.id));
+    const justAdded: Node[] = [];
+    const results: string[] = [];
+    const resolve = (reference: string) => resolveGraphNodeReference(
+      reference,
+      workingNodes
+        .filter((node) => originalIds.has(node.id))
+        .map((node) => ({ id: node.id, type: (node.data as any).voiceType as NodeType, device: (node.data as any).device ?? null, pos: node.position })),
+      justAdded.map((node) => ({ id: node.id, type: (node.data as any).voiceType as NodeType, device: (node.data as any).device ?? null, pos: node.position })),
+    );
+
+    for (const command of commands) {
+      if (command.op === "add") {
+        const id = command.id ?? `${command.type}-${Math.random().toString(36).slice(2, 8)}`;
+        if (workingNodes.some((node) => node.id === id)) {
+          results.push(`add skipped: node id ${JSON.stringify(id)} already exists`);
+          continue;
+        }
+        const editor = workingNodes.find((node) => node.id === editorId);
+        const offset = justAdded.length * 36;
+        const position = snapWorld(editor ? { x: editor.position.x + 260 + offset, y: editor.position.y + offset } : { x: 80 + offset, y: 80 + offset });
+        const node: Node = {
+          id,
+          type: "voice",
+          position,
+          data: { voiceType: command.type, device: myDeviceId, config: { ...defaultConfigFor(command.type), ...command.config } },
+        };
+        workingNodes.push(node);
+        justAdded.push(node);
+        results.push(`added ${command.type}`);
+        continue;
+      }
+
+      if (command.op === "remove") {
+        const target = resolve(command.id);
+        if ("error" in target) { results.push(`remove skipped: ${target.error}`); continue; }
+        workingNodes = workingNodes.filter((node) => node.id !== target.id);
+        workingEdges = workingEdges.filter((edge) => edge.source !== target.id && edge.target !== target.id);
+        const addedIndex = justAdded.findIndex((node) => node.id === target.id);
+        if (addedIndex >= 0) justAdded.splice(addedIndex, 1);
+        results.push(`removed ${target.id}`);
+        continue;
+      }
+
+      const source = resolve(command.from);
+      if ("error" in source) { results.push(`connect skipped: ${source.error}`); continue; }
+      const target = resolve(command.to);
+      if ("error" in target) { results.push(`connect skipped: ${target.error}`); continue; }
+      const graph = fromRF(workingNodes, workingEdges, versionRef.current);
+      const sourceType = graph.nodes[source.id]?.type;
+      const targetType = graph.nodes[target.id]?.type;
+      if (!sourceType || !targetType) { results.push("connect skipped: endpoint no longer exists"); continue; }
+      const outputs = command.fromPort ? NODE_SPECS[sourceType].outputs.filter((port) => port.id === command.fromPort) : NODE_SPECS[sourceType].outputs;
+      const inputs = command.toPort ? NODE_SPECS[targetType].inputs.filter((port) => port.id === command.toPort) : NODE_SPECS[targetType].inputs;
+      const pair = outputs.flatMap((output) => inputs.map((input) => ({ output, input })))
+        .find(({ output, input }) => canConnect(graph, source.id, output.id, target.id, input.id));
+      if (!pair) {
+        results.push(`connect skipped: no available compatible ports for ${command.from}→${command.to}`);
+        continue;
+      }
+      const id = edgeId({ source: source.id, sourceHandle: pair.output.id, target: target.id, targetHandle: pair.input.id });
+      workingEdges.push({ id, source: source.id, sourceHandle: pair.output.id, target: target.id, targetHandle: pair.input.id });
+      results.push(`connected ${command.from}→${command.to}`);
+    }
+
+    nodesRef.current = workingNodes;
+    edgesRef.current = workingEdges;
+    setNodes(workingNodes);
+    setEdges(workingEdges);
+    broadcast(workingNodes, workingEdges);
+    return results;
+  }, [broadcast, defaultConfigFor, myDeviceId, setEdges, setNodes, snapWorld]);
+  const onGraphCommandsRef = useRef(onGraphCommands);
+  onGraphCommandsRef.current = onGraphCommands;
+
   // Remove a single edge (rgui edge click/right-click, or Delete on a selected edge).
   const removeEdge = useCallback(
     (edgeId: string) => {
@@ -1683,6 +1762,7 @@ function Editor({ initialRoom, local, federationDemo }: { initialRoom?: string; 
       onConfigPatch: (id, patch) => onConfigRef.current?.(id, patch),
       hasPreviewConsumer: (id) => isPreviewShown(id) || (pv?.hasSubscriber(id) ?? false),
       onPipeOut: (id, text) => sigRef.current?.pipe(id, text, "node"), // pipe node input → CLI stdout
+      onGraphCommands: (id, commands) => onGraphCommandsRef.current(id, commands),
       onEdgeBytes: (eid, bytes) => edgeBytesRef.current.set(eid, (edgeBytesRef.current.get(eid) ?? 0) + bytes),
       onSink: (sinkId, tr: TranscriptMsg) => {
         if (!isReadableTranscript(tr.text)) return;

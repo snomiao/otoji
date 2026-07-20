@@ -164,6 +164,39 @@ export const BUILTIN_TEMPLATES: GraphTemplate[] = [
     ],
   },
   {
+    id: "voice-graph-editing",
+    category: "genai",
+    name: "Voice graph editing",
+    desc: "Mic → STT → LLM commands → live graph edits → result",
+    builtin: true,
+    nodes: [
+      { key: "mic", type: "mic-vad", dx: 0, dy: 0 },
+      { key: "stt", type: "stt", dx: COL, dy: 0 },
+      {
+        key: "agent",
+        type: "llm-agent",
+        dx: COL * 2,
+        dy: 0,
+        config: {
+          instruction: `Convert the user's graph-editing request into ONLY a JSON array. Do not use prose or Markdown.
+Schema:
+[{"op":"add","type":"NODE_TYPE","id":"optional-id","config":{}},{"op":"connect","from":"node-id-or-type","fromPort":"optional-port","to":"node-id-or-type","toPort":"optional-port"},{"op":"remove","id":"node-id-or-type"}]
+Example: "add a transcript sink" -> [{"op":"add","type":"sink"}]
+Example: "add translation after stt" -> [{"op":"add","type":"translate"},{"op":"connect","from":"stt","to":"translate"}]
+Available common node types: mic-vad, mic-raw, file-audio, file-image, file-text, textarea, stt, stream-asr, web-speech, vosk, translate, browser-translate-api, text-aggregate, text-normalize, text-filter, llm-agent, graph-edit, sink, audio-out, speaker, tts, model-source, model, pipe, camera, screen-share, paddle-ocr, vision-model, qwen-image, text-diff.`,
+        },
+      },
+      { key: "editor", type: "graph-edit", dx: COL * 3, dy: 0 },
+      { key: "sink", type: "sink", dx: COL * 4, dy: 0 },
+    ],
+    edges: [
+      { from: "mic", fromHandle: "out", to: "stt", toHandle: "in" },
+      { from: "stt", fromHandle: "out", to: "agent", toHandle: "in" },
+      { from: "agent", fromHandle: "out", to: "editor", toHandle: "in" },
+      { from: "editor", fromHandle: "out", to: "sink", toHandle: "in" },
+    ],
+  },
+  {
     id: "image-caption-browser",
     category: "genai",
     name: "Image → text (browser)",
