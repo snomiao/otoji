@@ -30,6 +30,11 @@ export type NodeCategory = RgNodeCategory;
 
 export type Measure = "extensive" | "intensive";
 export type Ownership = "copy" | "clone" | "share" | "move";
+
+// Signal-algebra predicates (must stay identical to rgui's core/signal —
+// graph/signal.ts re-exports these when the build falls back to the stub).
+export const isDuplicable = (o: Ownership): boolean => o === "copy" || o === "clone";
+export const isAliasable = (o: Ownership): boolean => o !== "move";
 export type Fanout = "broadcast" | "split" | "route";
 export type Grain = "continuous" | "atom";
 export type MergeRule =

@@ -188,7 +188,7 @@
   2-device room: camera→OCR image + OCR→camera control edges flag on
   reassignment and clear on return). runtime.ts's silent skip stays as the
   runtime backstop.
-- [ ] **BLOCKED (rgui) — Adopt rgui signal algebra — after rgui `4fb6cdf` reaches main** (checked 2026-07-21: `4fb6cdf` still not in rgui main; rgui itself is now on npm at 3.10.x) (+
+- [x] **Adopt rgui signal algebra** (2026-07-22 — unblocked: the signal module reached rgui main; predicates + Ownership now re-exported from `@snomiao/rgui` with a no-drift guard test, stub kept in lockstep). Remaining half — feeding measured onEdgeBytes into rgui's degree-annotated cloned-fanout warning — moves to the rgui-side collaboration backlog. (was BLOCKED; +
   submodule bump): swap `signal.ts`'s local predicates for the rgui
   `isDuplicable`/`isAliasable`/`resolveSignal` exports, and feed measured
   `onEdgeBytes` into rgui's degree-annotated `cloned-fanout` warning (ties into

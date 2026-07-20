@@ -7,14 +7,16 @@
 // carrying a share/move signal cannot cross a device boundary; all built-in
 // port types currently have a wire format.
 //
-// Types mirror rgui's signal module. Once rgui 4fb6cdf reaches main and the
-// submodule is bumped, swap isDuplicable/isAliasable for the rgui exports —
-// the values are identical by agreement.
+// The predicates and the Ownership vocabulary come from rgui itself (its
+// signal module reached main 2026-07-22) — one source of truth, re-exported
+// here so otoji callers keep importing from this module.
 
+import { isAliasable, isDuplicable, type Ownership } from "@snomiao/rgui";
 import { NODE_SPECS, type PortType, type VoiceEdge, type VoiceGraph, type VoiceNode } from "./model";
 
+export { isAliasable, isDuplicable, type Ownership };
+
 export type Measure = "extensive" | "intensive";
-export type Ownership = "copy" | "clone" | "share" | "move";
 export type Fanout = "broadcast" | "split" | "route";
 export type WireTransport = "json" | "pcm" | "latest-image" | "binary" | "reference";
 
@@ -43,11 +45,6 @@ export const SIGNAL: Record<PortType, SignalPolicy> = {
   // resolves and caches weights locally according to its CPU/GPU capabilities.
   model: { measure: "intensive", ownership: "copy", transport: "reference" },
 };
-
-/** Can the signal be turned into a wire frame? (copy/clone) */
-export const isDuplicable = (o: Ownership): boolean => o === "copy" || o === "clone";
-/** Can the signal be handed to several same-process consumers? (all but move) */
-export const isAliasable = (o: Ownership): boolean => o !== "move";
 
 /** The signal type an edge carries (its source output port's type). */
 export function edgeSignalType(
