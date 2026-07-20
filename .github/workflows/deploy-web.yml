@@ -42,8 +42,11 @@ jobs:
 
       # vite only: ci.yml owns typechecking; the deploy must not be blocked by
       # a stray type error while prod lags main.
+      # Invoke the LOCAL vite entry — `bun x vite` falls back to fetching
+      # vite@latest (a different major) when the bin isn't linked, which is
+      # exactly what broke the previous run.
       - name: Build
-        run: bun x vite build
+        run: node node_modules/vite/bin/vite.js build
 
       - name: Deploy to Cloudflare Pages
         uses: cloudflare/wrangler-action@v3
