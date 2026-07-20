@@ -40,6 +40,8 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use tokio::sync::mpsc;
 
+mod signal_relay;
+
 #[derive(Parser)]
 #[command(
     name = "otoji",
@@ -187,6 +189,16 @@ enum Cmd {
         /// Bind address (default: `127.0.0.1:8080`).
         #[arg(long, default_value = "127.0.0.1:8080")]
         addr: String,
+    },
+    /// Run the in-memory otoji signaling relay for offline/LAN rooms.
+    /// Room presence and graph state are lost when the process exits.
+    Signal {
+        /// TCP port to listen on.
+        #[arg(long, default_value_t = 8090)]
+        port: u16,
+        /// Interface address to bind (use 0.0.0.0 for LAN access).
+        #[arg(long, default_value = "0.0.0.0")]
+        host: String,
     },
     /// One-shot transcribe a WAV or PCM file. Prints a single JSON line
     /// `{"text": "..."}` to stdout and exits — designed for CI, batch
@@ -749,6 +761,7 @@ async fn main() -> Result<()> {
         Cmd::Devices => run_devices().await,
         Cmd::Mic { device, frame_ms } => run_mic(device, frame_ms).await,
         Cmd::Server { addr } => run_server(addr).await,
+        Cmd::Signal { port, host } => signal_relay::run(&host, port).await,
         Cmd::Transcribe {
             path,
             model,
