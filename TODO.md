@@ -313,7 +313,7 @@ hazard is a standalone immediate fix, not part of any milestone.
   continuous streams (contiguous `offsetMs`) and either applies its own
   VAD-endpoint buffering or surfaces a smart-link hint to insert the streaming
   backend / mic-vad. No more silent 4-inferences-per-second failure mode.
-- [ ] **M6.3 — two-pass as an explicit graph structure.** The streaming ASR
+- [x] **M6.3 — two-pass as an explicit graph structure** (shipped 2026-07-21). The streaming ASR
   node retains the full audio buffer per endpoint and exposes it on an
   `utterance` output port (today Vosk/sherpa attach *empty* audio to finals, so
   cross-device pass 2 has nothing to re-transcribe). Pass 2 = an ordinary ASR
@@ -321,6 +321,14 @@ hazard is a standalone immediate fix, not part of any milestone.
   on any device; its result emits as a `final` revision with `replacesRevision`
   pointing at the pass-1 provisional. No hidden `upgrade` enum inside the node —
   the graph *is* the coordinator.
+  **Shipped:** stream-asr retains each utterance's raw audio (30 s cap) and
+  emits it on a new `utterance` port tagged `{segmentId, revision}` (SegmentMsg
+  + wire); with a two-pass consumer wired the endpoint text goes out as
+  `provisional`, and the stt node returns `final` + `replacesRevision`. The
+  sink updates the matching row in place. `endpointMs` config added
+  (default 1200). "Two-pass captions" template. Verified live: streaming
+  "…SQUALID QUARTER OF THE BRAFFLS" (caps, raw) visibly replaced by
+  SenseVoice's cased+punctuated "…the squalid quarter of the brothels."​
 - [ ] **M6.5 — Interpreter-booth demo (the README vision).** Template: mic →
   streaming ASR → translate → TTS, both directions, two devices. Split KPIs:
   **caption partial p50 < 500 ms capture-to-glass** (model lookahead alone is
@@ -383,6 +391,15 @@ Ideas ranked by fun × implementation cost. Quick wins are being picked up first
   speech ("connect the camera to depth"). Dogfooding otoji with otoji.
 - [ ] **Subgraph / group node** — select → group collapses a pipeline into one
   node; unify with template save.
+- [ ] **Touch-screen support — full gesture coverage** (requested 2026-07-21).
+  Audit the graph editor on touch devices and cover every gesture end-to-end:
+  one-finger node drag vs canvas pan, two-finger pan + pinch zoom, long-press
+  for context/inspector, tap-tap to connect ports (drag-to-connect is fragile
+  on touch), palette/template drag-out, edge deletion, and text inputs without
+  zoom-jumping. Mind browser gesture conflicts (overscroll/back-swipe already
+  partly handled in index.html), finger-sized hit targets on the rgui canvas,
+  and pointer-events unification (mouse/touch/pen). Test matrix: iPad Safari,
+  Android Chrome, Windows touch.
 - [x] **Vision narrator pipeline** — camera → qwen-image caption → translate →
   TTS: "describe what I'm looking at, out loud". Accessibility angle.
 - [ ] **CLI node recipes** — document `npx otoji node <room> --exec 'claude -p'`

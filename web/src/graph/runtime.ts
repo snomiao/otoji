@@ -128,6 +128,11 @@ export interface SegmentMsg {
   durationMs: number;
   offsetMs?: number; // start of this segment in the source timeline (file/mic)
   ts?: number; // wall-clock epoch (ms) of the FIRST sample — used to time-align mixing
+  // Two-pass linkage (M6.3): a streaming recognizer's `utterance` output tags
+  // the audio with the provisional transcript it belongs to, so a second-pass
+  // ASR can emit a final revision that supersedes it.
+  segmentId?: number;
+  revision?: number; // revision of the provisional this audio corresponds to
 }
 export interface TranscriptMsg {
   text: string;
@@ -839,15 +844,29 @@ export class GraphRuntime {
         stream?.free();
         stream = createZipformerStream({
           paths,
+          endpointMs: typeof cfg.endpointMs === "number" ? (cfg.endpointMs as number) : undefined,
           onPartial: (text, segId) => {
             this.hooks.onRecognized?.(id, text);
             this.emit(id, "out", { text, audio: emptyAudio(), status: "partial", ...nextRevision(segId) } as TranscriptMsg);
           },
-          onFinal: (text, segId) => {
+          onFinal: (text, segId, audio) => {
             this.hooks.onRecognized?.(id, text);
             const rev = nextRevision(segId);
             revisions.delete(segId);
-            this.emit(id, "out", { text, audio: emptyAudio(), status: "final", ...rev } as TranscriptMsg);
+            // With a two-pass consumer wired, the endpoint result is only
+            // provisional — the utterance audio goes out for re-transcription
+            // and the pass-2 final (replacesRevision) supersedes this text.
+            const twoPass = this.hasOutgoing(id, "utterance");
+            this.emit(id, "out", { text, audio: emptyAudio(), status: twoPass ? "provisional" : "final", ...rev } as TranscriptMsg);
+            if (twoPass && audio.length) {
+              this.emit(id, "utterance", {
+                samples: audio,
+                sampleRate: MIC_VAD_SR,
+                durationMs: (audio.length / MIC_VAD_SR) * 1000,
+                segmentId: rev.segmentId,
+                revision: rev.revision,
+              } as SegmentMsg);
+            }
           },
           onError: (e) => this.hooks.onError?.(e),
           onProgress: (stage, received, total) => {
@@ -1302,6 +1321,11 @@ export class GraphRuntime {
                 event: res.event,
                 tStartMs,
                 tEndMs,
+                // Two-pass (M6.3): audio tagged with a provisional's identity
+                // makes this result the final revision that supersedes it.
+                ...(seg.segmentId !== undefined && seg.revision !== undefined
+                  ? { segmentId: seg.segmentId, revision: seg.revision + 1, replacesRevision: seg.revision, status: "final" as const }
+                  : {}),
               } as TranscriptMsg;
               this.emit(id, "out", caption);
               if (this.hasOutgoing(id, "caption")) this.emit(id, "caption", caption);

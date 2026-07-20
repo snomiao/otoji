@@ -100,6 +100,25 @@ export const BUILTIN_TEMPLATES: GraphTemplate[] = [
     ],
   },
   {
+    id: "two-pass-captions",
+    category: "voice",
+    name: "Two-pass captions (fast + accurate)",
+    desc: "Streaming ASR partials live, each utterance re-transcribed by SenseVoice for the final",
+    builtin: true,
+    nodes: [
+      { key: "mic", type: "mic-raw", dx: 0, dy: 0, config: { frameMs: 100 } },
+      { key: "stream", type: "stream-asr", dx: COL, dy: 0 },
+      { key: "pass2", type: "stt", dx: COL * 2, dy: ROW },
+      { key: "sink", type: "sink", dx: COL * 3, dy: 0 },
+    ],
+    edges: [
+      { from: "mic", fromHandle: "out", to: "stream", toHandle: "in" },
+      { from: "stream", fromHandle: "out", to: "sink", toHandle: "in" },
+      { from: "stream", fromHandle: "utterance", to: "pass2", toHandle: "in" },
+      { from: "pass2", fromHandle: "out", to: "sink", toHandle: "in" },
+    ],
+  },
+  {
     id: "live-captions",
     category: "voice",
     name: "Live captions",
