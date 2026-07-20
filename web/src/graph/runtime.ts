@@ -133,6 +133,7 @@ export interface SegmentMsg {
   // ASR can emit a final revision that supersedes it.
   segmentId?: number;
   revision?: number; // revision of the provisional this audio corresponds to
+  sourceId?: string; // node that minted the segmentId (collision namespace)
 }
 
 const CONTINUOUS_FRAME_MAX_MS = 400;
@@ -161,6 +162,9 @@ export interface TranscriptMsg {
   revision?: number; // monotonic within a segmentId; higher supersedes lower
   status?: "partial" | "provisional" | "final"; // absent = "final" (back-compat)
   replacesRevision?: number; // pass-2 rewrite: the revision this final supersedes
+  sourceId?: string; // node that minted segmentId — sinks key replacements on
+  // (sourceId, segmentId) so two recognizers (or a restarted stream) can
+  // never replace each other's rows
 }
 /** A captured video/image frame flowing on an "image" edge (single-device). */
 export interface ImageMsg {
@@ -843,31 +847,37 @@ export class GraphRuntime {
         ? zipformerPathsFromBase((cfg.modelsBase as string).trim())
         : undefined;
       const revisions = new Map<number, number>();
+      // Every (re)opened stream restarts its provider segIds at 0 — fold an
+      // epoch into the public segmentId so a model-override restart can never
+      // collide with rows an earlier stream already produced.
+      let segEpoch = 0;
       const nextRevision = (segId: number): { segmentId: number; revision: number } => {
-        const revision = (revisions.get(segId) ?? 0) + 1;
-        revisions.set(segId, revision);
-        return { segmentId: segId, revision };
+        const segmentId = segEpoch * 1_000_000 + segId;
+        const revision = (revisions.get(segmentId) ?? 0) + 1;
+        revisions.set(segmentId, revision);
+        return { segmentId, revision };
       };
       const emptyAudio = () => ({ samples: new Float32Array(0), sampleRate: MIC_VAD_SR, durationMs: 0 });
       let stream: ZipformerStream | null = null;
       const openStream = () => {
         stream?.free();
+        segEpoch += 1;
         stream = createZipformerStream({
           paths,
           endpointMs: typeof cfg.endpointMs === "number" ? (cfg.endpointMs as number) : undefined,
           onPartial: (text, segId) => {
             this.hooks.onRecognized?.(id, text);
-            this.emit(id, "out", { text, audio: emptyAudio(), status: "partial", ...nextRevision(segId) } as TranscriptMsg);
+            this.emit(id, "out", { text, audio: emptyAudio(), status: "partial", sourceId: id, ...nextRevision(segId) } as TranscriptMsg);
           },
           onFinal: (text, segId, audio) => {
             this.hooks.onRecognized?.(id, text);
             const rev = nextRevision(segId);
-            revisions.delete(segId);
+            revisions.delete(rev.segmentId);
             // With a two-pass consumer wired, the endpoint result is only
             // provisional — the utterance audio goes out for re-transcription
             // and the pass-2 final (replacesRevision) supersedes this text.
             const twoPass = this.hasOutgoing(id, "utterance");
-            this.emit(id, "out", { text, audio: emptyAudio(), status: twoPass ? "provisional" : "final", ...rev } as TranscriptMsg);
+            this.emit(id, "out", { text, audio: emptyAudio(), status: twoPass ? "provisional" : "final", sourceId: id, ...rev } as TranscriptMsg);
             if (twoPass && audio.length) {
               this.emit(id, "utterance", {
                 samples: audio,
@@ -875,6 +885,7 @@ export class GraphRuntime {
                 durationMs: (audio.length / MIC_VAD_SR) * 1000,
                 segmentId: rev.segmentId,
                 revision: rev.revision,
+                sourceId: id,
               } as SegmentMsg);
             }
           },
@@ -962,13 +973,13 @@ export class GraphRuntime {
         url,
         (partial, segId) => {
           this.hooks.onRecognized?.(id, partial);
-          this.emit(id, "out", { text: partial, audio: emptyAudio(), status: "partial", ...nextRevision(segId) } as TranscriptMsg);
+          this.emit(id, "out", { text: partial, audio: emptyAudio(), status: "partial", sourceId: id, ...nextRevision(segId) } as TranscriptMsg);
         },
         (text, segId) => {
           this.hooks.onRecognized?.(id, text);
           const rev = nextRevision(segId);
           revisions.delete(rev.segmentId); // utterance closed
-          this.emit(id, "out", { text, audio: emptyAudio(), status: "final", ...rev } as TranscriptMsg);
+          this.emit(id, "out", { text, audio: emptyAudio(), status: "final", sourceId: id, ...rev } as TranscriptMsg);
         },
         // Non-fatal: an unreachable server only disables this node. Point the
         // user at the one command that fixes it.
@@ -1000,10 +1011,18 @@ export class GraphRuntime {
         pendingDurationMs = 0;
         if (!segments.length) return;
         const sampleRate = segments[0]?.sampleRate || MIC_VAD_SR;
+        // offsets are ABSOLUTE source-timeline positions — rebase against the
+        // earliest one, or an hour-old mic stream allocates an hour of leading
+        // silence; and cap the real sample span, since the duration-sum cap
+        // cannot see gaps between offsets
+        const baseMs = Math.min(...segments.map((seg) => seg.offsetMs ?? Infinity));
+        const rebase = Number.isFinite(baseMs) ? baseMs : 0;
+        const maxSpan = Math.round(sampleRate * 60); // hard allocation ceiling: 60 s
         let appendAt = 0;
         const placements = segments.map((seg) => {
-          const at = seg.offsetMs !== undefined ? Math.max(0, Math.round((seg.offsetMs / 1000) * sampleRate)) : appendAt;
-          appendAt = Math.max(appendAt, at + seg.samples.length);
+          let at = seg.offsetMs !== undefined ? Math.max(0, Math.round(((seg.offsetMs - rebase) / 1000) * sampleRate)) : appendAt;
+          if (at > maxSpan) at = appendAt; // gap anomaly — fall back to contiguous
+          appendAt = Math.min(maxSpan + seg.samples.length, Math.max(appendAt, at + seg.samples.length));
           return { at, samples: seg.samples };
         });
         const samples = new Float32Array(appendAt);
@@ -1298,6 +1317,20 @@ export class GraphRuntime {
       let bufferingContinuousInput = false;
       let continuousNoticeShown = false;
       let pendingSegments: SegmentMsg[] = [];
+      // Continuity is only provable when frame #2 arrives — hold a lone short
+      // frame briefly instead of recognizing it solo, so a continuous stream's
+      // first 250 ms doesn't become a spurious fragment caption.
+      let heldShort: SegmentMsg | null = null;
+      let heldTimer: ReturnType<typeof setTimeout> | null = null;
+      const releaseHeld = () => {
+        if (heldTimer) clearTimeout(heldTimer);
+        heldTimer = null;
+        if (heldShort) {
+          const held = heldShort;
+          heldShort = null;
+          recognize(held);
+        }
+      };
 
       const recognize = (seg: SegmentMsg) => {
         q.run(`🔊 ${Math.round(seg.durationMs / 100) / 10}s`, async () => {
@@ -1393,18 +1426,35 @@ export class GraphRuntime {
               continuousNoticeShown = true;
               this.hooks.onRecognized?.(id, "continuous input detected — buffering utterances (consider the Streaming ASR node)");
             }
+            // the frame that proved continuity was held, not recognized — it
+            // belongs at the FRONT of the utterance buffer
+            if (heldTimer) clearTimeout(heldTimer);
+            heldTimer = null;
+            if (heldShort) {
+              pendingSegments.push(heldShort);
+              heldShort = null;
+            }
           }
           previousSegment = seg;
           if (bufferingContinuousInput) {
             pendingSegments.push(seg);
             flushContinuous();
+          } else if (seg.durationMs < 400 && seg.offsetMs !== undefined) {
+            // a lone short offset-bearing frame MIGHT be the start of a
+            // continuous stream — hold it briefly; a contiguous successor
+            // claims it above, anything else releases it for recognition
+            releaseHeld();
+            heldShort = seg;
+            heldTimer = setTimeout(releaseHeld, 600);
           } else {
+            releaseHeld();
             recognize(seg);
           }
         },
         // Wait for in-flight recognition so a just-spoken / stop-time segment
         // isn't dropped before its result reaches the sink.
         stop: () => {
+          releaseHeld();
           flushContinuous(true);
           return q.drain();
         },

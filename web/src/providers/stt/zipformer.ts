@@ -302,6 +302,10 @@ export function createZipformerStream(
   const paths = opts.paths ?? zipformerPathsFromBase(DEFAULT_REPO);
   const fbank = createStreamingFbank(ZIPFORMER_FBANK);
   const frames: Float32Array[] = []; // FIFO of [numBins] fbank frames
+  // Decoding slower than realtime must not grow the FIFO (and caption lag)
+  // without bound — cap at ~30 s of features and drop the OLDEST on overrun.
+  const MAX_FIFO_FRAMES = 3000;
+  let overrunWarned = false;
   // Raw samples of the utterance in progress, for two-pass consumers. Capped so
   // an endless no-endpoint stream can't grow without bound.
   const MAX_UTTERANCE_SAMPLES = 30 * 16000;
@@ -417,11 +421,27 @@ export function createZipformerStream(
       while (utteranceLen > MAX_UTTERANCE_SAMPLES && utterance.length > 1) utteranceLen -= utterance.shift()!.length;
       const { feats, numFrames, numBins } = fbank.push(scaled);
       for (let f = 0; f < numFrames; f++) frames.push(feats.slice(f * numBins, (f + 1) * numBins));
+      if (frames.length > MAX_FIFO_FRAMES) {
+        frames.splice(0, frames.length - MAX_FIFO_FRAMES);
+        if (!overrunWarned) {
+          overrunWarned = true;
+          opts.onError?.(new Error("streaming ASR overrun: decoding slower than realtime — dropping oldest audio"));
+        }
+      }
       void pump();
     },
     flush: async () => {
-      // Wait for the in-flight pump, then finalize whatever is hypothesized.
+      // The pump only consumes complete chunks, so up to chunkFrames-1 fbank
+      // frames (~last word) would die in the FIFO: pad a second of silence to
+      // flush the residual through one more encoder pass, then finalize.
       while (running) await sleep(20);
+      if (engine && !freed) {
+        const silence = new Float32Array(16000);
+        const { feats, numFrames, numBins } = fbank.push(silence);
+        for (let f = 0; f < numFrames; f++) frames.push(feats.slice(f * numBins, (f + 1) * numBins));
+        void pump();
+        while (running) await sleep(20);
+      }
       if (engine) finalize("flush");
     },
     free: () => {
@@ -429,6 +449,28 @@ export function createZipformerStream(
       frames.length = 0;
     },
   };
+}
+
+/** Release every cached engine (the last stream-asr node left the graph).
+ * Successful engines otherwise accumulate for the whole session — a few model
+ * switches can pin hundreds of MB of WASM memory. */
+export async function disposeZipformer(): Promise<void> {
+  const pending = [...engines.values()];
+  engines.clear();
+  for (const p of pending) {
+    try {
+      const e = await p;
+      for (const session of [e.encoder, e.decoder, e.joiner]) {
+        try {
+          await session?.release?.();
+        } catch {
+          /* already released */
+        }
+      }
+    } catch {
+      /* failed loads have nothing to release */
+    }
+  }
 }
 
 export const DEFAULT_ZIPFORMER_REPO = DEFAULT_REPO;

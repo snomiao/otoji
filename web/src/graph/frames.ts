@@ -26,6 +26,7 @@ export interface EdgeFrame {
   revision?: number; // revision protocol: monotonic within segmentId
   status?: "partial" | "provisional" | "final"; // revision protocol; absent = final
   replacesRevision?: number; // revision protocol: pass-2 supersede pointer
+  sourceId?: string; // revision protocol: node that minted segmentId
   samplesB64?: string; // Float32 PCM bytes, base64
   imageDataUrl?: string; // compressed image frame
   width?: number;
@@ -64,6 +65,7 @@ export function buildSegmentFrame(target: string, port: string, seg: SegmentMsg)
     offsetMs: seg.offsetMs,
     segmentId: seg.segmentId,
     revision: seg.revision,
+    sourceId: seg.sourceId,
     samplesB64: encodeSamples(seg.samples),
   };
 }
@@ -87,6 +89,7 @@ export function buildTranscriptFrame(target: string, port: string, tr: Transcrip
     revision: tr.revision,
     status: tr.status,
     replacesRevision: tr.replacesRevision,
+    sourceId: tr.sourceId,
     samplesB64: encodeSamples(tr.audio.samples),
   };
 }
@@ -145,8 +148,8 @@ export function frameToMessage(f: EdgeFrame): SegmentMsg | TranscriptMsg | Contr
   if (f.mtype === "spatial") return { data: f.spatial, ts: f.ts ?? Date.now() };
   if (f.mtype === "model") return f.model!;
   const samples = decodeSamples(f.samplesB64 ?? "");
-  const seg: SegmentMsg = { samples, sampleRate: f.sampleRate ?? 16000, durationMs: f.durationMs ?? 0, offsetMs: f.offsetMs, segmentId: f.mtype === "segment" ? f.segmentId : undefined, revision: f.mtype === "segment" ? f.revision : undefined };
+  const seg: SegmentMsg = { samples, sampleRate: f.sampleRate ?? 16000, durationMs: f.durationMs ?? 0, offsetMs: f.offsetMs, segmentId: f.mtype === "segment" ? f.segmentId : undefined, revision: f.mtype === "segment" ? f.revision : undefined, sourceId: f.mtype === "segment" ? f.sourceId : undefined };
   if (f.mtype === "transcript")
-    return { text: f.text ?? "", audio: seg, lang: f.lang, emotion: f.emotion, event: f.event, tStartMs: f.tStartMs, tEndMs: f.tEndMs, segmentId: f.segmentId, revision: f.revision, status: f.status, replacesRevision: f.replacesRevision };
+    return { text: f.text ?? "", audio: seg, lang: f.lang, emotion: f.emotion, event: f.event, tStartMs: f.tStartMs, tEndMs: f.tEndMs, segmentId: f.segmentId, revision: f.revision, status: f.status, replacesRevision: f.replacesRevision, sourceId: f.sourceId };
   return seg;
 }
