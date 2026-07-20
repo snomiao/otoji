@@ -49,6 +49,8 @@ md-5 = "0.10"
 base64 = "0.22"
 url = "2"
 urlencoding = "2"
+uuid = { version = "1", features = ["v4"] }
+local-ip-address = "0.6"
 hex = "0.4"
 reqwest = { version = "0.12", features = ["json", "rustls-tls", "stream"], default-features = false }
 ratatui = "0.28"
