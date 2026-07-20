@@ -29,6 +29,8 @@ import { illegalCrossDeviceEdges } from "../graph/signal";
 import { HEAVY_NODE_TYPES, offloadType } from "../graph/model-lifecycle";
 import {
   BUILTIN_TEMPLATES,
+  TEMPLATE_CATEGORIES,
+  templateCategoryLabel,
   loadUserTemplates,
   saveUserTemplate,
   deleteUserTemplate,
@@ -1392,7 +1394,7 @@ function Editor({ initialRoom, local, federationDemo }: { initialRoom?: string; 
         id: `tpl:${tpl.id}`,
         type: tpl.nodes[0]?.type ?? ("sink" as NodeType),
         label: `★ ${tpl.name}`,
-        detail: `template · ${tpl.desc ?? `${tpl.nodes.length} nodes`}`,
+        detail: `template · ${tpl.builtin ? templateCategoryLabel(tpl.category) : "★ Mine"} · ${tpl.desc ?? `${tpl.nodes.length} nodes`}`,
       })),
     ],
     [allTemplates],
@@ -2259,8 +2261,9 @@ function Editor({ initialRoom, local, federationDemo }: { initialRoom?: string; 
     panelCollapsedRef.current[panelId] = collapsed;
     try { localStorage.setItem(PANEL_COLLAPSED_KEY, JSON.stringify(panelCollapsedRef.current)); } catch { /* ignore */ }
   }, []);
-  // which node-palette category is expanded (accordion: one at a time)
+  // which node-palette / template category is expanded (accordion: one at a time)
   const [openCategory, setOpenCategory] = useState<string | null>(null);
+  const [openTplCategory, setOpenTplCategory] = useState<string | null>(null);
   const rguiPanels = useMemo<Panel[]>(() => {
     const kindColor = (t: NodeType) => {
       const spec = NODE_SPECS[t];
@@ -2297,17 +2300,44 @@ function Editor({ initialRoom, local, federationDemo }: { initialRoom?: string; 
         if (option) addNode(option.type, at.world, option.config);
       },
     };
+    // Templates use the same one-open-at-a-time accordion as the node palette:
+    // builtin categories first (simplest workflows on top), then the user's
+    // saved templates as their own "★ Mine" group. "⚙" marks templates that
+    // need a native/remote runner (area: "advanced").
+    const tplLabel = (tpl: GraphTemplate) => `　${tpl.area === "advanced" ? "⚙ " : ""}${tpl.name}`;
+    const tplGroups: { id: string; label: string; templates: GraphTemplate[] }[] = [
+      ...TEMPLATE_CATEGORIES.map((cat) => ({
+        id: cat.id,
+        label: cat.label,
+        templates: allTemplates.filter((tpl) => tpl.builtin && tpl.category === cat.id),
+      })),
+      { id: "other", label: "Other", templates: allTemplates.filter((tpl) => tpl.builtin && !tpl.category && !TEMPLATE_CATEGORIES.some((c) => c.id === tpl.category)) },
+      { id: "mine", label: "★ Mine (saved)", templates: allTemplates.filter((tpl) => !tpl.builtin) },
+    ].filter((group) => group.templates.length > 0);
     const tplPanel: Panel = {
       id: "templates",
       title: "Templates",
       anchor: compactPanels ? { x: 12, y: 100 } : anchorOf("templates", "right"),
       collapsed: compactPanels || (panelCollapsedRef.current["templates"] ?? true),
-      items: allTemplates.map((tpl) => ({ id: tpl.id, label: tpl.area === "advanced" ? `Advanced / ${tpl.name}` : tpl.name })),
-      onItemClick: (it) => { const tpl = allTemplates.find((x) => x.id === it.id); if (tpl) addTemplate(tpl); },
-      onItemDrop: (it, at) => { const tpl = allTemplates.find((x) => x.id === it.id); if (tpl) addTemplate(tpl, undefined, at.world); },
+      items: tplGroups.flatMap((group) => [
+        { id: `thdr-${group.id}`, label: `${openTplCategory === group.id ? "▾" : "▸"} ${group.label}`, color: "#a0aec0" },
+        ...(openTplCategory === group.id
+          ? group.templates.map((tpl) => ({ id: tpl.id, label: tplLabel(tpl) }))
+          : []),
+      ]),
+      onItemClick: (it) => {
+        if (it.id.startsWith("thdr-")) { setOpenTplCategory((cur) => (cur === it.id.slice(5) ? null : it.id.slice(5))); return; }
+        const tpl = allTemplates.find((x) => x.id === it.id);
+        if (tpl) addTemplate(tpl);
+      },
+      onItemDrop: (it, at) => {
+        if (it.id.startsWith("thdr-")) return;
+        const tpl = allTemplates.find((x) => x.id === it.id);
+        if (tpl) addTemplate(tpl, undefined, at.world);
+      },
     };
     return [nodePanel, tplPanel];
-  }, [allTemplates, addNode, addTemplate, openCategory, compactPanels]);
+  }, [allTemplates, addNode, addTemplate, openCategory, openTplCategory, compactPanels]);
 
   // Canvas-native toolbar: the floating HTML toolbar as an rgui panel. Items
   // are one-shot actions; live state shows as the row dot + label (active view,

@@ -19,14 +19,30 @@ export interface TemplateEdge {
   to: string;
   toHandle: string;
 }
+export type TemplateCategoryId = "voice" | "vision" | "screen" | "spatial" | "genai";
+
+/** Palette grouping for templates, in display order (simplest first). */
+export const TEMPLATE_CATEGORIES: { id: TemplateCategoryId; label: string }[] = [
+  { id: "voice", label: "🎙 Voice & captions" },
+  { id: "vision", label: "📷 Camera & vision" },
+  { id: "screen", label: "🖥 Screen understanding" },
+  { id: "spatial", label: "🧊 Spatial & AR" },
+  { id: "genai", label: "✨ Generative AI" },
+];
+
+export function templateCategoryLabel(id: TemplateCategoryId | undefined): string {
+  return TEMPLATE_CATEGORIES.find((c) => c.id === id)?.label ?? "Other";
+}
+
 export interface GraphTemplate {
   id: string;
   name: string;
   desc?: string;
+  category?: TemplateCategoryId; // builtin grouping; user-saved templates have none
   nodes: TemplateNode[];
   edges: TemplateEdge[];
   builtin?: boolean;
-  area?: "default" | "advanced";
+  area?: "default" | "advanced"; // "advanced" = needs a native/remote runner
 }
 
 const COL = 240;
@@ -37,6 +53,7 @@ const WORKFLOW_ROW = 280;
 export const BUILTIN_TEMPLATES: GraphTemplate[] = [
   {
     id: "yolo-webcam",
+    category: "vision",
     name: "YOLO webcam",
     desc: "Camera → object detection → labels",
     builtin: true,
@@ -52,6 +69,7 @@ export const BUILTIN_TEMPLATES: GraphTemplate[] = [
   },
   {
     id: "narrated-yolo",
+    category: "vision",
     name: "Narrated YOLO",
     desc: "Camera → detection → spoken labels (TTS)",
     builtin: true,
@@ -67,6 +85,7 @@ export const BUILTIN_TEMPLATES: GraphTemplate[] = [
   },
   {
     id: "live-captions",
+    category: "voice",
     name: "Live captions",
     desc: "Mic → STT → transcript",
     builtin: true,
@@ -82,6 +101,7 @@ export const BUILTIN_TEMPLATES: GraphTemplate[] = [
   },
   {
     id: "qwen-agent-browser",
+    category: "genai",
     name: "Qwen Agent (browser)",
     desc: "Searchable WebLLM provider + prompt → WebGPU Qwen 2.5 agent → editable response",
     builtin: true,
@@ -110,6 +130,7 @@ export const BUILTIN_TEMPLATES: GraphTemplate[] = [
   },
   {
     id: "image-caption-browser",
+    category: "genai",
     name: "Image → text (browser)",
     desc: "Image + searchable browser ONNX provider → editable caption",
     builtin: true,
@@ -127,6 +148,7 @@ export const BUILTIN_TEMPLATES: GraphTemplate[] = [
   },
   {
     id: "vibevoice-asr",
+    category: "voice",
     name: "Speech round-trip (browser)",
     desc: "Text → browser TTS → browser ASR → downloadable SRT",
     builtin: true,
@@ -146,6 +168,7 @@ export const BUILTIN_TEMPLATES: GraphTemplate[] = [
   },
   {
     id: "vibevoice-native-asr",
+    category: "voice",
     name: "VibeVoice long-form ASR",
     desc: "Native MLX/VLLM model provider → ASR → SRT",
     builtin: true,
@@ -164,6 +187,7 @@ export const BUILTIN_TEMPLATES: GraphTemplate[] = [
   },
   {
     id: "text-to-image-native",
+    category: "genai",
     name: "Text → image",
     desc: "Prompt + searchable image provider → native/remote runner → image",
     builtin: true,
@@ -184,6 +208,7 @@ export const BUILTIN_TEMPLATES: GraphTemplate[] = [
   },
   {
     id: "image-to-image-native",
+    category: "genai",
     name: "Image → image",
     desc: "Seed image + prompt + searchable edit provider → native/remote runner → image",
     builtin: true,
@@ -206,6 +231,7 @@ export const BUILTIN_TEMPLATES: GraphTemplate[] = [
   },
   {
     id: "text-image-text",
+    category: "genai",
     name: "Text → image → text",
     desc: "Generate an image from text, then recover its visible text with OCR",
     builtin: true,
@@ -230,6 +256,7 @@ export const BUILTIN_TEMPLATES: GraphTemplate[] = [
   },
   {
     id: "live-translate",
+    category: "voice",
     name: "Live translate",
     desc: "Mic → STT → translate → transcript",
     builtin: true,
@@ -247,6 +274,7 @@ export const BUILTIN_TEMPLATES: GraphTemplate[] = [
   },
   {
     id: "mix-two-mics",
+    category: "voice",
     name: "Mix two mics",
     desc: "Two mics → time-aligned mix → STT (pick a device on each mic)",
     builtin: true,
@@ -266,6 +294,7 @@ export const BUILTIN_TEMPLATES: GraphTemplate[] = [
   },
   {
     id: "screen-audio-stt",
+    category: "screen",
     name: "Screen audio → STT",
     desc: "Capture tab/system audio → transcript (share a tab with audio)",
     builtin: true,
@@ -281,6 +310,7 @@ export const BUILTIN_TEMPLATES: GraphTemplate[] = [
   },
   {
     id: "screen-yolo",
+    category: "screen",
     name: "Screen YOLO",
     desc: "Screen share → object detection → labels",
     builtin: true,
@@ -296,6 +326,7 @@ export const BUILTIN_TEMPLATES: GraphTemplate[] = [
   },
   {
     id: "screen-depth",
+    category: "screen",
     name: "Screen depth",
     desc: "Screen share → live depth map (preview)",
     builtin: true,
@@ -309,6 +340,7 @@ export const BUILTIN_TEMPLATES: GraphTemplate[] = [
   },
   {
     id: "screen-ocr-diff-tts",
+    category: "screen",
     name: "Screen + voice agent → TTS",
     desc: "Screen share → OCR → normalize → diff, plus screen-audio STT → context aggregate → LLM agent → spoken output",
     builtin: true,
@@ -337,6 +369,7 @@ export const BUILTIN_TEMPLATES: GraphTemplate[] = [
   },
   {
     id: "depth-cam",
+    category: "vision",
     name: "Depth camera",
     desc: "Camera → live depth map (preview)",
     builtin: true,
@@ -350,6 +383,7 @@ export const BUILTIN_TEMPLATES: GraphTemplate[] = [
   },
   {
     id: "pose-mirror",
+    category: "vision",
     name: "Pose mirror",
     desc: "Camera → body pose skeleton (MediaPipe)",
     builtin: true,
@@ -363,6 +397,7 @@ export const BUILTIN_TEMPLATES: GraphTemplate[] = [
   },
   {
     id: "hand-tracking",
+    category: "vision",
     name: "Hand tracking",
     desc: "Camera → hand landmarks (MediaPipe)",
     builtin: true,
@@ -376,6 +411,7 @@ export const BUILTIN_TEMPLATES: GraphTemplate[] = [
   },
   {
     id: "gesture-mirror",
+    category: "vision",
     name: "Gesture recognition",
     desc: "Camera → hand gestures (👍 ✌️ ✋ …, MediaPipe)",
     builtin: true,
@@ -389,6 +425,7 @@ export const BUILTIN_TEMPLATES: GraphTemplate[] = [
   },
   {
     id: "spatial-monkey",
+    category: "spatial",
     name: "Spatial fingertip model",
     desc: "Camera → hand calibration + 3D model → spatial renderer",
     builtin: true,
@@ -417,6 +454,7 @@ export const BUILTIN_TEMPLATES: GraphTemplate[] = [
   },
   {
     id: "ar-notes",
+    category: "spatial",
     name: "AR sticky notes",
     desc: "Pinch to place sticky notes in 3D space (synced to the room)",
     builtin: true,
@@ -438,6 +476,7 @@ export const BUILTIN_TEMPLATES: GraphTemplate[] = [
   },
   {
     id: "vision-narrator",
+    category: "vision",
     name: "Vision narrator",
     desc: "Describe what the camera sees, out loud — caption → translate → speech",
     builtin: true,
@@ -464,6 +503,7 @@ export const BUILTIN_TEMPLATES: GraphTemplate[] = [
   },
   {
     id: "gesture-speak",
+    category: "vision",
     name: "Gesture → speech",
     desc: "Camera → hand gesture recognition → spoken when the gesture changes",
     builtin: true,
@@ -481,6 +521,7 @@ export const BUILTIN_TEMPLATES: GraphTemplate[] = [
   },
   {
     id: "find-image",
+    category: "screen",
     name: "Find image on screen",
     desc: "Screen share + pattern image → highlighted matches, count & positions",
     builtin: true,
@@ -498,6 +539,7 @@ export const BUILTIN_TEMPLATES: GraphTemplate[] = [
   },
   {
     id: "caption-objects",
+    category: "voice",
     name: "Caption + objects",
     desc: "Voice captions and webcam object labels side by side",
     builtin: true,
