@@ -46,7 +46,7 @@ patches, never your audio).
 | **Text → Speech** | Text-to-Speech (browser SpeechSynthesis) · Neural TTS (on-device ONNX MMS-TTS) |
 | **Output** | Transcript + Recordings · Audio file (out) · SRT subtitles (out) · Speaker (play) |
 | **Custom** | Any transformers.js model by repo/URL (ASR / text2text / TTS) |
-| **Pipe** | CLI stdio bridge — wire a terminal into the graph via `otoji node` |
+| **Pipe** | CLI stdio bridge — wire a terminal into the graph via `otoji node`; see [CLI pipe recipes](./docs/CLI-RECIPES.md) |
 
 Models download once per device and can be **shared P2P within a room**, so only
 one device pays the download cost.
