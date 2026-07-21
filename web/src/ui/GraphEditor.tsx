@@ -21,7 +21,7 @@ type Edge = {
 import { MultiSignalingClient } from "../net/multi-signaling";
 import { envTrackers, capTrackers, urlTrackers, appendTrackers, dedupeTrackers } from "../lib/trackers";
 import { loadApproved, saveApproved, vetTracker } from "../lib/tracker-trust";
-import { PeerMesh } from "../net/peers";
+import { PeerMesh, warmTurnServers } from "../net/peers";
 import { type DeviceOpt } from "./device-opt";
 import { GraphContext } from "./graph-context";
 import { GraphRuntime, nodeOwner, type TranscriptMsg } from "../graph/runtime";
@@ -774,6 +774,7 @@ function Editor({ initialRoom, local, federationDemo }: { initialRoom?: string; 
       // STABLE transport object across reconnects (just swap its mesh) so a
       // running runtime's captured transport keeps delivering frames.
       meshRef.current?.destroy();
+      void warmTurnServers(); // TURN creds warm in parallel; mesh never blocks on them
       const mesh = new PeerMesh(sig, m.peerId, {
         onData: (peer, _label, data) => transportRef.current?.handleData(data, peer),
         onPeerState: (id, st) => {

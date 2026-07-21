@@ -21,6 +21,11 @@
 
 export interface Env {
   ROOMS: DurableObjectNamespace;
+  // Cloudflare Realtime TURN app credentials (wrangler secrets). Absent in
+  // local dev — /signal/turn then degrades to an empty server list and
+  // clients stay on their STUN defaults.
+  TURN_KEY_ID?: string;
+  TURN_API_TOKEN?: string;
 }
 
 const CORS = {
@@ -36,6 +41,30 @@ export default {
 
     if (url.pathname === "/signal" || url.pathname === "/signal/") {
       return Response.json({ ok: true, service: "otoji-signal", usage: "/signal/{room} (WebSocket)" }, { headers: CORS });
+    }
+
+    // Short-lived TURN credentials for symmetric-NAT peers. The worker holds
+    // the Realtime TURN app key (secrets) and mints per-client ICE servers;
+    // credentials expire on their own (ttl), so handing them to any caller is
+    // no worse than the bearer-code room model. Clients treat failures as
+    // "STUN only" and never block on this endpoint.
+    if (url.pathname === "/signal/turn") {
+      if (!env.TURN_KEY_ID || !env.TURN_API_TOKEN) return Response.json({ iceServers: [] }, { headers: CORS });
+      try {
+        const r = await fetch(
+          `https://rtc.live.cloudflare.com/v1/turn/keys/${env.TURN_KEY_ID}/credentials/generate-ice-servers`,
+          {
+            method: "POST",
+            headers: { Authorization: `Bearer ${env.TURN_API_TOKEN}`, "Content-Type": "application/json" },
+            body: JSON.stringify({ ttl: 7200 }),
+          },
+        );
+        if (!r.ok) return Response.json({ iceServers: [] }, { headers: CORS });
+        const body = (await r.json()) as { iceServers?: unknown };
+        return Response.json({ iceServers: body.iceServers ?? [] }, { headers: CORS });
+      } catch {
+        return Response.json({ iceServers: [] }, { headers: CORS });
+      }
     }
 
     const m = url.pathname.match(/^\/signal\/([^/]+)(\/graph)?\/?$/);

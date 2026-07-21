@@ -9,6 +9,29 @@ const ICE_SERVERS: RTCIceServer[] = [
   { urls: ["stun:stun.cloudflare.com:3478", "stun:stun.l.google.com:19302"] },
 ];
 
+// TURN (symmetric NATs / cross-network): the signal worker mints short-lived
+// Cloudflare Realtime credentials at /signal/turn. Fetched once per page,
+// merged in FRONT of the STUN defaults; any failure (offline relay, local
+// dev, endpoint absent) quietly leaves the mesh on STUN-only exactly as
+// before. Callers race this against connection setup — never block on it.
+let turnServers: RTCIceServer[] | null = null;
+let turnFetch: Promise<void> | null = null;
+export function warmTurnServers(origin = typeof location !== "undefined" ? location.origin : ""): Promise<void> {
+  if (!turnFetch) {
+    turnFetch = fetch(`${origin}/signal/turn`)
+      .then(async (r) => {
+        if (!r.ok) return;
+        const body = (await r.json()) as { iceServers?: RTCIceServer[] };
+        if (Array.isArray(body.iceServers) && body.iceServers.length) turnServers = body.iceServers;
+      })
+      .catch(() => undefined);
+  }
+  return turnFetch;
+}
+export function currentIceServers(): RTCIceServer[] {
+  return turnServers ? [...turnServers, ...ICE_SERVERS] : ICE_SERVERS;
+}
+
 /**
  * Deterministic, symmetric tie-break: exactly one side of a pair initiates.
  * The lexicographically-greater id initiates (and is the "impolite" peer).
@@ -57,7 +80,7 @@ export class PeerMesh {
     let p = this.peers.get(remoteId);
     if (p) return p;
 
-    const pc = new RTCPeerConnection({ iceServers: ICE_SERVERS });
+    const pc = new RTCPeerConnection({ iceServers: currentIceServers() });
     p = { pc, polite: !initiator, makingOffer: false, ignoreOffer: false, channels: new Map(), pendingCandidates: [] };
     this.peers.set(remoteId, p);
 
