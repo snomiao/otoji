@@ -50,6 +50,10 @@ export default defineConfig({
         maximumFileSizeToCacheInBytes: 30 * 1024 * 1024,
         navigateFallback: "/index.html",
         navigateFallbackDenylist: [/^\/signal(?:\/|$)/, /\/[^/?]+\.[^/?]+(?:\?.*)?$/],
+        // NOTE: no huggingface.co route here on purpose — HF `resolve` URLs
+        // 302 to cdn-lfs, and a CacheFirst replay of a redirected response
+        // makes the SECOND fetch throw "Failed to fetch" (hit live). Model
+        // bytes are cached app-side in otoji-models-v1 instead.
         runtimeCaching: [
           {
             urlPattern: /^https:\/\/cdn\.jsdelivr\.net\//,
@@ -67,15 +71,6 @@ export default defineConfig({
               cacheName: "otoji-cdn-assets-v1",
               cacheableResponse: { statuses: [0, 200] },
               expiration: { maxEntries: 80, maxAgeSeconds: 60 * 60 * 24 * 30 },
-            },
-          },
-          {
-            urlPattern: /^https:\/\/huggingface\.co\/.*\/resolve\//,
-            handler: "CacheFirst",
-            options: {
-              cacheName: "otoji-cdn-assets-v1",
-              cacheableResponse: { statuses: [0, 200] },
-              expiration: { maxEntries: 40, maxAgeSeconds: 60 * 60 * 24 * 30 },
             },
           },
         ],
