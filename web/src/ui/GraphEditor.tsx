@@ -2442,7 +2442,7 @@ function Editor({ initialRoom, local, federationDemo }: { initialRoom?: string; 
   }, []);
   // which node-palette / template category is expanded (accordion: one at a time)
   const [openCategory, setOpenCategory] = useState<string | null>(null);
-  const [openTplCategory, setOpenTplCategory] = useState<string | null>(null);
+  const [openTplCategory, setOpenTplCategory] = useState<string | null>("featured");
   const rguiPanels = useMemo<Panel[]>(() => {
     const kindColor = (t: NodeType) => {
       const spec = NODE_SPECS[t];
@@ -2485,6 +2485,8 @@ function Editor({ initialRoom, local, federationDemo }: { initialRoom?: string; 
     // need a native/remote runner (area: "advanced").
     const tplLabel = (tpl: GraphTemplate) => `　${tpl.area === "advanced" ? "⚙ " : ""}${tpl.name}`;
     const tplGroups: { id: string; label: string; templates: GraphTemplate[] }[] = [
+      // ⭐ curated demos first, so the palette opens on the strongest experiences
+      { id: "featured", label: "⭐ Featured", templates: allTemplates.filter((tpl) => tpl.builtin && tpl.featured) },
       ...TEMPLATE_CATEGORIES.map((cat) => ({
         id: cat.id,
         label: cat.label,

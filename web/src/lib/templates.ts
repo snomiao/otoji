@@ -43,6 +43,7 @@ export interface GraphTemplate {
   edges: TemplateEdge[];
   builtin?: boolean;
   area?: "default" | "advanced"; // "advanced" = needs a native/remote runner
+  featured?: boolean; // curated demo — floats to a ⭐ Featured group atop the palette
 }
 
 const COL = 240;
@@ -81,6 +82,59 @@ export const BUILTIN_TEMPLATES: GraphTemplate[] = [
     edges: [
       { from: "cam", fromHandle: "out", to: "yolo", toHandle: "in" },
       { from: "yolo", fromHandle: "labels", to: "tts", toHandle: "in" },
+    ],
+  },
+  {
+    id: "hey-otoji-assistant",
+    category: "voice",
+    featured: true,
+    name: "Hey otoji — voice assistant",
+    desc: "Say \"hey otoji …\" → on-device streaming ASR wakes an open LLM (Qwen) that answers out loud. Wire the pipe node to `otoji node <room>` for desktop actions. All open-source, all local.",
+    builtin: true,
+    nodes: [
+      { key: "mic", type: "mic-raw", dx: 0, dy: 0, config: { frameMs: 100 } },
+      { key: "asr", type: "stream-asr", dx: COL, dy: 0 },
+      { key: "wake", type: "text-filter", dx: COL * 2, dy: 0, config: { mode: "wake", wakeWords: "hey otoji, ok otoji, otoji" } },
+      {
+        key: "agent",
+        type: "llm-agent",
+        dx: COL * 3,
+        dy: 0,
+        config: {
+          backend: "webllm",
+          task: "text-generation",
+          model: "Qwen2.5-1.5B-Instruct-q4f16_1-MLC",
+          instruction: "You are otoji, a friendly on-device voice assistant. Answer the user's spoken request in one or two short spoken sentences. No markdown, no lists — just say it plainly.",
+        },
+      },
+      { key: "say", type: "tts", dx: COL * 4, dy: -ROW / 2 },
+      { key: "transcript", type: "sink", dx: COL * 4, dy: ROW / 2 },
+      { key: "desktop", type: "pipe", dx: COL * 3, dy: ROW, config: { title: "desktop action (otoji node)" } },
+    ],
+    edges: [
+      { from: "mic", fromHandle: "out", to: "asr", toHandle: "in" },
+      { from: "asr", fromHandle: "out", to: "wake", toHandle: "in" },
+      { from: "wake", fromHandle: "out", to: "agent", toHandle: "in" },
+      { from: "agent", fromHandle: "out", to: "say", toHandle: "in" },
+      { from: "agent", fromHandle: "out", to: "transcript", toHandle: "in" },
+      { from: "wake", fromHandle: "out", to: "desktop", toHandle: "in" },
+    ],
+  },
+  {
+    id: "live-dictation-srt",
+    category: "voice",
+    featured: true,
+    name: "Live dictation → SRT",
+    desc: "Speak → on-device streaming ASR (open zipformer) → downloadable .srt subtitles. Zero setup, zero cloud.",
+    builtin: true,
+    nodes: [
+      { key: "mic", type: "mic-raw", dx: 0, dy: 0, config: { frameMs: 100 } },
+      { key: "asr", type: "stream-asr", dx: COL, dy: 0 },
+      { key: "srt", type: "srt-out", dx: COL * 2, dy: 0 },
+    ],
+    edges: [
+      { from: "mic", fromHandle: "out", to: "asr", toHandle: "in" },
+      { from: "asr", fromHandle: "out", to: "srt", toHandle: "in" },
     ],
   },
   {
@@ -325,6 +379,7 @@ Available common node types: mic-vad, mic-raw, file-audio, file-image, file-text
   {
     id: "interpreter-booth",
     category: "voice",
+    featured: true,
     name: "Interpreter booth (2 devices)",
     desc: "Each speaker hears the other in their own language: mic → streaming ASR → translate → speech, both directions. Assign each lane's Mic and TTS to opposite devices.",
     builtin: true,
@@ -578,6 +633,7 @@ Available common node types: mic-vad, mic-raw, file-audio, file-image, file-text
   {
     id: "vision-narrator",
     category: "vision",
+    featured: true,
     name: "Vision narrator",
     desc: "Describe what the camera sees, out loud — caption → translate → speech",
     builtin: true,

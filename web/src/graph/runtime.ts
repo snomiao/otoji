@@ -102,10 +102,44 @@ function normalizeTranscriptText(text: string, mode: TextNormalizeMode = "ocr-st
   return { text: out.join("\n").trim(), keys };
 }
 
-type TextFilterMode = "diff-added" | "diff-removed" | "regex-keep" | "regex-drop" | "regex-replace";
+type TextFilterMode = "diff-added" | "diff-removed" | "regex-keep" | "regex-drop" | "regex-replace" | "wake";
+
+/** Split a wake-word config ("hey otoji, ok otoji") into normalized phrases. */
+export function parseWakeWords(raw: unknown): string[] {
+  return String(raw ?? "hey otoji, okay otoji, ok otoji, otoji")
+    .split(/[,\n]/)
+    .map((w) => w.trim().toLowerCase())
+    .filter(Boolean);
+}
+
+/**
+ * Wake-word gate: if `text` begins with (or contains, when floaty) a wake
+ * phrase, return the COMMAND that follows it (wake phrase stripped); otherwise
+ * "" so downstream (an LLM) never fires. Case/punctuation-insensitive; a bare
+ * wake word with no command yields "" too. Exported for tests.
+ */
+export function extractWakeCommand(text: string, wakeWords: string[]): string {
+  const norm = text.toLowerCase().replace(/[.,!?;:]/g, " ").replace(/\s+/g, " ").trim();
+  for (const w of wakeWords) {
+    const i = norm.indexOf(w);
+    if (i < 0) continue;
+    // require the wake phrase at a word boundary near the start (first ~3 words)
+    const before = norm.slice(0, i).trim();
+    if (before.split(" ").filter(Boolean).length > 2) continue;
+    // map the normalized cut point back onto the original text length-wise:
+    // recut the ORIGINAL at the same word offset so casing/accents survive
+    const wakeWordCount = before ? before.split(" ").length : 0;
+    const totalWake = wakeWordCount + w.split(" ").length;
+    const origWords = text.split(/\s+/);
+    const command = origWords.slice(totalWake).join(" ").replace(/^[\s,.:;!?-]+/, "").trim();
+    return command;
+  }
+  return "";
+}
 
 function filterTranscriptText(text: string, cfg: Record<string, unknown>): string {
   const mode = ((cfg.mode as string | undefined) ?? "diff-added") as TextFilterMode;
+  if (mode === "wake") return extractWakeCommand(text, parseWakeWords(cfg.wakeWords));
   const lines = text.split("\n");
   const strip = (cfg.stripPrefix as boolean | undefined) ?? false;
   if (mode === "diff-added") return lines.filter((l) => l.startsWith("+")).map((l) => strip ? l.slice(1) : l).join("\n").trim();
