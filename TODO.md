@@ -163,7 +163,7 @@
       preview sync (deferred).
 
 ### M5 — Future / hardening
-- [ ] **BLOCKED (hardware) — Verify Mix-audio live with two real mic devices** (rech): drop the "Mix
+- [~] **PARTIALLY VERIFIED (2-tab sim, 2026-07-22)**: two isolated rech sessions (distinct persisted deviceIds, one room) ran file-audio@A -> stream-asr@B -> sink@B over the live WebRTC mesh — remote segment frames decoded and device B produced the correct transcript. Real two-MIC mix on separate hardware still pending. orig: Verify Mix-audio live with two real mic devices (rech): drop the "Mix
   two mics" template, assign a *different* input device to each Mic + VAD, then
   confirm on the shared wall-clock timeline that overlapping speech is summed +
   soft-clipped (no harsh clipping) and STT transcribes the combined stream.
@@ -499,7 +499,7 @@ Ideas ranked by fun × implementation cost. Quick wins are being picked up first
   (`--exec` doesn't exist yet; documented honestly as future work).
 
 ### Big bets
-- [ ] **BLOCKED (hardware) — TURN cross-network validation + real mobile testing** (credentials + code shipped above; what remains needs two devices on different networks / physical mobiles) — phase 2 of NAT traversal;
+- [~] **PARTIALLY VERIFIED (2-tab rech, 2026-07-22)**: /signal/turn issued 6 working relay candidates via turn.cloudflare.com; ?direct paired two tabs with a live data channel (RTT 2 ms, no server). True cross-network relay + physical mobile still need separate networks. orig phase-2 text: — phase 2 of NAT traversal;
   needed before P2P mesh works reliably outside one LAN.
 - [x] **Interpreter-booth mode** → shipped as the M6.5 template (see above);
   only the 2-device KPI measurement remains (blocked on hardware).
