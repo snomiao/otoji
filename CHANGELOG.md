@@ -4,6 +4,48 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+## [0.1.60] - 2026-07-21
+
+### Bug Fixes
+- Drop the service worker's huggingface route (redirect replay broke fetches) ([#154](https://github.com/snomiao/otoji/pull/154)) *(web)*
+- Codex review batch — revision identity, buffer bounds, flush loss, bench realism ([#135](https://github.com/snomiao/otoji/pull/135)) *(web)*
+
+### CI
+- Redeploy the web app on lib/rgui submodule bumps ([#139](https://github.com/snomiao/otoji/pull/139))
+- Build with the local vite entry, not bun x vite ([#137](https://github.com/snomiao/otoji/pull/137))
+- Fix web deploy — bun install/build (pnpm rejected the bun packageManager spec) ([#136](https://github.com/snomiao/otoji/pull/136))
+
+### Documentation
+- Record 2-device (2-tab rech) end-to-end verification ([#155](https://github.com/snomiao/otoji/pull/155))
+- Check off voice→graph editing ([#150](https://github.com/snomiao/otoji/pull/150)) and group v1 ([#151](https://github.com/snomiao/otoji/pull/151)) ([#152](https://github.com/snomiao/otoji/pull/152))
+- Check off two-finger touch navigation (rgui#6 / #133) ([#134](https://github.com/snomiao/otoji/pull/134))
+- Touch gesture edge-case matrix — two-finger nav vs one-finger select ([#132](https://github.com/snomiao/otoji/pull/132))
+- Research note — otoji interconnect over Bluetooth / offline mesh ([#131](https://github.com/snomiao/otoji/pull/131))
+- Spec mobile multi-select + shared long-press menu (bulk remove) ([#130](https://github.com/snomiao/otoji/pull/130))
+- CLI pipe recipes (otoji node patterns) ([#128](https://github.com/snomiao/otoji/pull/128))
+
+### Features
+- Featured demo templates + wake-word gate (hey otoji assistant) ([#156](https://github.com/snomiao/otoji/pull/156)) *(web)*
+- Cloudflare TURN — /signal/turn mints short-lived ICE servers ([#153](https://github.com/snomiao/otoji/pull/153)) *(signal+web)*
+- Group — snap the selection into one stack (subgraph v1) ([#151](https://github.com/snomiao/otoji/pull/151)) *(web)*
+- Voice→graph editing — graph-edit node applies LLM commands ([#150](https://github.com/snomiao/otoji/pull/150)) *(web)*
+- Serverless direct pairing — SDP over copy-paste, links, and QR ([#149](https://github.com/snomiao/otoji/pull/149)) *(web)*
+- Feat(web)+docs: goal-sweep close — tap-tap bump, iOS input-zoom guard, TODO reconciliation ([#148](https://github.com/snomiao/otoji/pull/148))
+- Never auto-assign mic nodes to devices without a microphone ([#147](https://github.com/snomiao/otoji/pull/147)) *(web)*
+- PCM16 wire encoding for cross-device audio (half the bytes) ([#146](https://github.com/snomiao/otoji/pull/146)) *(web)*
+- Otoji signal --offline — native LAN signaling relay ([#145](https://github.com/snomiao/otoji/pull/145)) *(cli)*
+- Adopt rgui signal-algebra predicates (unblocked) ([#144](https://github.com/snomiao/otoji/pull/144)) *(web)*
+- Shared context menu for multi-selections (touch long-press + right-click) ([#143](https://github.com/snomiao/otoji/pull/143)) *(web)*
+- Mobile install nudge — small bottom sheet suggesting the PWA ([#142](https://github.com/snomiao/otoji/pull/142)) *(web)*
+- Proper PWA logo — waveform→captions mark, full icon set ([#141](https://github.com/snomiao/otoji/pull/141)) *(web)*
+- Rgui bump — double-tap/double-click a node maximizes the viewport ([#138](https://github.com/snomiao/otoji/pull/138)) *(web)*
+- Rgui bump — two-finger touch pan/pinch on the graph canvas ([#133](https://github.com/snomiao/otoji/pull/133)) *(web)*
+- Feat(web)+docs: M6.5 interpreter-booth template + TODO sweep (all items shipped or triaged) ([#129](https://github.com/snomiao/otoji/pull/129))
+- Per-edge throughput labels on cross-device edges ([#127](https://github.com/snomiao/otoji/pull/127)) *(web)*
+- M6.2 stt buffers continuous input into VAD utterances ([#126](https://github.com/snomiao/otoji/pull/126)) *(web)*
+- M6.3 explicit two-pass ASR via utterance port (provisional → final replace) ([#125](https://github.com/snomiao/otoji/pull/125)) *(web)*
+- M6.1 in-browser streaming ASR (zipformer transducer, stream-asr node) ([#123](https://github.com/snomiao/otoji/pull/123)) *(web)*
+
 ## [0.1.59] - 2026-07-20
 
 ### Features
