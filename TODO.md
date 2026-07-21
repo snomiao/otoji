@@ -169,7 +169,7 @@
   soft-clipped (no harsh clipping) and STT transcribes the combined stream.
   Deferred — no second mic on hand. (Unit-tested in `__tests__/audio-mix.test.ts`;
   only the live two-device path is unverified.)
-- [ ] Cloudflare TURN for symmetric-NAT / cross-network reliability. (Infra: needs the CF TURN service keys + real cross-network devices to validate — the one remaining M5 network item; same as the big-bet entry below.)
+- [x] Cloudflare TURN — shipped 2026-07-22: Realtime subscription enabled on the account (free 1TB/mo tier), a TURN app minted via the dashboard, its key stored as worker secrets, and `/signal/turn` on the signal worker now issues short-lived ICE servers that peers.ts merges ahead of the STUN defaults (fail-open to STUN-only). Verified live: otoji.org/signal/turn returns turn: urls. Cross-network relay VALIDATION still needs two devices on different networks (tracked in the big-bet entry below).
 - [x] Polish (LLM) + TTS nodes; Recorder/persist node; audio-monitor node — all landed since as: text-normalize `llm-filter` mode (polish), tts / tts-model, video-recorder + recordings DB, speaker / audio-out (monitor).
 - [ ] Reconnection resilience, graph conflict strategy (LWW → maybe CRDT). (Long-horizon: LWW has been sufficient in practice; revisit when multi-editor conflicts are actually observed.)
 - [ ] Optional auth / private rooms; per-room model selection. (Product decision pending — bearer-token room codes remain acceptable for the current audience; see Open questions.)
@@ -499,7 +499,7 @@ Ideas ranked by fun × implementation cost. Quick wins are being picked up first
   (`--exec` doesn't exist yet; documented honestly as future work).
 
 ### Big bets
-- [ ] **Cloudflare TURN + real mobile testing** (the last big infra bet; needs CF TURN credentials + physical mobile devices) — phase 2 of NAT traversal;
+- [ ] **BLOCKED (hardware) — TURN cross-network validation + real mobile testing** (credentials + code shipped above; what remains needs two devices on different networks / physical mobiles) — phase 2 of NAT traversal;
   needed before P2P mesh works reliably outside one LAN.
 - [x] **Interpreter-booth mode** → shipped as the M6.5 template (see above);
   only the 2-device KPI measurement remains (blocked on hardware).
