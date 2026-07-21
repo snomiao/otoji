@@ -1081,12 +1081,20 @@ export function NodeInspector({ node, controls = true, onClose }: { node: Inspec
                 <option value="regex-keep">regex keep lines</option>
                 <option value="regex-drop">regex drop lines</option>
                 <option value="regex-replace">regex replace</option>
+                <option value="wake">🎙 wake word gate</option>
               </SelectOmnibox>
             </label>
             {String(config?.mode ?? "diff-added").startsWith("diff-") && (
               <label style={{ ...row, justifyContent: "flex-start", gap: 6 }}>
                 <input type="checkbox" checked={(config?.stripPrefix as boolean | undefined) ?? false} onChange={(e) => onConfig(id, { stripPrefix: e.target.checked })} />
                 strip +/- prefix
+              </label>
+            )}
+            {config?.mode === "wake" && (
+              <label style={{ display: "block", color: "#718096", marginTop: 6 }}>wake words (comma-sep):
+                <input type="text" defaultValue={(config?.wakeWords as string) ?? "hey otoji, ok otoji, otoji"} placeholder="hey otoji, ok otoji"
+                  onBlur={(e) => onConfig(id, { wakeWords: e.target.value })}
+                  onKeyDown={(e) => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); }} style={{ fontSize: 12, width: "100%", marginTop: 2, boxSizing: "border-box" }} />
               </label>
             )}
             {String(config?.mode ?? "").startsWith("regex-") && (
