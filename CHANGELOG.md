@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+## [0.1.61] - 2026-07-23
+
+### Features
+- Wire native otoji kws into a wake-word template ([#160](https://github.com/snomiao/otoji/pull/160)) *(web)*
+- Otoji kws — native always-on wake word (小克小克) ([#159](https://github.com/snomiao/otoji/pull/159)) *(cli)*
+- Real KWS wake-word node (openWakeWord) + wire the assistant to it ([#157](https://github.com/snomiao/otoji/pull/157)) *(web)*
+
 ## [0.1.60] - 2026-07-21
 
 ### Bug Fixes
