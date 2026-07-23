@@ -126,3 +126,35 @@ sending the line and closing stdin, or keep the producer open.
 
 If startup reports that a global `WebSocket` is missing, use Node 22+, Bun, or
 Deno.
+
+## Always-on wake word (`otoji kws`)
+
+`otoji kws` is a cheap, always-on keyword spotter (sherpa-onnx streaming KWS,
+3.3M params — light enough to run all day on a laptop). It emits one JSON line
+per detection on stdout, so it composes with the pipe recipes above to wake a
+graph agent.
+
+```bash
+# default: auto-downloads the Chinese wenetspeech KWS model, wakes on 小克小克
+otoji kws
+# → {"type":"wake","keyword":"小克小克","timestamp_ms":1234}
+```
+
+The keyword is given in sherpa's pinyin-token form (`x iǎo k è x iǎo k è`),
+mapped to a display label after `@`:
+
+```bash
+otoji kws --keyword 'x iǎo k è x iǎo k è @小克小克' --threshold 0.25
+```
+
+Tuning: raise `--threshold` for fewer false wakes, add a per-keyword boost
+(`… :2.0 @小克小克`) for more sensitivity, and `--keywords-file` points at a full
+sherpa keywords file for several phrases at once. Test a keyword against a clip
+with `--wav clip.wav` before going live. A streaming spotter needs a little
+audio *after* the phrase to confirm, so say the wake word then pause.
+
+Wake a room agent by piping detections into a pipe node:
+
+```bash
+otoji kws | while IFS= read -r _; do echo "小克小克"; done | otoji node ROOM/PIPE_NODE
+```
