@@ -151,7 +151,7 @@ function loadPanelCollapsed(): Record<string, boolean> {
 // scrolls (overlay is clip:"node" + overflow:"auto"), it never covers the preview.
 const CONTROL_ROWS: Partial<Record<NodeType, number>> = {
   environment: 7,
-  "mic-vad": 3, "mic-raw": 2, stt: 3, "stream-asr": 2, "web-speech": 3, vosk: 3, sherpa: 3, "vibevoice-asr": 5,
+  "mic-vad": 3, "mic-raw": 2, stt: 3, "wake-word": 3, "stream-asr": 2, "web-speech": 3, vosk: 3, sherpa: 3, "vibevoice-asr": 5,
   translate: 5, "browser-translate-api": 3, "text-aggregate": 3, "text-normalize": 8, "text-filter": 7, "llm-agent": 8, "graph-edit": 2, sink: 7, "video-recorder": 8, "video-clip": 6, url: 0, tts: 4, "tts-model": 5, "model-source": 12, model: 5,
   // Visual nodes are full-bleed: controls live in the overlay's title bar, so
   // the whole body is preview.
@@ -161,7 +161,7 @@ const CONTROL_ROWS: Partial<Record<NodeType, number>> = {
 type DisplayMode = "full-bleed" | "fit" | "stack";
 const DISPLAY_MODES: DisplayMode[] = ["full-bleed", "fit", "stack"];
 const VISUAL_DISPLAY_NODES = new Set<NodeType>(["camera", "screen-share", "vision-model", "qwen-image", "depth-field", "hand-space", "spatial-renderer", "image-match", "ar-notes", "file-image", "video-recorder", "video-clip", "url"]);
-const TEXT_DISPLAY_NODES = new Set<NodeType>(["environment", "stt", "stream-asr", "web-speech", "vosk", "sherpa", "vibevoice-asr", "translate", "browser-translate-api", "text-aggregate", "text-normalize", "text-filter", "llm-agent", "graph-edit", "model-source", "model", "tts", "tts-model", "sink", "srt-out", "paddle-ocr", "text-diff"]);
+const TEXT_DISPLAY_NODES = new Set<NodeType>(["environment", "wake-word", "stt", "stream-asr", "web-speech", "vosk", "sherpa", "vibevoice-asr", "translate", "browser-translate-api", "text-aggregate", "text-normalize", "text-filter", "llm-agent", "graph-edit", "model-source", "model", "tts", "tts-model", "sink", "srt-out", "paddle-ocr", "text-diff"]);
 
 type SmartLinkOption = {
   id: string;

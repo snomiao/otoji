@@ -20,6 +20,7 @@ export type NodeType =
   | "web-speech"
   | "vosk"
   | "stream-asr"
+  | "wake-word"
   | "sherpa"
   | "vibevoice-asr"
   | "translate"
@@ -161,6 +162,20 @@ const RAW_NODE_SPECS: Record<NodeType, NodeSpec> = {
     // the device it runs on (no audio input port).
     inputs: [],
     outputs: [{ id: "out", type: "transcript" }],
+  },
+  "wake-word": {
+    type: "wake-word",
+    label: "Wake word (openWakeWord)",
+    // Real on-device KWS: continuous audio in; on detecting the wake phrase it
+    // emits a control pulse (`wake`) and the following utterance as audio
+    // (`audio`) — feed that to an ASR node so the assistant only listens after
+    // it's addressed. Runs a tiny 3-stage ONNX pipeline (mel/embedding/head),
+    // far cheaper than always-on streaming ASR.
+    inputs: [{ id: "in", type: "segment" }],
+    outputs: [
+      { id: "audio", type: "segment" },
+      { id: "wake", type: "control" },
+    ],
   },
   "stream-asr": {
     type: "stream-asr",
@@ -551,7 +566,7 @@ export const NODE_SPECS: Record<NodeType, NodeSpec> = Object.fromEntries(
 /** Palette grouping for the node types. */
 export const NODE_CATEGORIES: { id: string; label: string; types: NodeType[] }[] = [
   { id: "input", label: "Input", types: ["mic-vad", "mic-raw", "audio-mix", "file-audio", "file-image", "file-text", "url", "textarea", "video-clip"] },
-  { id: "stt", label: "Speech → Text", types: ["stt", "stream-asr", "web-speech", "vosk"] },
+  { id: "stt", label: "Speech → Text", types: ["wake-word", "stt", "stream-asr", "web-speech", "vosk"] },
   { id: "translate", label: "Text → Text", types: ["translate", "browser-translate-api", "text-aggregate", "text-normalize", "text-filter"] },
   { id: "tts", label: "Text → Speech", types: ["tts", "tts-model"] },
   { id: "output", label: "Output", types: ["sink", "audio-out", "video-recorder", "srt-out", "speaker"] },
