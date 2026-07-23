@@ -13,6 +13,7 @@ import { disposeWebllm } from "../providers/translate/webllm";
 import { disposeBrowserTranslate } from "../providers/translate/browser-translator";
 import { disposeOcr } from "../providers/vision/paddleocr";
 import { disposeZipformer } from "../providers/stt/zipformer";
+import { disposeWake } from "../providers/audio/openwakeword";
 import { disposeDetect } from "../providers/vision/detect";
 import { disposeDepth } from "../providers/vision/depth";
 import { disposeMediapipe } from "../providers/vision/mediapipe";
@@ -29,6 +30,7 @@ const DISPOSERS: Partial<Record<NodeType, Array<() => Promise<void>>>> = {
   model: [disposePipes],
   "paddle-ocr": [disposeOcr],
   "stream-asr": [disposeZipformer],
+  "wake-word": [disposeWake],
   "vision-model": [disposeDetect, disposeDepth, disposeMediapipe],
 };
 

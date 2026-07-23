@@ -9,6 +9,7 @@ import { fileStore } from "./file-store";
 import { sttRecognize, warmSenseVoice } from "../providers/stt/sensevoice";
 import { SENSEVOICE_MODELS } from "../providers/stt/sensevoice-models";
 import { createZipformerStream, zipformerModelFromSource, zipformerPathsFromBase, type ZipformerStream } from "../providers/stt/zipformer";
+import { createWakeStream, wakePathsFromConfig, warmWake, type WakeStream } from "../providers/audio/openwakeword";
 import { webllmTranslate } from "../providers/translate/webllm";
 import { browserTranslate } from "../providers/translate/browser-translator";
 import { DEFAULT_TRANSLATE_LANG, DEFAULT_TRANSLATE_MODEL, langNameToCode } from "../providers/translate/translate-config";
@@ -488,6 +489,15 @@ export class GraphRuntime {
       );
     }
 
+    // Wake-word models (openWakeWord) — tiny, preload so the first "hey …" isn't slow.
+    const wakePaths = Object.values(this.graph.nodes)
+      .filter((n) => n.type === "wake-word" && this.isLocal(n.id))
+      .map((n) => wakePathsFromConfig({ model: n.config?.model as string | undefined, base: n.config?.modelsBase as string | undefined }));
+    if (wakePaths.length) {
+      this.hooks.onStatus?.("loading wake-word model…");
+      await Promise.all(wakePaths.map((wp) => warmWake(wp).catch((e) => this.hooks.onError?.(e instanceof Error ? e : new Error(String(e))))));
+    }
+
     // Vision models — preload weights now per node task. Non-fatal.
     const visionWarms: Array<Promise<unknown>> = [];
     const onVisionProgress = (p: { progress?: number; text?: string }) => {
@@ -870,6 +880,37 @@ export class GraphRuntime {
           try { rec.start(); } catch (e) { this.hooks.onError?.(e instanceof Error ? e : new Error(String(e))); }
         },
         stop: () => { stopped = true; try { rec?.stop(); } catch { /* ignore */ } },
+      };
+    }
+
+    if (type === "wake-word") {
+      const cfg = this.graph.nodes[id]?.config ?? {};
+      const paths = wakePathsFromConfig({ model: cfg.model as string | undefined, base: cfg.modelsBase as string | undefined });
+      const threshold = typeof cfg.threshold === "number" ? (cfg.threshold as number) : 0.5;
+      const captureMs = typeof cfg.captureMs === "number" ? (cfg.captureMs as number) : 3000;
+      let stream: WakeStream | null = null;
+      return {
+        start: async () => {
+          stream = createWakeStream({
+            paths,
+            threshold,
+            captureMs,
+            onScore: (score) => { if (score >= threshold * 0.6) this.hooks.onLevel?.(id, { rms: score, active: score >= threshold }); },
+            onWake: (score) => {
+              this.hooks.onRecognized?.(id, `\u2728 wake · ${score.toFixed(2)}`);
+              this.emit(id, "wake", { pulse: true, ts: Date.now() } as ControlMsg);
+            },
+            onCommandAudio: (samples) => {
+              this.emit(id, "audio", { samples, sampleRate: MIC_VAD_SR, durationMs: (samples.length / MIC_VAD_SR) * 1000, ts: Date.now() } as SegmentMsg);
+            },
+            onError: (e) => this.hooks.onError?.(e),
+          });
+        },
+        input: (_port, msg) => {
+          const seg = msg as SegmentMsg;
+          if (seg.samples?.length) stream?.accept(seg.samples);
+        },
+        stop: async () => { stream?.free(); stream = null; },
       };
     }
 

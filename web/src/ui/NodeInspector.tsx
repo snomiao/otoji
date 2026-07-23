@@ -1129,6 +1129,24 @@ export function NodeInspector({ node, controls = true, onClose }: { node: Inspec
           </label>
         )}
 
+        {vt === "wake-word" && (
+          <>
+            <label style={row}>wake model:
+              <input value={(config?.model as string) ?? ""} onChange={(e) => onConfig(id, { model: e.target.value })}
+                placeholder="hey_jarvis_v0.1.onnx" spellCheck={false} style={sel} />
+            </label>
+            <label style={row}>threshold:
+              <input type="number" step="0.05" min="0" max="1" value={(config?.threshold as number | undefined) ?? 0.5}
+                onChange={(e) => onConfig(id, { threshold: Number(e.target.value) })} style={sel} />
+            </label>
+            <label style={row}>capture ms:
+              <input type="number" step="500" min="500" value={(config?.captureMs as number | undefined) ?? 3000}
+                onChange={(e) => onConfig(id, { captureMs: Number(e.target.value) })} style={sel} />
+            </label>
+            <div style={{ fontSize: 9.5, color: "#a0aec0", marginTop: 2 }}>real on-device KWS — feed Mic (raw); wake opens the audio port for ASR</div>
+          </>
+        )}
+
         {vt === "stream-asr" && (
           <>
             <label style={row}>models base:

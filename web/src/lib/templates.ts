@@ -89,12 +89,12 @@ export const BUILTIN_TEMPLATES: GraphTemplate[] = [
     category: "voice",
     featured: true,
     name: "Hey otoji — voice assistant",
-    desc: "Say \"hey otoji …\" → on-device streaming ASR wakes an open LLM (Qwen) that answers out loud. Wire the pipe node to `otoji node <room>` for desktop actions. All open-source, all local.",
+    desc: "Say the wake word → a real on-device KWS (openWakeWord) opens the mic to ASR, an open LLM (Qwen) answers out loud. Wire the pipe node to the otoji-node CLI for desktop actions. All open-source, all local.",
     builtin: true,
     nodes: [
-      { key: "mic", type: "mic-raw", dx: 0, dy: 0, config: { frameMs: 100 } },
-      { key: "asr", type: "stream-asr", dx: COL, dy: 0 },
-      { key: "wake", type: "text-filter", dx: COL * 2, dy: 0, config: { mode: "wake", wakeWords: "hey otoji, ok otoji, otoji" } },
+      { key: "mic", type: "mic-raw", dx: 0, dy: 0, config: { frameMs: 80 } },
+      { key: "wake", type: "wake-word", dx: COL, dy: 0, config: { model: "hey_jarvis_v0.1.onnx", threshold: 0.5, captureMs: 3500 } },
+      { key: "asr", type: "stt", dx: COL * 2, dy: 0 },
       {
         key: "agent",
         type: "llm-agent",
@@ -112,12 +112,12 @@ export const BUILTIN_TEMPLATES: GraphTemplate[] = [
       { key: "desktop", type: "pipe", dx: COL * 3, dy: ROW, config: { title: "desktop action (otoji node)" } },
     ],
     edges: [
-      { from: "mic", fromHandle: "out", to: "asr", toHandle: "in" },
-      { from: "asr", fromHandle: "out", to: "wake", toHandle: "in" },
-      { from: "wake", fromHandle: "out", to: "agent", toHandle: "in" },
+      { from: "mic", fromHandle: "out", to: "wake", toHandle: "in" },
+      { from: "wake", fromHandle: "audio", to: "asr", toHandle: "in" },
+      { from: "asr", fromHandle: "out", to: "agent", toHandle: "in" },
       { from: "agent", fromHandle: "out", to: "say", toHandle: "in" },
       { from: "agent", fromHandle: "out", to: "transcript", toHandle: "in" },
-      { from: "wake", fromHandle: "out", to: "desktop", toHandle: "in" },
+      { from: "asr", fromHandle: "out", to: "desktop", toHandle: "in" },
     ],
   },
   {
