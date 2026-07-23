@@ -156,6 +156,37 @@ enum Cmd {
         #[arg(long, default_value_t = 40)]
         frame_ms: u32,
     },
+    /// Always-on wake word (keyword spotting) via sherpa-onnx — cheap enough
+    /// to run all day. Emits {"type":"wake",...} JSON lines on stdout, so it
+    /// pipes into `otoji node <room>` to wake a graph agent. Auto-downloads the
+    /// Chinese wenetspeech KWS model; default keyword is 小克小克.
+    #[command(alias = "wake")]
+    Kws {
+        /// Input device — substring or index (see `otoji devices`).
+        device: Option<String>,
+        /// Model dir. Omit to auto-download the wenetspeech KWS model.
+        #[arg(long)]
+        model: Option<String>,
+        /// A sherpa keyword line (space-separated tokens + `@phrase`).
+        /// Default wakes on 小克小克: `x iǎo k è x iǎo k è @小克小克`.
+        #[arg(long)]
+        keyword: Option<String>,
+        /// A full sherpa keywords file (overrides --keyword).
+        #[arg(long)]
+        keywords_file: Option<String>,
+        /// Detection threshold (higher = fewer false wakes).
+        #[arg(long, default_value_t = 0.25)]
+        threshold: f32,
+        /// Min ms between repeat detections of the same keyword.
+        #[arg(long, default_value_t = 1500)]
+        cooldown_ms: u64,
+        /// Frame size in milliseconds.
+        #[arg(long, default_value_t = 40)]
+        frame_ms: u32,
+        /// Read this WAV instead of the mic (for testing).
+        #[arg(long)]
+        wav: Option<PathBuf>,
+    },
     /// Replay a 16kHz mono PCM file as if it were live mic input.
     File {
         path: PathBuf,
@@ -760,6 +791,17 @@ async fn main() -> Result<()> {
         }
         Cmd::Devices => run_devices().await,
         Cmd::Mic { device, frame_ms } => run_mic(device, frame_ms).await,
+        Cmd::Kws { device, model, keyword, keywords_file, threshold, cooldown_ms, frame_ms, wav } =>
+            otoji::kws::run(otoji::kws::KwsOptions {
+                device,
+                frame_ms,
+                model_dir: model.unwrap_or_default(),
+                keywords_file: keywords_file.unwrap_or_default(),
+                keyword_line: keyword,
+                threshold,
+                cooldown_ms,
+                wav,
+            }).await,
         Cmd::Server { addr } => run_server(addr).await,
         Cmd::Signal { port, host } => signal_relay::run(&host, port).await,
         Cmd::Transcribe {
