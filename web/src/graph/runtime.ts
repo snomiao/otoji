@@ -9,7 +9,7 @@ import { fileStore } from "./file-store";
 import { sttRecognize, warmSenseVoice } from "../providers/stt/sensevoice";
 import { SENSEVOICE_MODELS } from "../providers/stt/sensevoice-models";
 import { createZipformerStream, zipformerModelFromSource, zipformerPathsFromBase, type ZipformerStream } from "../providers/stt/zipformer";
-import { createWakeStream, wakePathsFromConfig, warmWake, type WakeStream } from "../providers/audio/openwakeword";
+import { CaptureBuffer, createWakeStream, wakePathsFromConfig, warmWake, type WakeStream } from "../providers/audio/openwakeword";
 import { webllmTranslate } from "../providers/translate/webllm";
 import { browserTranslate } from "../providers/translate/browser-translator";
 import { DEFAULT_TRANSLATE_LANG, DEFAULT_TRANSLATE_MODEL, langNameToCode } from "../providers/translate/translate-config";
@@ -491,7 +491,7 @@ export class GraphRuntime {
 
     // Wake-word models (openWakeWord) — tiny, preload so the first "hey …" isn't slow.
     const wakePaths = Object.values(this.graph.nodes)
-      .filter((n) => n.type === "wake-word" && this.isLocal(n.id))
+      .filter((n) => n.type === "wake-word" && this.isLocal(n.id) && n.config?.source !== "native")
       .map((n) => wakePathsFromConfig({ model: n.config?.model as string | undefined, base: n.config?.modelsBase as string | undefined }));
     if (wakePaths.length) {
       this.hooks.onStatus?.("loading wake-word model…");
@@ -885,9 +885,38 @@ export class GraphRuntime {
 
     if (type === "wake-word") {
       const cfg = this.graph.nodes[id]?.config ?? {};
+      const captureMs = typeof cfg.captureMs === "number" ? (cfg.captureMs as number) : 3000;
+      const emitCommand = (samples: Float32Array) =>
+        this.emit(id, "audio", { samples, sampleRate: MIC_VAD_SR, durationMs: (samples.length / MIC_VAD_SR) * 1000, ts: Date.now() } as SegmentMsg);
+
+      // native source: no model runs here — an external KWS (otoji kws → a pipe
+      // node → this node's `trigger` port) fires the wake, and we hand the next
+      // captureMs of `in` audio to the ASR. Cheapest possible browser side.
+      if (cfg.source === "native") {
+        const cap = new CaptureBuffer(captureMs);
+        return {
+          input: (port, msg) => {
+            if (port === "trigger") {
+              const tr = msg as TranscriptMsg;
+              if (tr.text?.trim()) {
+                this.hooks.onRecognized?.(id, `\u2728 wake (native) · ${tr.text.trim().slice(0, 20)}`);
+                this.emit(id, "wake", { pulse: true, ts: Date.now() } as ControlMsg);
+                cap.start();
+              }
+              return;
+            }
+            const seg = msg as SegmentMsg;
+            if (seg.samples?.length) {
+              const captured = cap.push(seg.samples);
+              if (captured) emitCommand(captured);
+            }
+          },
+        };
+      }
+
       const paths = wakePathsFromConfig({ model: cfg.model as string | undefined, base: cfg.modelsBase as string | undefined });
       const threshold = typeof cfg.threshold === "number" ? (cfg.threshold as number) : 0.5;
-      const captureMs = typeof cfg.captureMs === "number" ? (cfg.captureMs as number) : 3000;
+      const cap = new CaptureBuffer(captureMs);
       let stream: WakeStream | null = null;
       return {
         start: async () => {
@@ -900,15 +929,23 @@ export class GraphRuntime {
               this.hooks.onRecognized?.(id, `\u2728 wake · ${score.toFixed(2)}`);
               this.emit(id, "wake", { pulse: true, ts: Date.now() } as ControlMsg);
             },
-            onCommandAudio: (samples) => {
-              this.emit(id, "audio", { samples, sampleRate: MIC_VAD_SR, durationMs: (samples.length / MIC_VAD_SR) * 1000, ts: Date.now() } as SegmentMsg);
-            },
+            onCommandAudio: emitCommand,
             onError: (e) => this.hooks.onError?.(e),
           });
         },
-        input: (_port, msg) => {
+        input: (port, msg) => {
+          if (port === "trigger") {
+            // an external trigger can also fire capture even in onnx mode
+            const tr = msg as TranscriptMsg;
+            if (tr.text?.trim()) { this.emit(id, "wake", { pulse: true, ts: Date.now() } as ControlMsg); cap.start(); }
+            return;
+          }
           const seg = msg as SegmentMsg;
-          if (seg.samples?.length) stream?.accept(seg.samples);
+          if (seg.samples?.length) {
+            stream?.accept(seg.samples);
+            const captured = cap.push(seg.samples);
+            if (captured) emitCommand(captured);
+          }
         },
         stop: async () => { stream?.free(); stream = null; },
       };

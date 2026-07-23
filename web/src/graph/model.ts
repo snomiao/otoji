@@ -165,13 +165,18 @@ const RAW_NODE_SPECS: Record<NodeType, NodeSpec> = {
   },
   "wake-word": {
     type: "wake-word",
-    label: "Wake word (openWakeWord)",
-    // Real on-device KWS: continuous audio in; on detecting the wake phrase it
-    // emits a control pulse (`wake`) and the following utterance as audio
-    // (`audio`) — feed that to an ASR node so the assistant only listens after
-    // it's addressed. Runs a tiny 3-stage ONNX pipeline (mel/embedding/head),
-    // far cheaper than always-on streaming ASR.
-    inputs: [{ id: "in", type: "segment" }],
+    label: "Wake word",
+    // Continuous audio in; on wake it emits a control pulse (`wake`) and the
+    // following utterance as audio (`audio`) — feed that to an ASR node so the
+    // assistant only listens after it's addressed. Two sources (config.source):
+    //   onnx   — browser openWakeWord (tiny 3-stage ONNX, default)
+    //   native — capture only; the wake is driven by an EXTERNAL trigger on the
+    //            `trigger` port (e.g. `otoji kws | otoji node` into a pipe node),
+    //            so no model runs in the browser at all.
+    inputs: [
+      { id: "in", type: "segment" },
+      { id: "trigger", type: "transcript" },
+    ],
     outputs: [
       { id: "audio", type: "segment" },
       { id: "wake", type: "control" },

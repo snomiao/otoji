@@ -1131,10 +1131,20 @@ export function NodeInspector({ node, controls = true, onClose }: { node: Inspec
 
         {vt === "wake-word" && (
           <>
+            <label style={row}>source:
+              <SelectOmnibox value={(config?.source as string) ?? "onnx"} onChange={(e) => onConfig(id, { source: e.target.value })} style={sel}>
+                <option value="onnx">openWakeWord (browser)</option>
+                <option value="native">native trigger (otoji kws)</option>
+              </SelectOmnibox>
+            </label>
+            {(config?.source ?? "onnx") === "native" ? (
+              <div style={{ fontSize: 9.5, color: "#a0aec0", marginTop: 2 }}>wire a pipe node fed by <code>otoji kws | otoji node &lt;room&gt;</code> into the trigger port; the mic audio after each wake goes to ASR</div>
+            ) : (
             <label style={row}>wake model:
               <input value={(config?.model as string) ?? ""} onChange={(e) => onConfig(id, { model: e.target.value })}
                 placeholder="hey_jarvis_v0.1.onnx" spellCheck={false} style={sel} />
             </label>
+            )}
             <label style={row}>threshold:
               <input type="number" step="0.05" min="0" max="1" value={(config?.threshold as number | undefined) ?? 0.5}
                 onChange={(e) => onConfig(id, { threshold: Number(e.target.value) })} style={sel} />
