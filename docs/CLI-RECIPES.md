@@ -158,3 +158,31 @@ Wake a room agent by piping detections into a pipe node:
 ```bash
 otoji kws | while IFS= read -r _; do echo "小克小克"; done | otoji node ROOM/PIPE_NODE
 ```
+
+## Native local voice assistant (`otoji assistant`)
+
+`otoji assistant` runs the whole assistant in one native process — no browser,
+no room, no relay. Only the tiny wake-word spotter runs continuously; ASR, the
+LLM, and TTS fire once per wake:
+
+```
+wake word (KWS) → capture the command (energy endpoint) → SenseVoice ASR
+→ LLM reply (OpenAI-compatible; Ollama by default) → speak (macOS `say`)
+```
+
+```bash
+# default: wake on 小克小克, reply via local Ollama, speak the answer
+otoji assistant
+
+# say: "小克小克" … "帮我看一下今天北京的天气怎么样"
+# → {"type":"command","text":"帮我看一下今天北京的天气怎么样。"}
+# → {"type":"reply","text":"好的，我查一下今天的北京天气给你。"}   (spoken aloud)
+```
+
+The reply LLM is any OpenAI-compatible endpoint — Ollama at `:11434` by default;
+override with `OTOJI_ASSISTANT_BASE_URL` / `OTOJI_ASSISTANT_MODEL` /
+`OTOJI_ASSISTANT_API_KEY`. If none is reachable it echoes the command so the
+loop always responds. Flags: `--keyword` (wake phrase), `--threshold`,
+`--silence-ms` (command endpoint), `--max-command-s`, `--no-speak`, and
+`--wav clip.wav` to test the whole loop offline. Say the wake word, pause, then
+your request.

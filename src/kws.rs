@@ -61,7 +61,7 @@ fn otoji_cache() -> std::path::PathBuf {
 
 /// Ensure the default Chinese KWS model is present; download+extract if not.
 /// Returns its directory. Idempotent.
-async fn ensure_kws_model() -> Result<std::path::PathBuf> {
+pub async fn ensure_kws_model() -> Result<std::path::PathBuf> {
     let cache = otoji_cache();
     let dir = cache.join(KWS_MODEL);
     if dir.join("tokens.txt").is_file() {
@@ -99,8 +99,59 @@ async fn ensure_kws_model() -> Result<std::path::PathBuf> {
     Ok(dir)
 }
 
+/// Build a KeywordSpotter + its stream from a model dir and a keywords file.
+/// Shared by `otoji kws` and the native assistant loop.
+pub fn build_spotter(
+    model_dir: &Path,
+    keywords_file: &str,
+    threshold: f32,
+) -> Result<(KeywordSpotter, sherpa_onnx::OnlineStream)> {
+    let (encoder, decoder, joiner) = find_transducer_files(model_dir)?;
+    let tokens = model_dir.join("tokens.txt");
+    if !tokens.is_file() {
+        return Err(anyhow!("tokens.txt missing in {}", model_dir.display()));
+    }
+    let mut cfg = KeywordSpotterConfig::default();
+    cfg.model_config.transducer.encoder = Some(encoder);
+    cfg.model_config.transducer.decoder = Some(decoder);
+    cfg.model_config.transducer.joiner = Some(joiner);
+    cfg.model_config.tokens = Some(tokens.to_string_lossy().into_owned());
+    cfg.model_config.num_threads = 1;
+    cfg.model_config.provider = Some("cpu".into());
+    cfg.keywords_file = Some(keywords_file.to_string());
+    cfg.keywords_threshold = threshold;
+    let spotter = KeywordSpotter::create(&cfg)
+        .ok_or_else(|| anyhow!("sherpa: failed to create KeywordSpotter"))?;
+    let stream = spotter.create_stream();
+    Ok((spotter, stream))
+}
+
+/// Resolve model dir (auto-download if empty) and keywords file (write default
+/// from `keyword_line` if empty), for reuse by the assistant loop.
+pub async fn resolve_model_and_keywords(
+    model_dir: &str,
+    keywords_file: &str,
+    keyword_line: Option<&str>,
+) -> Result<(std::path::PathBuf, String)> {
+    let dir = if model_dir.trim().is_empty() {
+        ensure_kws_model().await?
+    } else {
+        std::path::PathBuf::from(model_dir)
+    };
+    let kw = if keywords_file.trim().is_empty() {
+        let line = keyword_line.unwrap_or(DEFAULT_KEYWORD_LINE);
+        let path = dir.join("otoji-keywords.txt");
+        std::fs::write(&path, format!("{}\n", line.trim()))
+            .with_context(|| format!("write {}", path.display()))?;
+        path.to_string_lossy().into_owned()
+    } else {
+        keywords_file.to_string()
+    };
+    Ok((dir, kw))
+}
+
 /// 16 kHz mono f32 samples from a WAV (any rate/channels), for --wav mode.
-fn read_wav_16k_mono(path: &Path) -> Result<Vec<f32>> {
+pub fn read_wav_16k_mono(path: &Path) -> Result<Vec<f32>> {
     let mut r = hound::WavReader::open(path).with_context(|| format!("open {}", path.display()))?;
     let spec = r.spec();
     let ch = spec.channels.max(1) as usize;
@@ -242,7 +293,7 @@ pub async fn run(opts: KwsOptions) -> Result<()> {
 }
 
 
-fn pcm16_to_f32(bytes: &[u8]) -> Vec<f32> {
+pub fn pcm16_to_f32(bytes: &[u8]) -> Vec<f32> {
     let mut out = Vec::with_capacity(bytes.len() / 2);
     for chunk in bytes.chunks_exact(2) {
         let s = i16::from_le_bytes([chunk[0], chunk[1]]);

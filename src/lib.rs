@@ -11,6 +11,7 @@ pub mod asr;
 pub mod audio;
 pub mod config;
 pub mod core;
+pub mod assistant;
 pub mod kws;
 pub mod notes;
 pub mod polish;

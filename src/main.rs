@@ -156,6 +156,42 @@ enum Cmd {
         #[arg(long, default_value_t = 40)]
         frame_ms: u32,
     },
+    /// Native local voice assistant: wake word → ASR → LLM → spoken reply,
+    /// all in one Rust process (no browser/room). Cheap enough to run all day —
+    /// only the tiny KWS runs continuously. Default wake word is 小克小克; the
+    /// reply LLM is an OpenAI-compatible endpoint (Ollama at :11434 by default).
+    #[command(alias = "agent")]
+    Assistant {
+        /// Input device — substring or index (see `otoji devices`).
+        device: Option<String>,
+        /// KWS model dir. Omit to auto-download the wenetspeech model.
+        #[arg(long)]
+        model: Option<String>,
+        /// A sherpa keyword line (default wakes on 小克小克).
+        #[arg(long)]
+        keyword: Option<String>,
+        /// Full sherpa keywords file (overrides --keyword).
+        #[arg(long)]
+        keywords_file: Option<String>,
+        /// Wake detection threshold.
+        #[arg(long, default_value_t = 0.25)]
+        threshold: f32,
+        /// Max seconds to record the command after a wake.
+        #[arg(long, default_value_t = 8.0)]
+        max_command_s: f32,
+        /// Trailing silence (ms) that ends the command capture.
+        #[arg(long, default_value_t = 1200)]
+        silence_ms: u64,
+        /// Frame size in milliseconds.
+        #[arg(long, default_value_t = 40)]
+        frame_ms: u32,
+        /// Do not speak replies aloud (print only).
+        #[arg(long)]
+        no_speak: bool,
+        /// Read this WAV instead of the mic (single-shot, for testing).
+        #[arg(long)]
+        wav: Option<PathBuf>,
+    },
     /// Always-on wake word (keyword spotting) via sherpa-onnx — cheap enough
     /// to run all day. Emits {"type":"wake",...} JSON lines on stdout, so it
     /// pipes into `otoji node <room>` to wake a graph agent. Auto-downloads the
@@ -791,6 +827,19 @@ async fn main() -> Result<()> {
         }
         Cmd::Devices => run_devices().await,
         Cmd::Mic { device, frame_ms } => run_mic(device, frame_ms).await,
+        Cmd::Assistant { device, model, keyword, keywords_file, threshold, max_command_s, silence_ms, frame_ms, no_speak, wav } =>
+            otoji::assistant::run(otoji::assistant::AssistantOptions {
+                device,
+                frame_ms,
+                model_dir: model.unwrap_or_default(),
+                keywords_file: keywords_file.unwrap_or_default(),
+                keyword_line: keyword,
+                threshold,
+                max_command_s,
+                silence_ms,
+                speak: !no_speak,
+                wav,
+            }).await,
         Cmd::Kws { device, model, keyword, keywords_file, threshold, cooldown_ms, frame_ms, wav } =>
             otoji::kws::run(otoji::kws::KwsOptions {
                 device,
