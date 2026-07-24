@@ -15,6 +15,7 @@ export type NodeType =
   | "file-image"
   | "file-text"
   | "url"
+  | "google-docs"
   | "textarea"
   | "stt"
   | "web-speech"
@@ -128,6 +129,16 @@ const RAW_NODE_SPECS: Record<NodeType, NodeSpec> = {
     label: "URL",
     // Dropped/pasted URL source. It tries to fetch readable content for text
     // output, and its inspector renders the URL in an iframe when embeddable.
+    inputs: [],
+    outputs: [{ id: "out", type: "transcript" }],
+  },
+  "google-docs": {
+    type: "google-docs",
+    label: "Google Docs",
+    // Drop a Google Docs URL to map the doc as a node. Public docs are read in
+    // the browser via the plain-text export endpoint; private docs are fed
+    // natively by the `otoji gdoc <url> | otoji node <room/nodeId>` CLI (which
+    // uses your local `gws` auth), injected onto `out` via pipeIn.
     inputs: [],
     outputs: [{ id: "out", type: "transcript" }],
   },
@@ -570,7 +581,7 @@ export const NODE_SPECS: Record<NodeType, NodeSpec> = Object.fromEntries(
 
 /** Palette grouping for the node types. */
 export const NODE_CATEGORIES: { id: string; label: string; types: NodeType[] }[] = [
-  { id: "input", label: "Input", types: ["mic-vad", "mic-raw", "audio-mix", "file-audio", "file-image", "file-text", "url", "textarea", "video-clip"] },
+  { id: "input", label: "Input", types: ["mic-vad", "mic-raw", "audio-mix", "file-audio", "file-image", "file-text", "url", "google-docs", "textarea", "video-clip"] },
   { id: "stt", label: "Speech → Text", types: ["wake-word", "stt", "stream-asr", "web-speech", "vosk"] },
   { id: "translate", label: "Text → Text", types: ["translate", "browser-translate-api", "text-aggregate", "text-normalize", "text-filter"] },
   { id: "tts", label: "Text → Speech", types: ["tts", "tts-model"] },

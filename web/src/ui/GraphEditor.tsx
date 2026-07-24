@@ -833,7 +833,7 @@ function Editor({ initialRoom, local, federationDemo }: { initialRoom?: string; 
       const rt = runtimeRef.current;
       if (!rt) return;
       if (m.node && m.node !== "*") rt.pipeIn(m.node, m.text);
-      else for (const n of nodesRef.current) if ((n.data as any).voiceType === "pipe") rt.pipeIn(n.id, m.text);
+      else for (const n of nodesRef.current) { const vt = (n.data as any).voiceType; if (vt === "pipe" || vt === "google-docs") rt.pipeIn(n.id, m.text); }
     });
     sig.connect();
     setJoined(true);
@@ -1376,9 +1376,12 @@ function Editor({ initialRoom, local, federationDemo }: { initialRoom?: string; 
   const addUrlNodeAt = useCallback((url: string, worldPos?: { x: number; y: number }) => {
     const clean = url.trim();
     if (!/^https?:\/\//i.test(clean)) return addTextNodeAt(clean, worldPos);
+    // A Google Docs URL maps the doc as a dedicated node (see the "google-docs"
+    // runtime handler); any other URL becomes a generic URL node.
+    const isGDoc = /https?:\/\/docs\.google\.com\/document\//i.test(clean);
     const position = worldPos ? snapWorld(worldPos) : { x: 80 + Math.random() * 120, y: 80 + Math.random() * 120 };
-    const id = `url-${Math.random().toString(36).slice(2, 8)}`;
-    const n: Node = { id, type: "voice", position, data: { voiceType: "url", device: myDeviceId, config: { url: clean } } };
+    const id = `${isGDoc ? "gdoc" : "url"}-${Math.random().toString(36).slice(2, 8)}`;
+    const n: Node = { id, type: "voice", position, data: { voiceType: isGDoc ? "google-docs" : "url", device: myDeviceId, config: { url: clean } } };
     const next = [...nodesRef.current, n];
     nodesRef.current = next;
     setNodes(next);

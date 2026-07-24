@@ -547,7 +547,7 @@ export function NodeInspector({ node, controls = true, onClose }: { node: Inspec
     );
   }
 
-  if (vt === "url") {
+  if (vt === "url" || vt === "google-docs") {
     const url = (config?.url as string | undefined) ?? "";
     const advanced = (config?.advancedRender as boolean | undefined) ?? false;
     return (

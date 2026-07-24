@@ -25,10 +25,14 @@
   ],
   "type": "module",
   "bin": {
-    "otoji": "otoji-node.mjs"
+    "otoji": "otoji.mjs",
+    "otoji-node": "otoji-node.mjs",
+    "otoji-gdoc": "otoji-gdoc.mjs"
   },
   "files": [
+    "otoji.mjs",
     "otoji-node.mjs",
+    "otoji-gdoc.mjs",
     "README.md"
   ],
   "engines": {

@@ -1389,6 +1389,32 @@ export class GraphRuntime {
       };
     }
 
+    if (type === "google-docs") {
+      // A Google Docs URL mapped as a node. Public / link-shared docs are read
+      // straight from Google's plain-text export endpoint (served with open
+      // CORS). Private docs fail that fetch — their text is fed natively by
+      // `otoji gdoc <url> | otoji node <room/nodeId>`, injected onto `out` via
+      // pipeIn(). So start() is best-effort and never blocks the native path.
+      const raw = (this.graph.nodes[id]?.config?.url as string | undefined)?.trim();
+      const empty = { samples: new Float32Array(0), sampleRate: MIC_VAD_SR, durationMs: 0 };
+      const docId = raw?.match(/\/document\/d\/([a-zA-Z0-9_-]+)/)?.[1] ?? raw?.match(/^[a-zA-Z0-9_-]{20,}$/)?.[0];
+      return {
+        start: async () => {
+          if (!docId) return;
+          try {
+            const res = await fetch(`https://docs.google.com/document/d/${docId}/export?format=txt`);
+            if (!res.ok) return; // private doc / no access → wait for the native pipe feed
+            const text = (await res.text()).slice(0, 20000).trim();
+            if (!text) return;
+            this.hooks.onRecognized?.(id, text);
+            this.emit(id, "out", { text, audio: empty } as TranscriptMsg);
+          } catch {
+            // CORS/private — the `otoji gdoc` CLI fills this node via pipeIn().
+          }
+        },
+      };
+    }
+
     if (type === "textarea") {
       // The Monaco editor's committed text. A commit changes config, config is
       // part of the auto-run signature, so the runtime restarts and start()
@@ -2841,9 +2867,14 @@ export class GraphRuntime {
     };
   }
 
-  /** Inject text from an external CLI into a local pipe node's output. */
+  /**
+   * Inject text from an external CLI into a local node's output. Used by
+   * `otoji node` (pipe nodes) and `otoji gdoc` (google-docs nodes, for private
+   * docs the browser cannot fetch).
+   */
   pipeIn(nodeId: string, text: string): void {
-    if (this.graph.nodes[nodeId]?.type !== "pipe" || !this.isLocal(nodeId)) return;
+    const t = this.graph.nodes[nodeId]?.type;
+    if ((t !== "pipe" && t !== "google-docs") || !this.isLocal(nodeId)) return;
     this.emit(nodeId, "out", {
       text,
       audio: { samples: new Float32Array(0), sampleRate: MIC_VAD_SR, durationMs: 0 },
