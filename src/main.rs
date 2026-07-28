@@ -791,7 +791,16 @@ async fn main() -> Result<()> {
         }
         Cmd::Devices => run_devices().await,
         Cmd::Mic { device, frame_ms } => run_mic(device, frame_ms).await,
-        Cmd::Kws { device, model, keyword, keywords_file, threshold, cooldown_ms, frame_ms, wav } =>
+        Cmd::Kws {
+            device,
+            model,
+            keyword,
+            keywords_file,
+            threshold,
+            cooldown_ms,
+            frame_ms,
+            wav,
+        } => {
             otoji::kws::run(otoji::kws::KwsOptions {
                 device,
                 frame_ms,
@@ -801,7 +810,9 @@ async fn main() -> Result<()> {
                 threshold,
                 cooldown_ms,
                 wav,
-            }).await,
+            })
+            .await
+        }
         Cmd::Server { addr } => run_server(addr).await,
         Cmd::Signal { port, host } => signal_relay::run(&host, port).await,
         Cmd::Transcribe {
