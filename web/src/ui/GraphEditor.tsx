@@ -62,6 +62,7 @@ import { FEDERATION_DEMO_IDS, agentYesMirrorForOtojiDemo, fetchFederatedGraph, h
 import type { Panel, SummaryContent } from "@snomiao/rgui";
 import { TimelineView } from "./TimelineView";
 import type { PortType } from "../graph/model";
+import { parseGoogleDocId } from "../providers/text/google-doc";
 import {
   NODE_SPECS,
   NODE_CATEGORIES,
@@ -152,7 +153,7 @@ function loadPanelCollapsed(): Record<string, boolean> {
 const CONTROL_ROWS: Partial<Record<NodeType, number>> = {
   environment: 7,
   "mic-vad": 3, "mic-raw": 2, stt: 3, "wake-word": 3, "stream-asr": 2, "web-speech": 3, vosk: 3, sherpa: 3, "vibevoice-asr": 5,
-  translate: 5, "browser-translate-api": 3, "text-aggregate": 3, "text-normalize": 8, "text-filter": 7, "llm-agent": 8, "graph-edit": 2, sink: 7, "video-recorder": 8, "video-clip": 6, url: 0, tts: 4, "tts-model": 5, "model-source": 12, model: 5,
+  translate: 5, "browser-translate-api": 3, "text-aggregate": 3, "text-normalize": 8, "text-filter": 7, "llm-agent": 8, "graph-edit": 2, sink: 7, "video-recorder": 8, "video-clip": 6, url: 0, "google-doc-live": 4, tts: 4, "tts-model": 5, "model-source": 12, model: 5,
   // Visual nodes are full-bleed: controls live in the overlay's title bar, so
   // the whole body is preview.
   camera: 0, "screen-share": 0, "vision-model": 0, "qwen-image": 0, "depth-field": 0, "hand-space": 0, "spatial-calibration": 3, "rgbd-point-cloud": 4, "spatial-renderer": 0, "model-3d": 3, "image-match": 0, "ar-notes": 0, "paddle-ocr": 2, "text-diff": 3,
@@ -161,7 +162,7 @@ const CONTROL_ROWS: Partial<Record<NodeType, number>> = {
 type DisplayMode = "full-bleed" | "fit" | "stack";
 const DISPLAY_MODES: DisplayMode[] = ["full-bleed", "fit", "stack"];
 const VISUAL_DISPLAY_NODES = new Set<NodeType>(["camera", "screen-share", "vision-model", "qwen-image", "depth-field", "hand-space", "spatial-renderer", "image-match", "ar-notes", "file-image", "video-recorder", "video-clip", "url"]);
-const TEXT_DISPLAY_NODES = new Set<NodeType>(["environment", "wake-word", "stt", "stream-asr", "web-speech", "vosk", "sherpa", "vibevoice-asr", "translate", "browser-translate-api", "text-aggregate", "text-normalize", "text-filter", "llm-agent", "graph-edit", "model-source", "model", "tts", "tts-model", "sink", "srt-out", "paddle-ocr", "text-diff"]);
+const TEXT_DISPLAY_NODES = new Set<NodeType>(["environment", "wake-word", "stt", "stream-asr", "web-speech", "vosk", "sherpa", "vibevoice-asr", "translate", "browser-translate-api", "text-aggregate", "text-normalize", "text-filter", "llm-agent", "graph-edit", "model-source", "model", "tts", "tts-model", "sink", "srt-out", "paddle-ocr", "text-diff", "google-doc-live"]);
 
 type SmartLinkOption = {
   id: string;
@@ -1377,8 +1378,10 @@ function Editor({ initialRoom, local, federationDemo }: { initialRoom?: string; 
     const clean = url.trim();
     if (!/^https?:\/\//i.test(clean)) return addTextNodeAt(clean, worldPos);
     const position = worldPos ? snapWorld(worldPos) : { x: 80 + Math.random() * 120, y: 80 + Math.random() * 120 };
-    const id = `url-${Math.random().toString(36).slice(2, 8)}`;
-    const n: Node = { id, type: "voice", position, data: { voiceType: "url", device: myDeviceId, config: { url: clean } } };
+    // A pasted/dropped Google Docs URL becomes a live doc source, not an iframe.
+    const gdoc = /docs\.google\.com\/document\//.test(clean) && parseGoogleDocId(clean) != null;
+    const id = `${gdoc ? "gdoc" : "url"}-${Math.random().toString(36).slice(2, 8)}`;
+    const n: Node = { id, type: "voice", position, data: { voiceType: gdoc ? "google-doc-live" : "url", device: myDeviceId, config: { url: clean } } };
     const next = [...nodesRef.current, n];
     nodesRef.current = next;
     setNodes(next);

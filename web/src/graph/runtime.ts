@@ -38,6 +38,8 @@ import { buildControlFrame, buildImageFrame, buildModelFrame, buildSegmentFrame,
 import { videoClipsDB, type VideoClip } from "../lib/video-clips-db";
 import { modelSourceToText, resolveModelSource, type ModelRuntime, type ModelSourceMsg } from "../providers/model/model-source";
 import { parseGraphCommands, type GraphCommand } from "./graph-commands";
+import { DEFAULT_GDOC_LIVE_SERVER, fetchGoogleDoc, parseGoogleDocId } from "../providers/text/google-doc";
+import { browserKeyStore } from "../lib/keystore";
 
 const DEFAULT_LLM_AGENT_MODEL = "Xenova/flan-t5-small";
 const DEFAULT_LLM_AGENT_TEXT_GENERATION_MODEL = "onnx-community/gemma-3-1b-it-ONNX";
@@ -1386,6 +1388,74 @@ export class GraphRuntime {
           this.hooks.onRecognized?.(id, text);
           this.emit(id, "out", { text, audio: empty } as TranscriptMsg);
         },
+      };
+    }
+
+    if (type === "google-doc-live") {
+      // Google Docs source. Poll mode hits the Docs API from the browser and
+      // re-emits when revisionId moves; live mode subscribes to a local
+      // `otoji gdoc` bridge (SSE) that pushes text on every remote edit
+      // (~2s behind the collaborator's keystroke). Emits the full document
+      // text — wire through text-diff downstream for change-only output.
+      const cfg = this.graph.nodes[id]?.config ?? {};
+      const docId = parseGoogleDocId(cfg.url as string | undefined);
+      const live = (cfg.mode as string | undefined) === "live";
+      const pollMs = Math.max(1000, Number(cfg.pollMs ?? 3000) || 3000);
+      const serverUrl = (cfg.serverUrl as string | undefined)?.trim() || DEFAULT_GDOC_LIVE_SERVER;
+      const empty = () => ({ samples: new Float32Array(0), sampleRate: MIC_VAD_SR, durationMs: 0 });
+      let current = "";
+      let revision: string | undefined;
+      let timer: ReturnType<typeof setInterval> | null = null;
+      let es: EventSource | null = null;
+      let warned = false;
+      const replace = (text: string) => {
+        const next = text.replace(/\s+$/, "");
+        if (!next || next === current) return;
+        current = next;
+        this.hooks.onRecognized?.(id, next);
+        this.emit(id, "out", { text: next, audio: empty() } as TranscriptMsg);
+      };
+      const poll = async () => {
+        const token = browserKeyStore().get("GOOGLE_OAUTH_TOKEN")?.trim();
+        if (!token) throw new Error("google-doc-live: set Google OAuth Token in settings, or switch the node to live mode");
+        const doc = await fetchGoogleDoc(docId!, token);
+        if (doc.revisionId && doc.revisionId === revision) return;
+        revision = doc.revisionId;
+        replace(doc.text);
+      };
+      return {
+        start: async () => {
+          if (!docId) {
+            this.hooks.onError?.(new Error("google-doc-live: paste a Google Docs URL in the node config"));
+            return;
+          }
+          if (live) {
+            es = new EventSource(`${serverUrl}?doc=${encodeURIComponent(docId)}`);
+            es.onmessage = (ev) => {
+              try {
+                const m = JSON.parse(ev.data) as { text?: string; error?: string };
+                if (m.error) this.hooks.onError?.(new Error(`google-doc-live: ${m.error}`));
+                else if (typeof m.text === "string") replace(m.text);
+              } catch { /* ignore malformed frames */ }
+            };
+            // EventSource retries forever on its own; report only the first drop.
+            es.onerror = () => {
+              if (warned) return;
+              warned = true;
+              this.hooks.onError?.(new Error(`google-doc-live: bridge unreachable at ${serverUrl}. Start it with:  otoji gdoc`));
+            };
+          } else {
+            try { await poll(); } catch (e) { this.hooks.onError?.(e instanceof Error ? e : new Error(String(e))); }
+            timer = setInterval(() => { poll().catch(() => { /* transient; retried next tick */ }); }, pollMs);
+          }
+        },
+        stop: () => {
+          if (timer != null) clearInterval(timer);
+          timer = null;
+          es?.close();
+          es = null;
+        },
+        replay: () => { if (current) this.emit(id, "out", { text: current, audio: empty() } as TranscriptMsg); },
       };
     }
 
