@@ -29,6 +29,7 @@
   },
   "files": [
     "otoji-node.mjs",
+    "otoji-gdoc.mjs",
     "README.md"
   ],
   "engines": {

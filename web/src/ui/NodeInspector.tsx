@@ -16,6 +16,7 @@ import { NEURAL_TTS_MODELS, AUTO_TTS_MODEL, AUTO_TTS_VOICE } from "../providers/
 import { MODEL_TASKS, MODEL_DTYPES, DEFAULT_MODEL_DTYPE } from "../providers/model/transformers-pipeline";
 import { VOSK_MODELS, DEFAULT_VOSK_MODEL } from "../providers/stt/vosk";
 import { DEFAULT_SHERPA_SERVER_URL } from "../providers/stt/sherpa_native";
+import { DEFAULT_GDOC_LIVE_SERVER } from "../providers/text/google-doc";
 import { DEFAULT_VIBEVOICE_MLX_MODEL, DEFAULT_VIBEVOICE_SERVER, DEFAULT_VIBEVOICE_VLLM_MODEL } from "../providers/stt/vibevoice";
 import { DEFAULT_TRANSLATE_PROMPT_TEMPLATE, listWebLlmModels } from "../providers/translate/webllm";
 import { useNodeLive } from "./useNodeLive";
@@ -1174,6 +1175,38 @@ export function NodeInspector({ node, controls = true, onClose }: { node: Inspec
                 placeholder={DEFAULT_SHERPA_SERVER_URL} spellCheck={false} style={sel} />
             </label>
             <div style={{ fontSize: 9.5, color: "#a0aec0", marginTop: 2 }}>run <code>otoji server</code> locally (native sherpa-onnx)</div>
+          </>
+        )}
+
+        {vt === "google-doc-live" && (
+          <>
+            <label style={row}>doc:
+              <input value={(config?.url as string) ?? ""} onChange={(e) => onConfig(id, { url: e.target.value })}
+                placeholder="https://docs.google.com/document/d/..." spellCheck={false} style={sel} />
+            </label>
+            <label style={row}>mode:
+              <SelectOmnibox value={(config?.mode as string) ?? "poll"} onChange={(e) => onConfig(id, { mode: e.target.value })} style={sel}>
+                <option value="poll">poll (Docs API)</option>
+                <option value="live">live (local bridge)</option>
+              </SelectOmnibox>
+            </label>
+            {((config?.mode as string) ?? "poll") === "poll" ? (
+              <>
+                <label style={row}>poll ms:
+                  <input type="number" min={1000} step={500} value={Number(config?.pollMs ?? 3000)}
+                    onChange={(e) => onConfig(id, { pollMs: Number(e.target.value) || 3000 })} style={sel} />
+                </label>
+                <div style={{ fontSize: 9.5, color: "#a0aec0", marginTop: 2 }}>needs Google OAuth Token in settings → keys</div>
+              </>
+            ) : (
+              <>
+                <label style={row}>bridge:
+                  <input value={(config?.serverUrl as string) ?? DEFAULT_GDOC_LIVE_SERVER} onChange={(e) => onConfig(id, { serverUrl: e.target.value })}
+                    placeholder={DEFAULT_GDOC_LIVE_SERVER} spellCheck={false} style={sel} />
+                </label>
+                <div style={{ fontSize: 9.5, color: "#a0aec0", marginTop: 2 }}>run <code>otoji gdoc</code> locally (realtime edits via headless Chrome)</div>
+              </>
+            )}
           </>
         )}
 

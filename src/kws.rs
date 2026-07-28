@@ -47,15 +47,16 @@ pub struct KwsOptions {
 }
 
 const KWS_MODEL: &str = "sherpa-onnx-kws-zipformer-wenetspeech-3.3M-2024-01-01";
-const KWS_RELEASE: &str =
-    "https://github.com/k2-fsa/sherpa-onnx/releases/download/kws-models";
+const KWS_RELEASE: &str = "https://github.com/k2-fsa/sherpa-onnx/releases/download/kws-models";
 /// Wake on "小克小克" by default — pinyin-token form for the wenetspeech model.
 pub const DEFAULT_KEYWORD_LINE: &str = "x iǎo k è x iǎo k è @小克小克";
 
 fn otoji_cache() -> std::path::PathBuf {
     std::env::var_os("OTOJI_CACHE_DIR")
         .map(std::path::PathBuf::from)
-        .or_else(|| std::env::var_os("HOME").map(|h| std::path::Path::new(&h).join(".cache").join("otoji")))
+        .or_else(|| {
+            std::env::var_os("HOME").map(|h| std::path::Path::new(&h).join(".cache").join("otoji"))
+        })
         .unwrap_or_else(|| std::path::PathBuf::from(".otoji-cache"))
 }
 
@@ -80,7 +81,9 @@ async fn ensure_kws_model() -> Result<std::path::PathBuf> {
         .error_for_status()?
         .bytes()
         .await?;
-    tokio::fs::write(&tarball, &bytes).await.context("write kws tarball")?;
+    tokio::fs::write(&tarball, &bytes)
+        .await
+        .context("write kws tarball")?;
     // system tar handles .tar.bz2 (bsdtar on macOS, GNU tar elsewhere)
     let status = std::process::Command::new("tar")
         .arg("-xjf")
@@ -94,7 +97,10 @@ async fn ensure_kws_model() -> Result<std::path::PathBuf> {
     }
     let _ = tokio::fs::remove_file(&tarball).await;
     if !dir.join("tokens.txt").is_file() {
-        return Err(anyhow!("KWS model missing tokens.txt after extract: {}", dir.display()));
+        return Err(anyhow!(
+            "KWS model missing tokens.txt after extract: {}",
+            dir.display()
+        ));
     }
     Ok(dir)
 }
@@ -107,13 +113,18 @@ fn read_wav_16k_mono(path: &Path) -> Result<Vec<f32>> {
     let raw: Vec<f32> = match spec.sample_format {
         hound::SampleFormat::Int => {
             let max = (1i64 << (spec.bits_per_sample - 1)) as f32;
-            r.samples::<i32>().filter_map(|s| s.ok()).map(|s| s as f32 / max).collect()
+            r.samples::<i32>()
+                .filter_map(|s| s.ok())
+                .map(|s| s as f32 / max)
+                .collect()
         }
         hound::SampleFormat::Float => r.samples::<f32>().filter_map(|s| s.ok()).collect(),
     };
     // downmix to mono
     let mono: Vec<f32> = if ch > 1 {
-        raw.chunks(ch).map(|c| c.iter().sum::<f32>() / ch as f32).collect()
+        raw.chunks(ch)
+            .map(|c| c.iter().sum::<f32>() / ch as f32)
+            .collect()
     } else {
         raw
     };
@@ -129,7 +140,10 @@ fn read_wav_16k_mono(path: &Path) -> Result<Vec<f32>> {
         let a = src.floor() as usize;
         let b = (a + 1).min(mono.len().saturating_sub(1));
         let t = src - a as f32;
-        out.push(mono.get(a).copied().unwrap_or(0.0) * (1.0 - t) + mono.get(b).copied().unwrap_or(0.0) * t);
+        out.push(
+            mono.get(a).copied().unwrap_or(0.0) * (1.0 - t)
+                + mono.get(b).copied().unwrap_or(0.0) * t,
+        );
     }
     Ok(out)
 }
@@ -148,14 +162,20 @@ pub async fn run(opts: KwsOptions) -> Result<()> {
     // Keywords: use the given file, else write one from `keyword_line` (default
     // wakes on 小克小克) into the cache next to the model.
     let keywords_file = if opts.keywords_file.trim().is_empty() {
-        let line = opts.keyword_line.clone().unwrap_or_else(|| DEFAULT_KEYWORD_LINE.to_string());
+        let line = opts
+            .keyword_line
+            .clone()
+            .unwrap_or_else(|| DEFAULT_KEYWORD_LINE.to_string());
         let path = dir.join("otoji-keywords.txt");
         std::fs::write(&path, format!("{}\n", line.trim()))
             .with_context(|| format!("write {}", path.display()))?;
         path.to_string_lossy().into_owned()
     } else {
         if !Path::new(&opts.keywords_file).is_file() {
-            return Err(anyhow!("KWS keywords file not found: {}", opts.keywords_file));
+            return Err(anyhow!(
+                "KWS keywords file not found: {}",
+                opts.keywords_file
+            ));
         }
         opts.keywords_file.clone()
     };
@@ -182,7 +202,9 @@ pub async fn run(opts: KwsOptions) -> Result<()> {
 
     eprintln!(
         "[otoji-kws] ready — model={} keywords={} threshold={}",
-        dir.display(), keywords_file, opts.threshold
+        dir.display(),
+        keywords_file,
+        opts.threshold
     );
 
     let start = Instant::now();
@@ -240,7 +262,6 @@ pub async fn run(opts: KwsOptions) -> Result<()> {
     }
     Ok(())
 }
-
 
 fn pcm16_to_f32(bytes: &[u8]) -> Vec<f32> {
     let mut out = Vec::with_capacity(bytes.len() / 2);
