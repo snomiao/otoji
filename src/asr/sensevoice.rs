@@ -178,6 +178,9 @@ pub enum WorkerMsg {
 /// Events from the worker thread to the async side.
 enum WorkerEvt {
     Open,
+    Vad {
+        active: bool,
+    },
     Partial {
         seg_id: u64,
         text: String,
@@ -271,6 +274,7 @@ impl AsrProvider for SenseVoice {
             while let Ok(evt) = out_rx.recv() {
                 let asr = match evt {
                     WorkerEvt::Open => AsrEvent::Open,
+                    WorkerEvt::Vad { active } => AsrEvent::Vad { active },
                     WorkerEvt::Partial { seg_id, text } => AsrEvent::Partial { seg_id, text },
                     WorkerEvt::Final {
                         seg_id,
@@ -469,6 +473,9 @@ fn worker_main(
     let mut ptt_buf: Vec<f32> = Vec::new();
     let mut ptt_samples_since_partial: usize = 0;
     let mut ptt_last_partial = String::new();
+    // Last emitted VAD state, so we only send a `Vad` event on transitions
+    // (silence↔speech) rather than once per audio block.
+    let mut prev_vad_active: Option<bool> = None;
 
     fn normalize_sentence(s: &str) -> String {
         s.chars()
@@ -744,6 +751,15 @@ fn worker_main(
 
                 let block_rms = rms(&block);
                 let active = block_rms >= threshold;
+
+                // Live VAD indicator: emit on silence↔speech transitions once
+                // the noise floor is calibrated. Runs for both ambient and PTT
+                // capture (it sits after the standby/ptt gate above), so a
+                // consumer gets a real "hearing you" signal from mic energy.
+                if calibrated && Some(active) != prev_vad_active {
+                    prev_vad_active = Some(active);
+                    let _ = out_tx.send(WorkerEvt::Vad { active });
+                }
 
                 if !speech_active && !active {
                     continue;

@@ -54,6 +54,12 @@ pub struct Word {
 pub enum AsrEvent {
     /// Connection established.
     Open,
+    /// Voice-activity transition from the energy VAD: `true` when the current
+    /// audio crossed above the speech threshold, `false` when it dropped back to
+    /// silence. Emitted on change (not per block) so consumers can drive a live
+    /// "listening / hearing you" indicator without their own mic capture.
+    /// Serialized as `{"type":"vad","active":<bool>}`.
+    Vad { active: bool },
     /// Live partial hypothesis (may be revised).
     Partial { seg_id: u64, text: String },
     /// Confirmed segment, will not change.

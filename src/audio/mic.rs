@@ -11,7 +11,7 @@ use crate::core::{AudioChunk, AudioFormat};
 use anyhow::{anyhow, Result};
 use bytes::Bytes;
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
-use cpal::{Sample, SampleFormat};
+use cpal::SampleFormat;
 use nnnoiseless::DenoiseState;
 use std::sync::{Arc, Mutex};
 
@@ -23,7 +23,18 @@ const RNNOISE_FRAME: usize = 480; // RNNoise fixed frame size at 48kHz
 /// bypasses RNNoise. ≈ -54 dBFS — well under any real speech, comfortably
 /// above mic self-noise on typical built-in mics. Skipping RNNoise on idle
 /// frames cuts otoji's resting CPU from ~76% to ~10% on Apple Silicon.
-const IDLE_PEAK_THRESHOLD: f32 = 0.002;
+/// Expressed in the i16-range float scale the pipeline runs in (see
+/// `I16_SCALE`): 0.002 × 32768.
+const IDLE_PEAK_THRESHOLD: f32 = 0.002 * I16_SCALE;
+
+/// The whole pipeline after downmix runs in i16-range floats
+/// (−32768..32767): that is the scale RNNoise expects, and it lets the final
+/// `as i16` cast be a plain clamp. cpal hands us unit-range f32 (and
+/// `to_float_sample()` on i16 also yields unit range), so both entry points
+/// multiply by this first. Without it every sample rounds to 0/±1 and the
+/// stream is pure digital silence — which is exactly what the cpal path
+/// produced on Windows (macOS goes through vpio.rs, which already scales).
+const I16_SCALE: f32 = 32768.0;
 
 #[inline]
 fn frame_peak(frame: &[f32]) -> f32 {
@@ -84,7 +95,10 @@ pub fn start(device_hint: Option<&str>, frame_ms: u32, tx: AudioTx) -> Result<cp
     let state_cb = state.clone();
     let tx_cb = tx.clone();
     let process_f32 = move |data: &[f32]| {
-        let mono = downmix_f32_to_mono(data, in_channels);
+        let mut mono = downmix_f32_to_mono(data, in_channels);
+        for s in &mut mono {
+            *s *= I16_SCALE;
+        }
         // Resample to 48kHz for RNNoise.
         let at48k = linear_resample(&mono, in_rate, RNNOISE_RATE);
 
@@ -136,9 +150,10 @@ pub fn start(device_hint: Option<&str>, frame_ms: u32, tx: AudioTx) -> Result<cp
         )?,
         SampleFormat::I16 => {
             let process = move |data: &[i16], _: &_| {
+                // i16 samples are already in the pipeline's scale.
                 let floats: Vec<f32> = downmix_i16_to_mono(data, in_channels)
                     .into_iter()
-                    .map(|s| s.to_float_sample())
+                    .map(|s| s as f32)
                     .collect();
                 // Resample to 48kHz for RNNoise.
                 let at48k = linear_resample(&floats, in_rate, RNNOISE_RATE);

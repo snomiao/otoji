@@ -259,8 +259,9 @@ async fn apply_event(
         AsrEvent::Error { message } => {
             s.error = Some(message);
         }
-        // PTT events are for external consumers (--plain mode); TUI ignores them.
-        AsrEvent::PttPartial { .. }
+        // PTT events + VAD are for external consumers (--plain mode); TUI ignores them.
+        AsrEvent::Vad { .. }
+        | AsrEvent::PttPartial { .. }
         | AsrEvent::PttFinal { .. }
         | AsrEvent::PttUpgrade { .. }
         | AsrEvent::PttTranslated { .. }
