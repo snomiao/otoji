@@ -42,6 +42,9 @@ extern "C" {}
 
 #[cfg(target_os = "macos")]
 mod tray_macos {
+    mod overlay {
+        include!("tray/overlay.rs");
+    }
     use std::ffi::c_void;
     use std::sync::atomic::{AtomicPtr, Ordering};
 
@@ -654,19 +657,21 @@ mod tray_macos {
         (y as i32, m as u32, d as u32)
     }
 
-    /// Click → kill all `otoji listen` processes. CLX will respawn one
-    /// on the next voice trigger.
+    /// Click → stop listening: the tray-owned child, plus any stray
+    /// `otoji listen` started elsewhere.
     unsafe extern "C" fn action_stop_listen(
         _this: *mut c_void,
         _cmd: *mut c_void,
         _sender: *mut c_void,
     ) {
+        overlay::stop_listen();
         let _ = std::process::Command::new("pkill")
             .args(["-f", "otoji listen"])
             .status();
     }
 
-    /// Click → spawn a bare `otoji listen --plain` if none is running.
+    /// Click → start a tray-owned `otoji listen --plain` (events feed the
+    /// caption overlay) if none is running.
     unsafe extern "C" fn action_start_listen(
         _this: *mut c_void,
         _cmd: *mut c_void,
@@ -675,12 +680,7 @@ mod tray_macos {
         if listen_is_running() {
             return;
         }
-        let _ = std::process::Command::new("otoji")
-            .args(["listen", "--plain"])
-            .stdin(std::process::Stdio::null())
-            .stdout(std::process::Stdio::null())
-            .stderr(std::process::Stdio::null())
-            .spawn();
+        overlay::start_listen();
     }
 
     /// Click → open the most recent note's polished .md (or fall back to
@@ -1001,6 +1001,8 @@ mod tray_macos {
 
         // Drain any pending model-download progress events.
         drain_download_events();
+
+        overlay::tick();
 
         let mtime = notes_mtime_secs();
         let prev = LAST_MTIME.load(std::sync::atomic::Ordering::Acquire);
@@ -1349,8 +1351,8 @@ mod tray_macos {
             // (must run on the main thread for WKWebView calls).
             let timer = CFRunLoopTimerCreate(
                 std::ptr::null_mut(),
-                CFAbsoluteTimeGetCurrent() + 0.2,
-                0.2,
+                CFAbsoluteTimeGetCurrent() + 0.1,
+                0.1,
                 0,
                 0,
                 refresh_tick,
@@ -1362,6 +1364,13 @@ mod tray_macos {
 
             // Global hold-to-talk hotkey (config `ptt_hotkey`, default Fn/Globe).
             install_ptt_hotkey();
+
+            // Caption overlay + tray-owned listen child. Skipped when another
+            // `otoji listen` already holds the mic (e.g. one spawned by CLX).
+            overlay::init();
+            if !std::env::args().any(|a| a == "--no-listen") && !listen_is_running() {
+                overlay::start_listen();
+            }
 
             eprintln!(
                 "otoji-tray: installed (pid {}, data {})",
