@@ -24,6 +24,8 @@ const RNNOISE_FRAME: usize = 480; // RNNoise fixed frame size at 48kHz
 /// above mic self-noise on typical built-in mics. Skipping RNNoise on idle
 /// frames cuts otoji's resting CPU from ~76% to ~10% on Apple Silicon.
 const IDLE_PEAK_THRESHOLD: f32 = 0.002;
+/// [-1, 1] float → i16-scale float, the range RNNoise expects.
+const I16_SCALE: f32 = 32768.0;
 
 #[inline]
 fn frame_peak(frame: &[f32]) -> f32 {
@@ -49,6 +51,52 @@ struct CaptureState {
     chunk_target: usize,
 }
 
+impl CaptureState {
+    fn new(chunk_target: usize) -> Self {
+        Self {
+            pre_denoise: Vec::with_capacity(RNNOISE_FRAME * 4),
+            denoise: DenoiseState::new(),
+            post_denoise: Vec::with_capacity(chunk_target),
+            chunk_target,
+        }
+    }
+
+    /// Feed mono samples in [-1.0, 1.0] at `in_rate`; returns every complete
+    /// 16 kHz s16le chunk now ready.
+    ///
+    /// RNNoise (nnnoiseless) works on i16-scale floats (±32768), so samples
+    /// are scaled up before it. Feeding it [-1, 1] floats made every output
+    /// sample truncate to 0 in the final `as i16`, i.e. pure digital silence.
+    fn push(&mut self, mono: &[f32], in_rate: u32) -> Vec<Bytes> {
+        let at48k = linear_resample(mono, in_rate, RNNOISE_RATE);
+        self.pre_denoise.extend(at48k.iter().map(|v| v * I16_SCALE));
+
+        while self.pre_denoise.len() >= RNNOISE_FRAME {
+            let frame: Vec<f32> = self.pre_denoise.drain(..RNNOISE_FRAME).collect();
+            let out = if frame_peak(&frame) < IDLE_PEAK_THRESHOLD * I16_SCALE {
+                // Idle frame: emit silence without invoking RNNoise. Its
+                // recurrent state re-warms within a few speech frames.
+                vec![0.0f32; RNNOISE_FRAME]
+            } else {
+                let mut out = vec![0.0f32; RNNOISE_FRAME];
+                self.denoise.process_frame(&mut out, &frame);
+                out
+            };
+            let at16k = linear_resample(&out, RNNOISE_RATE, TARGET_RATE);
+            self.post_denoise
+                .extend(at16k.into_iter().map(|v| v.clamp(-32768.0, 32767.0) as i16));
+        }
+
+        let mut chunks = Vec::new();
+        while self.post_denoise.len() * 2 >= self.chunk_target {
+            let n = self.chunk_target / 2;
+            let drain: Vec<i16> = self.post_denoise.drain(..n).collect();
+            chunks.push(Bytes::from(i16_slice_to_le_bytes(&drain)));
+        }
+        chunks
+    }
+}
+
 /// Start capturing from the default input device. The returned `Stream` must
 /// be kept alive (drop = stop).
 pub fn start_default(frame_ms: u32, tx: AudioTx) -> Result<cpal::Stream> {
@@ -72,12 +120,7 @@ pub fn start(device_hint: Option<&str>, frame_ms: u32, tx: AudioTx) -> Result<cp
         (TARGET_RATE as usize / 1000) * (AudioFormat::PCM16K_MONO.bytes_per_sample());
     let chunk_target = bytes_per_ms_target * frame_ms as usize;
 
-    let state = Arc::new(Mutex::new(CaptureState {
-        pre_denoise: Vec::with_capacity(RNNOISE_FRAME * 4),
-        denoise: DenoiseState::new(),
-        post_denoise: Vec::with_capacity(chunk_target),
-        chunk_target,
-    }));
+    let state = Arc::new(Mutex::new(CaptureState::new(chunk_target)));
 
     let err_fn = |e| tracing::error!("cpal stream error: {e}");
 
@@ -85,45 +128,9 @@ pub fn start(device_hint: Option<&str>, frame_ms: u32, tx: AudioTx) -> Result<cp
     let tx_cb = tx.clone();
     let process_f32 = move |data: &[f32]| {
         let mono = downmix_f32_to_mono(data, in_channels);
-        // Resample to 48kHz for RNNoise.
-        let at48k = linear_resample(&mono, in_rate, RNNOISE_RATE);
-
-        let mut s = state_cb.lock().unwrap();
-        s.pre_denoise.extend_from_slice(&at48k);
-
-        // Process complete 480-sample frames through RNNoise.
-        while s.pre_denoise.len() >= RNNOISE_FRAME {
-            let frame: Vec<f32> = s.pre_denoise.drain(..RNNOISE_FRAME).collect();
-            let out = if frame_peak(&frame) < IDLE_PEAK_THRESHOLD {
-                // Idle frame: emit silence without invoking RNNoise.
-                // RNNoise has internal recurrent state, but on the next
-                // real-speech frame the state warms up within a few frames
-                // — acceptable trade for ~7× idle CPU reduction.
-                vec![0.0f32; RNNOISE_FRAME]
-            } else {
-                let mut out = vec![0.0f32; RNNOISE_FRAME];
-                s.denoise.process_frame(&mut out, &frame);
-                out
-            };
-
-            // Resample 48kHz → 16kHz.
-            let at16k = linear_resample(&out, RNNOISE_RATE, TARGET_RATE);
-            let pcm: Vec<i16> = at16k
-                .into_iter()
-                .map(|v| (v.clamp(-32768.0, 32767.0)) as i16)
-                .collect();
-            s.post_denoise.extend(pcm);
-        }
-
-        // Emit complete chunks.
-        while s.post_denoise.len() * 2 >= s.chunk_target {
-            let n = s.chunk_target / 2;
-            let drain: Vec<i16> = s.post_denoise.drain(..n).collect();
-            let bytes = i16_slice_to_le_bytes(&drain);
-            let _ = tx_cb.try_send(AudioChunk::new(
-                AudioFormat::PCM16K_MONO,
-                Bytes::from(bytes),
-            ));
+        let chunks = state_cb.lock().unwrap().push(&mono, in_rate);
+        for pcm in chunks {
+            let _ = tx_cb.try_send(AudioChunk::new(AudioFormat::PCM16K_MONO, pcm));
         }
     };
 
@@ -136,42 +143,13 @@ pub fn start(device_hint: Option<&str>, frame_ms: u32, tx: AudioTx) -> Result<cp
         )?,
         SampleFormat::I16 => {
             let process = move |data: &[i16], _: &_| {
-                let floats: Vec<f32> = downmix_i16_to_mono(data, in_channels)
+                let mono: Vec<f32> = downmix_i16_to_mono(data, in_channels)
                     .into_iter()
                     .map(|s| s.to_float_sample())
                     .collect();
-                // Resample to 48kHz for RNNoise.
-                let at48k = linear_resample(&floats, in_rate, RNNOISE_RATE);
-
-                let mut s = state.lock().unwrap();
-                s.pre_denoise.extend_from_slice(&at48k);
-
-                while s.pre_denoise.len() >= RNNOISE_FRAME {
-                    let frame: Vec<f32> = s.pre_denoise.drain(..RNNOISE_FRAME).collect();
-                    let out = if frame_peak(&frame) < IDLE_PEAK_THRESHOLD {
-                        vec![0.0f32; RNNOISE_FRAME]
-                    } else {
-                        let mut out = vec![0.0f32; RNNOISE_FRAME];
-                        s.denoise.process_frame(&mut out, &frame);
-                        out
-                    };
-
-                    let at16k = linear_resample(&out, RNNOISE_RATE, TARGET_RATE);
-                    let pcm: Vec<i16> = at16k
-                        .into_iter()
-                        .map(|v| (v.clamp(-32768.0, 32767.0)) as i16)
-                        .collect();
-                    s.post_denoise.extend(pcm);
-                }
-
-                while s.post_denoise.len() * 2 >= s.chunk_target {
-                    let n = s.chunk_target / 2;
-                    let drain: Vec<i16> = s.post_denoise.drain(..n).collect();
-                    let bytes = i16_slice_to_le_bytes(&drain);
-                    let _ = tx.try_send(AudioChunk::new(
-                        AudioFormat::PCM16K_MONO,
-                        Bytes::from(bytes),
-                    ));
+                let chunks = state.lock().unwrap().push(&mono, in_rate);
+                for pcm in chunks {
+                    let _ = tx.try_send(AudioChunk::new(AudioFormat::PCM16K_MONO, pcm));
                 }
             };
             device.build_input_stream(&config.into(), process, err_fn, None)?
@@ -279,4 +257,49 @@ fn i16_slice_to_le_bytes(samples: &[i16]) -> Vec<u8> {
         v.extend_from_slice(&s.to_le_bytes());
     }
     v
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn peak_i16(chunks: &[Bytes]) -> i32 {
+        chunks
+            .iter()
+            .flat_map(|c| c.chunks_exact(2))
+            .map(|b| (i16::from_le_bytes([b[0], b[1]]) as i32).abs())
+            .max()
+            .unwrap_or(0)
+    }
+
+    /// A clearly audible signal must survive the pipeline. Before the i16
+    /// scaling fix every output sample was exactly 0.
+    #[test]
+    fn audible_input_is_not_silenced() {
+        let mut st = CaptureState::new(16 * 2 * 20); // 20 ms chunks
+        // 1 s of a 48 kHz, ~-10 dBFS signal: a few mixed tones plus a little
+        // deterministic noise so RNNoise doesn't treat it as pure hum.
+        let mut seed: u32 = 1;
+        let input: Vec<f32> = (0..48_000)
+            .map(|i| {
+                let t = i as f32 / 48_000.0;
+                seed = seed.wrapping_mul(1_664_525).wrapping_add(1_013_904_223);
+                let noise = (seed >> 9) as f32 / (1 << 23) as f32 - 0.5;
+                0.1 * (2.0 * std::f32::consts::PI * 220.0 * t).sin()
+                    + 0.1 * (2.0 * std::f32::consts::PI * 660.0 * t).sin()
+                    + 0.1 * (2.0 * std::f32::consts::PI * 1_250.0 * t).sin()
+                    + 0.05 * noise
+            })
+            .collect();
+        let chunks = st.push(&input, 48_000);
+        assert!(!chunks.is_empty());
+        assert!(peak_i16(&chunks) > 100, "peak {}", peak_i16(&chunks));
+    }
+
+    #[test]
+    fn digital_silence_stays_silent() {
+        let mut st = CaptureState::new(16 * 2 * 20);
+        let chunks = st.push(&vec![0.0; 48_000], 48_000);
+        assert_eq!(peak_i16(&chunks), 0);
+    }
 }
