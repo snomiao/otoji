@@ -101,7 +101,23 @@ fn pump_mic(mut stdin: std::process::ChildStdin) {
     if stdin.write_all(&streaming_wav_header()).is_err() {
         return;
     }
+    // Every 5 s, log the captured level so "no captions" can be told apart
+    // from "mic delivers silence" (peak 0 = digital silence).
+    let (mut peak, mut sum_sq, mut n) = (0i32, 0f64, 0u64);
+    let mut last_report = Instant::now();
     while let Some(chunk) = rx.blocking_recv() {
+        for s in chunk.pcm.chunks_exact(2) {
+            let v = i16::from_le_bytes([s[0], s[1]]) as i32;
+            peak = peak.max(v.abs());
+            sum_sq += (v as f64) * (v as f64);
+            n += 1;
+        }
+        if last_report.elapsed() >= Duration::from_secs(5) {
+            let rms = if n > 0 { (sum_sq / n as f64).sqrt() } else { 0.0 };
+            eprintln!("otoji-tray: mic level peak={peak} rms={rms:.1} (of 32767)");
+            (peak, sum_sq, n) = (0, 0.0, 0);
+            last_report = Instant::now();
+        }
         if stdin.write_all(&chunk.pcm).is_err() {
             break; // listen exited
         }

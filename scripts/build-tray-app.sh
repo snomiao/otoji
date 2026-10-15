@@ -54,9 +54,20 @@ cat > "$APP/Contents/Info.plist" << 'PLIST'
 </plist>
 PLIST
 
-# Ad-hoc signatures default to a cdhash designated requirement, so every
-# rebuild looks like a new app to TCC and drops the Microphone/Accessibility
-# grants. Pin the requirement to the bundle identifier so grants survive.
-codesign -s - --force --deep --identifier "com.snomiao.otoji" \
-    -r='designated => identifier "com.snomiao.otoji"' "$APP"
+# Sign with the local "otoji Local Signing" identity when present
+# (scripts/create-signing-cert.sh): its designated requirement is stable
+# across rebuilds, so macOS keeps the Microphone/Accessibility grants.
+# Otherwise fall back to ad-hoc, which needs re-granting after each rebuild.
+SIGN_ID="${OTOJI_SIGN_IDENTITY:-otoji Local Signing}"
+SIGN_KC="$HOME/Library/Keychains/otoji-signing.keychain-db"
+SIGN_PASS="${XDG_CONFIG_HOME:-$HOME/.config}/otoji/signing-keychain.pass"
+if [ -f "$SIGN_KC" ] && [ -f "$SIGN_PASS" ] \
+    && security find-certificate -c "$SIGN_ID" "$SIGN_KC" >/dev/null 2>&1; then
+    security unlock-keychain -p "$(cat "$SIGN_PASS")" "$SIGN_KC"
+    codesign -s "$SIGN_ID" --keychain "$SIGN_KC" --force --deep \
+        --identifier "com.snomiao.otoji" "$APP"
+else
+    echo "note: no '$SIGN_ID' identity — ad-hoc signing (run scripts/create-signing-cert.sh)" >&2
+    codesign -s - --force --deep --identifier "com.snomiao.otoji" "$APP"
+fi
 echo "built: $APP"
