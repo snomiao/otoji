@@ -549,6 +549,12 @@ fn maybe_rebuild_and_reexec() {
         Err(_) => return,
     };
 
+    // Never rebuild inside an app bundle: writing into it breaks the code
+    // signature, and with it the bundle's Microphone/Accessibility grants.
+    if exe.to_string_lossy().contains(".app/Contents/") {
+        return;
+    }
+
     let exe_mtime = match exe.metadata().and_then(|m| m.modified()) {
         Ok(t) => t,
         Err(_) => return,
