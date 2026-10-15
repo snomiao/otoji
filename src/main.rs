@@ -1474,6 +1474,12 @@ async fn speak_via_afplay(tts: Arc<dyn TtsProvider>, text: &str) {
     if text.is_empty() {
         return;
     }
+    // Hard kill-switch: OTOJI_STT_ONLY=1 forbids any audio output, even when a
+    // caller passed --ptt-tts (otoji-tray always sets it).
+    if std::env::var("OTOJI_STT_ONLY").is_ok_and(|v| v == "1") {
+        eprintln!("[otoji] OTOJI_STT_ONLY=1 — skipping TTS playback");
+        return;
+    }
     use bytes::BytesMut;
     let sample_rate = tts.sample_rate();
     let is_pcm = tts.is_pcm();
