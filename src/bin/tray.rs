@@ -62,10 +62,6 @@ mod tray_macos {
     static PERM_STATE: std::sync::atomic::AtomicU8 = std::sync::atomic::AtomicU8::new(u8::MAX);
     static PERM_POLL: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
 
-    fn hotkey_wanted() -> bool {
-        otoji::config::load().ptt_hotkey != "off"
-    }
-
     fn perm_state() -> u8 {
         (permissions::mic_status() == permissions::Mic::Authorized) as u8
             | ((permissions::accessibility_granted() as u8) << 1)
@@ -91,10 +87,14 @@ mod tray_macos {
             AUTO_LISTEN.store(false, Ordering::Release);
             overlay::start_listen();
         }
-        if state & 2 != 0 && !HOTKEY_INSTALLED.load(Ordering::Acquire) && hotkey_wanted() {
-            unsafe { install_ptt_hotkey() };
+        if state & 2 != 0 && !HOTKEY_INSTALLED.load(Ordering::Acquire) {
+            unsafe { install_hotkeys() };
         }
-        if PERM_STATE.swap(state, Ordering::AcqRel) != state {
+        let prev = PERM_STATE.swap(state, Ordering::AcqRel);
+        if prev != u8::MAX && prev & 2 == 0 && state & 2 != 0 {
+            permissions::close_guide();
+        }
+        if prev != state {
             unsafe { rebuild_menu() };
         }
     }
@@ -105,6 +105,12 @@ mod tray_macos {
     }
 
     unsafe extern "C" fn action_grant_ax(_this: *mut c_void, _cmd: *mut c_void, _sender: *mut c_void) {
+        // Bundled PermissionFlow helper: opens the pane and floats a "drag
+        // otoji here" card beside System Settings. Falls back to the system
+        // prompt + plain deeplink when running outside the .app.
+        if permissions::launch_guide("accessibility") {
+            return;
+        }
         permissions::prompt_accessibility();
         let nsurl = msg1_ptr(
             cls(b"NSURL\0"),
@@ -928,8 +934,8 @@ mod tray_macos {
         if permissions::mic_status() != permissions::Mic::Authorized {
             perm_rows.push(("⚠️  Allow microphone access…", b"grantMic:\0"));
         }
-        if hotkey_wanted() && !permissions::accessibility_granted() {
-            perm_rows.push(("⚠️  Allow Accessibility for the hold-to-talk hotkey…", b"grantAx:\0"));
+        if !permissions::accessibility_granted() {
+            perm_rows.push(("⚠️  Allow Accessibility for the Fn+/ on/off hotkey…", b"grantAx:\0"));
         }
         for (label, action) in perm_rows {
             let row = init_fn(
@@ -1109,6 +1115,9 @@ mod tray_macos {
         // Drain any pending model-download progress events.
         drain_download_events();
 
+        if TOGGLE_REQUESTED.swap(false, std::sync::atomic::Ordering::SeqCst) {
+            toggle_otoji();
+        }
         overlay::tick();
         poll_permissions();
 
@@ -1287,20 +1296,31 @@ mod tray_macos {
         }
     }
 
-    // ── Global PTT hotkey (hold-to-talk) ─────────────────────────────────────
+    // ── Global hotkeys ───────────────────────────────────────────────────────
     //
-    // A listen-only CGEventTap on flagsChanged watches a single modifier key
-    // (default: Fn/Globe — left-hand reachable and unused by CLX's space+V
-    // binding). Press → SIGUSR1 to every `otoji listen` process (PTT start),
-    // release → SIGUSR2 (PTT end). Requires Accessibility permission.
+    // One CGEventTap (needs Accessibility) serves two things:
+    // - On/off toggle: Fn+/ or Alt+CapsLock starts/stops otoji (listen + mic).
+    //   The `/` keystroke is swallowed so it isn't typed; CapsLock can't be.
+    // - Optional hold-to-talk (config `ptt_hotkey`, default "off"): holding a
+    //   modifier sends SIGUSR1/SIGUSR2 to every `otoji listen` (PTT start/end).
+    // The callback only flips atomics; refresh_tick does the actual toggle so
+    // the tap never stalls keyboard input.
 
-    /// Whether the hotkey modifier is currently held.
+    /// Whether the hold-to-talk modifier is currently held.
     static PTT_HELD: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
-    /// Selected hotkey: flag mask to test in the flagsChanged event.
+    /// Hold-to-talk: flag mask to test in the flagsChanged event (0 = off).
     static PTT_FLAG_MASK: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
-    /// Selected hotkey: virtual keycode the flagsChanged event must carry
+    /// Hold-to-talk: virtual keycode the flagsChanged event must carry
     /// (distinguishes left-Ctrl from right-Ctrl, etc.). u64::MAX = any.
     static PTT_KEYCODE: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(u64::MAX);
+    /// Set by the tap when a toggle combo is pressed; drained by refresh_tick.
+    static TOGGLE_REQUESTED: std::sync::atomic::AtomicBool =
+        std::sync::atomic::AtomicBool::new(false);
+    /// The tap swallowed a Fn+/ keyDown, so swallow its keyUp too.
+    static SLASH_SWALLOWED: std::sync::atomic::AtomicBool =
+        std::sync::atomic::AtomicBool::new(false);
+    static HOTKEY_TAP: std::sync::atomic::AtomicPtr<c_void> =
+        std::sync::atomic::AtomicPtr::new(std::ptr::null_mut());
 
     fn signal_listen_processes(sig: libc::c_int) {
         let out = std::process::Command::new("pgrep")
@@ -1315,91 +1335,148 @@ mod tray_macos {
         }
     }
 
-    extern "C" fn ptt_tap_callback(
+    /// Fn+/ or Alt+CapsLock → turn otoji off if it is listening, else on.
+    fn toggle_otoji() {
+        if listen_is_running() {
+            overlay::stop_listen();
+            let _ = std::process::Command::new("pkill")
+                .args(["-f", LISTEN_PROC_PATTERN])
+                .status();
+            overlay::notify("otoji off");
+            eprintln!("otoji-tray: toggled off by hotkey");
+        } else {
+            if permissions::mic_status() != permissions::Mic::Authorized {
+                AUTO_LISTEN.store(true, Ordering::Release);
+                unsafe { permissions::ensure_mic_interactive() };
+                return;
+            }
+            overlay::start_listen();
+            eprintln!("otoji-tray: toggled on by hotkey");
+        }
+        unsafe { rebuild_menu() };
+    }
+
+    extern "C" fn hotkey_tap_callback(
         _proxy: *mut c_void,
         etype: u32,
         event: *mut c_void,
         _user: *mut c_void,
     ) -> *mut c_void {
+        use std::sync::atomic::Ordering::{Relaxed, SeqCst};
+        const K_CG_EVENT_KEY_DOWN: u32 = 10;
+        const K_CG_EVENT_KEY_UP: u32 = 11;
         const K_CG_EVENT_FLAGS_CHANGED: u32 = 12;
         const K_CG_EVENT_TAP_DISABLED_BY_TIMEOUT: u32 = 0xFFFFFFFE;
+        const K_CG_EVENT_TAP_DISABLED_BY_USER_INPUT: u32 = 0xFFFFFFFF;
         const K_CG_KEYBOARD_EVENT_KEYCODE: u32 = 9;
-        if etype == K_CG_EVENT_TAP_DISABLED_BY_TIMEOUT {
-            // Re-enabled lazily by the next install attempt; nothing to do here
-            // (listen-only taps are rarely disabled, but don't crash if so).
-            return event;
-        }
-        if etype != K_CG_EVENT_FLAGS_CHANGED {
-            return event;
-        }
-        let want_key = PTT_KEYCODE.load(std::sync::atomic::Ordering::Relaxed);
-        if want_key != u64::MAX {
-            let keycode =
-                unsafe { CGEventGetIntegerValueField(event, K_CG_KEYBOARD_EVENT_KEYCODE) } as u64;
-            if keycode != want_key {
-                return event;
+        const K_CG_KEYBOARD_EVENT_AUTOREPEAT: u32 = 8;
+        const FLAG_MASK_ALTERNATE: u64 = 0x80000; // kCGEventFlagMaskAlternate
+        const FLAG_MASK_SECONDARY_FN: u64 = 0x800000;
+        const KEYCODE_SLASH: u64 = 44;
+        const KEYCODE_CAPS_LOCK: u64 = 57;
+
+        if etype == K_CG_EVENT_TAP_DISABLED_BY_TIMEOUT
+            || etype == K_CG_EVENT_TAP_DISABLED_BY_USER_INPUT
+        {
+            let tap = HOTKEY_TAP.load(Relaxed);
+            if !tap.is_null() {
+                unsafe { CGEventTapEnable(tap, true) };
             }
+            return event;
         }
-        let mask = PTT_FLAG_MASK.load(std::sync::atomic::Ordering::Relaxed);
-        let held = unsafe { CGEventGetFlags(event) } & mask != 0;
-        if held != PTT_HELD.swap(held, std::sync::atomic::Ordering::SeqCst) {
-            signal_listen_processes(if held { libc::SIGUSR1 } else { libc::SIGUSR2 });
+        let keycode =
+            unsafe { CGEventGetIntegerValueField(event, K_CG_KEYBOARD_EVENT_KEYCODE) } as u64;
+        let flags = unsafe { CGEventGetFlags(event) };
+        match etype {
+            K_CG_EVENT_KEY_DOWN if keycode == KEYCODE_SLASH && flags & FLAG_MASK_SECONDARY_FN != 0 => {
+                let repeat =
+                    unsafe { CGEventGetIntegerValueField(event, K_CG_KEYBOARD_EVENT_AUTOREPEAT) };
+                if repeat == 0 {
+                    TOGGLE_REQUESTED.store(true, SeqCst);
+                }
+                SLASH_SWALLOWED.store(true, SeqCst);
+                std::ptr::null_mut()
+            }
+            K_CG_EVENT_KEY_UP if keycode == KEYCODE_SLASH && SLASH_SWALLOWED.swap(false, SeqCst) => {
+                std::ptr::null_mut()
+            }
+            K_CG_EVENT_FLAGS_CHANGED => {
+                // CapsLock sends one flagsChanged per press (its flag toggles).
+                if keycode == KEYCODE_CAPS_LOCK && flags & FLAG_MASK_ALTERNATE != 0 {
+                    TOGGLE_REQUESTED.store(true, SeqCst);
+                }
+                let mask = PTT_FLAG_MASK.load(Relaxed);
+                let want_key = PTT_KEYCODE.load(Relaxed);
+                if mask != 0 && (want_key == u64::MAX || keycode == want_key) {
+                    let held = flags & mask != 0;
+                    if held != PTT_HELD.swap(held, SeqCst) {
+                        signal_listen_processes(if held { libc::SIGUSR1 } else { libc::SIGUSR2 });
+                    }
+                }
+                event
+            }
+            _ => event,
         }
-        event
     }
 
-    /// Install the global hotkey tap on the main run loop. No-op when
-    /// `ptt_hotkey` is "off" or unknown, or when Accessibility is not granted.
-    unsafe fn install_ptt_hotkey() {
+    /// Install the global hotkey tap on the main run loop. No-op until
+    /// Accessibility is granted (poll_permissions() retries every second).
+    unsafe fn install_hotkeys() {
         const FLAG_MASK_SECONDARY_FN: u64 = 0x800000; // kCGEventFlagMaskSecondaryFn
         const FLAG_MASK_CONTROL: u64 = 0x40000; // kCGEventFlagMaskControl
         const KEYCODE_FN: u64 = 63;
         const KEYCODE_LEFT_CTRL: u64 = 59;
 
-        let choice = otoji::config::load().ptt_hotkey;
-        let (mask, keycode, label) = match choice.as_str() {
-            "fn" => (FLAG_MASK_SECONDARY_FN, KEYCODE_FN, "Fn/Globe"),
-            "left-ctrl" => (FLAG_MASK_CONTROL, KEYCODE_LEFT_CTRL, "left-Ctrl"),
-            "off" => return,
-            other => {
-                eprintln!("otoji-tray: unknown ptt_hotkey {other:?} — hotkey disabled");
-                return;
-            }
-        };
         if !AXIsProcessTrusted() {
-            // poll_permissions() installs it once the user grants access.
             return;
         }
         if HOTKEY_INSTALLED.swap(true, std::sync::atomic::Ordering::AcqRel) {
             return;
         }
-        PTT_FLAG_MASK.store(mask, std::sync::atomic::Ordering::Relaxed);
-        PTT_KEYCODE.store(keycode, std::sync::atomic::Ordering::Relaxed);
+        let choice = otoji::config::load().ptt_hotkey;
+        let ptt = match choice.as_str() {
+            "fn" => Some((FLAG_MASK_SECONDARY_FN, KEYCODE_FN, "Fn/Globe")),
+            "left-ctrl" => Some((FLAG_MASK_CONTROL, KEYCODE_LEFT_CTRL, "left-Ctrl")),
+            "off" => None,
+            other => {
+                eprintln!("otoji-tray: unknown ptt_hotkey {other:?} — hold-to-talk disabled");
+                None
+            }
+        };
+        if let Some((mask, keycode, _)) = ptt {
+            PTT_FLAG_MASK.store(mask, std::sync::atomic::Ordering::Relaxed);
+            PTT_KEYCODE.store(keycode, std::sync::atomic::Ordering::Relaxed);
+        }
 
         const K_CG_HID_EVENT_TAP: u32 = 0;
         const K_CG_HEAD_INSERT_EVENT_TAP: u32 = 0;
-        const K_CG_EVENT_TAP_OPTION_LISTEN_ONLY: u32 = 1;
-        let mask_flags_changed: u64 = 1 << 12; // CGEventMaskBit(kCGEventFlagsChanged)
+        const K_CG_EVENT_TAP_OPTION_DEFAULT: u32 = 0; // active: may swallow Fn+/
+        let mask: u64 = (1 << 10) | (1 << 11) | (1 << 12); // keyDown | keyUp | flagsChanged
         let tap = CGEventTapCreate(
             K_CG_HID_EVENT_TAP,
             K_CG_HEAD_INSERT_EVENT_TAP,
-            K_CG_EVENT_TAP_OPTION_LISTEN_ONLY,
-            mask_flags_changed,
-            ptt_tap_callback,
+            K_CG_EVENT_TAP_OPTION_DEFAULT,
+            mask,
+            hotkey_tap_callback,
             std::ptr::null_mut(),
         );
         if tap.is_null() {
-            eprintln!("otoji-tray: CGEventTapCreate failed — global PTT hotkey disabled");
+            eprintln!("otoji-tray: CGEventTapCreate failed — global hotkeys disabled");
+            HOTKEY_INSTALLED.store(false, std::sync::atomic::Ordering::Release);
             return;
         }
         let source = CFMachPortCreateRunLoopSource(std::ptr::null_mut(), tap, 0);
         if source.is_null() {
-            eprintln!("otoji-tray: run loop source for PTT hotkey failed");
+            eprintln!("otoji-tray: run loop source for hotkeys failed");
             return;
         }
+        HOTKEY_TAP.store(tap, std::sync::atomic::Ordering::Release);
         CFRunLoopAddSource(CFRunLoopGetMain(), source, kCFRunLoopCommonModes);
         CGEventTapEnable(tap, true);
-        eprintln!("otoji-tray: global PTT hotkey active — hold {label} to talk");
+        eprintln!("otoji-tray: hotkeys active — Fn+/ or Alt+CapsLock toggles otoji on/off");
+        if let Some((_, _, label)) = ptt {
+            eprintln!("otoji-tray: hold {label} to talk");
+        }
     }
 
     pub fn run() {
@@ -1480,8 +1557,8 @@ mod tray_macos {
                 CFRunLoopAddTimer(CFRunLoopGetMain(), timer, kCFRunLoopCommonModes);
             }
 
-            // Global hold-to-talk hotkey (config `ptt_hotkey`, default Fn/Globe).
-            install_ptt_hotkey();
+            // Global hotkeys: Fn+/ or Alt+CapsLock on/off, optional hold-to-talk.
+            install_hotkeys();
 
             // Caption overlay + tray-owned listen child. Skipped when another
             // `otoji listen` already holds the mic (e.g. one spawned by CLX).
@@ -1494,9 +1571,7 @@ mod tray_macos {
             // alert that opens the right Settings pane); poll_permissions()
             // starts listening and the hotkey as soon as access is granted.
             permissions::ensure_mic();
-            if hotkey_wanted() {
-                permissions::prompt_accessibility();
-            }
+            permissions::prompt_accessibility();
             poll_permissions();
 
             eprintln!(

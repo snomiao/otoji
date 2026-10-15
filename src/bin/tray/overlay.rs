@@ -62,6 +62,11 @@ fn set_caption(text: &str, live: bool) {
     c.rev += 1;
 }
 
+/// Briefly show a status line (e.g. "otoji off") in the caption panel.
+pub fn notify(text: &str) {
+    set_caption(text, false);
+}
+
 /// 44-byte WAV header for an endless 16 kHz mono s16le stream (same layout
 /// `otoji mic` writes; sizes are 0xFFFFFFFE because the length is unknown).
 fn streaming_wav_header() -> [u8; 44] {
@@ -101,10 +106,12 @@ fn pump_mic(mut stdin: std::process::ChildStdin) {
     if stdin.write_all(&streaming_wav_header()).is_err() {
         return;
     }
-    // Every 5 s, log the captured level so "no captions" can be told apart
-    // from "mic delivers silence" (peak 0 = digital silence).
+    // Per 5 s window, classify the level and log only when the class
+    // changes, so "no captions" can be told apart from "mic delivers
+    // silence" without growing tray.log forever.
     let (mut peak, mut sum_sq, mut n) = (0i32, 0f64, 0u64);
     let mut last_report = Instant::now();
+    let mut last_class = "";
     while let Some(chunk) = rx.blocking_recv() {
         for s in chunk.pcm.chunks_exact(2) {
             let v = i16::from_le_bytes([s[0], s[1]]) as i32;
@@ -114,7 +121,13 @@ fn pump_mic(mut stdin: std::process::ChildStdin) {
         }
         if last_report.elapsed() >= Duration::from_secs(5) {
             let rms = if n > 0 { (sum_sq / n as f64).sqrt() } else { 0.0 };
-            eprintln!("otoji-tray: mic level peak={peak} rms={rms:.1} (of 32767)");
+            // Denoised output idles at peak 0..~10, so no separate
+            // digital-silence class (listen warns about all-zero input).
+            let class = if peak < 1000 { "quiet" } else { "voice" };
+            if class != last_class {
+                eprintln!("otoji-tray: mic {class} (peak={peak} rms={rms:.1} of 32767)");
+                last_class = class;
+            }
             (peak, sum_sq, n) = (0, 0.0, 0);
             last_report = Instant::now();
         }
@@ -179,6 +192,7 @@ pub fn start_listen() -> bool {
         "otoji-tray: listen started (control socket {})",
         control_socket_path().display()
     );
+    notify("otoji on — Fn+/ or ⌥+Caps Lock turns it off");
     true
 }
 
@@ -381,6 +395,9 @@ pub fn tick() {
                     std::mem::transmute(objc_msgSend as *const ());
                 f(panel, sel(b"setFrame:display:\0"), panel_frame(), true);
                 msg1_ptr(panel, sel(b"orderFrontRegardless\0"), std::ptr::null_mut());
+                let vis: extern "C" fn(*mut c_void, *mut c_void) -> bool =
+                    std::mem::transmute(objc_msgSend as *const ());
+                eprintln!("otoji-tray: overlay shown (isVisible={})", vis(panel, sel(b"isVisible\0")));
             } else {
                 msg1_ptr(panel, sel(b"orderOut:\0"), std::ptr::null_mut());
             }
