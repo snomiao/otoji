@@ -22,6 +22,22 @@ mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp "$BIN" "$APP/Contents/MacOS/otoji-tray"
 cp "$CLI" "$APP/Contents/MacOS/otoji"
 cp "$ICON" "$APP/Contents/Resources/icon.icns"
+
+# Permission guide (Swift, PermissionFlow): floats a "drag otoji into this
+# list" card beside System Settings. Optional — the tray falls back to the
+# system prompt without it. CommandLineTools ships no SwiftUI macro plugin
+# for the macOS 27 SDK, so prefer an older SDK when one is installed.
+GUIDE_DIR="$ROOT/macos/permission-guide"
+if command -v swift >/dev/null 2>&1; then
+    GUIDE_SDK="$(ls -d /Library/Developer/CommandLineTools/SDKs/MacOSX26*.sdk 2>/dev/null | sort -V | tail -1)"
+    if (cd "$GUIDE_DIR" && SDKROOT="${GUIDE_SDK:-$SDKROOT}" swift build -c release >/dev/null); then
+        cp "$GUIDE_DIR/.build/release/otoji-permission-guide" "$APP/Contents/MacOS/"
+        cp -R "$GUIDE_DIR/.build/release/PermissionFlow_PermissionFlow.bundle" "$APP/Contents/Resources/"
+        cp "$GUIDE_DIR/THIRD_PARTY_NOTICES.md" "$APP/Contents/Resources/"
+    else
+        echo "note: permission guide build failed — bundling without it" >&2
+    fi
+fi
 for f in \
     tray-icon.png tray-icon@2x.png \
     tray-icon-off.png tray-icon-off@2x.png \

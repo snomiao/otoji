@@ -183,3 +183,38 @@ pub unsafe fn ensure_mic_interactive() {
 pub fn mic_answer_pending() -> bool {
     MIC_ANSWERED.swap(false, Ordering::AcqRel)
 }
+
+/// Spawn the bundled `otoji-permission-guide <pane>` (PermissionFlow) next to
+/// this executable. Returns false when it isn't there (e.g. `cargo run`).
+pub fn launch_guide(pane: &str) -> bool {
+    let Some(helper) = std::env::current_exe()
+        .ok()
+        .and_then(|p| p.parent().map(|d| d.join("otoji-permission-guide")))
+        .filter(|p| p.exists())
+    else {
+        return false;
+    };
+    close_guide();
+    match std::process::Command::new(&helper).arg(pane).spawn() {
+        Ok(child) => {
+            eprintln!("otoji-tray: permission guide for {pane} (pid {})", child.id());
+            // Reap it so it doesn't linger as a zombie.
+            std::thread::spawn(move || {
+                let mut child = child;
+                let _ = child.wait();
+            });
+            true
+        }
+        Err(e) => {
+            eprintln!("otoji-tray: permission guide failed to start: {e}");
+            false
+        }
+    }
+}
+
+/// Close the permission guide once the grant it was opened for has landed.
+pub fn close_guide() {
+    let _ = std::process::Command::new("pkill")
+        .args(["-f", "otoji-permission-guide"])
+        .status();
+}
