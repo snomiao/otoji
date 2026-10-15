@@ -54,5 +54,9 @@ cat > "$APP/Contents/Info.plist" << 'PLIST'
 </plist>
 PLIST
 
-codesign -s - --force --deep --identifier "com.snomiao.otoji" "$APP"
+# Ad-hoc signatures default to a cdhash designated requirement, so every
+# rebuild looks like a new app to TCC and drops the Microphone/Accessibility
+# grants. Pin the requirement to the bundle identifier so grants survive.
+codesign -s - --force --deep --identifier "com.snomiao.otoji" \
+    -r='designated => identifier "com.snomiao.otoji"' "$APP"
 echo "built: $APP"

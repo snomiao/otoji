@@ -122,14 +122,44 @@ pub fn stop_listen() -> bool {
     true
 }
 
+/// Every listen event, timestamped, for diagnosing "no captions". Truncated
+/// at each listen start and once it passes `EVENTS_LOG_MAX`.
+fn events_log_path() -> std::path::PathBuf {
+    otoji::notes::data_dir().join("events.log")
+}
+const EVENTS_LOG_MAX: u64 = 4 * 1024 * 1024;
+
 fn read_events(out: std::process::ChildStdout) {
+    use std::io::Write;
+    let open_log = || std::fs::File::create(events_log_path()).ok();
+    let mut log = open_log();
     for line in std::io::BufReader::new(out).lines().map_while(Result::ok) {
+        if let Some(f) = log.as_mut() {
+            let ts = chrono::Local::now().format("%H:%M:%S%.3f");
+            let _ = writeln!(f, "{ts} {line}");
+            if f.metadata().map(|m| m.len() > EVENTS_LOG_MAX).unwrap_or(false) {
+                log = open_log();
+            }
+        }
         let Ok(v) = serde_json::from_str::<serde_json::Value>(&line) else {
             continue;
         };
         let kind = v.get("type").and_then(|t| t.as_str()).unwrap_or("");
         let text = v.get("text").and_then(|t| t.as_str()).unwrap_or("").trim();
         match kind {
+            // An all-zero noise floor means macOS is feeding silence: the mic
+            // permission is missing for this process. Say so on screen.
+            "status"
+                if v
+                    .get("message")
+                    .and_then(|m| m.as_str())
+                    .is_some_and(|m| m.contains("noise_floor=0.00000")) =>
+            {
+                set_caption(
+                    "⚠ Microphone is silent — allow otoji in Privacy & Security → Microphone",
+                    false,
+                )
+            }
             "partial" | "ptt_partial" if !text.is_empty() => set_caption(text, true),
             "final" | "ptt_final" | "ptt_upgrade" | "ptt_translated" if !text.is_empty() => {
                 set_caption(text, false)
