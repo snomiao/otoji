@@ -49,6 +49,11 @@ mod tray_macos {
         include!("tray/permissions.rs");
     }
 
+    /// pgrep/pkill pattern for real `otoji listen` processes: the program
+    /// itself must be `otoji` with `listen` as its first argument, so shells,
+    /// editors or agents that merely mention "otoji listen" don't match.
+    const LISTEN_PROC_PATTERN: &str = "^[^ ]*/?otoji listen( |$)";
+
     /// Auto-start listening as soon as the microphone is allowed.
     static AUTO_LISTEN: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
     static HOTKEY_INSTALLED: std::sync::atomic::AtomicBool =
@@ -74,6 +79,13 @@ mod tray_macos {
             return;
         }
         let state = perm_state();
+        if PERM_STATE.load(Ordering::Acquire) != state {
+            eprintln!(
+                "otoji-tray: permissions mic={:?} accessibility={}",
+                permissions::mic_status(),
+                state & 2 != 0
+            );
+        }
         let mic_ok = state & 1 != 0;
         if mic_ok && AUTO_LISTEN.load(Ordering::Acquire) && !listen_is_running() {
             AUTO_LISTEN.store(false, Ordering::Release);
@@ -680,7 +692,7 @@ mod tray_macos {
     /// Returns true if at least one `otoji listen` process is running.
     fn listen_is_running() -> bool {
         std::process::Command::new("pgrep")
-            .args(["-f", "otoji listen"])
+            .args(["-f", LISTEN_PROC_PATTERN])
             .stdout(std::process::Stdio::null())
             .stderr(std::process::Stdio::null())
             .status()
@@ -734,7 +746,7 @@ mod tray_macos {
     ) {
         overlay::stop_listen();
         let _ = std::process::Command::new("pkill")
-            .args(["-f", "otoji listen"])
+            .args(["-f", LISTEN_PROC_PATTERN])
             .status();
     }
 
@@ -1292,7 +1304,7 @@ mod tray_macos {
 
     fn signal_listen_processes(sig: libc::c_int) {
         let out = std::process::Command::new("pgrep")
-            .args(["-f", "otoji listen"])
+            .args(["-f", LISTEN_PROC_PATTERN])
             .output();
         if let Ok(out) = out {
             for line in String::from_utf8_lossy(&out.stdout).lines() {
@@ -1392,6 +1404,16 @@ mod tray_macos {
 
     pub fn run() {
         // CLX 設定が存在する場合、音声設定を otoji config に移行する (初回起動時のみ)。
+        // Launched as an app (no terminal): send our stderr to <data>/tray.log
+        // so permission / listen problems can be diagnosed afterwards.
+        if unsafe { libc::isatty(2) } == 0 {
+            let path = otoji::notes::data_dir().join("tray.log");
+            let _ = std::fs::create_dir_all(otoji::notes::data_dir());
+            if let Ok(f) = std::fs::File::create(&path) {
+                use std::os::unix::io::IntoRawFd;
+                unsafe { libc::dup2(f.into_raw_fd(), 2) };
+            }
+        }
         maybe_migrate_from_clx();
 
         unsafe {

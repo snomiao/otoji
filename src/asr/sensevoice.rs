@@ -729,6 +729,15 @@ fn worker_main(
                         let _ = out_tx.send(WorkerEvt::Status(format!(
                             "vad: noise_floor={noise_floor:.5}, threshold={threshold:.5}"
                         )));
+                        // Every calibration block was exactly zero: the OS is
+                        // feeding digital silence (on macOS, a missing or stale
+                        // Microphone grant). A quiet-but-live mic never does.
+                        if calibration_rms.is_empty() {
+                            let _ = out_tx.send(WorkerEvt::Status(
+                                "mic: all-zero samples (digital silence) — check Microphone permission"
+                                    .into(),
+                            ));
+                        }
                         calibration_rms = Vec::new();
                         calibrated = true;
                     }

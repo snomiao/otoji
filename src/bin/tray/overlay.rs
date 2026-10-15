@@ -62,8 +62,55 @@ fn set_caption(text: &str, live: bool) {
     c.rev += 1;
 }
 
-/// Spawn `otoji listen --plain` with its stdout piped into the overlay.
-/// Returns false when the spawn failed.
+/// 44-byte WAV header for an endless 16 kHz mono s16le stream (same layout
+/// `otoji mic` writes; sizes are 0xFFFFFFFE because the length is unknown).
+fn streaming_wav_header() -> [u8; 44] {
+    let (rate, channels, bits) = (16_000u32, 1u16, 16u16);
+    let mut h = [0u8; 44];
+    h[0..4].copy_from_slice(b"RIFF");
+    h[4..8].copy_from_slice(&0xFFFF_FFFEu32.to_le_bytes());
+    h[8..16].copy_from_slice(b"WAVEfmt ");
+    h[16..20].copy_from_slice(&16u32.to_le_bytes());
+    h[20..22].copy_from_slice(&1u16.to_le_bytes()); // PCM
+    h[22..24].copy_from_slice(&channels.to_le_bytes());
+    h[24..28].copy_from_slice(&rate.to_le_bytes());
+    h[28..32].copy_from_slice(&(rate * (channels * bits / 8) as u32).to_le_bytes());
+    h[32..34].copy_from_slice(&(channels * bits / 8).to_le_bytes());
+    h[34..36].copy_from_slice(&bits.to_le_bytes());
+    h[36..40].copy_from_slice(b"data");
+    h[40..44].copy_from_slice(&0xFFFF_FFFEu32.to_le_bytes());
+    h
+}
+
+/// Capture the mic in THIS process and stream it as WAV into `listen -`.
+/// macOS grants the Microphone to the app bundle (otoji-tray); a spawned
+/// `otoji listen` opening the mic itself was fed digital silence, so the
+/// process that holds the grant does the capture. Ends when the child exits.
+fn pump_mic(mut stdin: std::process::ChildStdin) {
+    use std::io::Write;
+    let (tx, mut rx) = otoji::audio::channel(64);
+    // cpal streams are !Send on macOS: create and hold it on this thread.
+    let _stream = match otoji::audio::mic::start(None, 20, tx) {
+        Ok(s) => s,
+        Err(e) => {
+            eprintln!("otoji-tray: mic capture failed: {e:#}");
+            return;
+        }
+    };
+    eprintln!("otoji-tray: mic capture started");
+    if stdin.write_all(&streaming_wav_header()).is_err() {
+        return;
+    }
+    while let Some(chunk) = rx.blocking_recv() {
+        if stdin.write_all(&chunk.pcm).is_err() {
+            break; // listen exited
+        }
+    }
+    eprintln!("otoji-tray: mic capture stopped");
+}
+
+/// Spawn `otoji listen - --plain`, feed it the tray's own mic capture, and
+/// pipe its stdout events into the overlay. Returns false when the spawn failed.
 pub fn start_listen() -> bool {
     let mut guard = LISTEN_CHILD.lock().unwrap();
     if let Some(child) = guard.as_mut() {
@@ -80,12 +127,13 @@ pub fn start_listen() -> bool {
         .unwrap_or_else(|_| std::process::Stdio::null());
     let spawned = std::process::Command::new(otoji_exe())
         .arg("listen")
+        .arg("-")
         .arg("--plain")
         .arg("--ptt-control-socket")
         .arg(&sock)
         // Speech-to-text only: never let this child play audio.
         .env("OTOJI_STT_ONLY", "1")
-        .stdin(std::process::Stdio::null())
+        .stdin(std::process::Stdio::piped())
         .stdout(std::process::Stdio::piped())
         .stderr(log)
         .spawn();
@@ -97,6 +145,12 @@ pub fn start_listen() -> bool {
         }
     };
     let stdout = child.stdout.take();
+    if let Some(stdin) = child.stdin.take() {
+        std::thread::Builder::new()
+            .name("mic-pump".into())
+            .spawn(move || pump_mic(stdin))
+            .ok();
+    }
     *guard = Some(child);
     drop(guard);
     if let Some(out) = stdout {
@@ -147,13 +201,13 @@ fn read_events(out: std::process::ChildStdout) {
         let kind = v.get("type").and_then(|t| t.as_str()).unwrap_or("");
         let text = v.get("text").and_then(|t| t.as_str()).unwrap_or("").trim();
         match kind {
-            // An all-zero noise floor means macOS is feeding silence: the mic
-            // permission is missing for this process. Say so on screen.
+            // listen saw only all-zero samples: macOS is feeding silence, so
+            // the mic permission is missing or stale. Say so on screen.
             "status"
                 if v
                     .get("message")
                     .and_then(|m| m.as_str())
-                    .is_some_and(|m| m.contains("noise_floor=0.00000")) =>
+                    .is_some_and(|m| m.starts_with("mic: all-zero samples")) =>
             {
                 set_caption(
                     "⚠ Microphone is silent — allow otoji in Privacy & Security → Microphone",
@@ -306,7 +360,10 @@ pub fn tick() {
         }
         if visible != shown.1 {
             if visible {
-                msg_rect(panel, sel(b"setFrame:\0"), panel_frame());
+                // NSWindow only has setFrame:display: (setFrame: is NSView's).
+                let f: extern "C" fn(*mut c_void, *mut c_void, NSRect, bool) =
+                    std::mem::transmute(objc_msgSend as *const ());
+                f(panel, sel(b"setFrame:display:\0"), panel_frame(), true);
                 msg1_ptr(panel, sel(b"orderFrontRegardless\0"), std::ptr::null_mut());
             } else {
                 msg1_ptr(panel, sel(b"orderOut:\0"), std::ptr::null_mut());
