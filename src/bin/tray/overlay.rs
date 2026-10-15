@@ -33,6 +33,10 @@ static CAPTION: Mutex<Caption> = Mutex::new(Caption {
     rev: 0,
 });
 static LISTEN_CHILD: Mutex<Option<std::process::Child>> = Mutex::new(None);
+/// The user wants otoji listening (cleared only by stop_listen), so a child
+/// that dies on its own gets restarted by `supervise`.
+static WANT_LISTEN: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+static LAST_START: Mutex<Option<Instant>> = Mutex::new(None);
 
 static PANEL: AtomicPtr<c_void> = AtomicPtr::new(std::ptr::null_mut());
 static LABEL: AtomicPtr<c_void> = AtomicPtr::new(std::ptr::null_mut());
@@ -182,6 +186,8 @@ pub fn start_listen() -> bool {
     }
     *guard = Some(child);
     drop(guard);
+    WANT_LISTEN.store(true, Ordering::Release);
+    *LAST_START.lock().unwrap() = Some(Instant::now());
     if let Some(out) = stdout {
         std::thread::Builder::new()
             .name("listen-events".into())
@@ -198,12 +204,40 @@ pub fn start_listen() -> bool {
 
 /// Kill the tray-owned listen child, if any. Returns true if one was running.
 pub fn stop_listen() -> bool {
+    WANT_LISTEN.store(false, Ordering::Release);
     let Some(mut child) = LISTEN_CHILD.lock().unwrap().take() else {
         return false;
     };
     let _ = child.kill();
     let _ = child.wait();
     true
+}
+
+/// Restart the listen child if it exited while the user still wants it on
+/// (at most once per 10 s, so a crash loop can't spin). Logs the exit status.
+pub fn supervise() {
+    if !WANT_LISTEN.load(Ordering::Acquire) {
+        return;
+    }
+    let status = {
+        let mut guard = LISTEN_CHILD.lock().unwrap();
+        match guard.as_mut().map(|c| c.try_wait()) {
+            Some(Ok(Some(status))) => {
+                guard.take();
+                Some(status)
+            }
+            Some(Ok(None)) => return, // still running
+            Some(Err(_)) | None => None,
+        }
+    };
+    if let Some(status) = status {
+        eprintln!("otoji-tray: listen exited unexpectedly ({status})");
+    }
+    let recent = LAST_START.lock().unwrap().is_some_and(|t| t.elapsed() < Duration::from_secs(10));
+    if !recent {
+        eprintln!("otoji-tray: restarting listen");
+        start_listen();
+    }
 }
 
 /// Every listen event, timestamped, for diagnosing "no captions". Truncated

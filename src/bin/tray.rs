@@ -1119,6 +1119,7 @@ mod tray_macos {
             toggle_otoji();
         }
         overlay::tick();
+        overlay::supervise();
         poll_permissions();
 
         let mtime = notes_mtime_secs();
@@ -1300,7 +1301,8 @@ mod tray_macos {
     //
     // One CGEventTap (needs Accessibility) serves two things:
     // - On/off toggle: Fn+/ or Alt+CapsLock starts/stops otoji (listen + mic).
-    //   The `/` keystroke is swallowed so it isn't typed; CapsLock can't be.
+    //   The `/` keystroke is swallowed so it isn't typed; CapsLock can't be
+    //   (but a CapsLock remapped to F18, as CapsLockX does, is).
     // - Optional hold-to-talk (config `ptt_hotkey`, default "off"): holding a
     //   modifier sends SIGUSR1/SIGUSR2 to every `otoji listen` (PTT start/end).
     // The callback only flips atomics; refresh_tick does the actual toggle so
@@ -1318,6 +1320,9 @@ mod tray_macos {
         std::sync::atomic::AtomicBool::new(false);
     /// The tap swallowed a Fn+/ keyDown, so swallow its keyUp too.
     static SLASH_SWALLOWED: std::sync::atomic::AtomicBool =
+        std::sync::atomic::AtomicBool::new(false);
+    /// Same for an Alt+F18 (remapped Caps Lock) keyDown.
+    static F18_SWALLOWED: std::sync::atomic::AtomicBool =
         std::sync::atomic::AtomicBool::new(false);
     static HOTKEY_TAP: std::sync::atomic::AtomicPtr<c_void> =
         std::sync::atomic::AtomicPtr::new(std::ptr::null_mut());
@@ -1374,6 +1379,8 @@ mod tray_macos {
         const FLAG_MASK_SECONDARY_FN: u64 = 0x800000;
         const KEYCODE_SLASH: u64 = 44;
         const KEYCODE_CAPS_LOCK: u64 = 57;
+        // CapsLockX remaps Caps Lock to F18 (hidutil), so Alt+CapsLock arrives as Alt+F18.
+        const KEYCODE_F18: u64 = 79;
 
         if etype == K_CG_EVENT_TAP_DISABLED_BY_TIMEOUT
             || etype == K_CG_EVENT_TAP_DISABLED_BY_USER_INPUT
@@ -1387,6 +1394,13 @@ mod tray_macos {
         let keycode =
             unsafe { CGEventGetIntegerValueField(event, K_CG_KEYBOARD_EVENT_KEYCODE) } as u64;
         let flags = unsafe { CGEventGetFlags(event) };
+        // Diagnostics: only the two toggle keys are ever logged, never typing.
+        if (etype == K_CG_EVENT_KEY_DOWN && keycode == KEYCODE_SLASH)
+            || (etype == K_CG_EVENT_FLAGS_CHANGED && keycode == KEYCODE_CAPS_LOCK)
+            || (etype == K_CG_EVENT_KEY_DOWN && keycode == KEYCODE_F18)
+        {
+            eprintln!("otoji-tray: hotkey tap saw key {keycode} flags={flags:#x}");
+        }
         match etype {
             K_CG_EVENT_KEY_DOWN if keycode == KEYCODE_SLASH && flags & FLAG_MASK_SECONDARY_FN != 0 => {
                 let repeat =
@@ -1398,6 +1412,18 @@ mod tray_macos {
                 std::ptr::null_mut()
             }
             K_CG_EVENT_KEY_UP if keycode == KEYCODE_SLASH && SLASH_SWALLOWED.swap(false, SeqCst) => {
+                std::ptr::null_mut()
+            }
+            K_CG_EVENT_KEY_DOWN if keycode == KEYCODE_F18 && flags & FLAG_MASK_ALTERNATE != 0 => {
+                let repeat =
+                    unsafe { CGEventGetIntegerValueField(event, K_CG_KEYBOARD_EVENT_AUTOREPEAT) };
+                if repeat == 0 {
+                    TOGGLE_REQUESTED.store(true, SeqCst);
+                }
+                F18_SWALLOWED.store(true, SeqCst);
+                std::ptr::null_mut()
+            }
+            K_CG_EVENT_KEY_UP if keycode == KEYCODE_F18 && F18_SWALLOWED.swap(false, SeqCst) => {
                 std::ptr::null_mut()
             }
             K_CG_EVENT_FLAGS_CHANGED => {
