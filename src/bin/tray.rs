@@ -45,6 +45,62 @@ mod tray_macos {
     mod overlay {
         include!("tray/overlay.rs");
     }
+    mod permissions {
+        include!("tray/permissions.rs");
+    }
+
+    /// Auto-start listening as soon as the microphone is allowed.
+    static AUTO_LISTEN: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+    static HOTKEY_INSTALLED: std::sync::atomic::AtomicBool =
+        std::sync::atomic::AtomicBool::new(false);
+    /// (mic authorized, accessibility granted) at the last menu build.
+    static PERM_STATE: std::sync::atomic::AtomicU8 = std::sync::atomic::AtomicU8::new(u8::MAX);
+    static PERM_POLL: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
+
+    fn hotkey_wanted() -> bool {
+        otoji::config::load().ptt_hotkey != "off"
+    }
+
+    fn perm_state() -> u8 {
+        (permissions::mic_status() == permissions::Mic::Authorized) as u8
+            | ((permissions::accessibility_granted() as u8) << 1)
+    }
+
+    /// Once per second: start listening / install the hotkey the moment the
+    /// user grants access, and refresh the menu's permission rows.
+    fn poll_permissions() {
+        let answered = permissions::mic_answer_pending();
+        if !answered && PERM_POLL.fetch_add(1, Ordering::Relaxed) % 10 != 0 {
+            return;
+        }
+        let state = perm_state();
+        let mic_ok = state & 1 != 0;
+        if mic_ok && AUTO_LISTEN.load(Ordering::Acquire) && !listen_is_running() {
+            AUTO_LISTEN.store(false, Ordering::Release);
+            overlay::start_listen();
+        }
+        if state & 2 != 0 && !HOTKEY_INSTALLED.load(Ordering::Acquire) && hotkey_wanted() {
+            unsafe { install_ptt_hotkey() };
+        }
+        if PERM_STATE.swap(state, Ordering::AcqRel) != state {
+            unsafe { rebuild_menu() };
+        }
+    }
+
+    unsafe extern "C" fn action_grant_mic(_this: *mut c_void, _cmd: *mut c_void, _sender: *mut c_void) {
+        AUTO_LISTEN.store(true, Ordering::Release);
+        permissions::ensure_mic_interactive();
+    }
+
+    unsafe extern "C" fn action_grant_ax(_this: *mut c_void, _cmd: *mut c_void, _sender: *mut c_void) {
+        permissions::prompt_accessibility();
+        let nsurl = msg1_ptr(
+            cls(b"NSURL\0"),
+            sel(b"URLWithString:\0"),
+            nsstring("x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility"),
+        );
+        msg1_ptr(msg0(cls(b"NSWorkspace\0"), sel(b"sharedWorkspace\0")), sel(b"openURL:\0"), nsurl);
+    }
     use std::ffi::c_void;
     use std::sync::atomic::{AtomicPtr, Ordering};
 
@@ -308,6 +364,18 @@ mod tray_macos {
                 sel(b"userContentController:didReceiveScriptMessage:\0"),
                 handle_settings_message as *const c_void,
                 b"v@:@@\0".as_ptr() as *const _,
+            );
+            class_addMethod(
+                new_cls,
+                sel(b"grantMic:\0"),
+                action_grant_mic as *const c_void,
+                b"v@:@\0".as_ptr() as *const _,
+            );
+            class_addMethod(
+                new_cls,
+                sel(b"grantAx:\0"),
+                action_grant_ax as *const c_void,
+                b"v@:@\0".as_ptr() as *const _,
             );
             objc_registerClassPair(new_cls);
         });
@@ -680,6 +748,11 @@ mod tray_macos {
         if listen_is_running() {
             return;
         }
+        if permissions::mic_status() != permissions::Mic::Authorized {
+            AUTO_LISTEN.store(true, Ordering::Release);
+            permissions::ensure_mic_interactive();
+            return;
+        }
         overlay::start_listen();
     }
 
@@ -837,6 +910,28 @@ mod tray_macos {
             msg1_ptr(toggle_item, sel(b"setTarget:\0"), target);
         }
         msg1_ptr(menu, sel(b"addItem:\0"), toggle_item);
+
+        // Missing permissions: one clickable row each, gone once granted.
+        let mut perm_rows: Vec<(&str, &[u8])> = Vec::new();
+        if permissions::mic_status() != permissions::Mic::Authorized {
+            perm_rows.push(("⚠️  Allow microphone access…", b"grantMic:\0"));
+        }
+        if hotkey_wanted() && !permissions::accessibility_granted() {
+            perm_rows.push(("⚠️  Allow Accessibility for the hold-to-talk hotkey…", b"grantAx:\0"));
+        }
+        for (label, action) in perm_rows {
+            let row = init_fn(
+                msg0(menuitem_cls, sel(b"alloc\0")),
+                init_sel,
+                nsstring(label),
+                sel(action),
+                nsstring(""),
+            );
+            if !target.is_null() {
+                msg1_ptr(row, sel(b"setTarget:\0"), target);
+            }
+            msg1_ptr(menu, sel(b"addItem:\0"), row);
+        }
 
         let sep0 = msg0(menuitem_cls, sel(b"separatorItem\0"));
         msg1_ptr(menu, sel(b"addItem:\0"), sep0);
@@ -1003,6 +1098,7 @@ mod tray_macos {
         drain_download_events();
 
         overlay::tick();
+        poll_permissions();
 
         let mtime = notes_mtime_secs();
         let prev = LAST_MTIME.load(std::sync::atomic::Ordering::Acquire);
@@ -1259,10 +1355,10 @@ mod tray_macos {
             }
         };
         if !AXIsProcessTrusted() {
-            eprintln!(
-                "otoji-tray: Accessibility permission not granted — global PTT hotkey ({label}) \
-                 disabled. Enable it in System Settings → Privacy & Security → Accessibility."
-            );
+            // poll_permissions() installs it once the user grants access.
+            return;
+        }
+        if HOTKEY_INSTALLED.swap(true, std::sync::atomic::Ordering::AcqRel) {
             return;
         }
         PTT_FLAG_MASK.store(mask, std::sync::atomic::Ordering::Relaxed);
@@ -1368,9 +1464,18 @@ mod tray_macos {
             // Caption overlay + tray-owned listen child. Skipped when another
             // `otoji listen` already holds the mic (e.g. one spawned by CLX).
             overlay::init();
-            if !std::env::args().any(|a| a == "--no-listen") && !listen_is_running() {
-                overlay::start_listen();
+            AUTO_LISTEN.store(
+                !std::env::args().any(|a| a == "--no-listen"),
+                Ordering::Release,
+            );
+            // Ask for what otoji needs with native UI (system dialogs / an
+            // alert that opens the right Settings pane); poll_permissions()
+            // starts listening and the hotkey as soon as access is granted.
+            permissions::ensure_mic();
+            if hotkey_wanted() {
+                permissions::prompt_accessibility();
             }
+            poll_permissions();
 
             eprintln!(
                 "otoji-tray: installed (pid {}, data {})",

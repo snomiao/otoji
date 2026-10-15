@@ -6,16 +6,21 @@ set -e
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 BIN="$ROOT/target/release/otoji-tray"
+CLI="$ROOT/target/release/otoji"
 ICON="$ROOT/assets/icon.icns"
 DEST="${1:-/Applications}"
 APP="$DEST/otoji.app"
 
 [ -x "$BIN" ] || { echo "missing $BIN — run: cargo build --release --bin otoji-tray" >&2; exit 1; }
+[ -x "$CLI" ] || { echo "missing $CLI — run: cargo build --release --bin otoji" >&2; exit 1; }
 [ -f "$ICON" ] || { echo "missing $ICON" >&2; exit 1; }
 
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
-cp "$BIN" "$APP/Contents/MacOS/otoji"
+# The tray is the bundle executable; the `otoji` CLI sits next to it so the
+# tray spawns the bundled `otoji listen` (inheriting the app's mic grant).
+cp "$BIN" "$APP/Contents/MacOS/otoji-tray"
+cp "$CLI" "$APP/Contents/MacOS/otoji"
 cp "$ICON" "$APP/Contents/Resources/icon.icns"
 for f in \
     tray-icon.png tray-icon@2x.png \
@@ -35,7 +40,7 @@ cat > "$APP/Contents/Info.plist" << 'PLIST'
 <dict>
     <key>CFBundleName</key><string>otoji</string>
     <key>CFBundleDisplayName</key><string>otoji</string>
-    <key>CFBundleExecutable</key><string>otoji</string>
+    <key>CFBundleExecutable</key><string>otoji-tray</string>
     <key>CFBundleIdentifier</key><string>com.snomiao.otoji</string>
     <key>CFBundleVersion</key><string>1.0</string>
     <key>CFBundleShortVersionString</key><string>1.0</string>
@@ -44,6 +49,7 @@ cat > "$APP/Contents/Info.plist" << 'PLIST'
     <key>LSMinimumSystemVersion</key><string>11.0</string>
     <key>LSUIElement</key><true/>
     <key>NSMicrophoneUsageDescription</key><string>otoji captures audio for speech-to-text transcription.</string>
+    <key>NSAccessibilityUsageDescription</key><string>otoji listens for the hold-to-talk hotkey.</string>
 </dict>
 </plist>
 PLIST
