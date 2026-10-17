@@ -1394,13 +1394,6 @@ mod tray_macos {
         let keycode =
             unsafe { CGEventGetIntegerValueField(event, K_CG_KEYBOARD_EVENT_KEYCODE) } as u64;
         let flags = unsafe { CGEventGetFlags(event) };
-        // Diagnostics: only the two toggle keys are ever logged, never typing.
-        if (etype == K_CG_EVENT_KEY_DOWN && keycode == KEYCODE_SLASH)
-            || (etype == K_CG_EVENT_FLAGS_CHANGED && keycode == KEYCODE_CAPS_LOCK)
-            || (etype == K_CG_EVENT_KEY_DOWN && keycode == KEYCODE_F18)
-        {
-            eprintln!("otoji-tray: hotkey tap saw key {keycode} flags={flags:#x}");
-        }
         match etype {
             K_CG_EVENT_KEY_DOWN if keycode == KEYCODE_SLASH && flags & FLAG_MASK_SECONDARY_FN != 0 => {
                 let repeat =
