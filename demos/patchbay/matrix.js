@@ -462,7 +462,9 @@ function compose(civ, actId) {
   };
   const phrase = (sc2, shiftOf) => bars.flatMap((bar, k) => render(bar, sc2, shiftOf(k)));
   // A named piece in the story whose tune survives: the lead plays it.
-  const piece = PIECES[`${civ.id}:${actId}`], tune = piece && piece.melody && SCALES[piece.scale] ? piece.melody.trim().split(/\s+/) : null;
+  // The story's named piece; if its melody is lost, a well-known piece for the scene (cultures/famous/).
+  const named = PIECES[`${civ.id}:${actId}`], famous = FAMOUS[`${civ.id}:${actId}`];
+  const piece = named && named.melody ? named : famous && famous.melody ? famous : named, tune = piece && piece.melody && SCALES[piece.scale] ? piece.melody.trim().split(/\s+/) : null;
   if (tune) {
     const up = tune.map((t) => (/^[#b]?[1-7]/.test(t) ? t.replace(/^([#b]?[1-7])([',]*)$/, (_, d, o) => d + (o.includes(",") ? o.slice(1) : o + "'")) : t));
     line(lead, `grid=${piece.grid || 8}`, q(tune), 1, 6, `${piece.scale} ${piece.key || key}`);
@@ -725,7 +727,7 @@ function renderPlayer() {
     now.querySelector(".title").textContent = `${civLabel(civ)} × ${A.zh}${LANG === "zh-CN" ? "" : " " + A.en}${f ? " ★ " + tr(f[2]) : ""}`;
     const kind = storyOf(civ, a) ? (isHistory(civ, a) ? ["history", tr("recorded history")] : ["imagined", tr("an imagined scene")]) : null;
     let pl = now.querySelector(".pieceline"); if (!pl) { pl = document.createElement("div"); pl.className = "pieceline"; now.append(pl); }
-    const pc = PIECES[`${civ.id}:${a}`];
+    const pk = `${civ.id}:${a}`, pc = (PIECES[pk] && PIECES[pk].melody ? PIECES[pk] : FAMOUS[pk]) || PIECES[pk];
     pl.textContent = pc ? `♫ ${pc.title}${pc.native ? ` (${pc.native})` : ""} — ${pc.about || ""}${pc.melody ? ` · ${tr("you are hearing its melody")} (${pc.source || ""})` : pc.source === "lost" ? ` · ${tr("its melody is lost")}` : ""}` : "";
     let kb = now.querySelector(".kind"); if (!kb) { kb = document.createElement("span"); now.querySelector(".title").after(kb); }
     kb.className = "kind " + (kind ? kind[0] : ""); kb.textContent = kind ? kind[1] : "";
@@ -760,7 +762,7 @@ function renderPlayer() {
           btn.title = `${civ.name} × ${ACTIVITIES[a].en}${f ? " ★ " + f[2] : ""}`;
           if (f) btn.classList.add("featured");
           if (isHistory(civ, a)) { btn.classList.add("history"); btn.title += " · from recorded history"; }
-          const pc = PIECES[civKey(civ, a).slice(2)]; if (pc) { btn.classList.add("piece"); btn.title += ` · ♫ ${pc.title}`; }
+          const pk = civKey(civ, a).slice(2), pc = (PIECES[pk] && PIECES[pk].melody ? PIECES[pk] : FAMOUS[pk]) || PIECES[pk]; if (pc) { btn.classList.add("piece"); btn.title += ` · ♫ ${pc.title}`; }
           btn.addEventListener("click", () => play(civ, a, btn));
           td.append(btn);
         }
