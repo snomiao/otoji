@@ -227,8 +227,11 @@ body.instruments-mode #instruments { display: block; }
 #instruments .fams { display: flex; flex-wrap: wrap; gap: 6px 14px; margin: 6px 0 12px; font-size: 14px; }
 #instruments .fams a { color: var(--focus); }
 #instruments h2 { font-size: 17px; margin: 18px 0 8px; border-bottom: 1px solid var(--line); padding-bottom: 4px; }
-#instruments .cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 12px; }
-#instruments .cards h2 { grid-column: 1 / -1; }
+#instruments .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 12px; margin: 8px 0 14px; }
+#instruments details.sec > summary { cursor: pointer; font-weight: 600; font-size: 15px; padding: 4px 0; }
+#instruments details.top > summary { font-size: 18px; border-bottom: 1px solid var(--line); margin-top: 10px; }
+#instruments details.top > details.sec { margin-left: 14px; }
+#instruments .grouping { font-size: 13px; } #instruments .group { font: inherit; }
 #instruments article { display: grid; grid-template-columns: 72px 1fr; gap: 4px 12px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--screen); }
 #instruments article:target { outline: 2px solid var(--feature); }
 #instruments .icon { all: unset; grid-row: span 3; width: 72px; height: 72px; color: var(--ink); cursor: pointer; border-radius: 8px; }

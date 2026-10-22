@@ -58,6 +58,7 @@ function renderInstruments() {
   root.innerHTML = `<header><h1>${tr("otoji · instruments of the world's peoples")}</h1>
     <a class="to-player" href="?player&lang=${LANG}">${tr("▶ the player")}</a> <a class="to-player" href="?lang=${LANG}">${tr("✎ the editor")}</a>
     <input type="search" class="find" placeholder="${tr("find an instrument or a people…")}" aria-label="${tr("find")}">
+    <label class="grouping">${tr("group by")} <select class="group"><option value="type">${tr("type of instrument")}</option><option value="region">${tr("region and people")}</option></select></label>
     <button type="button" class="stop">${tr("■ Stop")}</button>
     <span class="legend">${list.length} ${tr("instruments")} · ${tr("click a shape to hear it · keys A S D F G H J K play the scale of the last one you touched · ♪ plays its people's tune · Esc or ■ stops")}</span></header>
     <nav class="fams"></nav><div class="cards"></div>`;
@@ -65,44 +66,85 @@ function renderInstruments() {
   const cards = root.querySelector(".cards"), fams = root.querySelector(".fams"), byId = new Map(list.map((e) => [e.id, e]));
   let last = null;
   const civName = (id) => { const c = CIVS.find((x) => x.id === id); return c ? civLabel(c) : id; };
-  for (const fam of FAMILY_ORDER.filter((f) => list.some((e) => e.family === f))) {
-    fams.append(Object.assign(document.createElement("a"), { href: `#fam-${fam}`, textContent: `${tr(FAMILY_LABEL[fam])} (${list.filter((e) => e.family === fam).length})` }));
-    cards.append(Object.assign(document.createElement("h2"), { id: `fam-${fam}`, textContent: tr(FAMILY_LABEL[fam]) }));
-    for (const e of list.filter((x) => x.family === fam)) {
-      const art = document.createElement("article"); art.className = "inst"; art.id = `inst-${e.id}`; art.tabIndex = -1;
-      art.dataset.find = [e.name, e.native, e.zh, ...(e.aliases || []), ...e.peoples.map(civName)].join(" ").toLowerCase();
-      const icon = document.createElement("button"); icon.type = "button"; icon.className = "icon"; icon.title = tr("play a note"); icon.setAttribute("aria-label", `${tr("play")} ${e.name}`);
-      icon.innerHTML = e.svg; // shapes only: checked by cultures/instruments/check.mjs
-      const hs = homeScale(e);
-      icon.addEventListener("click", () => { last = e; auditionNote(e, hs.notes[0], 0.9, 0, hs.civ.key); });
-      const head = document.createElement("div"); head.className = "head";
-      head.append(Object.assign(document.createElement("h3"), { textContent: `${e.name}` }),
-        Object.assign(document.createElement("span"), { className: "native", textContent: `${e.native}${e.zh && e.zh !== e.native ? " · " + e.zh : ""}` }));
-      const ppl = document.createElement("div"); ppl.className = "peoples";
-      for (const p of e.peoples) ppl.append(Object.assign(document.createElement("span"), { className: "chip", textContent: civName(p) }));
-      const keys = document.createElement("div"); keys.className = "keys";
-      hs.notes.forEach((f, i) => { const k = document.createElement("button"); k.type = "button"; k.textContent = hs.names[i]; k.title = "ASDFGHJK"[i] || ""; k.addEventListener("click", () => { last = e; auditionNote(e, f, 0.7, 0, hs.civ.key); }); keys.append(k); });
-      const tune = Object.assign(document.createElement("button"), { type: "button", className: "tune", textContent: `♪ ${tr("its tune")}`, title: civName(hs.civ.id) });
-      tune.addEventListener("click", () => { last = e; playTune(e); }); keys.append(tune);
-      const det = document.createElement("dl");
-      for (const [k, label] of [["origin", "Origin"], ["history", "History"], ["materials", "Materials"], ["usage", "How it is played"], ["skills", "Advanced techniques"], ["scenes", "Where it is heard"]]) {
-        if (!e[k]) continue; det.append(Object.assign(document.createElement("dt"), { textContent: tr(label) }), Object.assign(document.createElement("dd"), { textContent: tr(e[k]) }));
-      }
-      if (e.partners && e.partners.length) {
-        const dd = document.createElement("dd");
-        for (const p of e.partners) { const pe = byId.get(p); dd.append(pe ? Object.assign(document.createElement("a"), { href: `#inst-${p}`, className: "chip", textContent: pe.name }) : Object.assign(document.createElement("span"), { className: "chip", textContent: p })); }
-        det.append(Object.assign(document.createElement("dt"), { textContent: tr("Plays with") }), dd);
-      }
-      art.append(icon, head, ppl, keys, det);
-      art.addEventListener("pointerenter", () => { last = e; });
-      cards.append(art);
+  // One card per instrument (a fresh element each time it is shown).
+  const makeCard = (e, where) => {
+    const art = document.createElement("article"); art.className = "inst"; art.id = `inst-${e.id}${where ? "-" + where : ""}`; art.tabIndex = -1;
+    art.dataset.find = [e.name, e.native, e.zh, ...(e.aliases || []), ...e.peoples.map(civName)].join(" ").toLowerCase();
+    const icon = document.createElement("button"); icon.type = "button"; icon.className = "icon"; icon.title = tr("play a note"); icon.setAttribute("aria-label", `${tr("play")} ${e.name}`);
+    icon.innerHTML = e.svg; // shapes only: checked by cultures/instruments/check.mjs
+    const hs = homeScale(e);
+    icon.addEventListener("click", () => { last = e; auditionNote(e, hs.notes[0], 0.9, 0, hs.civ.key); });
+    const head = document.createElement("div"); head.className = "head";
+    head.append(Object.assign(document.createElement("h3"), { textContent: `${e.name}` }),
+      Object.assign(document.createElement("span"), { className: "native", textContent: `${e.native}${e.zh && e.zh !== e.native ? " · " + e.zh : ""}` }));
+    const ppl = document.createElement("div"); ppl.className = "peoples";
+    for (const p of e.peoples) ppl.append(Object.assign(document.createElement("span"), { className: "chip", textContent: civName(p) }));
+    const keys = document.createElement("div"); keys.className = "keys";
+    hs.notes.forEach((f, i) => { const k = document.createElement("button"); k.type = "button"; k.textContent = hs.names[i]; k.title = "ASDFGHJK"[i] || ""; k.addEventListener("click", () => { last = e; auditionNote(e, f, 0.7, 0, hs.civ.key); }); keys.append(k); });
+    const tune = Object.assign(document.createElement("button"), { type: "button", className: "tune", textContent: `♪ ${tr("its tune")}`, title: civName(hs.civ.id) });
+    tune.addEventListener("click", () => { last = e; playTune(e); }); keys.append(tune);
+    const det = document.createElement("dl");
+    for (const [k, label] of [["origin", "Origin"], ["history", "History"], ["materials", "Materials"], ["usage", "How it is played"], ["skills", "Advanced techniques"], ["scenes", "Where it is heard"]]) {
+      if (!e[k]) continue; det.append(Object.assign(document.createElement("dt"), { textContent: tr(label) }), Object.assign(document.createElement("dd"), { textContent: tr(e[k]) }));
     }
-  }
-  root.querySelector(".stop").addEventListener("click", stopAudition);
-  root.querySelector(".find").addEventListener("input", (ev) => {
-    const q = ev.target.value.trim().toLowerCase();
+    if (e.partners && e.partners.length) {
+      const dd = document.createElement("dd");
+      for (const p of e.partners) { const pe = byId.get(p); dd.append(pe ? Object.assign(document.createElement("a"), { href: `#inst-${p}`, className: "chip", textContent: pe.name }) : Object.assign(document.createElement("span"), { className: "chip", textContent: p })); }
+      det.append(Object.assign(document.createElement("dt"), { textContent: tr("Plays with") }), dd);
+    }
+    art.append(icon, head, ppl, keys, det);
+    art.addEventListener("pointerenter", () => { last = e; });
+    return art;
+  };
+  // Sections fold; by type (Hornbostel–Sachs) or by region → people.
+  const CLASSES = [["Strings (chordophones)", ["plucked", "bowed", "struck-string"]], ["Winds (aerophones)", ["flute", "reed", "free-reed", "bagpipe", "brass"]],
+    ["Drums (membranophones)", ["drum"]], ["Bells, gongs & rattles (idiophones)", ["idiophone"]], ["Voices", ["voice"]]];
+  const section = (title, n, id, open = true) => { const d = document.createElement("details"); d.open = open; d.id = id; d.className = "sec";
+    d.append(Object.assign(document.createElement("summary"), { textContent: `${title} (${n})` })); const g = document.createElement("div"); g.className = "grid"; d.append(g); return [d, g]; };
+  const render = (mode) => {
+    cards.replaceChildren(); fams.replaceChildren();
+    if (mode === "type") {
+      for (const [cls, fs] of CLASSES) {
+        const inCls = list.filter((e) => fs.includes(e.family)); if (!inCls.length) continue;
+        const [top] = section(tr(cls), inCls.length, `cls-${fs[0]}`); top.classList.add("top"); top.querySelector(".grid").remove();
+        for (const fam of fs) {
+          const items = list.filter((e) => e.family === fam); if (!items.length) continue;
+          const [d, g] = section(tr(FAMILY_LABEL[fam]), items.length, `fam-${fam}`);
+          for (const e of items) g.append(makeCard(e));
+          top.append(d);
+          fams.append(Object.assign(document.createElement("a"), { href: `#fam-${fam}`, textContent: `${tr(FAMILY_LABEL[fam])} (${items.length})` }));
+        }
+        cards.append(top);
+      }
+    } else {
+      const regions = [...new Set([...REGION_ORDER, ...CIVS.map((c) => c.region)])].filter((r) => CIVS.some((c) => c.region === r));
+      for (const reg of regions) {
+        const civs = CIVS.filter((c) => c.region === reg && list.some((e) => e.peoples.includes(c.id))); if (!civs.length) continue;
+        const ids = new Set(list.filter((e) => e.peoples.some((p) => civs.some((c) => c.id === p))).map((e) => e.id));
+        const [top] = section(tr(reg), ids.size, `reg-${reg.replace(/\W+/g, "-")}`); top.classList.add("top"); top.querySelector(".grid").remove();
+        for (const civ of civs) {
+          const items = list.filter((e) => e.peoples.includes(civ.id));
+          const [d, g] = section(civLabel(civ), items.length, `civ-${civ.id}`, false);
+          for (const e of items) g.append(makeCard(e, civ.id));
+          top.append(d);
+        }
+        cards.append(top);
+        fams.append(Object.assign(document.createElement("a"), { href: `#reg-${reg.replace(/\W+/g, "-")}`, textContent: `${tr(reg)} (${ids.size})` }));
+      }
+    }
+    filter();
+  };
+  const filter = () => {
+    const q = root.querySelector(".find").value.trim().toLowerCase();
     for (const a of cards.querySelectorAll("article")) a.hidden = !!q && !a.dataset.find.includes(q);
-  });
+    for (const d of cards.querySelectorAll("details")) { const any = !q || d.querySelector("article:not([hidden])"); d.hidden = !any; if (q && any) d.open = true; }
+  };
+  let mode = "type"; try { mode = localStorage.getItem("otoji-inst-group") || "type"; } catch (err) { /* storage unavailable */ }
+  const sw = root.querySelector(".group");
+  sw.value = mode; sw.addEventListener("change", () => { mode = sw.value; try { localStorage.setItem("otoji-inst-group", mode); } catch (err) { /* storage unavailable */ } render(mode); });
+  render(mode);
+  root.querySelector(".stop").addEventListener("click", stopAudition);
+  root.querySelector(".find").addEventListener("input", filter);
   // A S D F G H J K play the scale of the last instrument touched.
   document.addEventListener("keydown", (ev) => {
     if (!document.body.classList.contains("instruments-mode")) return;
