@@ -19,6 +19,25 @@ INSTRUMENT_CATALOG.push({
   skills: "…",      // advanced techniques (e.g. 揉弦, sliding, circular breathing)
   scenes: "…",      // where it is typically heard (court, opera, festivals, funerals…)
   partners: ["pipa", "dizi", "sheng"], // ids of instruments it usually plays with
+  // sound
+  sound: "…",       // what it sounds like: timbre (bright, nasal, breathy, metallic…), attack and decay, dynamics, and how its techniques sound
+  range: "…",       // pitch range, e.g. "D4–A6 (about 2½ octaves)"
+  tuning: "…",      // how it is tuned; the scale or mode system it plays in
+  // construction
+  acoustics: "…",   // how the sound is made: exciter (pluck, bow, breath, lips, strike) → vibrator → resonator
+  // context
+  repertoire: "…",  // well-known pieces or genres it is heard in
+  notation: "…",    // its traditional notation, if any (减字谱, 工尺谱, sargam, tablature…)
+  meaning: "…",     // symbolism and cultural meaning
+  relatives: ["oud", "pipa"], // ids of related instruments across cultures (ancestors, descendants, cousins)
+  role: "…",        // its role in an ensemble: melody, drone, bass, harmony, rhythm
+  players: "…",     // who traditionally plays it (griots, women, monks, court musicians…)
+  making: "…",      // how it is made, and by whom
+  variants: "…",    // regional variants and sizes
+  finds: "…",       // the earliest evidence: excavated or depicted examples
+  today: "…",       // living, revived or endangered today (UNESCO listings)
+  hs: "…",          // Hornbostel–Sachs number, e.g. 321.321-6
+  uncertain: "…",   // optional: what in this entry is uncertain and why (shown as ⓘ)
 });
 ```
 

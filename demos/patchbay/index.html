@@ -246,6 +246,7 @@ body.instruments-mode #instruments { display: block; }
 #instruments .keys .tune { margin-left: 6px; }
 #instruments .techs { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 3px; align-items: center; font-size: 12px; }
 #instruments .techs .lbl { color: var(--muted); margin-right: 4px; }
+#instruments .info { cursor: help; color: var(--focus); }
 #instruments .refs { margin-top: 28px; border-top: 1px solid var(--line); padding-top: 8px; font-size: 13px; }
 #instruments .refs h2 { font-size: 18px; } #instruments .refs h3 { font-size: 14px; margin: 12px 0 4px; }
 #instruments .refs ul { margin: 0; padding-left: 20px; display: grid; gap: 2px; } #instruments .refs a { color: var(--focus); }
@@ -253,6 +254,9 @@ body.instruments-mode #instruments { display: block; }
 #instruments .techs button { font: inherit; font-size: 12px; padding: 1px 6px; cursor: pointer; }
 #instruments dl { grid-column: 1 / -1; margin: 6px 0 0; font-size: 13px; display: grid; grid-template-columns: max-content 1fr; gap: 3px 10px; }
 #instruments dt { color: var(--muted); }
+#instruments details.more { grid-column: 1 / -1; font-size: 13px; }
+#instruments details.more > summary { cursor: pointer; color: var(--focus); padding: 2px 0; }
+#instruments details.more dl { margin-top: 2px; }
 #instruments dd { margin: 0; display: block; }
 /* featured demos */
 .tree ul.civs .chips button.history { color: var(--history); box-shadow: inset 0 -2px 0 var(--history); }

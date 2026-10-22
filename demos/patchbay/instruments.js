@@ -130,15 +130,30 @@ function renderInstruments() {
       techRow = tq;
     }
     const det = document.createElement("dl");
-    for (const [k, label] of [["origin", "Origin"], ["history", "History"], ["materials", "Materials"], ["usage", "How it is played"], ["skills", "Advanced techniques"], ["scenes", "Where it is heard"]]) {
-      if (!e[k]) continue; det.append(Object.assign(document.createElement("dt"), { textContent: tr(label) }), Object.assign(document.createElement("dd"), { textContent: tr(e[k]) }));
+    // Always shown: what it sounds like and its range. The rest folds into four sections.
+    const field = (dl, k, label) => { if (!e[k]) return; dl.append(Object.assign(document.createElement("dt"), { textContent: tr(label) }), Object.assign(document.createElement("dd"), { textContent: tr(e[k]) })); };
+    const chips = (dl, ids, label) => {
+      if (!ids || !ids.length) return; const dd = document.createElement("dd");
+      for (const p of ids) { const pe = byId.get(p); dd.append(pe ? Object.assign(document.createElement("a"), { href: `#inst-${p}`, className: "chip", textContent: pe.name }) : Object.assign(document.createElement("span"), { className: "chip", textContent: p })); }
+      dl.append(Object.assign(document.createElement("dt"), { textContent: tr(label) }), dd);
+    };
+    field(det, "sound", "Sound"); field(det, "range", "Range");
+    const GROUPS = [
+      ["Construction", [["acoustics", "How the sound is made"], ["materials", "Materials"], ["making", "How it is made"]]],
+      ["Playing", [["usage", "How it is played"], ["role", "Role in the ensemble"], ["players", "Who plays it"], ["tuning", "Tuning"], ["skills", "Advanced techniques"]], ["partners", "Plays with"]],
+      ["Context", [["scenes", "Where it is heard"], ["repertoire", "Repertoire"], ["notation", "Notation"], ["meaning", "Meaning"]]],
+      ["History", [["origin", "Origin"], ["finds", "Earliest evidence"], ["history", "History"], ["variants", "Variants"], ["today", "Today"], ["hs", "Hornbostel–Sachs"]], ["relatives", "Relatives"]],
+    ];
+    const more = [];
+    for (const [title, fields, chipField] of GROUPS) {
+      const dl = document.createElement("dl"); for (const [k, label] of fields) field(dl, k, label);
+      if (chipField) chips(dl, e[chipField[0]], chipField[1]);
+      if (!dl.children.length) continue;
+      const d = document.createElement("details"); d.className = "more";
+      d.append(Object.assign(document.createElement("summary"), { textContent: tr(title) }), dl); more.push(d);
     }
-    if (e.partners && e.partners.length) {
-      const dd = document.createElement("dd");
-      for (const p of e.partners) { const pe = byId.get(p); dd.append(pe ? Object.assign(document.createElement("a"), { href: `#inst-${p}`, className: "chip", textContent: pe.name }) : Object.assign(document.createElement("span"), { className: "chip", textContent: p })); }
-      det.append(Object.assign(document.createElement("dt"), { textContent: tr("Plays with") }), dd);
-    }
-    art.append(icon, head, ppl, keys, ...(techRow ? [techRow] : []), det);
+    if (e.uncertain) head.append(Object.assign(document.createElement("span"), { className: "info", textContent: " ⓘ", title: tr(e.uncertain), tabIndex: 0, role: "note" }));
+    art.append(icon, head, ppl, keys, ...(techRow ? [techRow] : []), det, ...more);
     art.addEventListener("pointerenter", () => { last = e; });
     return art;
   };
