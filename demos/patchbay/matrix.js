@@ -6,6 +6,7 @@
 "use strict";
 
 const ACTIVITIES = {
+  showcase: { zh: "楽器", glyph: "楽", en: "Instruments", about: "the instruments themselves: each plays the people's own tune alone, one by one, then all together", bpm: 92, mode: "scale", grid: 8 },
   hunt:   { zh: "狩猎", glyph: "猎", en: "Hunt", about: "vs nature: stalking in silence, holding breath, then the sudden chase and the strike", bpm: 124, mode: "dark", grid: 16,
     tune: [["x---0---x-0-0---", "repeat", 1, 1], ["x-0-x-0-0-x-x---", "neighbor", 1, 2], ["xxxxxxxxxxxx----", "step", 0, 7], ["x---x---x-------", "leap", 6, 0]],
     climb: true, prog: ["1", "1", "6,", "7,"], second: "third", horn: "call", timp: "pulse", perc: "heart", climax: "oct",
@@ -75,7 +76,7 @@ const ACTIVITIES = {
     adds: ["drone", "bell", "low", "second", "choir", "pad", "horns"] },
 };
 // Shown in this order: conflict, work and joy, the sky and the earth, life.
-const ACTIVITY_IDS = ["hunt", "battle", "siege", "triumph", "gather", "build", "voyage", "festival", "games", "ritual",
+const ACTIVITY_IDS = ["showcase", "hunt", "battle", "siege", "triumph", "gather", "build", "voyage", "festival", "games", "ritual",
   "rain", "drought", "flood", "wind", "fire", "thunder", "quake", "winter", "plague", "birth", "wedding", "death"];
 // Scenes a people would not have lived through.
 const NEVER = {
@@ -219,6 +220,36 @@ Object.assign(MOODS, {
     tune: [["xx-x-x--", "step", 2, 4], ["x-xx-x--", "step", 4, 2], ["xx-x-xx-", "leap", 3, 6], ["x-x-----", "step", 3, 0]],
     perc: "calm", horn: "call", timp: null, climb: false, climax: "oct", adds: ["second", "perc", "low", "harp", "whistle", "pad", "horns"] },
 });
+// Battles differ too: how a people fought shapes the sound.
+const BATTLE = (about, extra) => ({ act: "battle", about, ...extra });
+Object.assign(MOODS, {
+  horsearchers: { ...BATTLE("horse archers: hooves thunder, arrows hiss, the riders wheel and strike and never stand still", { bpm: 144,
+    tune: [["xxxxxxxx", "wave", 0, 4], ["xxxx-xxx", "wave", 4, 2], ["xxxxxxxx", "wave", 2, 7], ["x-x-x---", "leap", 6, 0]], grid: 8,
+    adds: ["perc", "ostinato", "second", "horns", "drive", "timp", "melee"] }), ids: "mongols huns cumans tatars golden-horde jurchens khitans magyars saracens lakota",
+    lines: ['drums@cavalry kit=horses "x...x...x...x...|................|..........x....." ?song.2-10', 'drums@riders kit=horses "................|x...............|..x...x...x...x." ?song.6-10'] },
+  elephants: { ...BATTLE("war elephants: the ground shakes under their feet, they trumpet, the line breaks", { bpm: 104 }),
+    ids: "hindustanis indians bengalis dravidians gurjaras delhi-sultanate tughlaq-dynasty khmer burmese",
+    lines: ['drums@elephants kit=elephants "x.......x.......|x.......x.......|....x.......x..." ?song.3-10', 'drums@trumpeting kit=elephants "x...............|................|................" ?song.5-10'] },
+  chariots: { ...BATTLE("chariots: wheels and hooves across the plain, archers on the platforms, the clash of the lines", { bpm: 132 }),
+    ids: "egyptians hittites shang sumerians assyrians babylonians",
+    lines: ['drums@chariots kit=horses "x.x.x.x.x.x.x.x.|................|..x.......x....." ?song.3-10', `drums@wheels kit=sky "X${".".repeat(31)}|${".".repeat(32)}|${".".repeat(32)}" ?song.5-10`] },
+  naval: { ...BATTLE("a sea battle: oars to the drum, ships closing, grappling hooks, boarding", { bpm: 112, prog: ["1", "6,", "7,", "1"] }),
+    ids: "vikings phoenicians carthaginians malay maltese",
+    lines: ['wind@sea 0.3 gust=0.1Hz', 'crowd@oars chant "HEI ya" "x---....x---...." voices=14 pitch=0.9 ?song.3-8'] },
+  gunpowder: { ...BATTLE("a battle of gunpowder: fife and drum, the lines advance, cannon and volleys of muskets", { bpm: 116 }),
+    ids: "americans dutch germans russians swedes mexicans ottomans spanish portuguese italians french",
+    lines: ['drums@fife-drum kit=orch "x...............|x.x.x.xxx.x.x.xx|................" ?song.2-10', 'drums@cannon kit=guns "x...............................|................................|................................" ?song.5-10',
+      'drums@muskets kit=guns "................|........x.......|x...............x.......x......." ?song.7-10'] },
+  ambush: { ...BATTLE("an ambush: silence in the forest, every breath held, then the attack comes from everywhere at once", { bpm: 132, grid: 16,
+    tune: [["x-------0-------", "repeat", 1, 1], ["0---x---0---x---", "neighbor", 1, 2], ["xxxxxxxxxxxxxxxx", "step", 0, 7], ["x-x-x-x-x-------", "leap", 6, 0]], perc: "heart" }),
+    ids: "mayans tupi lac-viet vietnamese muisca haudenosaunee mapuche" },
+  duel: { ...BATTLE("single combat: two warriors face each other, nothing moves; one cry, one stroke", { bpm: 84, grid: 8,
+    tune: [["x-------", "repeat", 2, 2], ["x---x---", "neighbor", 2, 3], ["x-------", "step", 4, 4], ["x-x-x---", "leap", 7, 0]], perc: "heart" }),
+    ids: "japanese sengoku-daimyo yamato", lines: ['crowd@kiai shout "EI" "x-------........" voices=2 pitch=1.1 ?song.9'] },
+  phalanx: { ...BATTLE("the phalanx: shields locked, a slow march to the pipe, the paean, then the push", { bpm: 96, perc: "march" }),
+    ids: "greeks athenians spartans macedonians romans minoans",
+    lines: ['crowd@paean chant "i-E PAI-an" "x-x-x---........" voices=24 pitch=0.9 ?song.4-8'] },
+});
 const moodOf = (civ, act) => Object.values(MOODS).find((m) => m.act === act && m.ids.split(" ").includes(civ.id));
 // What "gathering" is for a people that doesn't farm or forage the usual way, and its rhythm.
 const GATHER_AS = [
@@ -295,7 +326,38 @@ function storyBlock(text) {
   }
   return ['"""', ...out, '"""'];
 }
+// 楽: each of the culture's instruments plays its own tune alone for a bar, then all together.
+function composeShowcase(civ) {
+  const A = ACTIVITIES.showcase, scale = civ.scale, key = civ.key, sc = `${scale} ${key}`, bpm = Math.round(A.bpm * (civ.tempo || 1));
+  const motif = (civ.motifs[0] + " " + (civ.motifs[1] || civ.motifs[0])).trim().split(/\s+/);
+  const names = {}, L = [], secs = [];
+  const roles = [["lead", civ.lead], ["second", civ.second], ["flute", civ.flute], ["harp", civ.harp], ["horns", civ.horns], ["trem", civ.trem], ["low", civ.low],
+    ["drone", civ.drone], ["pad", civ.pad], ["choir", civ.choir], ["bell", civ.bell], ["timp", civ.timp]].filter(([, v]) => v);
+  const seen = new Set(), shown = [];
+  for (const [k, spec] of roles) { const r = role(spec); if (seen.has(r.name)) continue; seen.add(r.name); shown.push([k, r]); }
+  const one = shown.slice(0, 9); // nine solos, then the drums, then everyone
+  const lineOf = (r, phrase, grid, a, b) => {
+    let id = r.name; for (let j = 2; names[id]; j++) id = `${r.name}${j}`; names[id] = true;
+    L.push(`. ${r.kind}@${id} ${[sc, r.opts, `grid=${grid}`, phrase].filter(Boolean).join(" ")} ?song.${a === b ? a : `${a}-${b}`}`);
+  };
+  one.forEach(([k, r], i) => {
+    const bar = i + 1, held = ["drone", "timp", "bell"].includes(k);
+    lineOf(r, held ? q(["1+5", ...hold(7)]) : q(motif.slice(i % 2 ? 8 : 0, i % 2 ? 16 : 8).concat(Array(Math.max(0, 8 - motif.slice(i % 2 ? 8 : 0, i % 2 ? 16 : 8).length)).fill("-"))), 8, bar, bar);
+    secs.push(r.name);
+  });
+  const drumsBar = one.length + 1, tutti = drumsBar + 1;
+  L.push(`. drums@${civ.kit} kit=${civ.kit} "${(civ.grooves && civ.grooves.calm) || DEFAULT_GROOVES.calm}" ?song.${drumsBar}-${tutti + 1}`); secs.push(civ.kit);
+  for (const [k, r] of one.filter(([k]) => ["lead", "second", "harp", "low", "drone", "pad"].includes(k)))
+    lineOf(r, ["drone", "pad", "low"].includes(k) ? q(["1+5", ...hold(7)]) : q(motif.slice(0, 16)), 8, tutti, tutti + 1);
+  secs.push("together", "together2");
+  const head = [`# ${civ.zh} ${civ.name} × 楽器 Instruments — ${A.about}`, `# ${civ.signature || civ.note || ""}`,
+    `# one at a time: ${one.map(([, r]) => r.name).join(", ")}; then ${civ.kit} drums; then together`,
+    `. clock ${bpm} 4/4`, `. arrange@song ${secs.map((x) => `${x.replace(/[^\p{L}\p{N}_-]/gu, "")}:1bars`).join(" ")}`, `. scale@${scale} ${formatScaleDef(SCALES[scale])}`, ""];
+  const text = [...head, ...L, "", "*> reverb 2.5s wet=0.3", "> speaker 0.5", ""].join("\n");
+  try { return formatPatch(parsePatch(text.replace(/\n$/, ""))) + "\n"; } catch (e) { return text; }
+}
 function compose(civ, actId) {
+  if (actId === "showcase") return composeShowcase(civ);
   const fun = actId === "death" ? funeralOf(civ) : null;
   const mood = moodOf(civ, actId), gatherAs = actId === "gather" ? GATHER_AS.find(([ids]) => ids.split(" ").includes(civ.id)) : null;
   const A = { ...ACTIVITIES[actId], ...(fun ? FUNERALS[fun] : {}), ...(mood || {}) }, R = A.roles || {};
@@ -423,6 +485,7 @@ function compose(civ, actId) {
   adds.forEach((k, i) => (k === "perc" && drive > i ? layers.perc(i + 2, drive + 1) : layers[k](i + 2)));
   if (civ.extra) line(role(civ.extra), "grid=4", q(["1", "-", "-", "-"]), 9, 10);
   if (civ.cymbals !== false && !["death", "gather", "birth", "drought", "plague", "winter", "build", "voyage"].includes(actId)) drum("crash", "orch", "................|................|x...............", 9, 9);
+  if (mood && mood.lines) for (const l of mood.lines) L.push(`. ${own(l)}${/\?song\./.test(l) ? "" : ""}`);
   // Voices: the culture's war cry at the climax; people chatting while they gather.
   if (actId === "battle") for (const l of lookup(WAR_CRIES, civ) || ['crowd@cry shout "HAA" "x-------........"']) L.push(`. ${own(l)} ?song.9-10`);
   if (actId === "gather") {
@@ -561,7 +624,7 @@ function renderPlayer() {
     <div class="grid-wrap"><table><thead></thead><tbody></tbody></table></div>`;
   document.body.append(root);
   const head = root.querySelector("thead"), body = root.querySelector("tbody"), now = root.querySelector(".now");
-  const hr = document.createElement("tr"); hr.append(document.createElement("th"));
+  const hr = document.createElement("tr"); hr.append(document.createElement("th"), Object.assign(document.createElement("th"), { textContent: "the people and their instruments", className: "sig" }));
   for (const a of ACTIVITY_IDS) hr.append(Object.assign(document.createElement("th"), { textContent: ACTIVITIES[a].glyph, title: `${ACTIVITIES[a].zh} ${ACTIVITIES[a].en}: ${ACTIVITIES[a].about}`, scope: "col" }));
   head.append(hr);
   let current = null, switching = 0;
@@ -593,10 +656,14 @@ function renderPlayer() {
   const regions = [...new Set([...REGION_ORDER, ...CIVS.map((c) => c.region)])].filter((r) => CIVS.some((c) => c.region === r));
   for (const reg of regions) {
     const rr = document.createElement("tr"); rr.className = "region";
-    rr.append(Object.assign(document.createElement("th"), { textContent: reg, colSpan: ACTIVITY_IDS.length + 1, scope: "colgroup" })); body.append(rr);
+    rr.append(Object.assign(document.createElement("th"), { textContent: reg, colSpan: ACTIVITY_IDS.length + 2, scope: "colgroup" })); body.append(rr);
     for (const civ of CIVS.filter((c) => c.region === reg)) {
       const tr = document.createElement("tr");
       tr.append(Object.assign(document.createElement("th"), { textContent: `${civ.zh} ${civ.name}`, scope: "row", title: civ.note || "" }));
+      const intro = document.createElement("td"); intro.className = "sig"; intro.title = civ.note || "";
+      if (civ.signature) intro.append(Object.assign(document.createElement("b"), { textContent: civ.signature }));
+      intro.append(civ.intro || (civ.signature ? "" : civ.note || ""));
+      tr.append(intro);
       const ok = activitiesFor(civ);
       for (const a of ACTIVITY_IDS) {
         const td = document.createElement("td");

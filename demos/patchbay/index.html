@@ -223,7 +223,7 @@ ul.ideas { margin: 0; padding-left: 18px; display: grid; gap: 6px; font-size: 14
 a.to-player { font-size: 14px; font-weight: 500; margin-left: 10px; color: var(--feature); white-space: nowrap; }
 /* player: every piece as a play button */
 body.player-mode #app { display: none; }
-#player { display: none; max-width: 1400px; margin: 0 auto; }
+#player { display: none; width: 100%; }
 body.player-mode #player { display: block; }
 #player header { display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: baseline; margin-bottom: 12px; }
 #player h1 { margin: 0; font-size: 22px; }
@@ -246,6 +246,9 @@ body.player-mode #player { display: block; }
 #player .legend i { color: var(--history); font-style: normal; font-weight: 700; }
 #player .now .kind { font-size: 12px; font-weight: 700; margin-left: 6px; }
 #player .now .kind.history { color: var(--history); } #player .now .kind.imagined { color: var(--muted); }
+#player .grid-wrap table { width: 100%; }
+#player td.sig, #player th.sig { text-align: left; font-size: 12px; color: var(--muted); padding: 4px 12px; min-width: 220px; width: 40%; line-height: 1.35; }
+#player td.sig b { color: var(--ink); font-weight: 600; display: block; }
 #player td button[aria-pressed="true"] { background: var(--signal-soft); color: var(--ink); }
 #player .legend { font-size: 13px; color: var(--muted); }
 #player .legend b { color: var(--feature); }
@@ -1433,6 +1436,37 @@ KITS.work = ["hammer", "chisel", "heave"];
     else before(out, lane, t, accent);
   };
 }
+// Battle beasts and guns: horses (hooves, a neigh, an arrow's hiss), elephants
+// (a trumpet, a stamp, chains), gunpowder (cannon, musket, a volley).
+Object.assign(KITS, { horses: ["hooves", "neigh", "arrow"], elephants: ["elephant", "stomp", "chain"], guns: ["cannon", "musket", "volley"] });
+{
+  const before = kitHit;
+  const glide = (out, t, pts, dur, peak, type, bp) => { // a pitched cry following [time, freq] points
+    const o = ctx.createOscillator(), f = ctx.createBiquadFilter(), g = ctx.createGain(), v = ctx.createOscillator(), vd = ctx.createGain();
+    o.type = type; f.type = "bandpass"; f.frequency.value = bp; f.Q.value = 2.5; v.frequency.value = 11; vd.gain.value = 30; v.connect(vd).connect(o.frequency);
+    o.frequency.setValueAtTime(pts[0][1], t); for (const [dt, fr] of pts.slice(1)) o.frequency.linearRampToValueAtTime(fr, t + dt);
+    g.gain.setValueAtTime(0.0001, t); g.gain.linearRampToValueAtTime(peak, t + 0.06); g.gain.setValueAtTime(peak, t + dur * 0.7); g.gain.linearRampToValueAtTime(0.0001, t + dur);
+    o.connect(f).connect(g).connect(out); for (const x of [o, v]) { x.start(t); x.stop(t + dur + 0.05); }
+  };
+  kitHit = function (out, lane, t, accent) {
+    const a = accent ? 1.3 : 1, j = 0.92 + Math.random() * 0.16;
+    if (lane === "hooves") { for (const dt of [0, 0.07]) { voice(out, t + dt, { freq: 160 * j, endFreq: 90, dur: 0.07, peak: 0.35 * a, type: "triangle" }); noise(out, t + dt, 0.04, 0.12 * a, 500); } }
+    else if (lane === "neigh") glide(out, t, [[0, 700 * j], [0.15, 1300 * j], [0.5, 1000 * j], [0.8, 600 * j]], 0.9, 0.18 * a, "sawtooth", 1400);
+    else if (lane === "arrow") { const s2 = ctx.createBufferSource(), f = ctx.createBiquadFilter(), g = ctx.createGain(); if (!noiseBuf) noise(ctx.createGain(), t, 0.01, 0.0001, 100);
+      s2.buffer = noiseBuf; f.type = "bandpass"; f.Q.value = 6; f.frequency.setValueAtTime(3800 * j, t); f.frequency.exponentialRampToValueAtTime(1400, t + 0.3);
+      g.gain.setValueAtTime(0.0001, t); g.gain.linearRampToValueAtTime(0.25 * a, t + 0.12); g.gain.linearRampToValueAtTime(0.0001, t + 0.32);
+      s2.connect(f).connect(g).connect(out); s2.start(t); s2.stop(t + 0.35); voice(out, t + 0.32, { freq: 300, dur: 0.05, peak: 0.15 * a, type: "triangle" }); }
+    else if (lane === "elephant") glide(out, t, [[0, 380 * j], [0.12, 820 * j], [0.6, 700 * j], [1.0, 450 * j]], 1.1, 0.25 * a, "sawtooth", 900);
+    else if (lane === "stomp") { voice(out, t, { freq: 48, endFreq: 32, dur: 0.6, peak: 0.9 * a }); noise(out, t, 0.12, 0.15 * a, 120); }
+    else if (lane === "chain") for (let k = 0; k < 5; k++) voice(out, t + k * 0.03, { freq: (2400 + Math.random() * 1600), dur: 0.08, peak: 0.05 * a });
+    else if (lane === "cannon") { voice(out, t, { freq: 70, endFreq: 30, dur: 1.4, peak: 0.95 * a }); const s3 = ctx.createBufferSource(), lp = ctx.createBiquadFilter(), g = ctx.createGain(); if (!noiseBuf) noise(ctx.createGain(), t, 0.01, 0.0001, 100);
+      s3.buffer = noiseBuf; s3.loop = true; lp.type = "lowpass"; lp.frequency.setValueAtTime(1500, t); lp.frequency.exponentialRampToValueAtTime(120, t + 2);
+      g.gain.setValueAtTime(0.6 * a, t); g.gain.exponentialRampToValueAtTime(0.0001, t + 2.2); s3.connect(lp).connect(g).connect(out); s3.start(t); s3.stop(t + 2.3); }
+    else if (lane === "musket") { noise(out, t, 0.12, 0.5 * a, 1200); voice(out, t, { freq: 110, endFreq: 60, dur: 0.2, peak: 0.3 * a }); }
+    else if (lane === "volley") for (let k = 0; k < 12; k++) { const dt = Math.random() * 0.18; noise(out, t + dt, 0.1, 0.12 * a, 1000 + Math.random() * 800); }
+    else before(out, lane, t, accent);
+  };
+}
 // Weather: thunder (a long low rumble), a sharp crack, hail.
 KITS.sky = ["thunder", "crack", "hail"];
 {
@@ -1624,7 +1658,7 @@ for (const [k, doc] of [["marimba", "Marimba / balafon: wooden bars."], ["piano"
   ["bagpipe", "Bagpipe (gaida, tulum, dudy, säckpipa, uilleann): a reed chanter over a drone on the key's tonic."]]) {
   CATALOG[k] = { doc, args: MELODIC_ARGS };
 }
-CATALOG.drums.args.push(["kit", "rock", "rock, darbuka, taiko, opera (京剧), aztec, african, tabla, gamelan, celtic, flamenco, orch (orchestra), zhangu (战鼓), sky (thunder), temple (木魚 りん), work (hammer, chisel), daf (frame drum); battle: clash (steel, metal shields), woodshield, rattan (藤牌), hide", Object.keys(KITS), { re: new RegExp(`^(${Object.keys(KITS).join("|")})$`) }]);
+CATALOG.drums.args.push(["kit", "rock", "rock, darbuka, taiko, opera (京剧), aztec, african, tabla, gamelan, celtic, flamenco, orch (orchestra), zhangu (战鼓), sky (thunder), temple (木魚 りん), work (hammer, chisel), daf (frame drum), horses, elephants, guns; battle: clash (steel, metal shields), woodshield, rattan (藤牌), hide", Object.keys(KITS), { re: new RegExp(`^(${Object.keys(KITS).join("|")})$`) }]);
 CATALOG.drums.args[1][3] = [...new Set(Object.values(KITS).flat())];
 CATALOG.drums.args[1][4] = { re: new RegExp(`^(${[...new Set(Object.values(KITS).flat())].join("|")})$`) };
 
@@ -2658,6 +2692,8 @@ const VALUE_DOCS = {
   "kit.opera": "京剧 锣鼓: 板 ban (clapper, the beat), 锣 luo (gong), 钹 bo (cymbals).",
   "mode.shout": "Everyone shouts the words once per pattern, rising then falling: a war cry.", "mode.chant": "Short syllables together on the rhythm: hu! ha!",
   "mode.ululate": "A high trilled cry (the tongue flicks l-l-l), like zaghārīd.", "mode.murmur": "Chatter: people talk in bursts of random syllables (walla).",
+  "kit.horses": "Horses: hooves (a gallop), neigh, arrow (a hiss and a thud).", "kit.elephants": "War elephants: trumpet, stomp, chains.",
+  "kit.guns": "Gunpowder: cannon, musket, volley (many muskets at once).",
   "kit.daf": "Frame drum (daf, bendir, riq): dum (low), tek (rim), jingles.",
   "kit.work": "Work: hammer (on stone or wood), chisel (a ring), heave (hauling stone or timber).",
   "kit.temple": "Temple: 木魚 mokugyo (wooden fish), りん rin (bowl bell), 拍子木 hyoshigi (clappers).",
