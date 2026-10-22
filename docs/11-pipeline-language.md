@@ -20,7 +20,7 @@ vad>        stt       sensevoice
 stt>        overlay
 stt.final>  polish    auto
 #stt.final> translate en
-stt.final>  log=append transcripts/$date.stt
+stt.final>  append@log transcripts/$date.stt
 ```
 
 As shown in the menu (the part after `#` is generated live, never stored):
@@ -31,7 +31,7 @@ mic>        stt       sensevoice                # / 5 sentences · 120 chars · 
 stt>        overlay                             # - captions on screen
 stt.final>  polish    auto                      # - 5 done · “I'm at home.”
 #stt.final> translate en                        # off
-stt.final>  log=append transcripts/$date.stt    # - 5 lines
+stt.final>  append@log transcripts/$date.stt    # - 5 lines
 ```
 
 ## Syntax
@@ -39,7 +39,7 @@ stt.final>  log=append transcripts/$date.stt    # - 5 lines
 ```
 line   := blank | comment | node
 comment:= "#" text                          # anything that isn't "#" + node
-node   := "#"? head ws (name "=")? kind (ws arg)* (ws "#" text)?
+node   := "#"? head ws kind ("@" name)? (ws arg)* (ws "#" text)?
 head   := "."                               # source node: no input
         | "|"? ws? refs? ws? ">"            # input; bare ">" = previous node line
 refs   := ref (ws? "," ws? ref)*            # several refs fan in
@@ -65,10 +65,10 @@ name, kind, id, port, policy, key := [A-Za-z0-9_-]+
   complete line and `mic>` refers to it.
 - **Same kind more than once:** later unnamed nodes are numbered in order —
   `mic`, `mic2`, `mic3` — skipping names already taken. The formatter writes
-  those numbers down (`mic2=mic`), so a node added later gets the next free
+  those numbers down (`mic@mic2`), so a node added later gets the next free
   number instead of renumbering existing ones. (A new unnamed line placed
   *above* the bare `mic` takes the bare name and the old one gets the next
-  number; name it explicitly to avoid that.) An explicit name (`log=append`)
+  number; name it explicitly to avoid that.) An explicit name (`append@log`)
   works anywhere; a redundant `mic=mic` is dropped.
 - **Ids are names, not indexes.** Sequence vs parallel is a property of the
   graph shape.
@@ -81,7 +81,7 @@ no extra syntax:
 
 ```
 .           llm       ollama gemma3:4b
-.           llm2=llm  openai gpt-4.1-mini
+.           llm@llm2  openai gpt-4.1-mini
 stt.final>  polish                 # implicitly llm,stt.final> (first enabled llm)
 llm2,stt.final> translate en       # names its llm explicitly
 ```
@@ -209,7 +209,7 @@ emits `{"type":"decode","ms":N}` after every recognizer pass.
 - `>` (previous line) kept in a linear chain, made explicit (`id>`) once any
   node feeds more than one consumer; no leading `|`;
 - columns aligned per block (blank-line separated): head, node (`kind` or
-  `name=kind`), arguments; a trailing comment two spaces after the widest
+  `kind@name`), arguments; a trailing comment two spaces after the widest
   arguments;
 - blank lines, comments and line order preserved; status comments dropped.
 

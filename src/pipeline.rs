@@ -87,9 +87,9 @@ pub enum Head {
 pub struct NodeLine {
     pub enabled: bool,
     pub head: Head,
-    /// Node id: the explicit name (`log=append …`) or, if none, the kind.
+    /// Node id: the explicit name (`append@log …`) or, if none, the kind.
     pub id: String,
-    /// Whether the id was written explicitly (`name=kind`).
+    /// Whether the id was written explicitly (`kind@name`).
     pub named: bool,
     pub kind: String,
     /// Arguments as written (quotes kept so formatting round-trips).
@@ -305,12 +305,16 @@ fn parse_node(head: Head, rest: &str, enabled: bool, line: usize) -> Result<Node
     }
     // `kind` or `name=kind`; without a name the id is the kind.
     let tok = tokens.remove(0);
-    let (id, kind, named) = match tok.split_once('=') {
-        Some((id, kind)) => (id.to_string(), kind.to_string(), true),
-        None => (tok.clone(), tok.clone(), false),
+    // `kind` or `kind@name`; the older `name=kind` still reads.
+    let (id, kind, named) = if let Some((kind, id)) = tok.split_once('@') {
+        (id.to_string(), kind.to_string(), true)
+    } else if let Some((id, kind)) = tok.split_once('=') {
+        (id.to_string(), kind.to_string(), true)
+    } else {
+        (tok.clone(), tok.clone(), false)
     };
     if !is_id(&id) || !is_id(&kind) {
-        return Err(ParseError { line, message: format!("bad node `{tok}` (want `kind` or `name=kind`)") });
+        return Err(ParseError { line, message: format!("bad node `{tok}` (want `kind` or `kind@name`)") });
     }
     Ok(NodeLine { enabled, head, id, named, kind, args: tokens, comment })
 }
@@ -374,13 +378,13 @@ impl NodeLine {
         self.args.iter().filter_map(|a| parse_control(a)).collect()
     }
 
-    /// The node as written: `kind`, or `name=kind` whenever the id differs
+    /// The node as written: `kind`, or `kind@name` whenever the id differs
     /// from the kind. That includes auto names (`mic2`): writing them down
     /// keeps them stable, so a node added later gets the next free number
     /// instead of renumbering existing ones.
     pub fn token(&self) -> String {
         if self.id != self.kind {
-            format!("{}={}", self.id, self.kind)
+            format!("{}@{}", self.kind, self.id)
         } else {
             self.kind.clone()
         }
@@ -1114,8 +1118,8 @@ mod tests {
 .          mic
 mic>       stt        sensevoice vad=3s
 stt.final> polish     gemini
-stt.final> log=append $date.stt  # daily log
-#stt>      dbg=append debug.txt
+stt.final> append@log $date.stt  # daily log
+#stt>      append@dbg debug.txt
 ";
 
     #[test]
@@ -1165,7 +1169,7 @@ stt.final> log=append $date.stt  # daily log
         assert_eq!(ids, ["mic", "mic2", "mic3"]);
         // The formatter writes the auto names down…
         let f = p.format();
-        assert_eq!(f, ". mic\n. mic2=mic\n. mic3=mic\n");
+        assert_eq!(f, ". mic\n. mic@mic2\n. mic@mic3\n");
         // …so a node added later gets the next free number, not a reshuffle.
         let p = Pipeline::parse(&format!("{f}. mic\n")).unwrap();
         let ids: Vec<_> = p.nodes().map(|n| n.id.as_str()).collect();
@@ -1176,7 +1180,7 @@ stt.final> log=append $date.stt  # daily log
         let ids: Vec<_> = p.nodes().map(|n| n.id.as_str()).collect();
         assert_eq!(ids, ["mic", "mic4", "mic2", "mic3"]);
         // Explicit names are never taken by auto numbering.
-        let p = Pipeline::parse(". mic2=stt\n. mic\n. mic\n").unwrap();
+        let p = Pipeline::parse(". stt@mic2\n. mic\n. mic\n").unwrap();
         let ids: Vec<_> = p.nodes().map(|n| n.id.as_str()).collect();
         assert_eq!(ids, ["mic2", "mic", "mic3"]);
     }
@@ -1256,8 +1260,8 @@ stt.final> log=append $date.stt  # daily log
 .          mic                           # ~ ▁▃▇ · 3:42
 mic>       stt        sensevoice vad=3s  # / 12% busy
 stt.final> polish     gemini             # ? needs API key
-stt.final> log=append $date.stt          # -
-#stt>      dbg=append debug.txt          # off
+stt.final> append@log $date.stt          # -
+#stt>      append@dbg debug.txt          # off
 "
         );
         let back = Pipeline::parse(&shown).unwrap();
@@ -1273,7 +1277,7 @@ stt.final> log=append $date.stt          # -
         assert!(p.set_enabled("polish", false));
         assert!(p.format().contains("\n#stt.final> polish     gemini\n"), "{}", p.format());
         assert!(p.set_enabled("dbg", true));
-        assert!(p.format().contains("\nstt>        dbg=append debug.txt\n"), "{}", p.format());
+        assert!(p.format().contains("\nstt>        append@dbg debug.txt\n"), "{}", p.format());
         assert!(!p.set_enabled("nope", true));
     }
 
@@ -1281,7 +1285,7 @@ stt.final> log=append $date.stt          # -
     fn errors_name_the_line() {
         let e = Pipeline::parse(". mic\nx> stt\n").unwrap_err();
         assert_eq!((e.line, e.message.as_str()), (2, "unknown node `x`"));
-        let e = Pipeline::parse(". a=mic\n. a=mic\n").unwrap_err();
+        let e = Pipeline::parse(". mic@a\n. mic@a\n").unwrap_err();
         assert_eq!(e.line, 2);
         assert!(e.message.contains("duplicate node name `a`"));
         let e = Pipeline::parse("> stt\n").unwrap_err();
@@ -1305,7 +1309,7 @@ stt.final> log=append $date.stt          # -
 
     #[test]
     fn graph_json_round_trip() {
-        let src = ". mic default @iphone\nmic> stt sensevoice vad=3s\nstt.final:latest> pol=polish gemini\n#stt> dbg=append debug.txt\n";
+        let src = ". mic default @iphone\nmic> stt sensevoice vad=3s\nstt.final:latest> polish@pol gemini\n#stt> append@dbg debug.txt\n";
         let p = Pipeline::parse(src).unwrap();
         let g = p.to_graph_json();
         assert_eq!(g["nodes"]["mic"]["device"], "iphone");
@@ -1316,7 +1320,7 @@ stt.final> log=append $date.stt          # -
         assert_eq!((pe["sourceHandle"].as_str(), pe["policy"].as_str()), (Some("final"), Some("latest")));
         let back = Pipeline::from_graph_json(&g).unwrap();
         assert_eq!(back.to_graph_json(), g);
-        assert!(back.format().contains("pol=polish gemini"));
+        assert!(back.format().contains("polish@pol gemini"));
         let mic = back.nodes().find(|n| n.id == "mic").unwrap();
         assert_eq!((mic.token(), mic.args.clone()), ("mic".into(), vec!["default".into(), "@iphone".into()]));
     }
@@ -1399,7 +1403,7 @@ stt.final> log=append $date.stt          # -
         assert_eq!(ids("x"), ["mic"]);
         let f = p.format();
         let squeeze = f.split_whitespace().collect::<Vec<_>>().join(" ");
-        assert!(squeeze.contains("*> overlay --- . llm openai") && squeeze.contains("*> x=append b.txt"), "{f}");
+        assert!(squeeze.contains("*> overlay --- . llm openai") && squeeze.contains("*> append@x b.txt"), "{f}");
         assert_eq!(Pipeline::parse(&f).unwrap().format(), f);
     }
 
@@ -1413,7 +1417,7 @@ stt.final> log=append $date.stt          # -
 
     #[test]
     fn env_nodes_attach_to_nodes_that_need_them() {
-        let src = ". mic\nmic> stt\n. llm gemma3:4b\n. llm2=llm gpt-4.1-mini\nstt.final> polish\nllm2,stt.final> translate en\n";
+        let src = ". mic\nmic> stt\n. llm gemma3:4b\n. llm@llm2 gpt-4.1-mini\nstt.final> polish\nllm2,stt.final> translate en\n";
         let p = Pipeline::parse(src).unwrap();
         let eff = p.effective_inputs();
         let ids = |id: &str| eff[id].iter().map(|(r, i)| (r.node.clone(), *i)).collect::<Vec<_>>();
@@ -1429,7 +1433,7 @@ stt.final> log=append $date.stt          # -
         assert_eq!(imp, 1);
         assert_eq!(Pipeline::from_graph_json(&g).unwrap().to_graph_json(), g);
         // A disabled llm is skipped; the next enabled one is used.
-        let p = Pipeline::parse("#. llm a\n. llm2=llm b\n. x\nx> polish\n").unwrap();
+        let p = Pipeline::parse("#. llm a\n. llm@llm2 b\n. x\nx> polish\n").unwrap();
         assert_eq!(p.effective_inputs()["polish"].last().unwrap().0.node, "llm2");
     }
 
