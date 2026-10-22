@@ -251,6 +251,7 @@ body.player-mode #player { display: block; }
 #player td.sig b { color: var(--ink); font-weight: 600; display: block; }
 #player td button[aria-pressed="true"] { background: var(--signal-soft); color: var(--ink); }
 #player .legend { font-size: 13px; color: var(--muted); }
+#player .lang { font: inherit; font-size: 13px; padding: 2px 6px; margin-left: auto; }
 #player .legend b { color: var(--feature); }
 /*MONACO_CSS*/
 </style>
@@ -375,7 +376,7 @@ body.player-mode #player { display: block; }
 </aside>
 </div>
 
-<script>var CIVS = [], CULTURE_SCALES = {}, STORIES = {};</script>
+<script>var CIVS = [], CULTURE_SCALES = {}, STORIES = {}, I18N = { "zh-CN": { stories: {}, text: {} } };</script>
 <script src="cultures/asia.js"></script>
 <script src="cultures/westasia-africa.js"></script>
 <script src="cultures/ancient-americas.js"></script>
@@ -387,6 +388,13 @@ body.player-mode #player { display: block; }
 <script src="cultures/stories/ancient-americas.js"></script>
 <script src="cultures/stories/europe-west.js"></script>
 <script src="cultures/stories/europe-northeast.js"></script>
+<script src="cultures/i18n/zh-CN/text.js"></script>
+<script src="cultures/i18n/zh-CN/asia.js"></script>
+<script src="cultures/i18n/zh-CN/asia-south.js"></script>
+<script src="cultures/i18n/zh-CN/westasia-africa.js"></script>
+<script src="cultures/i18n/zh-CN/ancient-americas.js"></script>
+<script src="cultures/i18n/zh-CN/europe-west.js"></script>
+<script src="cultures/i18n/zh-CN/europe-northeast.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.52.2/min/vs/loader.js"></script>
 <script>
 "use strict";

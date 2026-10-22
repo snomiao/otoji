@@ -76,6 +76,18 @@ const ACTIVITIES = {
     adds: ["drone", "bell", "low", "second", "choir", "pad", "horns"] },
 };
 // Shown in this order: conflict, work and joy, the sky and the earth, life.
+// ── language: English, or a translation from cultures/i18n/<lang>/ ─────────
+const LANGS = { en: "English", "zh-CN": "简体中文" };
+let LANG = (() => {
+  const q = new URLSearchParams(location.search).get("lang");
+  if (q && LANGS[q]) return q;
+  try { const saved = localStorage.getItem("otoji-lang"); if (saved && LANGS[saved]) return saved; } catch (e) { /* storage unavailable */ }
+  return /^zh/i.test(navigator.language || "") ? "zh-CN" : "en";
+})();
+// A short text in the chosen language (looked up by its English), or the English.
+const tr = (en) => (LANG !== "en" && en && I18N[LANG] && I18N[LANG].text[en]) || en;
+// A story in the chosen language, or the English one.
+const storyText = (key) => (LANG !== "en" && I18N[LANG] && I18N[LANG].stories[key]) || STORIES[key];
 const ACTIVITY_IDS = ["showcase", "hunt", "battle", "siege", "triumph", "gather", "build", "voyage", "festival", "games", "ritual",
   "rain", "drought", "flood", "wind", "fire", "thunder", "quake", "winter", "plague", "birth", "wedding", "death"];
 // Scenes a people would not have lived through.
@@ -294,7 +306,7 @@ const lookup = (table, civ) => (table.find(([ids]) => named(ids, civ)) || [])[1]
 // Does an id list name this culture? An era row (like: "chinese") also matches its parent's id.
 const named = (ids, civ) => { const l = ids.split(" "); return l.includes(civ.id) || (!!civ.like && l.includes(civ.like)); };
 // "汉 Han · late", with the era when a people has several rows.
-const civLabel = (civ) => `${civ.zh} ${civ.name}${civ.era ? ` · ${civ.era}` : ""}`;
+const civLabel = (civ) => `${civ.zh} ${LANG === "zh-CN" ? "" : civ.name}${civ.era ? ` · ${tr(civ.era)}` : ""}`.replace(/\s+·/, " ·").trim();
 // Deterministic randomness per civilization × activity.
 function seeded(str) {
   let h = 2166136261; for (const ch of str) h = Math.imul(h ^ ch.codePointAt(0), 16777619);
@@ -319,7 +331,7 @@ function shapeBar(mask, shape, from, to, rnd) {
   let k = 0; return [...mask].map((c) => (c === "x" ? out[k++] : c));
 }
 // A story (cultures/stories/*.js) as a """ block, wrapped at ~76 columns.
-function storyBlock(text) {
+function storyBlock(text, lang = "en") {
   if (!text) return [];
   const out = [];
   for (const para of text.trim().split(/\n\s*\n/)) {
@@ -328,7 +340,7 @@ function storyBlock(text) {
     for (const w of para.split(/\s+/)) { if (line && (line + " " + w).length > 76) { out.push(line); line = w; } else line = line ? line + " " + w : w; }
     if (line) out.push(line);
   }
-  return ['"""', ...out, '"""'];
+  return [lang === "en" ? '"""' : `"""${lang}`, ...out, '"""'];
 }
 // 楽: each of the culture's instruments plays its own tune alone for a bar, then all together.
 function composeShowcase(civ) {
@@ -356,7 +368,7 @@ function composeShowcase(civ) {
   secs.push("together", "together2");
   const head = [`# ${civLabel(civ)} × 楽器 Instruments — ${A.about}`, `# ${civ.signature || civ.note || ""}`,
     `# one at a time: ${one.map(([, r]) => r.name).join(", ")}; then ${civ.kit} drums; then together`,
-    ...storyBlock(STORIES[`${civ.id}:showcase`] || civ.intro),
+    ...storyBlock(storyText(`${civ.id}:showcase`) || tr(civ.intro), LANG),
     `. clock ${bpm} 4/4`, `. arrange@song ${secs.map((x) => `${x.replace(/[^\p{L}\p{N}_-]/gu, "")}:1bars`).join(" ")}`, `. scale@${scale} ${formatScaleDef(SCALES[scale])}`, ""];
   const text = [...head, ...L, "", "*> reverb 2.5s wet=0.3", "> speaker 0.5", ""].join("\n");
   try { return formatPatch(parsePatch(text.replace(/\n$/, ""))) + "\n"; } catch (e) { return text; }
@@ -529,7 +541,7 @@ function compose(civ, actId) {
     `# ${civLabel(civ)} × ${A.zh} ${A.en}${fun ? ` (${fun})` : ""} — ${A.about}`,
     `# ${scale} on ${key} · ${bpm} bpm · bar 1: ${lead.name} alone; each bar adds one layer: ${adds.map(label).join(", ")} · climax · ebb · it loops`,
     civ.note ? `# ${civ.note}` : null,
-    ...storyBlock(STORIES[`${civ.id}:${actId}`]),
+    ...storyBlock(storyText(`${civ.id}:${actId}`), LANG),
     `. clock ${bpm} 4/4`,
     `. arrange@song ${secs.join(" ")}`,
     ...[...new Set([scale, A.climax === "bright" || A.climax === "dance" || A.open ? scaleOf("bright") : scale, A.danger ? scaleOf("dark") : scale])].map((n) => `. scale@${n} ${formatScaleDef(SCALES[n])}`),
@@ -560,7 +572,7 @@ const FEATURED = [
 const featuredKey = (k) => (k.includes(":") ? `m:${k}` : k);
 const FEATURED_KEYS = new Set(FEATURED.map(([k]) => featuredKey(k)));
 // A piece drawn from recorded history (its story isn't marked "Imagined:").
-const storyOf = (civ, a) => STORIES[`${civ.id}:${a}`];
+const storyOf = (civ, a) => STORIES[`${civ.id}:${a}`]; // the English decides history vs imagined
 const isHistory = (civ, a) => { const st = storyOf(civ, a); return !!st && !/Imagined:/i.test(st); };
 // ── the left nav: region → civilization → one chip per activity ────────
 const REGION_ORDER = ["East Asia", "South & Southeast Asia", "Steppe & Central Asia", "Middle East", "Africa", "Ancient Mediterranean & Near East",
@@ -623,14 +635,22 @@ renderMatrix();
 // ── player: every piece as a play button, no code ─────────────────────
 function renderPlayer() {
   const root = document.createElement("section"); root.id = "player"; root.setAttribute("aria-label", "Player");
-  root.innerHTML = `<header><h1>otoji · music of the world's peoples</h1><a class="to-player" href="?">✎ open the editor</a>
-    <span class="legend">${CIVS.length} peoples × ${ACTIVITY_IDS.length} scenes · each piece starts with one instrument and adds one every bar · <b>violet</b> = featured · <i>teal</i> = from recorded history (the rest are imagined scenes)</span></header>
-    <div class="now" aria-live="polite"><span class="title">Pick a piece below.</span><div class="story"></div></div>
-    <div class="grid-wrap"><table><thead></thead><tbody></tbody></table></div>`;
+  const legend = tr("{n} peoples × {m} scenes · each piece starts with one instrument and adds one every bar").replace("{n}", CIVS.length).replace("{m}", ACTIVITY_IDS.length);
+  root.innerHTML = `<header><h1>${tr("otoji · music of the world's peoples")}</h1><a class="to-player" href="?lang=${LANG}">${tr("✎ open the editor")}</a>
+    <span class="legend">${legend} · <b>${tr("violet")}</b> = ${tr("featured")} · <i>${tr("teal")}</i> = ${tr("from recorded history (the rest are imagined scenes)")}</span>
+    <select class="lang" aria-label="Language">${Object.entries(LANGS).map(([k, v]) => `<option value="${k}"${k === LANG ? " selected" : ""}>${v}</option>`).join("")}</select></header>
+    <div class="now" aria-live="polite"><span class="title">${tr("Pick a piece below.")}</span><div class="story"></div></div>`;
+  root.querySelector(".lang").addEventListener("change", (e) => {
+    LANG = e.target.value; try { localStorage.setItem("otoji-lang", LANG); } catch (err) { /* storage unavailable */ }
+    const u = new URL(location.href); u.searchParams.set("lang", LANG); history.replaceState(null, "", u);
+    if (running) stop(); root.remove(); renderPlayer();
+  });
+  root.insertAdjacentHTML("beforeend", `
+    <div class="grid-wrap"><table><thead></thead><tbody></tbody></table></div>`);
   document.body.append(root);
   const head = root.querySelector("thead"), body = root.querySelector("tbody"), now = root.querySelector(".now");
-  const hr = document.createElement("tr"); hr.append(document.createElement("th"), Object.assign(document.createElement("th"), { textContent: "the people and their instruments", className: "sig" }));
-  for (const a of ACTIVITY_IDS) hr.append(Object.assign(document.createElement("th"), { textContent: ACTIVITIES[a].glyph, title: `${ACTIVITIES[a].zh} ${ACTIVITIES[a].en}: ${ACTIVITIES[a].about}`, scope: "col" }));
+  const hr = document.createElement("tr"); hr.append(document.createElement("th"), Object.assign(document.createElement("th"), { textContent: tr("the people and their instruments"), className: "sig" }));
+  for (const a of ACTIVITY_IDS) hr.append(Object.assign(document.createElement("th"), { textContent: ACTIVITIES[a].glyph, title: `${ACTIVITIES[a].zh} ${LANG === "zh-CN" ? "" : ACTIVITIES[a].en}: ${tr(ACTIVITIES[a].about)}`, scope: "col" }));
   head.append(hr);
   let current = null, switching = 0;
   // Fades on the master gain: out before switching or stopping, in after starting.
@@ -651,24 +671,24 @@ function renderPlayer() {
     if (my !== switching) return; // another click came in while fading
     loadExample(key); await start(); fadeIn(1.0);
     const A = ACTIVITIES[a], f = FEATURED.find(([k]) => featuredKey(k) === key);
-    now.querySelector(".title").textContent = `${civLabel(civ)} × ${A.zh} ${A.en}${f ? " ★ " + f[2] : ""}`;
-    const kind = storyOf(civ, a) ? (isHistory(civ, a) ? ["history", "recorded history"] : ["imagined", "an imagined scene"]) : null;
+    now.querySelector(".title").textContent = `${civLabel(civ)} × ${A.zh}${LANG === "zh-CN" ? "" : " " + A.en}${f ? " ★ " + tr(f[2]) : ""}`;
+    const kind = storyOf(civ, a) ? (isHistory(civ, a) ? ["history", tr("recorded history")] : ["imagined", tr("an imagined scene")]) : null;
     let kb = now.querySelector(".kind"); if (!kb) { kb = document.createElement("span"); now.querySelector(".title").after(kb); }
     kb.className = "kind " + (kind ? kind[0] : ""); kb.textContent = kind ? kind[1] : "";
-    const sb = now.querySelector(".story"); sb.textContent = (STORIES[`${civ.id}:${a}`] || (a === "showcase" && civ.intro) || A.about) + (civ.note ? `\n♪ ${civ.note}` : "");
-    if (!now.querySelector("button")) { const st = Object.assign(document.createElement("button"), { type: "button", textContent: "■ Stop" }); st.addEventListener("click", () => { if (current) current.setAttribute("aria-pressed", "false"); current = null; stopSoftly(); }); now.querySelector(".title").after(st); }
+    const sb = now.querySelector(".story"); sb.textContent = (storyText(`${civ.id}:${a}`) || (a === "showcase" && tr(civ.intro)) || tr(A.about)) + (civ.note ? `\n♪ ${tr(civ.note)}` : "");
+    if (!now.querySelector("button")) { const st = Object.assign(document.createElement("button"), { type: "button", textContent: tr("■ Stop") }); st.addEventListener("click", () => { if (current) current.setAttribute("aria-pressed", "false"); current = null; stopSoftly(); }); now.querySelector(".title").after(st); }
   };
   const regions = [...new Set([...REGION_ORDER, ...CIVS.map((c) => c.region)])].filter((r) => CIVS.some((c) => c.region === r));
   for (const reg of regions) {
     const rr = document.createElement("tr"); rr.className = "region";
-    rr.append(Object.assign(document.createElement("th"), { textContent: reg, colSpan: ACTIVITY_IDS.length + 2, scope: "colgroup" })); body.append(rr);
+    rr.append(Object.assign(document.createElement("th"), { textContent: tr(reg), colSpan: ACTIVITY_IDS.length + 2, scope: "colgroup" })); body.append(rr);
     for (const civ of CIVS.filter((c) => c.region === reg)) {
-      const tr = document.createElement("tr");
-      tr.append(Object.assign(document.createElement("th"), { textContent: civLabel(civ), scope: "row", title: civ.note || "" }));
+      const row = document.createElement("tr");
+      row.append(Object.assign(document.createElement("th"), { textContent: civLabel(civ), scope: "row", title: civ.note || "" }));
       const intro = document.createElement("td"); intro.className = "sig"; intro.title = civ.note || "";
       if (civ.signature) intro.append(Object.assign(document.createElement("b"), { textContent: civ.signature }));
-      intro.append(civ.intro || (civ.signature ? "" : civ.note || ""));
-      tr.append(intro);
+      intro.append(tr(civ.intro) || (civ.signature ? "" : tr(civ.note) || ""));
+      row.append(intro);
       const ok = activitiesFor(civ);
       for (const a of ACTIVITY_IDS) {
         const td = document.createElement("td");
@@ -682,9 +702,9 @@ function renderPlayer() {
           btn.addEventListener("click", () => play(civ, a, btn));
           td.append(btn);
         }
-        tr.append(td);
+        row.append(td);
       }
-      body.append(tr);
+      body.append(row);
     }
   }
   if (/[?&]player\b/.test(location.search)) document.body.classList.add("player-mode");
