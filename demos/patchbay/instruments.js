@@ -92,7 +92,7 @@ function renderInstruments() {
   const list = INSTRUMENT_CATALOG.slice().sort((a, b) => FAMILY_ORDER.indexOf(a.family) - FAMILY_ORDER.indexOf(b.family) || a.name.localeCompare(b.name));
   root.innerHTML = `<header><h1>${tr("otoji · instruments of the world's peoples")}</h1>
     <a class="to-player" href="?player&lang=${LANG}">${tr("▶ the player")}</a> <a class="to-player" href="?lang=${LANG}">${tr("✎ the editor")}</a>
-    <input type="search" class="find" placeholder="${tr("find an instrument or a people…")}" aria-label="${tr("find")}">
+    <input type="search" class="find" placeholder="${tr("find: an instrument, a people, a technique, a material…")}" aria-label="${tr("find")}">
     <label class="grouping">${tr("group by")} <select class="group"><option value="type">${tr("type of instrument")}</option><option value="region">${tr("region and people")}</option></select></label>
     <button type="button" class="stop">${tr("■ Stop")}</button>
     <span class="legend">${list.length} ${tr("instruments")} · ${tr("click a shape to hear it · keys A S D F G H J K play the scale of the last one you touched · ♪ plays its people's tune · Esc or ■ stops")}</span></header>
@@ -104,7 +104,10 @@ function renderInstruments() {
   // One card per instrument (a fresh element each time it is shown).
   const makeCard = (e, where) => {
     const art = document.createElement("article"); art.className = "inst"; art.id = `inst-${e.id}${where ? "-" + where : ""}`; art.tabIndex = -1;
-    art.dataset.find = [e.name, e.native, e.zh, ...(e.aliases || []), ...e.peoples.map(civName)].join(" ").toLowerCase();
+    // the search box looks through every field, techniques included (Ctrl+F also finds text inside the folded sections)
+    art.dataset.find = [e.name, e.native, e.zh, ...(e.aliases || []), ...e.peoples.map(civName),
+      ...["sound", "range", "tuning", "acoustics", "materials", "making", "usage", "role", "players", "skills", "scenes", "repertoire", "notation", "meaning", "origin", "finds", "history", "variants", "today", "hs"].map((k) => e[k] || ""),
+      ...(e.techniques || []).flatMap((t) => [t.name, t.native || "", t.how || ""])].join(" ").toLowerCase();
     const icon = document.createElement("button"); icon.type = "button"; icon.className = "icon"; icon.title = tr("play a note"); icon.setAttribute("aria-label", `${tr("play")} ${e.name}`);
     icon.innerHTML = e.svg; // shapes only: checked by cultures/instruments/check.mjs
     const hs = homeScale(e);
