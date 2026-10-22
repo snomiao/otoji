@@ -754,6 +754,8 @@ mod tray_macos {
         let _ = std::process::Command::new("pkill")
             .args(["-f", LISTEN_PROC_PATTERN])
             .status();
+        eprintln!("otoji-tray: listen stopped from menu");
+        rebuild_menu();
     }
 
     /// LaunchAgent label from scripts/install-launch-agent.sh.
@@ -790,6 +792,7 @@ mod tray_macos {
             return;
         }
         overlay::start_listen();
+        rebuild_menu();
     }
 
     /// Click → open the most recent note's polished .md (or fall back to
