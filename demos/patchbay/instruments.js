@@ -86,6 +86,49 @@ function playTune(entry) {
   });
 }
 
+// ── a demo patch for an instrument, written from its data (no network, no model) ──
+const TECH_LETTER = { knock: "x", harmonic: "h", mute: "m", pizz: "p", spiccato: "s", "col-legno": "c", tremolo: "r", overblow: "o", flutter: "f", roll: "r" };
+function demoPatch(entry) {
+  const civ = CIVS.find((c) => c.id === entry.peoples[0]) || CIVS[0], sc = civ.scale, key = civ.key;
+  const motif = `${civ.motifs?.[0] || "1 2 3 5 6 5 3 2"} ${civ.motifs?.[1] || "1 2 3 5 3 2 1 -"}`.trim().split(/\s+/);
+  const notes = motif.map((t, i) => [t, i]).filter(([t]) => /^[#b]?[1-7]/.test(t));
+  // the tune again, each technique on the next note in turn
+  const techs = (entry.techniques || []).map((t) => t.play).filter((p) => p && p !== "normal");
+  const withTech = motif.slice(); let k = 0;
+  for (const [t, i] of notes) {
+    if (!techs.length) break; const p = techs[k++ % techs.length];
+    if (p === "slide") { const nxt = notes.find(([, j]) => j > i); withTech[i] = nxt ? `${t}~${nxt[0]}` : t; }
+    else if (p === "strum") { const d = Number(t.replace(/\D/g, "")) || 1; withTech[i] = `${t}+${((d + 1) % 7) + 1}+${((d + 3) % 7) + 1}/`; }
+    else if (p === "gliss") withTech[i] = `${t}~${t.replace(/^([#b]?[1-7])/, "$1'")}`;
+    else if (TECH_LETTER[p]) withTech[i] = t + TECH_LETTER[p];
+  }
+  const name = entry.aliases[0] === sc ? `${entry.aliases[0]}-${entry.family}` : entry.aliases[0], esc = (x) => (x || "").replace(/"""/g, "”””");
+  const lines = [`# ${entry.name}${entry.native ? ` (${entry.native})` : ""} — ${civLabel(civ)}`,
+    `# bars 1–2 the tune · bars 3–4 its techniques: ${(entry.techniques || []).map((t) => t.name).join(", ") || "—"} · bars 5–6 with a drone`,
+    '"""', ...[entry.sound, entry.origin, entry.usage].filter(Boolean).map(esc), '"""',
+    ". clock 84 4/4", ". arrange@song tune:2bars techniques:2bars together:2bars",
+    `. scale@${sc} ${formatScaleDef(SCALES[sc])}`, ""];
+  if (entry.kind.startsWith("kit:")) {
+    const [, kit] = entry.kind.split(":");
+    lines.push(`. drums@${name} kit=${kit} "${(civ.grooves && civ.grooves.calm) || "x...x...x...x...|....x.......x...|..x...x...x...x."}"`);
+  } else {
+    lines.push(`. ${entry.kind}@${name} ${sc} ${key} grid=8 "${motif.join(" ")}" ?song.1`,
+      `. ${entry.kind}@${name}-techniques ${sc} ${key} grid=8 "${withTech.join(" ")}" ?song.2`,
+      `. ${entry.kind}@${name}-again ${sc} ${key} grid=8 "${motif.join(" ")}" ?song.3`);
+    const partner = (entry.partners || []).map((p) => INSTRUMENT_CATALOG.find((x) => x.id === p)).find((x) => x && !x.kind.startsWith("kit:"));
+    lines.push(partner ? `. ${partner.kind}@${partner.aliases[0]}-drone ${sc} ${key} oct=3 grid=8 "1+5 - - - - - - -" ?song.3` : `. strings@drone ${sc} ${key} oct=3 grid=8 "1+5 - - - - - - -" ?song.3`);
+  }
+  lines.push("", "*> reverb 2s wet=0.25", "> speaker 0.5", "");
+  const text = lines.join("\n");
+  try { return formatPatch(parsePatch(text.replace(/\n$/, ""))) + "\n"; } catch (e) { return text; }
+}
+// Open a patch in the editor view of this page.
+function openInEditor(text) {
+  stopAudition(); document.body.classList.remove("instruments-mode", "player-mode");
+  const u = new URL(location.href); u.searchParams.delete("instruments"); u.searchParams.delete("player"); history.pushState(null, "", u);
+  ui.setText(text); applyText(text); window.scrollTo(0, 0);
+}
+
 // ── page ─────────────────────────────────────────────────────────────────
 function renderInstruments() {
   const root = document.createElement("section"); root.id = "instruments"; root.setAttribute("aria-label", "Instruments");
@@ -121,6 +164,8 @@ function renderInstruments() {
     hs.notes.forEach((f, i) => { const k = document.createElement("button"); k.type = "button"; k.textContent = hs.names[i]; k.title = "ASDFGHJK"[i] || ""; k.addEventListener("click", () => { last = e; auditionNote(e, f, 0.7, 0, hs.civ.key); }); keys.append(k); });
     const tune = Object.assign(document.createElement("button"), { type: "button", className: "tune", textContent: `♪ ${tr("its tune")}`, title: civName(hs.civ.id) });
     tune.addEventListener("click", () => { last = e; playTune(e); }); keys.append(tune);
+    const demo = Object.assign(document.createElement("button"), { type: "button", className: "tune", textContent: `✎ ${tr("demo")}`, title: tr("open a demo of this instrument in the editor") });
+    demo.addEventListener("click", () => openInEditor(demoPatch(e))); keys.append(demo);
     let techRow = null;
     if (e.techniques && e.techniques.length) {
       const tq = document.createElement("div"); tq.className = "techs";
