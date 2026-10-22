@@ -18,6 +18,13 @@ INSTRUMENT_CATALOG.push(
   skills: "Harmonics (泛音), open strings (散音) and stopped notes (按音), with left-hand slides 吟 yin and 猱 nao vibrato, 绰 chuo and 注 zhu glides.",
   scenes: "Private self-cultivation, scholars' gatherings and gardens, Confucian rites; rarely loud or public.",
   partners: ["xiao","se","xun"],
+  techniques: [
+    { name: "Harmonics", native: "泛音", how: "The left hand lightly touches a string at a hui marker while the right plucks, giving a clear, bell-like overtone.", play: "harmonic" },
+    { name: "Open string", native: "散音", how: "An unstopped string is plucked, giving a deep, round open tone.", play: "normal" },
+    { name: "Stopped note", native: "按音", how: "The left hand presses the string onto the board and the plucked note sounds firmer and more nasal.", play: "normal" },
+    { name: "Vibrato", native: "吟猱", how: "After plucking, the stopping finger rocks or swings along the string, making the dying note waver.", play: "slide" },
+    { name: "Glide", native: "绰注", how: "The stopping finger slides up (绰) or down (注) into the note, so the pitch arrives by a glide.", play: "slide" },
+  ],
 },
 {
   id: "guzheng",
@@ -36,6 +43,13 @@ INSTRUMENT_CATALOG.push(
   skills: "Left-hand 按 an pressing for bent notes, 揉弦 vibrato, glissando 刮奏, rapid 摇指 tremolo and 双手 two-hand counterpoint.",
   scenes: "Banquets and courts since the Han, regional folk schools (Shandong, Henan, Chaozhou, Hakka), modern concert stages.",
   partners: ["pipa","dizi","xiao"],
+  techniques: [
+    { name: "Tremolo", native: "摇指", how: "One finger pick strokes the string back and forth very fast, sustaining a shimmering, singing line.", play: "tremolo" },
+    { name: "Glissando", native: "刮奏", how: "The fingers sweep across many strings, giving a cascading pentatonic run.", play: "gliss" },
+    { name: "Press-bend", native: "按音", how: "The left hand presses the string beyond the bridge to raise the plucked pitch, bending it like a voice.", play: "slide" },
+    { name: "Harmonics", native: "泛音", how: "A string is touched at its midpoint while plucked, sounding a soft octave overtone.", play: "harmonic" },
+    { name: "Body tap", native: "拍板", how: "The player strikes the wooden board or frame with the hand or fingers as a percussive effect in modern pieces.", play: "knock" },
+  ],
 },
 {
   id: "se",
@@ -54,6 +68,10 @@ INSTRUMENT_CATALOG.push(
   skills: "Plucking octaves and paired notes with both hands; sustained ritual playing rather than ornament.",
   scenes: "Zhou court and ancestral rites, Confucian temple music, the classical pairing 琴瑟和鸣.",
   partners: ["guqin","bianzhong","sheng"],
+  techniques: [
+    { name: "Plucked octaves", how: "Both hands pluck paired strings an octave apart, giving a full, stately sound.", play: "normal" },
+    { name: "Damping", how: "A hand rests on the strings to stop them ringing, giving short, dry notes.", play: "mute" },
+  ],
 },
 {
   id: "pipa",
@@ -72,6 +90,13 @@ INSTRUMENT_CATALOG.push(
   skills: "轮指 lunzhi rolling tremolo, 扫弦 strumming, 推拉 bends, 绞弦 string-crossing for martial effects, harmonics.",
   scenes: "Tang court banquets, 南音 nanyin and 江南丝竹 ensembles, storytelling 评弹, solo pieces such as 十面埋伏.",
   partners: ["erhu","dizi","guzheng"],
+  techniques: [
+    { name: "Tremolo", native: "轮指", how: "The five fingers pluck the string in rapid succession, a continuous rolling sound.", play: "tremolo" },
+    { name: "Sweep", native: "扫", how: "The fingers sweep across all four strings at once, a sharp strummed chord used in martial pieces.", play: "strum" },
+    { name: "Push-pull bend", native: "推拉", how: "The left hand pushes or pulls the string sideways on the frets to bend the pitch.", play: "slide" },
+    { name: "Harmonics", native: "泛音", how: "A string is touched lightly over a node while plucked, sounding a thin, bell-like overtone.", play: "harmonic" },
+    { name: "Twisted strings", native: "绞弦", how: "Two strings are crossed and plucked together to imitate the clash of weapons, as in 十面埋伏.", play: "knock" },
+  ],
 },
 {
   id: "ruan",
@@ -90,6 +115,11 @@ INSTRUMENT_CATALOG.push(
   skills: "Tremolo, chordal strumming, single-line melody with slides.",
   scenes: "Wei-Jin scholars' gatherings, Tang court music, modern Chinese orchestras and plucked ensembles.",
   partners: ["pipa","konghou","sheng"],
+  techniques: [
+    { name: "Tremolo", native: "轮指", how: "Rapid alternate plectrum or finger strokes sustain a note with a warm, rolling sound.", play: "tremolo" },
+    { name: "Sweep", native: "扫", how: "The plectrum sweeps across all strings in a chord.", play: "strum" },
+    { name: "Harmonics", native: "泛音", how: "A string is touched lightly above a fret while plucked, giving a soft overtone.", play: "harmonic" },
+  ],
 },
 {
   id: "konghou",
@@ -108,6 +138,11 @@ INSTRUMENT_CATALOG.push(
   skills: "Glissando, plucked arpeggios and harmonics; on the modern double-row form, pressing strings to bend pitch.",
   scenes: "Han–Tang court banquets and Buddhist imagery, Goryeo and Joseon court ensembles, modern revival concerts.",
   partners: ["pipa","sheng","ruan"],
+  techniques: [
+    { name: "Glissando", native: "刮奏", how: "The fingers sweep across the strings, a rippling harp-like run.", play: "gliss" },
+    { name: "Press-bend", native: "按音", how: "On the modern double-sided konghou the left hand presses a string past its bridge to bend the pitch.", play: "slide" },
+    { name: "Harmonics", native: "泛音", how: "The palm touches a string at its midpoint while the fingers pluck, sounding an octave overtone.", play: "harmonic" },
+  ],
 },
 {
   id: "zhu",
@@ -126,6 +161,10 @@ INSTRUMENT_CATALOG.push(
   skills: "Striking rhythms with pitch inflected by the pressing hand.",
   scenes: "Warring States and Han courts, laments and farewell songs.",
   partners: ["guqin","se","xun"],
+  techniques: [
+    { name: "Struck note", native: "击", how: "A bamboo stick strikes the string while the left hand stops it, giving a sharp, ringing attack.", play: "normal" },
+    { name: "Pressed slide", how: "The stopping hand slides along the string after the strike to bend the pitch.", play: "slide" },
+  ],
 },
 {
   id: "sanxian",
@@ -144,6 +183,11 @@ INSTRUMENT_CATALOG.push(
   skills: "Slides along the fretless neck, rolls and strummed accompaniment patterns that follow the voice.",
   scenes: "大鼓 drum-ballad singing and 弹词 storytelling, 昆曲 and regional opera, 南音 ensembles.",
   partners: ["pipa","erhu","dizi"],
+  techniques: [
+    { name: "Tremolo", native: "轮指", how: "Rapid alternate strokes keep a note sounding with a buzzing roll.", play: "tremolo" },
+    { name: "Slide", native: "滑音", how: "The left finger slides along the fretless neck, gliding between notes.", play: "slide" },
+    { name: "Sweep", native: "扫", how: "The fingers or pick sweep across the three strings as a chord.", play: "strum" },
+  ],
 },
 {
   id: "xun",
@@ -162,6 +206,10 @@ INSTRUMENT_CATALOG.push(
   skills: "Breath-shaped dynamics and pitch bending, half-holing for semitones.",
   scenes: "Shang and Zhou ritual and ancestor ceremonies, Confucian temple music, modern meditative solos.",
   partners: ["chi","bianqing","guqin"],
+  techniques: [
+    { name: "Glide", how: "Partly shading a finger hole bends the dark, hollow tone between notes.", play: "slide" },
+    { name: "Breath vibrato", how: "Pulsing the breath makes the soft tone waver.", play: "normal" },
+  ],
 },
 {
   id: "chi",
@@ -180,6 +228,10 @@ INSTRUMENT_CATALOG.push(
   skills: "Soft breath control and half-holing.",
   scenes: "Zhou and later Confucian ritual music 雅乐.",
   partners: ["xun","se","bianzhong"],
+  techniques: [
+    { name: "Half-holing", how: "Covering a hole only partly shades the pitch between the stopped notes.", play: "slide" },
+    { name: "Overblowing", how: "Stronger breath jumps the tone to its upper octave.", play: "overblow" },
+  ],
 },
 {
   id: "yue",
@@ -198,6 +250,9 @@ INSTRUMENT_CATALOG.push(
   skills: "Simple melodies on three holes with breath shaping.",
   scenes: "Zhou and later court ritual dances and Confucian temple rites.",
   partners: ["chi","xun","bianqing"],
+  techniques: [
+    { name: "Overblowing", how: "Stronger breath lifts the notched-flute tone to its upper register.", play: "overblow" },
+  ],
 },
 {
   id: "dizi",
@@ -216,6 +271,12 @@ INSTRUMENT_CATALOG.push(
   skills: "Flutter tongue, 叠音 and 打音 ornaments, 颤音 trills, slides, circular breathing 循环换气, double tonguing.",
   scenes: "Han–Wei 鼓吹 military bands, Kunqu opera, 江南丝竹 teahouse ensembles, folk festivals.",
   partners: ["sheng","pipa","erhu"],
+  techniques: [
+    { name: "Flutter-tongue", native: "花舌", how: "The tongue rolls an r while blowing, giving a buzzing, birdlike tone.", play: "flutter" },
+    { name: "Glide", native: "滑音", how: "Fingers slide off or onto the holes so the pitch glides, common in northern styles.", play: "slide" },
+    { name: "Overblowing", how: "Stronger breath jumps to the bright upper octave.", play: "overblow" },
+    { name: "Trill", native: "颤音", how: "Rapid alternation of a finger over a hole decorates a held note.", play: "flutter" },
+  ],
 },
 {
   id: "xiao",
@@ -234,6 +295,11 @@ INSTRUMENT_CATALOG.push(
   skills: "Breath vibrato, slides and half-holing, soft dynamic control.",
   scenes: "Scholars' gardens with the guqin, 南音 nanyin, 江南丝竹, meditative solos.",
   partners: ["guqin","pipa","guzheng"],
+  techniques: [
+    { name: "Glide", native: "滑音", how: "Fingers slide slowly on or off the holes to bend the soft tone.", play: "slide" },
+    { name: "Breath vibrato", native: "气震音", how: "A pulsing breath makes the note waver gently.", play: "normal" },
+    { name: "Overblowing", how: "Stronger breath lifts the note to its upper octave.", play: "overblow" },
+  ],
 },
 {
   id: "paixiao",
@@ -252,6 +318,10 @@ INSTRUMENT_CATALOG.push(
   skills: "Moving the lips quickly across pipes, tilting for slight bends.",
   scenes: "Zhou and Han court ritual, Han–Wei military 鼓吹 bands, Confucian temple music.",
   partners: ["sheng","bianzhong","dizi"],
+  techniques: [
+    { name: "Sweep", how: "The lips glide across the row of pipes, a rising or falling run.", play: "gliss" },
+    { name: "Overblowing", how: "Stronger breath into a pipe makes it sound its upper partial.", play: "overblow" },
+  ],
 },
 {
   id: "sheng",
@@ -270,6 +340,11 @@ INSTRUMENT_CATALOG.push(
   skills: "Chords in fourths and fifths 和音, 花舌 flutter tongue, breath accents both blowing and drawing.",
   scenes: "Zhou ritual and court banquets, 江南丝竹 and 西安鼓乐 ensembles, Kunqu, Daoist and Buddhist music.",
   partners: ["dizi","yu","pipa"],
+  techniques: [
+    { name: "Flutter-tongue", native: "花舌", how: "Rolling the tongue while blowing gives a rapid buzzing pulse to the chord.", play: "flutter" },
+    { name: "Tonguing", native: "吐音", how: "Single, double or triple tonguing gives fast detached chords.", play: "normal" },
+    { name: "Bend", how: "Changing breath pressure slightly bends the pitch of the reeds.", play: "slide" },
+  ],
 },
 {
   id: "yu",
@@ -288,6 +363,9 @@ INSTRUMENT_CATALOG.push(
   skills: "Sustained chords and drones by blowing and drawing.",
   scenes: "Warring States and Han court banquets and ritual music.",
   partners: ["sheng","se","bianzhong"],
+  techniques: [
+    { name: "Sustained chord", how: "Several pipes are held together with steady breath, giving a drone chord.", play: "normal" },
+  ],
 },
 {
   id: "erhu",
@@ -306,6 +384,13 @@ INSTRUMENT_CATALOG.push(
   skills: "揉弦 vibrato, slides 滑音, 颤音 trills, harmonics, ricochet and imitations of horses and birds.",
   scenes: "Opera bands, 江南丝竹 teahouse ensembles, Chinese orchestras, street and solo concert music.",
   partners: ["pipa","dizi","guzheng"],
+  techniques: [
+    { name: "Vibrato", native: "揉弦", how: "The left hand presses and releases or rolls on the string, giving a singing waver.", play: "slide" },
+    { name: "Slide", native: "滑音", how: "The finger glides along the string between notes, imitating the voice.", play: "slide" },
+    { name: "Pizzicato", native: "拨弦", how: "A finger plucks the string instead of bowing, a short, dry note.", play: "pizz" },
+    { name: "Harmonics", native: "泛音", how: "A finger lightly touches a node while bowing, sounding a thin, flute-like overtone.", play: "harmonic" },
+    { name: "Tremolo bowing", native: "快弓", how: "Very fast short bow strokes give a trembling, agitated sound.", play: "tremolo" },
+  ],
 },
 {
   id: "xiqin",
@@ -324,6 +409,10 @@ INSTRUMENT_CATALOG.push(
   skills: "Slides and finger pressure for pitch inflection.",
   scenes: "Song and Liao court and banquet music, steppe entertainments.",
   partners: ["pipa","dizi","sheng"],
+  techniques: [
+    { name: "Slide", native: "滑音", how: "The finger slides along the string, gliding between notes.", play: "slide" },
+    { name: "Vibrato", native: "揉弦", how: "Pressing and releasing the string makes the bowed note waver.", play: "slide" },
+  ],
 },
 {
   id: "yazheng",
@@ -342,6 +431,10 @@ INSTRUMENT_CATALOG.push(
   skills: "Long sustained tones, left-hand pressing for vibrato and bends.",
   scenes: "Tang and Song court and folk music, northern Chinese folk ensembles.",
   partners: ["guzheng","sheng","dizi"],
+  techniques: [
+    { name: "Press-bend", native: "按音", how: "The left hand presses the string beyond the bridge to bend the scraped note.", play: "slide" },
+    { name: "Rosined-stick bowing", how: "A rosined stick scrapes the string, a rasping, sustained tone.", play: "normal" },
+  ],
 },
 {
   id: "suona",
@@ -360,6 +453,12 @@ INSTRUMENT_CATALOG.push(
   skills: "Circular breathing, 花舌 flutter tongue, imitating birds and the human voice, wide slides.",
   scenes: "Weddings and funerals, village festivals, 鼓吹乐 wind-and-drum bands, northern opera.",
   partners: ["dagu","gong","sheng"],
+  techniques: [
+    { name: "Flutter-tongue", native: "花舌", how: "Rolling the tongue while blowing gives a raucous buzzing.", play: "flutter" },
+    { name: "Circular breathing", native: "循环换气", how: "Breath stored in the cheeks keeps the sound going without a break.", play: "normal" },
+    { name: "Glide", native: "滑音", how: "Lip pressure and half-holing bend the pitch, imitating the voice and birds.", play: "slide" },
+    { name: "Overblowing", how: "Stronger breath and lip pressure push into the shrill upper register.", play: "overblow" },
+  ],
 },
 {
   id: "bili",
@@ -378,6 +477,9 @@ INSTRUMENT_CATALOG.push(
   skills: "Wide pitch bends by lip pressure, slides and vibrato.",
   scenes: "Tang court banquets, Buddhist and Daoist temple music, northern 笙管乐 ensembles.",
   partners: ["sheng","dizi","fangxiang"],
+  techniques: [
+    { name: "Lip bend", how: "Changing lip pressure on the large double reed bends the pitch widely.", play: "slide" },
+  ],
 },
 {
   id: "hujia",
@@ -396,6 +498,9 @@ INSTRUMENT_CATALOG.push(
   skills: "Mournful slides and breath effects; a voiced drone is sometimes hummed with it.",
   scenes: "Steppe camps and military marches, Han–Tang frontier poetry and laments.",
   partners: ["jiao","pipa","dagu"],
+  techniques: [
+    { name: "Glide", how: "Shading holes and breath bend the reedy tone between notes.", play: "slide" },
+  ],
 },
 {
   id: "jiao",
@@ -414,6 +519,9 @@ INSTRUMENT_CATALOG.push(
   skills: "Long held calls and swells, lip-produced overtones.",
   scenes: "Battles and military camps, watches on city walls, processions and funerals.",
   partners: ["jiangu","dagu","hujia"],
+  techniques: [
+    { name: "Overblowing", how: "Lip tension moves between the few natural notes of the horn.", play: "overblow" },
+  ],
 },
 {
   id: "bianzhong",
@@ -432,6 +540,10 @@ INSTRUMENT_CATALOG.push(
   skills: "Choosing the striking point for the two-tone pitches; damping by touch.",
   scenes: "Zhou court ritual and banquets, ancestor ceremonies, Confucian temple music.",
   partners: ["bianqing","se","sheng"],
+  techniques: [
+    { name: "Two tones", native: "双音", how: "Each bell is struck at its centre (正鼓) or side (侧鼓), sounding two different pitches.", play: "normal" },
+    { name: "Damping", how: "A hand or stick stops the bell's ring, shortening the note.", play: "mute" },
+  ],
 },
 {
   id: "bianqing",
@@ -450,6 +562,10 @@ INSTRUMENT_CATALOG.push(
   skills: "Even ringing strokes and damping in slow ritual tempo.",
   scenes: "Shang and Zhou ancestral rites, court ritual music, Confucian temple ceremonies.",
   partners: ["bianzhong","xun","se"],
+  techniques: [
+    { name: "Struck stone", how: "A mallet strikes the hanging L-shaped stone, a clear, short ringing tone.", play: "normal" },
+    { name: "Damping", how: "The stone is touched to stop its ring.", play: "mute" },
+  ],
 },
 {
   id: "bo",
@@ -468,6 +584,9 @@ INSTRUMENT_CATALOG.push(
   skills: "Placing single strokes in slow ritual time.",
   scenes: "Zhou court ritual, Confucian ceremonial music.",
   partners: ["bianzhong","bianqing","jiangu"],
+  techniques: [
+    { name: "Struck bell", how: "A wooden mallet strikes the large bell, a deep, long ring.", play: "normal" },
+  ],
 },
 {
   id: "nao",
@@ -486,6 +605,9 @@ INSTRUMENT_CATALOG.push(
   skills: "Striking at different points for two tones.",
   scenes: "Shang ancestor and oracle rites, royal ceremonies.",
   partners: ["bianqing","xun","tuogu"],
+  techniques: [
+    { name: "Struck bell", how: "The mouth-up bell is struck with a stick, a short, bright clang.", play: "normal" },
+  ],
 },
 {
   id: "chunyu",
@@ -504,6 +626,9 @@ INSTRUMENT_CATALOG.push(
   skills: "Signal strokes and steady beats with drums.",
   scenes: "Ba war dances 巴渝舞, battle signalling, ancestor rites.",
   partners: ["jiangu","bianzhong","jiao"],
+  techniques: [
+    { name: "Struck bell", how: "The hanging bell is struck at the side, a hollow, booming tone.", play: "normal" },
+  ],
 },
 {
   id: "goudiao",
@@ -522,6 +647,9 @@ INSTRUMENT_CATALOG.push(
   skills: "Striking sets in sequence for simple melodies.",
   scenes: "Wu-Yue court banquets and sacrifices.",
   partners: ["bianzhong","guqin","sheng"],
+  techniques: [
+    { name: "Struck bell", how: "The mouth-up bell is struck with a stick, a short ringing note.", play: "normal" },
+  ],
 },
 {
   id: "fangxiang",
@@ -540,6 +668,10 @@ INSTRUMENT_CATALOG.push(
   skills: "Melodic doubling and bright ringing accents.",
   scenes: "Tang and Song court banquets 燕乐, Liao court music.",
   partners: ["pipa","bili","sheng"],
+  techniques: [
+    { name: "Struck slab", how: "A small mallet strikes the iron slabs, a bright, bell-like tone.", play: "normal" },
+    { name: "Damping", how: "The slab is touched after striking to cut the ring.", play: "mute" },
+  ],
 },
 {
   id: "gong",
@@ -558,6 +690,11 @@ INSTRUMENT_CATALOG.push(
   skills: "Opera 锣鼓经 rhythmic patterns, damping, the rising or falling pitch of opera gongs.",
   scenes: "Opera, lion dances, temple fairs, processions and weddings.",
   partners: ["tanggu","tongbo","suona"],
+  techniques: [
+    { name: "Open stroke", how: "A padded beater strikes the centre and the gong rings with a swelling, shimmering tone.", play: "normal" },
+    { name: "Damped stroke", native: "闷锣", how: "The hand or body touches the gong to choke the sound into a short thud.", play: "mute" },
+    { name: "Roll", how: "Rapid soft strokes build up a rising roar.", play: "roll" },
+  ],
 },
 {
   id: "tongbo",
@@ -576,6 +713,11 @@ INSTRUMENT_CATALOG.push(
   skills: "Opera 锣鼓 patterns, open and damped strokes, rubbing.",
   scenes: "Buddhist temple ritual, opera, festivals and lion dances.",
   partners: ["gong","dagu","pipa"],
+  techniques: [
+    { name: "Clash", how: "The two cymbals are struck together and allowed to ring.", play: "normal" },
+    { name: "Choked clash", native: "闷镲", how: "The cymbals are pressed together after striking, a short, dry crash.", play: "mute" },
+    { name: "Rubbing", how: "The cymbal edges are rubbed together, a hissing shimmer.", play: "tremolo" },
+  ],
 },
 {
   id: "yaoling",
@@ -594,6 +736,9 @@ INSTRUMENT_CATALOG.push(
   skills: "Rhythmic hip swings in time with the drum.",
   scenes: "Shamanic healing and ancestor rites.",
   partners: ["untun","kouxian","erhu"],
+  techniques: [
+    { name: "Shaking", how: "The shaman shakes the hips so the waist bells jangle with each step.", play: "tremolo" },
+  ],
 },
 {
   id: "jiangu",
@@ -612,6 +757,11 @@ INSTRUMENT_CATALOG.push(
   skills: "Paired strikes and dance-like stick movements.",
   scenes: "Zhou and Han court and ritual music, Han acrobatic and banquet shows.",
   partners: ["bianzhong","jiao","sheng"],
+  techniques: [
+    { name: "Head stroke", how: "A stick strikes the head, a deep resonant boom.", play: "normal" },
+    { name: "Rim stroke", how: "The stick hits the wooden rim or barrel, a dry click.", play: "knock" },
+    { name: "Roll", how: "Rapid alternating strokes give a continuous thunder.", play: "roll" },
+  ],
 },
 {
   id: "dagu",
@@ -630,6 +780,11 @@ INSTRUMENT_CATALOG.push(
   skills: "Rolls, accents at centre and edge, 锣鼓 patterns that lead the band.",
   scenes: "Battles, temple fairs, New Year festivals, dragon-boat races.",
   partners: ["gong","tongbo","suona"],
+  techniques: [
+    { name: "Centre stroke", how: "A stick strikes the centre, a deep boom.", play: "normal" },
+    { name: "Rim stroke", native: "鼓边", how: "The stick strikes the rim or edge, a sharp, dry crack.", play: "knock" },
+    { name: "Roll", how: "Fast alternating strokes give a rumbling roll.", play: "roll" },
+  ],
 },
 {
   id: "tanggu",
@@ -648,6 +803,12 @@ INSTRUMENT_CATALOG.push(
   skills: "Rolls 滚奏 and 锣鼓经 patterns, centre-to-edge tone changes.",
   scenes: "Opera battle scenes, festivals, lion dances, 吹打 ensembles.",
   partners: ["gong","tongbo","suona"],
+  techniques: [
+    { name: "Centre stroke", how: "A stick strikes the head centre, a deep boom.", play: "normal" },
+    { name: "Edge stroke", how: "Striking near the edge gives a higher, thinner sound.", play: "mute" },
+    { name: "Rim knock", how: "The stick hits the wooden barrel, a dry click.", play: "knock" },
+    { name: "Roll", how: "Rapid alternate strokes build a rolling crescendo.", play: "roll" },
+  ],
 },
 {
   id: "tuogu",
@@ -666,6 +827,10 @@ INSTRUMENT_CATALOG.push(
   skills: "Deep single strokes and rolls.",
   scenes: "Neolithic and Shang chiefly and royal rites, ancestor ceremonies.",
   partners: ["nao","bianqing","xun"],
+  techniques: [
+    { name: "Head stroke", how: "A beater strikes the skin, a heavy boom.", play: "normal" },
+    { name: "Roll", how: "Fast strokes give a thunderous roll.", play: "roll" },
+  ],
 },
 {
   id: "kouxian",
@@ -684,6 +849,10 @@ INSTRUMENT_CATALOG.push(
   skills: "Changing mouth shape and breath to select overtones; speech-like courting patterns.",
   scenes: "Courting, private song, shamanic rites.",
   partners: ["yaoling","untun","erhu"],
+  techniques: [
+    { name: "Mouth resonance", how: "Changing the mouth shape while the reed vibrates picks out overtone melodies.", play: "harmonic" },
+    { name: "Plucked drone", how: "The reed is plucked or the string jerked, a buzzing drone.", play: "normal" },
+  ],
 },
 {
   id: "untun",
@@ -702,6 +871,10 @@ INSTRUMENT_CATALOG.push(
   skills: "Steady trance rhythms, accelerating rolls.",
   scenes: "Shamanic healing and ancestor rites.",
   partners: ["yaoling","kouxian","erhu"],
+  techniques: [
+    { name: "Frame stroke", how: "A beater strikes the frame-drum skin, a deep, ringing thud.", play: "normal" },
+    { name: "Roll", how: "Rapid strokes during shamanic rites give a continuous rumble.", play: "roll" },
+  ],
 },
 {
   id: "koto",
@@ -720,6 +893,13 @@ INSTRUMENT_CATALOG.push(
   skills: "押し手 oshide pressing for raised notes, 引き色 hikiiro, 後押し atooshi, glissando 流し爪, tremolo 散し爪.",
   scenes: "Edo-period salon music 地歌箏曲, sankyoku with shamisen and shakuhachi, New Year pieces such as 六段.",
   partners: ["shamisen","shakuhachi","kokyu"],
+  techniques: [
+    { name: "Press-bend", native: "押し手", how: "The left hand presses the string beyond the bridge to raise the plucked pitch a half or whole step.", play: "slide" },
+    { name: "Glissando", native: "流し爪", how: "A pick sweeps across the strings, a rippling run.", play: "gliss" },
+    { name: "Tremolo", native: "かき爪 / トレモロ", how: "Rapid back-and-forth strokes on one string sustain a shimmering note.", play: "tremolo" },
+    { name: "Pulled scrape", native: "すり爪", how: "The edges of the picks scrape along the string's length, a rasping sweep.", play: "slide" },
+    { name: "Harmonics", native: "ハーモニクス", how: "A string is touched at its midpoint while plucked, sounding a soft octave overtone (in modern pieces).", play: "harmonic" },
+  ],
 },
 {
   id: "gakuso",
@@ -738,6 +918,10 @@ INSTRUMENT_CATALOG.push(
   skills: "Patterned arpeggios marking the beat cycle, without pressing the strings.",
   scenes: "Imperial court gagaku, Heian aristocratic music-making, shrine and temple ceremonies.",
   partners: ["gakubiwa","sho","ryuteki"],
+  techniques: [
+    { name: "Stroke patterns", native: "閑掻・早掻", how: "Set patterns of two or three plucked strings punctuate the gagaku melody.", play: "normal" },
+    { name: "Sweep", how: "Several strings are swept in one gesture, a soft arpeggio.", play: "gliss" },
+  ],
 },
 {
   id: "gakubiwa",
@@ -756,6 +940,9 @@ INSTRUMENT_CATALOG.push(
   skills: "Arpeggiated chords swept to the melody note, set patterns per mode.",
   scenes: "Imperial court gagaku and the Heian aristocracy.",
   partners: ["gakuso","sho","hichiriki"],
+  techniques: [
+    { name: "Arpeggiated chord", how: "The plectrum sweeps across the four strings slowly, a broken chord that marks the beat.", play: "strum" },
+  ],
 },
 {
   id: "satsuma-biwa",
@@ -774,6 +961,11 @@ INSTRUMENT_CATALOG.push(
   skills: "Pressing behind high frets to bend pitch, percussive bachi strikes on the body, sweeping rolls.",
   scenes: "Samurai education and war-tale recitation such as the 平家物語 and 城山.",
   partners: ["shakuhachi","shamisen","dadaiko"],
+  techniques: [
+    { name: "Plectrum strike", native: "撥打", how: "The large plectrum strikes the string and the body hard, a percussive, buzzing attack.", play: "knock" },
+    { name: "Press-bend", how: "Pressing the string down between the high frets raises the pitch sharply.", play: "slide" },
+    { name: "Sweep", how: "The plectrum sweeps across the strings in a dramatic chord.", play: "strum" },
+  ],
 },
 {
   id: "shamisen",
@@ -792,6 +984,13 @@ INSTRUMENT_CATALOG.push(
   skills: "さわり sawari buzzing resonance, スリ slides, ハジキ left-hand plucks, 打ち hammering, Tsugaru-style fast strikes.",
   scenes: "Kabuki and bunraku, 長唄 and 地歌, geisha entertainment, folk songs.",
   partners: ["koto","shakuhachi","kokyu"],
+  techniques: [
+    { name: "Sawari buzz", native: "さわり", how: "The lowest string touches the neck to make a buzzing resonance on every note.", play: "normal" },
+    { name: "Body strike", native: "打ち", how: "The bachi strikes the skin as well as the string, a sharp percussive snap in tsugaru style.", play: "knock" },
+    { name: "Hammer-on", native: "打ち指", how: "A left finger hammers onto the string, sounding a note without the plectrum.", play: "normal" },
+    { name: "Pluck-off", native: "はじき", how: "A left finger plucks the string upward, a soft, light note.", play: "pizz" },
+    { name: "Slide", native: "スリ", how: "The finger slides along the fretless neck, gliding between notes.", play: "slide" },
+  ],
 },
 {
   id: "wagon",
@@ -810,6 +1009,10 @@ INSTRUMENT_CATALOG.push(
   skills: "菅掻 sugagaki strumming across all strings, left-hand plucked notes.",
   scenes: "Shinto shrine rites, imperial court kagura and 東遊 azuma-asobi.",
   partners: ["ryuteki","hichiriki","shoko"],
+  techniques: [
+    { name: "Sweep", how: "A tortoiseshell plectrum sweeps across all six strings, a soft rolled chord.", play: "strum" },
+    { name: "Damping", how: "The left hand damps strings so only chosen ones sound in the sweep.", play: "mute" },
+  ],
 },
 {
   id: "kokyu",
@@ -828,6 +1031,10 @@ INSTRUMENT_CATALOG.push(
   skills: "Rotating the body to change strings, slides and vibrato.",
   scenes: "Sankyoku chamber music, Edo salons, the Owara festival.",
   partners: ["koto","shamisen","shakuhachi"],
+  techniques: [
+    { name: "Rotating bow", how: "The instrument is turned on its spike to bring a string to the bow, a smooth, nasal tone.", play: "normal" },
+    { name: "Slide", how: "The finger slides along the fretless neck, gliding between notes.", play: "slide" },
+  ],
 },
 {
   id: "shakuhachi",
@@ -846,6 +1053,13 @@ INSTRUMENT_CATALOG.push(
   skills: "メリ meri and カリ kari pitch bending, ムラ息 muraiki breathy attack, 首振り head-shaking vibrato, 玉音 flutter tongue.",
   scenes: "Zen meditation and honkyoku, sankyoku chamber music, folk song 民謡.",
   partners: ["koto","shamisen","kokyu"],
+  techniques: [
+    { name: "Meri / kari", native: "メリ・カリ", how: "Lowering or raising the chin against the edge bends the pitch down or up.", play: "slide" },
+    { name: "Muraiki", native: "ムライキ", how: "A forceful, breathy attack that makes the tone rough and windy.", play: "flutter" },
+    { name: "Koro-koro", native: "コロコロ", how: "Rapid alternation of finger holes gives a rolling trill.", play: "flutter" },
+    { name: "Head shake", native: "首振り", how: "Swinging the head makes the tone sway in a broad vibrato.", play: "slide" },
+    { name: "Overblowing", how: "Stronger breath lifts the tone to the second octave.", play: "overblow" },
+  ],
 },
 {
   id: "shinobue",
@@ -864,6 +1078,10 @@ INSTRUMENT_CATALOG.push(
   skills: "指打ち finger-tapped ornaments, breath accents, high shrill passages.",
   scenes: "Shinto festivals 祭り, 獅子舞 lion dances, kabuki and nagauta.",
   partners: ["odaiko","kane","shamisen"],
+  techniques: [
+    { name: "Uchiyubi", native: "打ち指", how: "A finger strikes a hole to separate repeated notes instead of tonguing.", play: "normal" },
+    { name: "Overblowing", how: "Stronger breath jumps to the shrill upper octave.", play: "overblow" },
+  ],
 },
 {
   id: "ryuteki",
@@ -882,6 +1100,10 @@ INSTRUMENT_CATALOG.push(
   skills: "Ornamented elaborations around the hichiriki melody, breath swells, 塩梅 enbai-like glides.",
   scenes: "Imperial court gagaku and bugaku dance, shrine and temple ceremonies.",
   partners: ["hichiriki","sho","gakubiwa"],
+  techniques: [
+    { name: "Glide", native: "塩梅", how: "Shading the holes and breath bends the pitch between notes.", play: "slide" },
+    { name: "Overblowing", how: "Stronger breath lifts to the upper octave.", play: "overblow" },
+  ],
 },
 {
   id: "komabue",
@@ -900,6 +1122,9 @@ INSTRUMENT_CATALOG.push(
   skills: "Ornamented melodic lines, breath swells.",
   scenes: "Komagaku pieces and bugaku 'dances of the right' 右舞 at court and shrines.",
   partners: ["hichiriki","shoko","gakubiwa"],
+  techniques: [
+    { name: "Overblowing", how: "Stronger breath lifts the thin tone to the upper octave.", play: "overblow" },
+  ],
 },
 {
   id: "nohkan",
@@ -918,6 +1143,10 @@ INSTRUMENT_CATALOG.push(
   skills: "The ヒシギ hishigi shriek, 指打ち finger ornaments, set melodic patterns 唱歌 shōga.",
   scenes: "Noh and kyōgen theatre, kabuki, warrior-class entertainment.",
   partners: ["shinobue","dadaiko","shamisen"],
+  techniques: [
+    { name: "Hishigi", native: "ヒシギ", how: "A piercing overblown cry high in the range, opening Noh pieces.", play: "overblow" },
+    { name: "Glide", how: "Fingers slide off the holes so the pitch glides.", play: "slide" },
+  ],
 },
 {
   id: "hichiriki",
@@ -936,6 +1165,9 @@ INSTRUMENT_CATALOG.push(
   skills: "塩梅 enbai pitch-sliding between notes, breath swells.",
   scenes: "Imperial court gagaku, bugaku dance, shrine ceremonies and weddings.",
   partners: ["ryuteki","sho","gakuso"],
+  techniques: [
+    { name: "Enbai", native: "塩梅", how: "Changing lip pressure on the reed glides the pitch between notes.", play: "slide" },
+  ],
 },
 {
   id: "sho",
@@ -954,6 +1186,10 @@ INSTRUMENT_CATALOG.push(
   skills: "Aitake cluster chords and the 手移り te-utsuri shifts between them, continuous sound by blowing and drawing.",
   scenes: "Imperial court gagaku, bugaku dance, Shinto and Buddhist ceremonies.",
   partners: ["hichiriki","ryuteki","gakubiwa"],
+  techniques: [
+    { name: "Aitake chord", native: "合竹", how: "Several pipes sound together as a sustained cluster chord.", play: "normal" },
+    { name: "Te-utsuri", native: "手移り", how: "Fingers change one pipe at a time so the chord shifts smoothly.", play: "slide" },
+  ],
 },
 {
   id: "horagai",
@@ -972,6 +1208,10 @@ INSTRUMENT_CATALOG.push(
   skills: "Overtone calls and long held patterns; signal codes for marches and attacks.",
   scenes: "Mountain ascetic rites, temple ceremonies, Sengoku battlefields.",
   partners: ["jindaiko","dora","kane"],
+  techniques: [
+    { name: "Overblowing", how: "Lip tension switches the conch between its few natural tones.", play: "overblow" },
+    { name: "Lip glide", how: "Bending lip pressure slides the blast between tones.", play: "slide" },
+  ],
 },
 {
   id: "dadaiko",
@@ -990,6 +1230,9 @@ INSTRUMENT_CATALOG.push(
   skills: "Placing single strong strokes at the end of each cycle.",
   scenes: "Grand bugaku performances at the imperial court and great shrines.",
   partners: ["sho","hichiriki","shoko"],
+  techniques: [
+    { name: "Paired strokes", how: "Left and right beaters strike the great drum, a soft then loud boom.", play: "normal" },
+  ],
 },
 {
   id: "gakudaiko",
@@ -1008,6 +1251,9 @@ INSTRUMENT_CATALOG.push(
   skills: "Soft 図 zu and strong 百 hyaku strokes at set points.",
   scenes: "Imperial court gagaku kangen performances.",
   partners: ["shoko","sho","hichiriki"],
+  techniques: [
+    { name: "Paired strokes", how: "A soft left stroke followed by a loud right stroke marks the cycle.", play: "normal" },
+  ],
 },
 {
   id: "odaiko",
@@ -1026,6 +1272,11 @@ INSTRUMENT_CATALOG.push(
   skills: "Powerful strokes, rim clicks, the shouts 掛け声 kakegoe that drive the rhythm.",
   scenes: "Shrine festivals, temple ceremonies, Bon dances, modern taiko troupes.",
   partners: ["shinobue","kane","shamisen"],
+  techniques: [
+    { name: "Centre stroke", how: "Thick bachi strike the centre, a deep, thunderous boom.", play: "normal" },
+    { name: "Rim stroke", native: "ふち", how: "The bachi hit the drum's wooden rim, a sharp click.", play: "knock" },
+    { name: "Roll", how: "Rapid alternating strokes build a rising thunder.", play: "roll" },
+  ],
 },
 {
   id: "jindaiko",
@@ -1044,6 +1295,11 @@ INSTRUMENT_CATALOG.push(
   skills: "Signal rhythms for marching and attack.",
   scenes: "Sengoku battlefields and camps, castle signals.",
   partners: ["horagai","dora","kane"],
+  techniques: [
+    { name: "Centre stroke", how: "Bachi strike the head, a deep boom.", play: "normal" },
+    { name: "Rim stroke", native: "ふち", how: "The bachi hit the rim, a dry crack.", play: "knock" },
+    { name: "Roll", how: "Rapid strokes give a rolling crescendo.", play: "roll" },
+  ],
 },
 {
   id: "shoko",
@@ -1062,6 +1318,9 @@ INSTRUMENT_CATALOG.push(
   skills: "Single 'chin' strokes and paired 'chi-chin' strokes on set beats.",
   scenes: "Imperial court gagaku and bugaku, shrine and temple ceremonies.",
   partners: ["gakudaiko","sho","hichiriki"],
+  techniques: [
+    { name: "Struck gong", how: "Two horn-tipped sticks strike the small gong, a bright, short clang.", play: "normal" },
+  ],
 },
 {
   id: "kane",
@@ -1080,6 +1339,10 @@ INSTRUMENT_CATALOG.push(
   skills: "Interlocking patterns between rim and inside, damped strokes.",
   scenes: "Shrine festivals, Bon dances, Buddhist chanting, Sengoku battle signals.",
   partners: ["shinobue","odaiko","jindaiko"],
+  techniques: [
+    { name: "Struck gong", how: "A horn-tipped stick strikes the inside, a sharp metallic clang.", play: "normal" },
+    { name: "Damped stroke", how: "The gong is held against the hand, giving a short, choked sound.", play: "mute" },
+  ],
 },
 {
   id: "dora",
@@ -1098,6 +1361,10 @@ INSTRUMENT_CATALOG.push(
   skills: "Long ringing single strokes and swelling rolls.",
   scenes: "Temples, battlefields, ship departures.",
   partners: ["horagai","jindaiko","kane"],
+  techniques: [
+    { name: "Open stroke", how: "A padded beater strikes the centre, a long swelling ring.", play: "normal" },
+    { name: "Roll", how: "Rapid soft strokes build a rising roar.", play: "roll" },
+  ],
 },
 {
   id: "rin",
@@ -1116,6 +1383,10 @@ INSTRUMENT_CATALOG.push(
   skills: "Timing strokes in chant and allowing the long decay.",
   scenes: "Buddhist temple chanting, home altars, memorial rites.",
   partners: ["shakuhachi","bonsho","kane"],
+  techniques: [
+    { name: "Struck bowl", how: "A stick strikes the rim and the bowl rings long and pure.", play: "normal" },
+    { name: "Rim rubbing", how: "The stick circles the rim, a sustained singing tone.", play: "tremolo" },
+  ],
 },
 {
   id: "bonsho",
@@ -1134,6 +1405,9 @@ INSTRUMENT_CATALOG.push(
   skills: "Spacing single strokes to let the long hum fade.",
   scenes: "Buddhist temples at dawn and dusk, New Year's Eve.",
   partners: ["rin","sho","kane"],
+  techniques: [
+    { name: "Log strike", how: "A suspended log swings against the bell, a deep, long-decaying boom.", play: "normal" },
+  ],
 },
 {
   id: "dotaku",
@@ -1152,6 +1426,9 @@ INSTRUMENT_CATALOG.push(
   skills: "Ritual ringing.",
   scenes: "Yayoi agricultural and community rites.",
   partners: ["wagon","odaiko","ryuteki"],
+  techniques: [
+    { name: "Clapper swing", how: "The bell is shaken so its clapper strikes inside, a dull ring.", play: "normal" },
+  ],
 },
 {
   id: "gayageum",
@@ -1170,6 +1447,12 @@ INSTRUMENT_CATALOG.push(
   skills: "농현 nonghyeon vibrato, 추성 chuseong rising and 퇴성 toeseong falling bends, 전성 jeonseong shakes.",
   scenes: "Court music, sanjo solo improvisation, 가야금병창 sung accompaniment, folk songs.",
   partners: ["geomungo","daegeum","buk"],
+  techniques: [
+    { name: "Nonghyeon vibrato", native: "농현", how: "The left hand presses and shakes the string beyond the bridge, a deep, wide vibrato.", play: "slide" },
+    { name: "Press-bend", native: "추성 · 퇴성", how: "Pressing the string raises the pitch (chuseong) or a pressed note is released downward (toeseong), bending the note.", play: "slide" },
+    { name: "Pluck-flick", native: "뜯는 법", how: "Plucking toward the body versus flicking outward changes the tone.", play: "normal" },
+    { name: "Glissando", how: "A finger sweeps across the strings, a rippling run.", play: "gliss" },
+  ],
 },
 {
   id: "geomungo",
@@ -1188,6 +1471,11 @@ INSTRUMENT_CATALOG.push(
   skills: "Striking the body with the suldae, deep 농현 vibrato, pressed bends on the frets.",
   scenes: "Scholar-aristocrat chamber music 정악, court ensembles, sanjo.",
   partners: ["gayageum","daegeum","haegeum"],
+  techniques: [
+    { name: "Stick strike", native: "술대", how: "The bamboo stick (suldae) strikes the string and the body, a deep, percussive attack.", play: "knock" },
+    { name: "Nonghyeon vibrato", native: "농현", how: "Pressing the string on the high frets and shaking gives a wide vibrato.", play: "slide" },
+    { name: "Press-bend", how: "Pushing the string on the fret raises the pitch.", play: "slide" },
+  ],
 },
 {
   id: "hyangbipa",
@@ -1206,6 +1494,9 @@ INSTRUMENT_CATALOG.push(
   skills: "Strummed accompaniment to native songs.",
   scenes: "Silla and Goryeo court hyangak music.",
   partners: ["gayageum","geomungo","daegeum"],
+  techniques: [
+    { name: "Plucked strike", how: "A bamboo pick plucks the strings, a dry, ringing note.", play: "normal" },
+  ],
 },
 {
   id: "dangbipa",
@@ -1224,6 +1515,10 @@ INSTRUMENT_CATALOG.push(
   skills: "Arpeggiated chords and melodic doubling.",
   scenes: "Goryeo and Joseon court banquets.",
   partners: ["hyangbipa","saenghwang","pyeonjong"],
+  techniques: [
+    { name: "Plucked note", how: "A pick or fingers pluck the strings.", play: "normal" },
+    { name: "Arpeggiated chord", how: "The strings are swept in a broken chord.", play: "strum" },
+  ],
 },
 {
   id: "yanggeum",
@@ -1242,6 +1537,9 @@ INSTRUMENT_CATALOG.push(
   skills: "Delicate striking that doubles the melody, light ornaments.",
   scenes: "Joseon salon chamber music 풍류방, 가곡 lyric song accompaniment.",
   partners: ["geomungo","gayageum","haegeum"],
+  techniques: [
+    { name: "Struck note", how: "A thin bamboo stick strikes the wire courses, a bright, ringing tone.", play: "normal" },
+  ],
 },
 {
   id: "ajaeng",
@@ -1260,6 +1558,11 @@ INSTRUMENT_CATALOG.push(
   skills: "Heavy sustained bass lines, deep 농현 vibrato, sobbing bends.",
   scenes: "Court music, shaman ritual music 시나위, sanjo and pansori accompaniment.",
   partners: ["haegeum","daegeum","piri"],
+  techniques: [
+    { name: "Rosined-stick bowing", how: "A rosined forsythia stick scrapes the strings, a deep, rasping sustain.", play: "normal" },
+    { name: "Nonghyeon vibrato", native: "농현", how: "Pressing and shaking the string beyond the bridge gives a wide vibrato.", play: "slide" },
+    { name: "Pizzicato", how: "In sanjo the strings are plucked with the fingers, a short twang.", play: "pizz" },
+  ],
 },
 {
   id: "haegeum",
@@ -1278,6 +1581,10 @@ INSTRUMENT_CATALOG.push(
   skills: "Pulling and pressing the strings for wide 농현 vibrato and slides.",
   scenes: "Court and military 대취타 music, shaman rites, folk dance music 삼현육각.",
   partners: ["daegeum","piri","buk"],
+  techniques: [
+    { name: "Slide", how: "With no fingerboard, pulling the strings bends and glides the pitch widely.", play: "slide" },
+    { name: "Vibrato", native: "농현", how: "Varying the hand's pull on the strings makes the note waver.", play: "slide" },
+  ],
 },
 {
   id: "daegeum",
@@ -1296,6 +1603,11 @@ INSTRUMENT_CATALOG.push(
   skills: "Breath vibrato 농음, wide pitch bends with the lips, the buzz of the membrane in loud passages.",
   scenes: "Court 정악 music (수제천), aristocratic chamber music, sanjo, shaman music.",
   partners: ["gayageum","geomungo","piri"],
+  techniques: [
+    { name: "Cheong buzz", native: "청", how: "The reed membrane over a side hole adds a bright buzzing timbre, especially when blown strongly.", play: "overblow" },
+    { name: "Nonghyeon vibrato", native: "농음", how: "The breath and head move to make a wide, swelling vibrato.", play: "slide" },
+    { name: "Overblowing", how: "Stronger breath lifts to the upper octave.", play: "overblow" },
+  ],
 },
 {
   id: "junggeum",
@@ -1314,6 +1626,9 @@ INSTRUMENT_CATALOG.push(
   skills: "Ornamented melody and breath vibrato.",
   scenes: "Silla, Goryeo and Joseon court music.",
   partners: ["daegeum","piri","gayageum"],
+  techniques: [
+    { name: "Overblowing", how: "Stronger breath lifts the tone to the upper octave.", play: "overblow" },
+  ],
 },
 {
   id: "piri",
@@ -1332,6 +1647,10 @@ INSTRUMENT_CATALOG.push(
   skills: "Wide 농현 vibrato and slides, sharp accents.",
   scenes: "Court music (수제천), shaman ritual, folk dance music 삼현육각.",
   partners: ["daegeum","haegeum","buk"],
+  techniques: [
+    { name: "Lip glide", how: "Lip pressure on the large reed bends and slides the pitch.", play: "slide" },
+    { name: "Vibrato", native: "농음", how: "Breath and lip pulse make the tone waver.", play: "slide" },
+  ],
 },
 {
   id: "taepyeongso",
@@ -1350,6 +1669,10 @@ INSTRUMENT_CATALOG.push(
   skills: "Circular breathing, fast ornaments and bends.",
   scenes: "Royal processions 대취타, pungmul farmers' music, shaman rituals.",
   partners: ["kkwaenggwari","jing","buk"],
+  techniques: [
+    { name: "Glide", how: "Lip pressure and half-holing bend the shrill pitch.", play: "slide" },
+    { name: "Circular breathing", how: "Breath stored in the cheeks keeps the sound unbroken.", play: "normal" },
+  ],
 },
 {
   id: "saenghwang",
@@ -1368,6 +1691,10 @@ INSTRUMENT_CATALOG.push(
   skills: "Paired octave and fifth chords, continuous sound.",
   scenes: "Court rites, aristocratic chamber music, 수룡음 duets.",
   partners: ["daegeum","yanggeum","pyeonjong"],
+  techniques: [
+    { name: "Chords", how: "Two or more pipes sound together, a sustained harmony.", play: "normal" },
+    { name: "Flutter-tongue", how: "Rolling the tongue while blowing makes a buzzing pulse.", play: "flutter" },
+  ],
 },
 {
   id: "pyeonjong",
@@ -1386,6 +1713,9 @@ INSTRUMENT_CATALOG.push(
   skills: "Slow, even strokes doubling the melody.",
   scenes: "Royal ancestral rites at Jongmyo, Confucian shrine rites 문묘제례악.",
   partners: ["pyeongyeong","saenghwang","buk"],
+  techniques: [
+    { name: "Struck bell", how: "A horn-tipped mallet strikes the lower part of each bell, a clear, sustained ring.", play: "normal" },
+  ],
 },
 {
   id: "pyeongyeong",
@@ -1404,6 +1734,9 @@ INSTRUMENT_CATALOG.push(
   skills: "Even ritual strokes doubling the melody.",
   scenes: "Royal ancestral and Confucian shrine rites.",
   partners: ["pyeonjong","saenghwang","daegeum"],
+  techniques: [
+    { name: "Struck stone", how: "A horn mallet strikes the stone chime, a clear, short ring.", play: "normal" },
+  ],
 },
 {
   id: "jing",
@@ -1422,6 +1755,10 @@ INSTRUMENT_CATALOG.push(
   skills: "Long resonant strokes, the swelling 'wave' tone.",
   scenes: "Pungmul farmers' music, shaman rites, court processions 대취타.",
   partners: ["kkwaenggwari","buk","taepyeongso"],
+  techniques: [
+    { name: "Open stroke", how: "A padded mallet strikes the centre, a deep, long swelling hum.", play: "normal" },
+    { name: "Damped stroke", how: "The hand inside the rim damps the gong after the strike.", play: "mute" },
+  ],
 },
 {
   id: "kkwaenggwari",
@@ -1440,6 +1777,11 @@ INSTRUMENT_CATALOG.push(
   skills: "Damped and open strokes, fast rolls, signalling cues to the band.",
   scenes: "Pungmul, samulnori, shaman rites, village festivals.",
   partners: ["jing","buk","taepyeongso"],
+  techniques: [
+    { name: "Open stroke", how: "A wooden mallet strikes the small gong, a piercing ring.", play: "normal" },
+    { name: "Damped stroke", native: "막음", how: "Fingers inside the rim press the gong, a short, choked clack.", play: "mute" },
+    { name: "Roll", how: "Rapid strokes give a clattering tremolo.", play: "roll" },
+  ],
 },
 {
   id: "paljuryeong",
@@ -1458,6 +1800,9 @@ INSTRUMENT_CATALOG.push(
   skills: "Ritual shaking.",
   scenes: "Bronze Age ritual ceremonies.",
   partners: ["buk","jing"],
+  techniques: [
+    { name: "Shaking", how: "The eight-pronged rattle is shaken so its pellet bells jangle.", play: "tremolo" },
+  ],
 },
 {
   id: "daegak",
@@ -1476,6 +1821,9 @@ INSTRUMENT_CATALOG.push(
   skills: "Long held calls.",
   scenes: "Royal and military processions, signals.",
   partners: ["taepyeongso","jing","buk"],
+  techniques: [
+    { name: "Long blast", how: "A sustained call on the horn's natural tone.", play: "normal" },
+  ],
 },
 {
   id: "buk",
@@ -1494,6 +1842,10 @@ INSTRUMENT_CATALOG.push(
   skills: "Rhythmic cycles 장단 jangdan, rim strokes, 추임새 calls.",
   scenes: "Pansori, pungmul, court and military music, shaman rites.",
   partners: ["kkwaenggwari","jing","taepyeongso"],
+  techniques: [
+    { name: "Head stroke", how: "A palm or stick strikes the skin, a deep thud.", play: "normal" },
+    { name: "Rim stroke", how: "The stick strikes the wooden barrel, a dry click (in pansori accompaniment).", play: "knock" },
+  ],
 },
 {
   id: "jeolgo",
@@ -1512,6 +1864,9 @@ INSTRUMENT_CATALOG.push(
   skills: "Single marking strokes.",
   scenes: "Royal ancestral rites and Confucian shrine music.",
   partners: ["pyeonjong","pyeongyeong","buk"],
+  techniques: [
+    { name: "Head stroke", how: "A padded stick strikes the head, a deep boom.", play: "normal" },
+  ],
 },
 {
   id: "morin-khuur",
@@ -1530,6 +1885,12 @@ INSTRUMENT_CATALOG.push(
   skills: "Imitations of galloping and neighing, overtone-rich double stops, ornaments in 長調 urtyn duu long-song style.",
   scenes: "Long-song accompaniment, nomad gatherings and festivals, epic tales, modern ensembles.",
   partners: ["khoomii","limbe","yatga"],
+  techniques: [
+    { name: "Fingernail stopping", how: "The strings are stopped from the side with the fingernails or knuckles, not pressed to the neck, giving a breathy, horse-like tone.", play: "normal" },
+    { name: "Horse neigh", how: "A fast upward glide with tremolo bowing imitates a horse's whinny.", play: "slide" },
+    { name: "Harmonics", how: "Lightly touching a string while bowing brings out whistling overtones.", play: "harmonic" },
+    { name: "Galloping bow", how: "Short, rhythmic bow strokes imitate the gait of a galloping horse.", play: "spiccato" },
+  ],
 },
 {
   id: "khuuchir",
@@ -1548,6 +1909,10 @@ INSTRUMENT_CATALOG.push(
   skills: "Fast ornamented melodies and slides.",
   scenes: "Storytelling, folk songs, banquets.",
   partners: ["morin-khuur","limbe","yatga"],
+  techniques: [
+    { name: "Slide", how: "The finger glides along the string between notes.", play: "slide" },
+    { name: "Vibrato", how: "Rocking the stopping finger makes the nasal tone waver.", play: "slide" },
+  ],
 },
 {
   id: "ikil",
@@ -1566,6 +1931,10 @@ INSTRUMENT_CATALOG.push(
   skills: "Drone-rich double stops, rhythmic galloping bow strokes.",
   scenes: "Epic recitation, throat-singing accompaniment, herders' songs.",
   partners: ["khoomii","tovshuur","limbe"],
+  techniques: [
+    { name: "Fingernail stopping", how: "The strings are stopped from the side with the nails, a soft, airy bowed tone.", play: "normal" },
+    { name: "Harmonics", how: "Light touches on the strings bring out overtones.", play: "harmonic" },
+  ],
 },
 {
   id: "tovshuur",
@@ -1584,6 +1953,10 @@ INSTRUMENT_CATALOG.push(
   skills: "Galloping strummed rhythms, drone strings under melody.",
   scenes: "Epic recitation, bii biyelgee dance, herders' gatherings.",
   partners: ["khoomii","ikil","limbe"],
+  techniques: [
+    { name: "Strum", how: "The fingers strike both strings together in a galloping rhythm.", play: "strum" },
+    { name: "Body tap", how: "The hand taps the body between strums, a soft percussive beat.", play: "knock" },
+  ],
 },
 {
   id: "yatga",
@@ -1602,6 +1975,11 @@ INSTRUMENT_CATALOG.push(
   skills: "Pressing bends, tremolo and glissando.",
   scenes: "Noble courts, Buddhist monasteries, modern concerts.",
   partners: ["morin-khuur","limbe","khuuchir"],
+  techniques: [
+    { name: "Press-bend", how: "The left hand presses the string beyond the bridge to bend the pitch.", play: "slide" },
+    { name: "Glissando", how: "A finger sweeps across the strings, a rippling run.", play: "gliss" },
+    { name: "Tremolo", how: "Rapid back-and-forth plucking sustains a note.", play: "tremolo" },
+  ],
 },
 {
   id: "limbe",
@@ -1620,6 +1998,11 @@ INSTRUMENT_CATALOG.push(
   skills: "Circular breathing for unbroken lines, ornaments shadowing the singer.",
   scenes: "Long-song accompaniment, festivals, ensembles.",
   partners: ["morin-khuur","khoomii","yatga"],
+  techniques: [
+    { name: "Circular breathing", how: "Breath is drawn through the nose while the cheeks keep blowing, so long-song melodies flow unbroken.", play: "normal" },
+    { name: "Trill ornaments", how: "Quick finger flutters decorate the long notes.", play: "flutter" },
+    { name: "Overblowing", how: "Stronger breath lifts to the upper octave.", play: "overblow" },
+  ],
 },
 {
   id: "bureree",
@@ -1638,6 +2021,9 @@ INSTRUMENT_CATALOG.push(
   skills: "Low sustained tones, alternating breaths between paired players.",
   scenes: "Monastery ceremonies, cham dances, military signals.",
   partners: ["tsan","khonkh","kogerge"],
+  techniques: [
+    { name: "Overblowing", how: "Lip tension switches between the horn's natural tones.", play: "overblow" },
+  ],
 },
 {
   id: "khoomii",
@@ -1656,6 +2042,11 @@ INSTRUMENT_CATALOG.push(
   skills: "Isgeree whistling overtones, kharkhiraa (khargiraa) low growl using the false vocal folds, circular overtone shifts.",
   scenes: "Herders' songs, Naadam and festivals, epic recitation, modern stages.",
   partners: ["morin-khuur","tovshuur","limbe"],
+  techniques: [
+    { name: "Khöömii", native: "хөөмий", how: "A throat-and-nasal drone with a soft whistled overtone melody shaped by the mouth.", play: "harmonic" },
+    { name: "Isgeree", native: "исгэрээ", how: "A whistling style with a high, flute-like overtone melody over the drone.", play: "harmonic" },
+    { name: "Kharkhiraa", native: "хархираа", how: "A deep growling style using the false vocal folds, sounding a sub-octave.", play: "normal" },
+  ],
 },
 {
   id: "kai",
@@ -1674,6 +2065,11 @@ INSTRUMENT_CATALOG.push(
   skills: "Low growled throat voice, overtone colouring, long memorised epics.",
   scenes: "Epic recitation at night gatherings and rites.",
   partners: ["tovshuur","khoomii","morin-khuur"],
+  techniques: [
+    { name: "Kai", native: "кай", how: "A deep, rasping throat voice used to chant Altai epics.", play: "normal" },
+    { name: "Kargyraa", native: "каргыра", how: "A very low growling style with a sub-octave from the false vocal folds.", play: "normal" },
+    { name: "Sygyt", native: "сыгыт", how: "A whistling overtone melody above a tight throat drone.", play: "harmonic" },
+  ],
 },
 {
   id: "khonkh",
@@ -1692,6 +2088,9 @@ INSTRUMENT_CATALOG.push(
   skills: "Ritual ringing patterns paired with the vajra and drum.",
   scenes: "Buddhist chanting and ceremonies, shamanic rites.",
   partners: ["tsan","bureree","kogerge"],
+  techniques: [
+    { name: "Shaking", how: "The hand bell is shaken so its clapper strikes, a bright ring.", play: "tremolo" },
+  ],
 },
 {
   id: "tsan",
@@ -1710,6 +2109,10 @@ INSTRUMENT_CATALOG.push(
   skills: "Accelerating clash patterns, damped strokes.",
   scenes: "Monastery chanting, cham dances.",
   partners: ["bureree","khonkh","kogerge"],
+  techniques: [
+    { name: "Clash", how: "The two cymbals strike together and ring.", play: "normal" },
+    { name: "Choked clash", how: "The cymbals are pressed together after striking, a short, dry crash.", play: "mute" },
+  ],
 },
 {
   id: "kogerge",
@@ -1728,6 +2131,10 @@ INSTRUMENT_CATALOG.push(
   skills: "Signal rhythms for advance and attack.",
   scenes: "Battles, camps, khan's court ceremonies.",
   partners: ["bureree","tsan","morin-khuur"],
+  techniques: [
+    { name: "Head stroke", how: "A curved stick strikes the kettledrum, a deep boom.", play: "normal" },
+    { name: "Roll", how: "Rapid strokes give a rolling thunder.", play: "roll" },
+  ],
 },
 {
   id: "sitar",
@@ -1746,6 +2153,13 @@ INSTRUMENT_CATALOG.push(
   skills: "मींड meend pulls of up to five notes on one fret, gamak, कृन्तन krintan hammer-ons, jhala rhythmic strumming.",
   scenes: "Hindustani classical concerts, Mughal and princely courts, film music.",
   partners: ["pakhawaj","tanpura","sarangi"],
+  techniques: [
+    { name: "Meend", native: "मींड", how: "The string is pulled sideways across the fret to bend the pitch smoothly through several notes.", play: "slide" },
+    { name: "Gamak", native: "गमक", how: "A heavy oscillation between notes, made by repeated deflection of the string.", play: "slide" },
+    { name: "Krintan", native: "कृन्तन", how: "Notes are sounded by left-hand pull-offs and hammer-ons without the plectrum.", play: "normal" },
+    { name: "Jhala", native: "झाला", how: "Rapid strokes alternate between the melody and the chikari drone strings, a fast, ringing pulse.", play: "tremolo" },
+    { name: "Sympathetic strum", how: "The plectrum sweeps across the sympathetic strings, a shimmering wash.", play: "gliss" },
+  ],
 },
 {
   id: "sarod",
@@ -1764,6 +2178,12 @@ INSTRUMENT_CATALOG.push(
   skills: "Long slides 'meend' on the fretless board, gamak, jhala strumming, fast tans.",
   scenes: "Hindustani classical concerts, especially in Bengal and the Maihar tradition.",
   partners: ["pakhawaj","tanpura","sitar"],
+  techniques: [
+    { name: "Slide", native: "सूत", how: "The left fingernail slides along the fretless metal fingerboard, a smooth glide between notes.", play: "slide" },
+    { name: "Gamak", native: "गमक", how: "Heavy, rapid oscillations between notes.", play: "slide" },
+    { name: "Jhala", native: "झाला", how: "Fast alternating strokes on melody and drone strings.", play: "tremolo" },
+    { name: "Sympathetic strum", how: "The plectrum sweeps the sympathetic strings for a shimmering wash.", play: "gliss" },
+  ],
 },
 {
   id: "rudra-veena",
@@ -1782,6 +2202,11 @@ INSTRUMENT_CATALOG.push(
   skills: "Slow alap with deep meend and gamak, low kharaj resonance, andolan oscillation.",
   scenes: "Dhrupad concerts, Mughal and Rajput courts, temple music.",
   partners: ["pakhawaj","tanpura","sarangi"],
+  techniques: [
+    { name: "Meend", native: "मींड", how: "Pulling the string deeply across the high frets bends through several notes, the hallmark of dhrupad playing.", play: "slide" },
+    { name: "Gamak", native: "गमक", how: "Slow, heavy oscillations of pitch.", play: "slide" },
+    { name: "Jhala", native: "झाला", how: "Rapid strokes on the melody and chikari strings.", play: "tremolo" },
+  ],
 },
 {
   id: "veena",
@@ -1800,6 +2225,11 @@ INSTRUMENT_CATALOG.push(
   skills: "Gamaka oscillations by pulling the string, glides, the tala strings struck with the little finger.",
   scenes: "Carnatic concerts, temple music, devotional and household music.",
   partners: ["tanpura","venu","violin"],
+  techniques: [
+    { name: "Gamaka", native: "கமகம்", how: "Pulling the string across the fret makes the oscillating ornaments of Carnatic music.", play: "slide" },
+    { name: "Jaaru", native: "ஜாரு", how: "The finger slides along the frets, a glide between notes.", play: "slide" },
+    { name: "Tala strings", how: "The little finger strikes the side drone strings to keep the beat.", play: "normal" },
+  ],
 },
 {
   id: "kinnari-veena",
@@ -1818,6 +2248,9 @@ INSTRUMENT_CATALOG.push(
   skills: "Melodic plucking with drone strings.",
   scenes: "Medieval courts, Deccan bardic narrative.",
   partners: ["rudra-veena","tanpura","pakhawaj"],
+  techniques: [
+    { name: "Meend", native: "मींड", how: "Pulling the string over the high frets bends the pitch.", play: "slide" },
+  ],
 },
 {
   id: "tanpura",
@@ -1836,6 +2269,10 @@ INSTRUMENT_CATALOG.push(
   skills: "Tuning the jawari threads for the buzzing sound, even cyclical plucking.",
   scenes: "Classical concerts of every kind, devotional singing, Rajasthani folk and bhajan.",
   partners: ["sitar","sarangi","veena"],
+  techniques: [
+    { name: "Jivari drone", native: "जवारी", how: "A thread on the curved bridge makes each plucked string buzz and bloom with overtones.", play: "harmonic" },
+    { name: "Drone cycle", how: "The strings are plucked one after another in a slow, unbroken cycle.", play: "normal" },
+  ],
 },
 {
   id: "swarmandal",
@@ -1854,6 +2291,9 @@ INSTRUMENT_CATALOG.push(
   skills: "Glissando strums matching the raga, tuning to the raga scale.",
   scenes: "Hindustani vocal concerts, light-classical song.",
   partners: ["tanpura","sarangi","pakhawaj"],
+  techniques: [
+    { name: "Glissando", how: "A finger or pick sweeps across the strings, a shimmering wash behind the voice.", play: "gliss" },
+  ],
 },
 {
   id: "santoor",
@@ -1872,6 +2312,12 @@ INSTRUMENT_CATALOG.push(
   skills: "Rolling tremolo, quick runs, damped strokes for clarity.",
   scenes: "Kashmiri Sufi gatherings, classical and film music.",
   partners: ["pakhawaj","tanpura","sarangi"],
+  techniques: [
+    { name: "Struck note", how: "Light walnut mallets strike the strings, a bright, ringing note.", play: "normal" },
+    { name: "Tremolo", how: "Rapid alternate mallet strokes sustain a note.", play: "tremolo" },
+    { name: "Glissando", how: "The mallets sweep across the strings, a cascading run.", play: "gliss" },
+    { name: "Damping", how: "The hand or mallet stops the strings for shorter notes.", play: "mute" },
+  ],
 },
 {
   id: "sarangi",
@@ -1890,6 +2336,11 @@ INSTRUMENT_CATALOG.push(
   skills: "Continuous vocal-like meend slides, gamak, shadowing the singer.",
   scenes: "Hindustani vocal accompaniment, courtesan salons, Kathak dance, folk music.",
   partners: ["pakhawaj","tanpura","harmonium"],
+  techniques: [
+    { name: "Nail stopping", how: "The strings are stopped by pressing the cuticles sideways against them, giving a vocal tone.", play: "normal" },
+    { name: "Meend", native: "मींड", how: "The nail slides along the string, gliding between notes like the voice.", play: "slide" },
+    { name: "Gamak", native: "गमक", how: "Wide, heavy oscillations of pitch.", play: "slide" },
+  ],
 },
 {
   id: "sindhi-sarangi",
@@ -1908,6 +2359,10 @@ INSTRUMENT_CATALOG.push(
   skills: "Ornamented folk melody with drone sympathetic strings.",
   scenes: "Weddings, births and patron gatherings in the Thar desert.",
   partners: ["kamaicha","algoza","nagara"],
+  techniques: [
+    { name: "Nail stopping", how: "The strings are stopped with the nails from the side, a nasal, singing tone.", play: "normal" },
+    { name: "Slide", how: "The nail glides between notes.", play: "slide" },
+  ],
 },
 {
   id: "esraj",
@@ -1926,6 +2381,10 @@ INSTRUMENT_CATALOG.push(
   skills: "Meend slides along frets, sustained singing tone.",
   scenes: "Rabindrasangeet, devotional kirtan, Bengali light music.",
   partners: ["harmonium","tanpura","bansuri"],
+  techniques: [
+    { name: "Meend", native: "মীড়", how: "The finger slides along the string over the frets, gliding between notes.", play: "slide" },
+    { name: "Vibrato", how: "Rocking the finger makes the bowed note waver.", play: "slide" },
+  ],
 },
 {
   id: "sarinda",
@@ -1944,6 +2403,9 @@ INSTRUMENT_CATALOG.push(
   skills: "Driving folk rhythms in the bow, ornaments.",
   scenes: "Folk songs and dances, bardic narration.",
   partners: ["kamaicha","algoza","nagara"],
+  techniques: [
+    { name: "Slide", how: "The nail glides along the string between notes.", play: "slide" },
+  ],
 },
 {
   id: "kamaicha",
@@ -1962,6 +2424,10 @@ INSTRUMENT_CATALOG.push(
   skills: "Resonant drones from many sympathetic strings, ornamented melody under the voice.",
   scenes: "Weddings and births, patrons' courtyards, desert festivals.",
   partners: ["algoza","sindhi-sarangi","manjira"],
+  techniques: [
+    { name: "Bell bow", how: "A bow with small bells is drawn across the gut strings, adding a jingle.", play: "normal" },
+    { name: "Slide", how: "The finger glides between notes.", play: "slide" },
+  ],
 },
 {
   id: "ravanahatha",
@@ -1980,6 +2446,10 @@ INSTRUMENT_CATALOG.push(
   skills: "Bowing with bells, drone strings, long narrative accompaniment.",
   scenes: "Pabuji ki phad epic performances, village fairs.",
   partners: ["kamaicha","nagara","manjira"],
+  techniques: [
+    { name: "Bell bow", how: "The bow carries bells that jingle with each stroke.", play: "normal" },
+    { name: "Slide", how: "The finger glides along the string between notes.", play: "slide" },
+  ],
 },
 {
   id: "ektara",
@@ -1998,6 +2468,10 @@ INSTRUMENT_CATALOG.push(
   skills: "Rhythmic plucking and squeezed pitch bends.",
   scenes: "Baul and devotional singing, village fairs.",
   partners: ["dotara","khamak","kartal"],
+  techniques: [
+    { name: "Neck squeeze", how: "Squeezing the split bamboo neck changes the string tension, bending the pitch like a voice.", play: "slide" },
+    { name: "Plucked rhythm", how: "A forefinger plucks the single string in a steady pulse.", play: "normal" },
+  ],
 },
 {
   id: "dotara",
@@ -2016,6 +2490,10 @@ INSTRUMENT_CATALOG.push(
   skills: "Rapid picked melodies with slides.",
   scenes: "Baul and folk songs, rural festivals.",
   partners: ["ektara","khamak","dhak"],
+  techniques: [
+    { name: "Plucked note", how: "A pick plucks the strings, a bright twang.", play: "normal" },
+    { name: "Slide", how: "The finger slides along the fretless neck.", play: "slide" },
+  ],
 },
 {
   id: "khamak",
@@ -2034,6 +2512,9 @@ INSTRUMENT_CATALOG.push(
   skills: "Pitch-bending 'talking' rhythms.",
   scenes: "Baul songs and dances, village fairs.",
   partners: ["ektara","dotara","kartal"],
+  techniques: [
+    { name: "Pull-pluck", how: "The string is held taut and plucked while the tension is changed, giving a bouncy pitch bend.", play: "slide" },
+  ],
 },
 {
   id: "gottuvadhyam",
@@ -2052,6 +2533,10 @@ INSTRUMENT_CATALOG.push(
   skills: "Continuous glides for gamaka, voice-like melody.",
   scenes: "Carnatic concerts.",
   partners: ["tanpura","veena","venu"],
+  techniques: [
+    { name: "Slide", how: "A cylindrical slide is moved along the strings, giving gliding gamakas.", play: "slide" },
+    { name: "Sympathetic ring", how: "The sympathetic strings ring under the melody.", play: "harmonic" },
+  ],
 },
 {
   id: "yazh",
@@ -2070,6 +2555,9 @@ INSTRUMENT_CATALOG.push(
   skills: "Plucked melodies in the ancient 'pann' modes.",
   scenes: "Sangam-era courts and bards 'panar', temple rites.",
   partners: ["venu","thavil","manjira"],
+  techniques: [
+    { name: "Plucked note", how: "The strings of the ancient harp are plucked with the fingers.", play: "normal" },
+  ],
 },
 {
   id: "jantar",
@@ -2088,6 +2576,10 @@ INSTRUMENT_CATALOG.push(
   skills: "Drone and melody plucking with high frets.",
   scenes: "Devnarayan epic performances, village rites.",
   partners: ["ravanahatha","manjira","nagara"],
+  techniques: [
+    { name: "Plucked note", how: "The strings are plucked over high frets, a twanging tone.", play: "normal" },
+    { name: "Strum", how: "The fingers strike several strings together.", play: "strum" },
+  ],
 },
 {
   id: "bansuri",
@@ -2106,6 +2598,12 @@ INSTRUMENT_CATALOG.push(
   skills: "Meend slides by half-holing, gamak breath shakes, murki and khatka ornaments, long alap.",
   scenes: "Krishna devotional songs, folk music, Hindustani classical concerts, film music.",
   partners: ["pakhawaj","tanpura","sitar"],
+  techniques: [
+    { name: "Meend", native: "मींड", how: "Slowly sliding the fingers off the holes glides the pitch between notes.", play: "slide" },
+    { name: "Andolan", native: "आंदोलन", how: "A slow oscillation of pitch made by shading a hole.", play: "slide" },
+    { name: "Murki", native: "मुरकी", how: "A quick turn of notes made with fast fingering.", play: "flutter" },
+    { name: "Overblowing", how: "Stronger breath lifts to the upper octave.", play: "overblow" },
+  ],
 },
 {
   id: "venu",
@@ -2124,6 +2622,10 @@ INSTRUMENT_CATALOG.push(
   skills: "Gamaka oscillations by half-holing and breath, fast phrases, slides.",
   scenes: "Carnatic concerts, temple festivals, Bharatanatyam dance.",
   partners: ["veena","violin","tanpura"],
+  techniques: [
+    { name: "Gamaka", native: "கமகம்", how: "Half-holing and finger slides produce the oscillating Carnatic ornaments.", play: "slide" },
+    { name: "Overblowing", how: "Stronger breath lifts to the upper octave.", play: "overblow" },
+  ],
 },
 {
   id: "algoza",
@@ -2142,6 +2644,10 @@ INSTRUMENT_CATALOG.push(
   skills: "Circular breathing, drone plus melody, rapid finger ornaments.",
   scenes: "Herding, folk songs, weddings and fairs.",
   partners: ["kamaicha","sindhi-sarangi","nagara"],
+  techniques: [
+    { name: "Circular breathing", how: "Breath through the nose keeps both flutes sounding without a break.", play: "normal" },
+    { name: "Trill", how: "Rapid finger flutters decorate the melody over the drone pipe.", play: "flutter" },
+  ],
 },
 {
   id: "narh",
@@ -2160,6 +2666,10 @@ INSTRUMENT_CATALOG.push(
   skills: "Simultaneous humming and blowing, circular breathing.",
   scenes: "Herders' solo music, folk festivals.",
   partners: ["algoza","kamaicha","nagara"],
+  techniques: [
+    { name: "Voice and flute", how: "The player hums a drone while blowing, sounding voice and flute together.", play: "harmonic" },
+    { name: "Overblowing", how: "Overblowing selects the flute's harmonics as the melody.", play: "overblow" },
+  ],
 },
 {
   id: "shehnai",
@@ -2178,6 +2688,11 @@ INSTRUMENT_CATALOG.push(
   skills: "Circular breathing, meend and gamak by lip pressure, fast taans.",
   scenes: "Weddings, temple and palace gates, Hindustani concerts.",
   partners: ["naqqara","pakhawaj","tanpura"],
+  techniques: [
+    { name: "Meend", native: "मींड", how: "Lip pressure and half-holing glide the pitch between notes.", play: "slide" },
+    { name: "Circular breathing", how: "Breath stored in the cheeks keeps the tone unbroken.", play: "normal" },
+    { name: "Murki", native: "मुरकी", how: "Quick ornamental turns from fast fingering.", play: "flutter" },
+  ],
 },
 {
   id: "nadaswaram",
@@ -2196,6 +2711,10 @@ INSTRUMENT_CATALOG.push(
   skills: "Circular breathing, gamaka, long raga alapana improvisation.",
   scenes: "Hindu temple rituals and processions, weddings.",
   partners: ["thavil","sruti-petti","manjira"],
+  techniques: [
+    { name: "Gamaka", native: "கமகம்", how: "Lip and finger control produce the sweeping Carnatic ornaments.", play: "slide" },
+    { name: "Circular breathing", how: "Breath stored in the cheeks keeps long phrases unbroken.", play: "normal" },
+  ],
 },
 {
   id: "harmonium",
@@ -2214,6 +2733,10 @@ INSTRUMENT_CATALOG.push(
   skills: "Following the singer, drone stops, fast ornamental runs.",
   scenes: "Bhajan and kirtan, qawwali, ghazal and Rabindrasangeet, theatre.",
   partners: ["manjira","esraj","kartal"],
+  techniques: [
+    { name: "Sustained chord", how: "Pumping the bellows keeps several reeds sounding as a chord.", play: "normal" },
+    { name: "Drone stops", how: "Drone stops hold the tonic under the melody.", play: "normal" },
+  ],
 },
 {
   id: "sruti-petti",
@@ -2232,6 +2755,9 @@ INSTRUMENT_CATALOG.push(
   skills: "Steady pumping, tuning to the performer's pitch.",
   scenes: "Temple nadaswaram music, Carnatic vocal concerts, devotional singing.",
   partners: ["nadaswaram","thavil","veena"],
+  techniques: [
+    { name: "Drone", how: "Bellows keep the tonic and fifth sounding as a steady drone.", play: "normal" },
+  ],
 },
 {
   id: "pakhawaj",
@@ -2250,6 +2776,11 @@ INSTRUMENT_CATALOG.push(
   skills: "Open-palm bols, resonant bass strokes, complex tala cycles and parans.",
   scenes: "Dhrupad concerts, temple worship, Kathak dance.",
   partners: ["rudra-veena","tanpura","shehnai"],
+  techniques: [
+    { name: "Open bass stroke", how: "The palm strikes the wheat-dough-covered bass head, a deep boom.", play: "normal" },
+    { name: "Damped stroke", how: "The palm stays on the head, a short, dry slap.", play: "mute" },
+    { name: "Rela", native: "रेला", how: "Very fast cascades of strokes, a roll-like flurry.", play: "roll" },
+  ],
 },
 {
   id: "dhak",
@@ -2268,6 +2799,10 @@ INSTRUMENT_CATALOG.push(
   skills: "Fast stick rhythms, dance while drumming.",
   scenes: "Durga Puja and other festivals, processions.",
   partners: ["shankh","kartal","dotara"],
+  techniques: [
+    { name: "Stick strokes", how: "Two thin sticks strike the head, a loud, booming beat.", play: "normal" },
+    { name: "Roll", how: "Rapid strokes give a continuous roar at the Puja.", play: "roll" },
+  ],
 },
 {
   id: "thavil",
@@ -2286,6 +2821,11 @@ INSTRUMENT_CATALOG.push(
   skills: "Complex tala improvisation, 'tani avartanam' solos, powerful rolls.",
   scenes: "Temple processions and rituals, weddings.",
   partners: ["nadaswaram","sruti-petti","manjira"],
+  techniques: [
+    { name: "Stick stroke", how: "A stick strikes the right head, a sharp, loud crack.", play: "knock" },
+    { name: "Finger stroke", how: "Capped fingers strike the left head, a ringing slap.", play: "normal" },
+    { name: "Roll", how: "Rapid strokes give a thunderous roll.", play: "roll" },
+  ],
 },
 {
   id: "ghanta",
@@ -2304,6 +2844,9 @@ INSTRUMENT_CATALOG.push(
   skills: "Steady ringing throughout the rite.",
   scenes: "Temple and home worship, aarti.",
   partners: ["shankh","manjira","pakhawaj"],
+  techniques: [
+    { name: "Ringing", how: "The hand bell is shaken so its clapper strikes, a bright ring.", play: "tremolo" },
+  ],
 },
 {
   id: "ghungroo",
@@ -2322,6 +2865,9 @@ INSTRUMENT_CATALOG.push(
   skills: "Precise footwork 'tatkar', sounding single bells or whole bands.",
   scenes: "Kathak and Bharatanatyam dance, folk dance, Mughal courts.",
   partners: ["pakhawaj","sarangi","manjira"],
+  techniques: [
+    { name: "Stamping", how: "The dancer's footwork shakes the ankle bells in sharp rhythmic patterns.", play: "tremolo" },
+  ],
 },
 {
   id: "manjira",
@@ -2340,6 +2886,10 @@ INSTRUMENT_CATALOG.push(
   skills: "Open and closed strokes marking beats of the tala cycle.",
   scenes: "Bhajan and kirtan, folk song, temple music, Bharatanatyam.",
   partners: ["harmonium","kartal","pakhawaj"],
+  techniques: [
+    { name: "Open clash", how: "The two small cymbals strike edge to edge and ring.", play: "normal" },
+    { name: "Damped clash", how: "The cymbals are pressed together, a short click.", play: "mute" },
+  ],
 },
 {
   id: "kartal",
@@ -2358,6 +2908,10 @@ INSTRUMENT_CATALOG.push(
   skills: "Rapid clapping patterns and rolls.",
   scenes: "Kirtan and bhajan, Baul song, Rajasthani folk.",
   partners: ["harmonium","ektara","dhak"],
+  techniques: [
+    { name: "Clapping", how: "The wooden clappers with jingles are clapped together in rhythmic patterns.", play: "knock" },
+    { name: "Roll", how: "Rapid shaking clicks give a continuous rattle.", play: "roll" },
+  ],
 },
 {
   id: "shankh",
@@ -2376,6 +2930,10 @@ INSTRUMENT_CATALOG.push(
   skills: "Long swelling single tones and overtone calls.",
   scenes: "Temple worship and aarti, weddings, Durga Puja, Khmer royal ceremonies.",
   partners: ["ghanta","dhak","kartal"],
+  techniques: [
+    { name: "Blast", how: "The conch is blown with buzzing lips, a long, rising call.", play: "normal" },
+    { name: "Lip glide", how: "Changing lip pressure bends the call.", play: "slide" },
+  ],
 },
 {
   id: "kombu",
@@ -2394,6 +2952,10 @@ INSTRUMENT_CATALOG.push(
   skills: "Overtone calls in alternation with drums.",
   scenes: "Temple festivals, processions, Kerala panchavadyam.",
   partners: ["nadaswaram","thavil","manjira"],
+  techniques: [
+    { name: "Blast", how: "Buzzing lips sound the horn's natural tone in a loud call.", play: "normal" },
+    { name: "Overblowing", how: "Tighter lips jump to a higher partial.", play: "overblow" },
+  ],
 },
 {
   id: "nagara",
@@ -2412,6 +2974,10 @@ INSTRUMENT_CATALOG.push(
   skills: "Rolling interlocking strokes between the two drums, accelerating festival rhythms.",
   scenes: "Temple rites, village fairs, Holi and weddings, folk dances.",
   partners: ["algoza","kamaicha","shehnai"],
+  techniques: [
+    { name: "Stick strokes", how: "Two sticks strike the kettledrum, a loud, resonant boom.", play: "normal" },
+    { name: "Roll", how: "Rapid strokes give a rolling thunder.", play: "roll" },
+  ],
 },
 {
   id: "rabab",
@@ -2430,6 +2996,11 @@ INSTRUMENT_CATALOG.push(
   skills: "Fast picked runs, drones on open strings, rhythmic strumming.",
   scenes: "Mughal and Sultanate courts, Sikh and Sufi devotional music, Afghan and Pashtun songs.",
   partners: ["pakhawaj","sarangi","tanpura"],
+  techniques: [
+    { name: "Plucked note", how: "A pick plucks the melody string, a deep, resonant twang.", play: "normal" },
+    { name: "Sympathetic ring", how: "The sympathetic strings ring after each note.", play: "harmonic" },
+    { name: "Tremolo", how: "Rapid alternate picking sustains a note.", play: "tremolo" },
+  ],
 },
 {
   id: "surnay",
@@ -2448,6 +3019,10 @@ INSTRUMENT_CATALOG.push(
   skills: "Circular breathing, ornamented fanfares and melodies.",
   scenes: "Naubat ceremonies at palace gates, military marches, weddings and festivals.",
   partners: ["nagara","shehnai","karnay"],
+  techniques: [
+    { name: "Circular breathing", how: "Breath stored in the cheeks keeps the sound unbroken.", play: "normal" },
+    { name: "Glide", how: "Lip pressure bends the shrill pitch.", play: "slide" },
+  ],
 },
 {
   id: "ghichak",
@@ -2466,6 +3041,9 @@ INSTRUMENT_CATALOG.push(
   skills: "Ornamented melody, slides and drones on sympathetic strings.",
   scenes: "Court ensembles, Sufi gatherings, Central Asian folk and wedding music.",
   partners: ["rabab","surnay","tanpura"],
+  techniques: [
+    { name: "Slide", how: "The finger glides along the string between notes.", play: "slide" },
+  ],
 },
 {
   id: "biola",
@@ -2484,6 +3062,10 @@ INSTRUMENT_CATALOG.push(
   skills: "Malay-style ornaments 'bunga', slides and vibrato following the singer.",
   scenes: "Malay ghazal and joget dance, weddings, ronggeng and theatre.",
   partners: ["gambus","nengkara","seruling"],
+  techniques: [
+    { name: "Slide", how: "The finger glides between notes as in Malay songs.", play: "slide" },
+    { name: "Vibrato", how: "Rocking the finger makes the note waver.", play: "slide" },
+  ],
 },
 {
   id: "saung-gauk",
@@ -2502,6 +3084,11 @@ INSTRUMENT_CATALOG.push(
   skills: "Stopping strings with the left thumb for altered pitches, damping, rippling arpeggios.",
   scenes: "Royal court chamber music, classical song 'Mahagita', modern solo recitals.",
   partners: ["pattala","palwei","hne"],
+  techniques: [
+    { name: "Pressed note", how: "The left thumb presses a string near the neck to raise its pitch.", play: "slide" },
+    { name: "Damping", how: "The left hand damps the strings for a short, muted note.", play: "mute" },
+    { name: "Harmonics", how: "A string is touched lightly while plucked, a soft overtone.", play: "harmonic" },
+  ],
 },
 {
   id: "hne",
@@ -2520,6 +3107,10 @@ INSTRUMENT_CATALOG.push(
   skills: "Circular breathing, flexible slides and ornaments.",
   scenes: "Hsaing waing ensembles, pagoda festivals, zat pwe theatre, nat spirit rites.",
   partners: ["pat-waing","kyi-waing","maung"],
+  techniques: [
+    { name: "Circular breathing", how: "Breath stored in the cheeks keeps the shrill tone unbroken.", play: "normal" },
+    { name: "Glide", how: "Lip pressure and half-holing bend the pitch.", play: "slide" },
+  ],
 },
 {
   id: "tayaw",
@@ -2538,6 +3129,10 @@ INSTRUMENT_CATALOG.push(
   skills: "Burmese-style slides and ornaments following the saung gauk or voice.",
   scenes: "Classical song accompaniment, theatre, popular music.",
   partners: ["saung-gauk","pattala","palwei"],
+  techniques: [
+    { name: "Slide", how: "The finger glides along the string, imitating the voice.", play: "slide" },
+    { name: "Vibrato", how: "Rocking the finger makes the note waver.", play: "slide" },
+  ],
 },
 {
   id: "pattala",
@@ -2556,6 +3151,10 @@ INSTRUMENT_CATALOG.push(
   skills: "Octave doubling, rapid runs and tremolo.",
   scenes: "Court chamber music, hsaing ensembles, solo recitals.",
   partners: ["saung-gauk","palwei","hne"],
+  techniques: [
+    { name: "Struck bar", how: "Padded mallets strike the bamboo bars, a soft, hollow tone.", play: "normal" },
+    { name: "Octave tremolo", how: "Rapid alternate strokes on two bars sustain a note.", play: "tremolo" },
+  ],
 },
 {
   id: "palwei",
@@ -2574,6 +3173,10 @@ INSTRUMENT_CATALOG.push(
   skills: "Ornamented melody and breath vibrato.",
   scenes: "Chamber music, hsaing ensembles, folk songs.",
   partners: ["saung-gauk","pattala","tayaw"],
+  techniques: [
+    { name: "Trill ornaments", how: "Quick finger flutters decorate the melody.", play: "flutter" },
+    { name: "Overblowing", how: "Stronger breath lifts to the upper octave.", play: "overblow" },
+  ],
 },
 {
   id: "pat-waing",
@@ -2592,6 +3195,11 @@ INSTRUMENT_CATALOG.push(
   skills: "Melodic drumming, pitch bending by pressing the heads, fast runs.",
   scenes: "Hsaing waing orchestras, festivals, theatre and dance.",
   partners: ["kyi-waing","hne","maung"],
+  techniques: [
+    { name: "Melodic strokes", how: "The player strikes the circle of 21 tuned drums with the palms and fingers, playing melodies.", play: "normal" },
+    { name: "Damped stroke", how: "The palm stays on the head, a short, dry tone.", play: "mute" },
+    { name: "Roll", how: "Rapid strokes on one drum give a roll.", play: "roll" },
+  ],
 },
 {
   id: "kyi-waing",
@@ -2610,6 +3218,10 @@ INSTRUMENT_CATALOG.push(
   skills: "Melodic patterns and octave doubling.",
   scenes: "Hsaing waing orchestras, festivals and theatre.",
   partners: ["pat-waing","hne","maung"],
+  techniques: [
+    { name: "Struck gong", how: "Padded sticks strike the bosses of the circle of gongs, a bright ring.", play: "normal" },
+    { name: "Damping", how: "A gong is touched after striking to stop its ring.", play: "mute" },
+  ],
 },
 {
   id: "maung",
@@ -2628,6 +3240,9 @@ INSTRUMENT_CATALOG.push(
   skills: "Marking cycles, melodic patterns on the gong row.",
   scenes: "Hsaing waing, temple festivals, rituals.",
   partners: ["kyi-waing","pat-waing","hne"],
+  techniques: [
+    { name: "Struck gong", how: "A padded beater strikes the boss, a deep hum.", play: "normal" },
+  ],
 },
 {
   id: "mi-gyaung",
@@ -2646,6 +3261,10 @@ INSTRUMENT_CATALOG.push(
   skills: "Plucked melody with tremolo and slides.",
   scenes: "Mon and Burmese court chamber music, revival ensembles.",
   partners: ["saung-gauk","pattala","palwei"],
+  techniques: [
+    { name: "Pressed note", how: "A string is pressed onto the raised frets and plucked, a twanging tone.", play: "normal" },
+    { name: "Slide", how: "The finger slides between frets to bend the note.", play: "slide" },
+  ],
 },
 {
   id: "roneat-ek",
@@ -2664,6 +3283,10 @@ INSTRUMENT_CATALOG.push(
   skills: "Octave playing, fast tremolo and variation of the core melody.",
   scenes: "Royal court dance, temple ceremonies, shadow puppet theatre.",
   partners: ["roneat-thung","kong-vong","sralai"],
+  techniques: [
+    { name: "Octave strokes", how: "Both hands strike bars an octave apart, a bright, doubled line.", play: "normal" },
+    { name: "Tremolo", how: "Rapid alternate strokes sustain a note in slow pieces.", play: "tremolo" },
+  ],
 },
 {
   id: "roneat-thung",
@@ -2682,6 +3305,10 @@ INSTRUMENT_CATALOG.push(
   skills: "Syncopated off-beat counter-melodies.",
   scenes: "Pinpeat ensembles at court and temple.",
   partners: ["roneat-ek","kong-vong","skor-thom"],
+  techniques: [
+    { name: "Struck bar", how: "Padded mallets strike the bamboo bars, a low, mellow knock.", play: "normal" },
+    { name: "Syncopated strokes", how: "Off-beat, playful strokes weave around the melody.", play: "knock" },
+  ],
 },
 {
   id: "sralai",
@@ -2700,6 +3327,10 @@ INSTRUMENT_CATALOG.push(
   skills: "Circular breathing, ornamented melody.",
   scenes: "Royal and temple ceremonies, court dance, funerals.",
   partners: ["roneat-ek","kong-vong","skor-thom"],
+  techniques: [
+    { name: "Circular breathing", how: "Breath stored in the cheeks keeps the sound unbroken.", play: "normal" },
+    { name: "Glide", how: "Lip pressure bends the pitch.", play: "slide" },
+  ],
 },
 {
   id: "tro",
@@ -2718,6 +3349,10 @@ INSTRUMENT_CATALOG.push(
   skills: "Ornaments and slides; drone accompaniment.",
   scenes: "Mahori and wedding music, court ensembles.",
   partners: ["krapeu","khloy","chapei"],
+  techniques: [
+    { name: "Slide", how: "The finger glides along the string between notes.", play: "slide" },
+    { name: "Vibrato", how: "Rocking the finger makes the note waver.", play: "slide" },
+  ],
 },
 {
   id: "krapeu",
@@ -2736,6 +3371,10 @@ INSTRUMENT_CATALOG.push(
   skills: "Tremolo and ornamented melody.",
   scenes: "Mahori ensembles, weddings, court entertainment.",
   partners: ["tro","khloy","chapei"],
+  techniques: [
+    { name: "Tremolo", how: "Rapid back-and-forth plectrum strokes sustain a note.", play: "tremolo" },
+    { name: "Pressed note", how: "Pressing the string on the high frets raises the pitch.", play: "slide" },
+  ],
 },
 {
   id: "chapei",
@@ -2754,6 +3393,11 @@ INSTRUMENT_CATALOG.push(
   skills: "Ornamented plucked lines and improvised verse.",
   scenes: "Storytelling and comic song, weddings, ceremonies.",
   partners: ["tro","krapeu","khloy"],
+  techniques: [
+    { name: "Plucked note", how: "A pick plucks the strings over the high frets, a twanging tone.", play: "normal" },
+    { name: "Slide", how: "The finger slides along the neck between frets.", play: "slide" },
+    { name: "Strum", how: "The pick strums both strings as rhythmic punctuation.", play: "strum" },
+  ],
 },
 {
   id: "khloy",
@@ -2772,6 +3416,10 @@ INSTRUMENT_CATALOG.push(
   skills: "Ornaments, trills and breath vibrato.",
   scenes: "Mahori ensembles, weddings, rural life.",
   partners: ["tro","krapeu","roneat-ek"],
+  techniques: [
+    { name: "Trill ornaments", how: "Quick finger flutters decorate the melody.", play: "flutter" },
+    { name: "Overblowing", how: "Stronger breath lifts to the upper octave.", play: "overblow" },
+  ],
 },
 {
   id: "kong-vong",
@@ -2790,6 +3438,10 @@ INSTRUMENT_CATALOG.push(
   skills: "Core melody in octaves, damping.",
   scenes: "Pinpeat at court dance, temple ceremonies, shadow puppetry.",
   partners: ["roneat-ek","sralai","skor-thom"],
+  techniques: [
+    { name: "Struck gong", how: "Padded beaters strike the bosses, a ringing melody.", play: "normal" },
+    { name: "Damping", how: "A gong is touched to stop its ring.", play: "mute" },
+  ],
 },
 {
   id: "skor-thom",
@@ -2808,6 +3460,10 @@ INSTRUMENT_CATALOG.push(
   skills: "Cycle-marking rhythms and rolls.",
   scenes: "Pinpeat at temple and court ceremonies, funerals.",
   partners: ["roneat-ek","kong-vong","sralai"],
+  techniques: [
+    { name: "Stick strokes", how: "Sticks strike the paired barrel drums, a deep boom.", play: "normal" },
+    { name: "Roll", how: "Rapid strokes give a rolling thunder.", play: "roll" },
+  ],
 },
 {
   id: "serunai",
@@ -2826,6 +3482,10 @@ INSTRUMENT_CATALOG.push(
   skills: "Circular breathing, ornamented melodies.",
   scenes: "Nobat royal ceremonies, silat, wayang kulit, weddings.",
   partners: ["nengkara","nafiri","gong-agung"],
+  techniques: [
+    { name: "Circular breathing", how: "Breath stored in the cheeks keeps the tone unbroken.", play: "normal" },
+    { name: "Glide", how: "Lip pressure bends the pitch.", play: "slide" },
+  ],
 },
 {
   id: "nafiri",
@@ -2844,6 +3504,10 @@ INSTRUMENT_CATALOG.push(
   skills: "Sustained single-note calls.",
   scenes: "Nobat at royal installations and state ceremonies.",
   partners: ["nengkara","serunai","gong-agung"],
+  techniques: [
+    { name: "Long blast", how: "A sustained call on the trumpet's natural tone.", play: "normal" },
+    { name: "Overblowing", how: "Tighter lips jump to a higher partial.", play: "overblow" },
+  ],
 },
 {
   id: "nengkara",
@@ -2862,6 +3526,10 @@ INSTRUMENT_CATALOG.push(
   skills: "Ceremonial rhythmic patterns with the gendang.",
   scenes: "Nobat at royal installations, Hari Raya and state ceremonies.",
   partners: ["nafiri","serunai","gong-agung"],
+  techniques: [
+    { name: "Stick strokes", how: "Sticks strike the kettledrum, a deep boom.", play: "normal" },
+    { name: "Roll", how: "Rapid strokes give a rolling thunder.", play: "roll" },
+  ],
 },
 {
   id: "gambus",
@@ -2880,6 +3548,11 @@ INSTRUMENT_CATALOG.push(
   skills: "Ornamented 'taqsim'-like introductions, rhythmic strumming for zapin.",
   scenes: "Zapin dance, ghazal, weddings and Islamic festivities.",
   partners: ["biola","nengkara","seruling"],
+  techniques: [
+    { name: "Plucked note", how: "A plectrum plucks the paired strings, a deep, round tone.", play: "normal" },
+    { name: "Tremolo", how: "Rapid alternate picking sustains a note.", play: "tremolo" },
+    { name: "Slide", how: "The finger slides along the fretless neck.", play: "slide" },
+  ],
 },
 {
   id: "kecapi",
@@ -2898,6 +3571,10 @@ INSTRUMENT_CATALOG.push(
   skills: "Interlocking patterns and ornamented melody.",
   scenes: "Sung poetry, court entertainment, rice-harvest rites.",
   partners: ["seruling","gambus","saron"],
+  techniques: [
+    { name: "Plucked note", how: "The fingers pluck the zither strings, a bright ripple.", play: "normal" },
+    { name: "Damping", how: "The hand damps the strings to shorten the notes.", play: "mute" },
+  ],
 },
 {
   id: "saron",
@@ -2916,6 +3593,11 @@ INSTRUMENT_CATALOG.push(
   skills: "Damping, interlocking 'imbal' patterns.",
   scenes: "Gamelan at courts, dance and wayang.",
   partners: ["gong-agung","kecapi","seruling"],
+  techniques: [
+    { name: "Struck key", how: "A mallet strikes the bronze key, a bright, ringing tone.", play: "normal" },
+    { name: "Damping", how: "The left hand pinches the previous key to stop its ring as the next is struck.", play: "mute" },
+    { name: "Imbal interlock", how: "Two players alternate strokes in a fast interlocking pattern.", play: "tremolo" },
+  ],
 },
 {
   id: "seruling",
@@ -2934,6 +3616,10 @@ INSTRUMENT_CATALOG.push(
   skills: "Ornaments and breath vibrato.",
   scenes: "Folk songs, gamelan Melayu, weddings.",
   partners: ["gambus","biola","kecapi"],
+  techniques: [
+    { name: "Trill ornaments", how: "Quick finger flutters decorate the melody.", play: "flutter" },
+    { name: "Overblowing", how: "Stronger breath lifts to the upper octave.", play: "overblow" },
+  ],
 },
 {
   id: "gong-agung",
@@ -2952,6 +3638,10 @@ INSTRUMENT_CATALOG.push(
   skills: "Marking the colotomic cycle with deep strokes.",
   scenes: "Gamelan, nobat, wayang kulit, weddings and ceremonies.",
   partners: ["saron","nengkara","serunai"],
+  techniques: [
+    { name: "Struck gong", how: "A padded beater strikes the boss, a deep, long hum.", play: "normal" },
+    { name: "Damping", how: "The gong is touched to stop its ring.", play: "mute" },
+  ],
 },
 {
   id: "dan-bau",
@@ -2970,6 +3660,11 @@ INSTRUMENT_CATALOG.push(
   skills: "Playing only harmonics, wide glides and vibrato by bending the rod, voice-like ornaments.",
   scenes: "Folk song, ca trù and chèo theatre, street singing 'hát xẩm', modern solos.",
   partners: ["dan-tranh","sao-truc","dan-nhi"],
+  techniques: [
+    { name: "Harmonics", how: "The side of the hand touches a node while the pick plucks, sounding a clear overtone.", play: "harmonic" },
+    { name: "Rod bend", how: "The flexible rod is pushed or pulled to bend the pitch smoothly, like a voice.", play: "slide" },
+    { name: "Vibrato", how: "Shaking the rod makes the note waver.", play: "slide" },
+  ],
 },
 {
   id: "dan-tranh",
@@ -2988,6 +3683,12 @@ INSTRUMENT_CATALOG.push(
   skills: "Pressed bends and vibrato, tremolo and glissando.",
   scenes: "Court music of Huế, đờn ca tài tử, folk ensembles.",
   partners: ["dan-bau","dan-nguyet","sao-truc"],
+  techniques: [
+    { name: "Press-bend", native: "nhấn", how: "The left hand presses the string beyond the bridge to bend the pitch.", play: "slide" },
+    { name: "Vibrato", native: "rung", how: "Shaking the pressed string makes the note waver.", play: "slide" },
+    { name: "Glissando", how: "A finger sweeps across the strings, a rippling run.", play: "gliss" },
+    { name: "Tremolo", how: "Rapid back-and-forth plucking sustains a note.", play: "tremolo" },
+  ],
 },
 {
   id: "dan-nhi",
@@ -3006,6 +3707,11 @@ INSTRUMENT_CATALOG.push(
   skills: "Slides, vibrato and voice-like ornaments.",
   scenes: "Chèo and cải lương theatre, court music, folk ensembles.",
   partners: ["dan-bau","dan-nguyet","sao-truc"],
+  techniques: [
+    { name: "Slide", how: "The finger glides along the string between notes.", play: "slide" },
+    { name: "Vibrato", native: "rung", how: "Pressing and releasing the string makes the note waver.", play: "slide" },
+    { name: "Pizzicato", how: "A finger plucks the string instead of bowing.", play: "pizz" },
+  ],
 },
 {
   id: "dan-ho",
@@ -3024,6 +3730,10 @@ INSTRUMENT_CATALOG.push(
   skills: "Sustained bass lines, slides.",
   scenes: "Southern chamber music, theatre, national orchestras.",
   partners: ["dan-nhi","dan-tranh","dan-nguyet"],
+  techniques: [
+    { name: "Slide", how: "The finger glides along the string between notes.", play: "slide" },
+    { name: "Vibrato", how: "Rocking the finger makes the deep tone waver.", play: "slide" },
+  ],
 },
 {
   id: "dan-gao",
@@ -3042,6 +3752,9 @@ INSTRUMENT_CATALOG.push(
   skills: "Mellow slides and vibrato.",
   scenes: "Đờn ca tài tử, cải lương, funerals.",
   partners: ["dan-tranh","dan-nguyet","dan-nhi"],
+  techniques: [
+    { name: "Slide", how: "The finger glides along the string between notes.", play: "slide" },
+  ],
 },
 {
   id: "dan-nguyet",
@@ -3060,6 +3773,10 @@ INSTRUMENT_CATALOG.push(
   skills: "Pressing between high frets to bend pitch, vibrato, ornaments.",
   scenes: "Chầu văn spirit-medium rites, court music, đờn ca tài tử.",
   partners: ["dan-tranh","dan-nhi","sao-truc"],
+  techniques: [
+    { name: "Pressed bend", native: "nhấn", how: "Pressing between the high frets bends the pitch.", play: "slide" },
+    { name: "Tremolo", how: "Rapid alternate picking sustains a note.", play: "tremolo" },
+  ],
 },
 {
   id: "ty-ba",
@@ -3078,6 +3795,11 @@ INSTRUMENT_CATALOG.push(
   skills: "Tremolo and ornamented melody.",
   scenes: "Court music of Huế, chamber music, folk song accompaniment.",
   partners: ["dan-tranh","dan-nguyet","dan-nhi"],
+  techniques: [
+    { name: "Tremolo", how: "The fingers pluck in rapid succession, a rolling sustain.", play: "tremolo" },
+    { name: "Press-bend", native: "nhấn", how: "Pressing between the high frets bends the pitch.", play: "slide" },
+    { name: "Sweep", how: "The fingers sweep across all strings in a chord.", play: "strum" },
+  ],
 },
 {
   id: "sao-truc",
@@ -3096,6 +3818,11 @@ INSTRUMENT_CATALOG.push(
   skills: "Ornaments, trills and breath vibrato.",
   scenes: "Folk song, chèo theatre, village life.",
   partners: ["dan-bau","dan-tranh","dan-nhi"],
+  techniques: [
+    { name: "Glide", how: "Fingers slide on or off the holes to bend the pitch.", play: "slide" },
+    { name: "Trill", how: "Rapid finger flutters decorate the melody.", play: "flutter" },
+    { name: "Overblowing", how: "Stronger breath lifts to the upper octave.", play: "overblow" },
+  ],
 },
 {
   id: "ken",
@@ -3114,6 +3841,10 @@ INSTRUMENT_CATALOG.push(
   skills: "Circular breathing, slides and ornaments.",
   scenes: "Court rituals, funerals, temple festivals.",
   partners: ["trong-cai","chuong","dan-nhi"],
+  techniques: [
+    { name: "Circular breathing", how: "Breath stored in the cheeks keeps the tone unbroken.", play: "normal" },
+    { name: "Glide", how: "Lip pressure bends the pitch.", play: "slide" },
+  ],
 },
 {
   id: "chuong",
@@ -3132,6 +3863,9 @@ INSTRUMENT_CATALOG.push(
   skills: "Spaced strokes allowing long decay.",
   scenes: "Buddhist pagodas, rituals, festivals.",
   partners: ["ken","trong-cai","dan-nhi"],
+  techniques: [
+    { name: "Struck bell", how: "A wooden striker hits the bell, a long, deep ring.", play: "normal" },
+  ],
 },
 {
   id: "trong-cai",
@@ -3150,6 +3884,11 @@ INSTRUMENT_CATALOG.push(
   skills: "Signal rhythms, rolls, rim strokes.",
   scenes: "Village festivals, chèo theatre, rites at the communal house, battles.",
   partners: ["ken","chuong","sao-truc"],
+  techniques: [
+    { name: "Head stroke", how: "A stick strikes the head, a deep boom.", play: "normal" },
+    { name: "Rim stroke", how: "The stick hits the wooden rim, a dry click.", play: "knock" },
+    { name: "Roll", how: "Rapid strokes give a rolling thunder.", play: "roll" },
+  ],
 },
 {
   id: "khen",
@@ -3168,6 +3907,10 @@ INSTRUMENT_CATALOG.push(
   skills: "Continuous sound by blowing and drawing, drones and chords, rhythmic breath patterns.",
   scenes: "Courting, village festivals, rice rituals, lam singing.",
   partners: ["t-rung","cong-chieng","trong-dong"],
+  techniques: [
+    { name: "Chordal drone", how: "Several pipes sound together, a sustained harmony under the melody.", play: "normal" },
+    { name: "Breath pulse", how: "Alternating breath in and out gives a rhythmic pulse to the chord.", play: "tremolo" },
+  ],
 },
 {
   id: "t-rung",
@@ -3186,6 +3929,10 @@ INSTRUMENT_CATALOG.push(
   skills: "Fast interlocking melodies with both sticks.",
   scenes: "Highland village festivals, fields, modern ensembles.",
   partners: ["khen","cong-chieng","k-ni"],
+  techniques: [
+    { name: "Struck tube", how: "Sticks strike the hanging bamboo tubes, a light, hollow tone.", play: "normal" },
+    { name: "Tremolo", how: "Rapid alternate strokes give a rippling sound.", play: "tremolo" },
+  ],
 },
 {
   id: "dan-da",
@@ -3204,6 +3951,9 @@ INSTRUMENT_CATALOG.push(
   skills: "Melodic striking with damped and open strokes.",
   scenes: "Prehistoric rites; modern revival concerts.",
   partners: ["t-rung","khen","cong-chieng"],
+  techniques: [
+    { name: "Struck stone", how: "Wooden mallets strike the stone slabs, a dry, ringing tone.", play: "normal" },
+  ],
 },
 {
   id: "dan-goong",
@@ -3222,6 +3972,9 @@ INSTRUMENT_CATALOG.push(
   skills: "Interlocking two-hand plucking, gourd modulation against the body.",
   scenes: "Courting, private song, village life.",
   partners: ["k-ni","t-rung","khen"],
+  techniques: [
+    { name: "Plucked note", how: "The fingers pluck the bamboo-tube zither's strings.", play: "normal" },
+  ],
 },
 {
   id: "k-ni",
@@ -3240,6 +3993,9 @@ INSTRUMENT_CATALOG.push(
   skills: "Mouth-shaping for vowels and speech-like melody, slides.",
   scenes: "Courting, storytelling, highland life.",
   partners: ["dan-goong","t-rung","khen"],
+  techniques: [
+    { name: "Mouth resonance", how: "The player holds the thread in the mouth and shapes the vowels, so the bowed tone sounds like speech.", play: "harmonic" },
+  ],
 },
 {
   id: "cong-chieng",
@@ -3258,6 +4014,10 @@ INSTRUMENT_CATALOG.push(
   skills: "Interlocking hocket patterns, damping with the hand.",
   scenes: "Buffalo sacrifices, harvest and new-rice festivals, funerals and village rites.",
   partners: ["khen","t-rung","trong-dong"],
+  techniques: [
+    { name: "Struck gong", how: "A padded beater or fist strikes the gong, a ringing hum.", play: "normal" },
+    { name: "Damped stroke", how: "The hand damps the gong to cut the ring short.", play: "mute" },
+  ],
 },
 {
   id: "buffalo-horn",
@@ -3276,6 +4036,9 @@ INSTRUMENT_CATALOG.push(
   skills: "Long calls and swells.",
   scenes: "Village calls, festivals, war signals.",
   partners: ["trong-dong","cong-chieng","khen"],
+  techniques: [
+    { name: "Long blast", how: "A sustained call on the horn's natural tone.", play: "normal" },
+  ],
 },
 {
   id: "trong-dong",
@@ -3294,5 +4057,9 @@ INSTRUMENT_CATALOG.push(
   skills: "Ritual strokes on the centre star and rim.",
   scenes: "Ritual feasts, rain and harvest rites, chiefly ceremonies.",
   partners: ["khen","cong-chieng","buffalo-horn"],
+  techniques: [
+    { name: "Centre stroke", how: "A beater strikes the star at the centre of the tympanum, a ringing tone.", play: "normal" },
+    { name: "Rim stroke", how: "Striking near the rim gives a higher, drier sound.", play: "knock" },
+  ],
 }
 );

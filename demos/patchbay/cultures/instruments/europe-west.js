@@ -11,6 +11,12 @@ INSTRUMENT_CATALOG.push({
   skills: "Reaching into the middle row for accidentals, rippling arpeggios and harmonics, long sets of variations on airs, and accompanying cerdd dant, where the singer weaves a counter-melody over the harp's tune.",
   scenes: "Princes' and nobles' halls, eisteddfodau, Welsh dances and the cerdd dant tradition of sung poetry.",
   partners: ["crwth", "pibgorn", "pipe"],
+  techniques: [
+    { name: "Harmonics", how: "The lower palm lightly touches the middle of a string as the thumb plucks it, giving a soft bell-like note an octave higher.", play: "harmonic" },
+    { name: "Glissando", how: "A finger sweeps across a run of strings, releasing a rippling wash of notes.", play: "gliss" },
+    { name: "Rolled chords", how: "The notes of a chord are plucked in a quick upward ripple instead of together, a staple of harp accompaniment.", play: "strum" },
+    { name: "Damping", how: "The palm or fingertips are laid on ringing strings to stop them, giving short, dry notes.", play: "mute" },
+  ],
 });
 INSTRUMENT_CATALOG.push({
   id: "clarsach", name: "clàrsach (Gaelic wire harp)", native: "clàrsach · cláirseach", zh: "凯尔特金属弦竖琴",
@@ -23,6 +29,10 @@ INSTRUMENT_CATALOG.push({
   skills: "Damping the ringing wire notes, plucking with the nails, ornaments on slow airs, and the 'sisters', two adjacent strings tuned to the same note.",
   scenes: "Chieftains' halls, recitation of bardic poetry, and later the airs and planxties of harpers such as Turlough O'Carolan.",
   partners: ["violin", "tin-whistle", "bodhran"],
+  techniques: [
+    { name: "Fingernail plucking", how: "The strings are struck with the fingernails, drawing a bright, bell-like ring from the brass wire.", play: "normal" },
+    { name: "Damping", how: "Fingertips stop the long-ringing wire strings just after or before the next note, so the melody stays clear instead of blurring.", play: "mute" },
+  ],
 });
 INSTRUMENT_CATALOG.push({
   id: "crwth", name: "crwth", native: "crwth", zh: "克鲁斯琴",
@@ -35,6 +45,10 @@ INSTRUMENT_CATALOG.push({
   skills: "Bowing several strings at once for full chords, plucking the off-board drone strings with the thumb, and keeping a steady rhythmic bow for dance tunes.",
   scenes: "Bardic gatherings and princely halls, accompanying recited verse and harp, and village dances.",
   partners: ["telyn", "pibgorn", "pipe"],
+  techniques: [
+    { name: "Bowed chords", how: "The flat bridge lets the bow sound several strings at once, giving a thick, buzzing chordal texture.", play: "normal" },
+    { name: "Thumb-plucked drones", how: "The left thumb plucks the two open strings lying off the fingerboard, adding a plucked bass under the bowed tune.", play: "pizz" },
+  ],
 });
 INSTRUMENT_CATALOG.push({
   id: "pibgorn", name: "pibgorn (Welsh hornpipe)", native: "pibgorn", zh: "威尔士角笛",
@@ -47,6 +61,10 @@ INSTRUMENT_CATALOG.push({
   skills: "Because notes cannot be tongued, phrases are separated by finger ornaments such as cuts and grace notes.",
   scenes: "Shepherds' music, fairs, dances and festivities in rural Wales.",
   partners: ["crwth", "telyn"],
+  techniques: [
+    { name: "Cuts and grace notes", how: "Since the reed under the horn cap cannot be tongued, quick finger flicks above the melody note separate repeated notes.", play: "normal" },
+    { name: "Trills", how: "A finger rapidly opens and closes a hole, making the buzzing tone shake between two notes.", play: "flutter" },
+  ],
 });
 INSTRUMENT_CATALOG.push({
   id: "tabor", name: "tabor", native: "tabwrdd · tabor · tambour", zh: "塔博鼓",
@@ -59,6 +77,10 @@ INSTRUMENT_CATALOG.push({
   skills: "Steady dance and march patterns with accents and rolls, coordinated with the pipe melody.",
   scenes: "Dances, morris and folk festivities, processions, and the marching of archers and soldiers.",
   partners: ["pipe", "crwth", "telyn"],
+  techniques: [
+    { name: "Single-stick beating", how: "One stick taps steady dance patterns while the other hand plays the pipe.", play: "normal" },
+    { name: "Roll", how: "Rapid bounced strokes sustain a rattling roll against the snare.", play: "roll" },
+  ],
 });
 INSTRUMENT_CATALOG.push({
   id: "basse-de-violon", name: "basse de violon", native: "basse de violon", zh: "低音维奥隆",
@@ -71,6 +93,10 @@ INSTRUMENT_CATALOG.push({
   skills: "Firm continuo bass lines with clear dance articulation, and the French court orchestra's rule of the down-bow on strong beats, as described by Georg Muffat.",
   scenes: "Court ballets, operas and the king's orchestra at Versailles.",
   partners: ["violin", "harpsichord", "timpani"],
+  techniques: [
+    { name: "Bowed bass line", how: "Firm, detached French-style bow strokes give the dance pulse of the bass part.", play: "normal" },
+    { name: "Pizzicato", native: "pizzicato", how: "The strings are plucked with a finger instead of bowed, giving a short, round thump.", play: "pizz" },
+  ],
 });
 INSTRUMENT_CATALOG.push({
   id: "rebec", name: "rebec", native: "rebec · rubeba", zh: "雷贝克琴",
@@ -83,6 +109,9 @@ INSTRUMENT_CATALOG.push({
   skills: "Quick dance figures, drones on the open strings and high, nasal ornamented lines.",
   scenes: "Dances, feasts, taverns and the music of minstrels; also depicted in church art.",
   partners: ["psaltery", "pipe", "citole"],
+  techniques: [
+    { name: "Bowing with drones", how: "The bow catches open strings beside the melody string, so the tune sounds over a nasal drone.", play: "normal" },
+  ],
 });
 INSTRUMENT_CATALOG.push({
   id: "rabeca", name: "rabeca (Portuguese fiddle)", native: "rabeca", zh: "拉贝卡提琴",
@@ -95,6 +124,10 @@ INSTRUMENT_CATALOG.push({
   skills: "Driving repeated dance figures and bright high-register melodies with simple double stops.",
   scenes: "Village festivals, romarias and chula dances.",
   partners: ["cavaquinho", "viola-portuguesa", "bombo-portugues"],
+  techniques: [
+    { name: "Bowing with double stops", how: "The bow sounds the melody together with an open neighbouring string, giving the rough, ringing folk fiddle sound.", play: "normal" },
+    { name: "Slides", how: "The finger glides along the string into a note, a common ornament in folk fiddling.", play: "slide" },
+  ],
 });
 INSTRUMENT_CATALOG.push({
   id: "organistrum", name: "organistrum", native: "organistrum · symphonia", zh: "双人手摇琴",
@@ -107,6 +140,9 @@ INSTRUMENT_CATALOG.push({
   skills: "Sustaining organum-like fifths and octaves under a slow melody, coordinated between the two players.",
   scenes: "Monasteries and cathedrals, supporting chant and music teaching.",
   partners: ["church-organ", "vielle", "church-bells"],
+  techniques: [
+    { name: "Cranked drone and melody", how: "One player turns the wheel while the other pulls up the key rods, so the slow chant melody sounds over a constant drone.", play: "normal" },
+  ],
 });
 INSTRUMENT_CATALOG.push({
   id: "gothic-harp", name: "harp (medieval & Gothic)", native: "harpe · harpa · hearpe", zh: "哥特竖琴",
@@ -119,6 +155,10 @@ INSTRUMENT_CATALOG.push({
   skills: "Setting the brays for a nasal buzzing tone, retuning single strings between pieces, and playing the tenor and ornamented divisions of chansons.",
   scenes: "Courts and noble chambers, minstrels' songs and dances, and the angel consorts of painted altarpieces.",
   partners: ["lute", "recorder", "vielle", "portative"],
+  techniques: [
+    { name: "Bray pins", how: "Small L-shaped pins are turned to touch the vibrating strings, adding a buzzing, nasal rattle to every note.", play: "normal" },
+    { name: "Damping", how: "The hands stop ringing strings to keep lines clear and give short, dry notes.", play: "mute" },
+  ],
 });
 INSTRUMENT_CATALOG.push({
   id: "pipe", name: "pipe (medieval duct flute)", native: "pipe · flaüste · pib", zh: "中世纪三孔笛",
@@ -131,6 +171,10 @@ INSTRUMENT_CATALOG.push({
   skills: "Overblowing to reach the upper scale, quick finger ornaments, and keeping melody and drum rhythm going at once as a one-man band.",
   scenes: "Dances, processions, village festivities and jongleurs' performances.",
   partners: ["tabor", "vielle", "crwth"],
+  techniques: [
+    { name: "Overblowing", how: "With only three holes, the player overblows into the upper harmonics to get the full scale, the breath choosing the register.", play: "overblow" },
+    { name: "Pipe and tabor", how: "The pipe is fingered with one hand while the other beats the tabor, one musician giving tune and rhythm.", play: "normal" },
+  ],
 });
 INSTRUMENT_CATALOG.push({
   id: "viol", name: "viol (viola da gamba)", native: "viola da gamba · vihuela de arco · viole · viool", zh: "维奥尔琴",
@@ -143,6 +187,12 @@ INSTRUMENT_CATALOG.push({
   skills: "Chords and divisions (improvised diminutions over a ground), glosas as taught in Diego Ortiz's Trattado de glosas (1553), and lyra-viol playing from tablature.",
   scenes: "Domestic consort music, chamber music at court, church music and song accompaniment.",
   partners: ["lute", "recorder", "harpsichord", "vihuela"],
+  techniques: [
+    { name: "Chordal (lyra-viol) playing", how: "The curved bridge lets the bow sound two or three strings at once, giving full chords on a single instrument.", play: "normal" },
+    { name: "Plucking", how: "The strings are plucked with the fingers (Tobias Hume's 'play with your fingers'), giving a soft, lute-like note.", play: "pizz" },
+    { name: "Striking with the bow's back", how: "Tobias Hume (1605) asked players to 'drum this with the backe of your bow', tapping the strings with the stick for a dry, clicking sound.", play: "col-legno" },
+    { name: "Divisions", how: "A melody or ground is broken into fast running notes in varied patterns, played with light, smooth bowing.", play: "normal" },
+  ],
 });
 INSTRUMENT_CATALOG.push({
   id: "violin", name: "violin (and fiddle)", native: "violino · violon · fidil", zh: "小提琴",
@@ -155,6 +205,13 @@ INSTRUMENT_CATALOG.push({
   skills: "Vibrato, tremolo and stile concitato repeated notes, double stops; on the folk fiddle, cuts, rolls, bowed triplets and the Scottish snap.",
   scenes: "Opera, court and church orchestras, chamber music, and village dances and pub sessions.",
   partners: ["violone", "theorbo", "harpsichord", "bagpipe", "bodhran"],
+  techniques: [
+    { name: "Pizzicato", native: "pizzicato", how: "The string is plucked with a finger instead of bowed, giving a short, dry, plucked note.", play: "pizz" },
+    { name: "Spiccato", native: "spiccato", how: "The bow is bounced lightly off the string, giving crisp, short, separated notes.", play: "spiccato" },
+    { name: "Col legno", native: "col legno", how: "The strings are struck with the wooden stick of the bow, giving a dry, clicking, ghostly tone.", play: "col-legno" },
+    { name: "Harmonics", native: "flageolet", how: "A finger lightly touches a node on the string, producing a pure, whistling, flute-like tone.", play: "harmonic" },
+    { name: "Bowed tremolo", native: "tremolo", how: "Very rapid short back-and-forth bow strokes on one note, giving a shimmering, agitated sound.", play: "tremolo" },
+  ],
 });
 INSTRUMENT_CATALOG.push({
   id: "violone", name: "violone", native: "violone", zh: "维奥隆内",
@@ -167,6 +224,10 @@ INSTRUMENT_CATALOG.push({
   skills: "Sustaining a steady continuo bass and doubling the cello line at the lower octave.",
   scenes: "Church ensembles, concerti and sinfonias of Baroque Italy.",
   partners: ["violin", "theorbo", "church-organ"],
+  techniques: [
+    { name: "Bowed bass line", how: "Long, sustained strokes give the low foundation of the ensemble.", play: "normal" },
+    { name: "Pizzicato", native: "pizzicato", how: "The thick strings are plucked by hand, giving a deep, round, short thump.", play: "pizz" },
+  ],
 });
 INSTRUMENT_CATALOG.push({
   id: "vielle", name: "vielle (medieval fiddle)", native: "vièle · viella", zh: "中世纪维埃尔琴",
@@ -179,6 +240,10 @@ INSTRUMENT_CATALOG.push({
   skills: "Drones against the melody, bowing two strings for fifths and octaves, and ornamented estampie and song lines.",
   scenes: "Courtly song, estampies and dances, feasts, and processions.",
   partners: ["gothic-harp", "psaltery", "recorder", "pipe"],
+  techniques: [
+    { name: "Bowing with drones", how: "The flat bridge lets the bow sound the melody string together with open strings, a melody over a steady drone.", play: "normal" },
+    { name: "Plucked bourdon", native: "bordunus", how: "As described by Jerome of Moravia, the bourdon string lying off the fingerboard is plucked with the left thumb, adding a plucked bass note.", play: "pizz" },
+  ],
 });
 INSTRUMENT_CATALOG.push({
   id: "hurdy-gurdy", name: "hurdy-gurdy", native: "vielle à roue", zh: "手摇弦琴",
@@ -191,6 +256,10 @@ INSTRUMENT_CATALOG.push({
   skills: "The coup de poignet: rhythmic jerks of the crank that make the buzzing bridge 'chatter' in time with the dance.",
   scenes: "Village dances (bourrées), fairs, street music and the pastoral fashion at Versailles.",
   partners: ["musette", "lute", "fife"],
+  techniques: [
+    { name: "Wrist stroke (buzzing bridge)", native: "coup de poignet", how: "Jerks of the cranking hand make the loose 'dog' bridge of the trompette string rattle in rhythm, a percussive buzz against the drone.", play: "knock" },
+    { name: "Melody over drones", how: "Keys press tangents onto the chanterelles while the wheel keeps the drone strings sounding continuously.", play: "normal" },
+  ],
 });
 INSTRUMENT_CATALOG.push({
   id: "harpsichord", name: "harpsichord", native: "clavecin · clavicembalo · klavecimbel", zh: "羽管键琴",
@@ -203,6 +272,11 @@ INSTRUMENT_CATALOG.push({
   skills: "Figured-bass realisation (continuo), French ornaments (pincés, ports de voix), arpeggiated chords and 'style brisé', and expressive timing in place of dynamics.",
   scenes: "Court and salon chamber music, opera continuo, and private study and entertainment in wealthy homes.",
   partners: ["violin", "viol", "recorder", "theorbo"],
+  techniques: [
+    { name: "Arpeggiation", native: "arpègement", how: "Chords are rolled from bottom to top instead of struck together, letting each plucked note ring and filling out the sound.", play: "strum" },
+    { name: "Lute (buff) stop", native: "jeu de luth", how: "A row of leather or felt pads is moved against the strings, damping them for a short, muffled, lute-like pluck.", play: "mute" },
+    { name: "Ornaments", native: "pincé · tremblement", how: "Mordents and trills decorate notes, giving accent and sustain to the quickly decaying plucked tone.", play: "normal" },
+  ],
 });
 INSTRUMENT_CATALOG.push({
   id: "rote", name: "rote (Germanic lyre)", native: "rote · hrotta · rotta", zh: "日耳曼里拉琴",
@@ -215,6 +289,10 @@ INSTRUMENT_CATALOG.push({
   skills: "Strumming with selective damping to leave chosen notes ringing, and plucked melodies to accompany heroic song.",
   scenes: "Feasting halls, recitation of heroic poetry and courtly entertainment of early medieval kings.",
   partners: ["vielle", "olifant", "psaltery"],
+  techniques: [
+    { name: "Block and strum", how: "One hand strums across all the strings while the fingers of the other block (damp) those not wanted, leaving chosen strings to ring.", play: "strum" },
+    { name: "Plucking single strings", how: "The fingers pluck individual strings for a melody or to mark recited verse.", play: "normal" },
+  ],
 });
 INSTRUMENT_CATALOG.push({
   id: "theorbo", name: "theorbo", native: "tiorba · chitarrone · théorbe", zh: "提奥尔巴琴",
@@ -227,6 +305,10 @@ INSTRUMENT_CATALOG.push({
   skills: "Realising figured bass, arpeggiated (harped) chords, and moving bass lines on the open diapasons.",
   scenes: "Opera, chamber cantatas, church music and accompanying solo song.",
   partners: ["violin", "harpsichord", "violone", "cornett"],
+  techniques: [
+    { name: "Arpeggiated continuo", how: "Chords over the bass are spread and broken with the fingertips, a soft, rippling accompaniment.", play: "strum" },
+    { name: "Open diapasons", how: "The long unstopped bass strings are plucked by the thumb, giving deep, long-ringing bass notes.", play: "normal" },
+  ],
 });
 INSTRUMENT_CATALOG.push({
   id: "gittern", name: "gittern", native: "gittern · guiterne · guitarra morisca", zh: "吉特恩琴",
@@ -239,6 +321,9 @@ INSTRUMENT_CATALOG.push({
   skills: "Quick plectrum melodies, tremolo on held notes, and lively dance divisions.",
   scenes: "Taverns, courtly dances, and minstrels' and amateurs' music.",
   partners: ["vielle", "psaltery", "recorder"],
+  techniques: [
+    { name: "Quill plucking", how: "A goose-quill plectrum picks quick melodic lines, giving a bright, crisp tone.", play: "normal" },
+  ],
 });
 INSTRUMENT_CATALOG.push({
   id: "citole", name: "citole", native: "citole · cetola", zh: "西托勒琴",
@@ -251,6 +336,9 @@ INSTRUMENT_CATALOG.push({
   skills: "Plectrum melody with drones and quick repeated notes.",
   scenes: "Courts, minstrels' performances, and the angel musicians of church art.",
   partners: ["rebec", "psaltery", "vielle"],
+  techniques: [
+    { name: "Plectrum playing", how: "The strings are picked with a plectrum, giving a bright, clear tone for melody.", play: "normal" },
+  ],
 });
 INSTRUMENT_CATALOG.push({
   id: "cittern", name: "cittern", native: "cister · cistre · cetra", zh: "西特琴",
@@ -263,6 +351,10 @@ INSTRUMENT_CATALOG.push({
   skills: "Bright chordal strumming and plectrum melodies using its re-entrant tuning for close-voiced chords.",
   scenes: "Homes, taverns and barbers' shops, broken consorts and popular songs.",
   partners: ["lute", "recorder", "viol"],
+  techniques: [
+    { name: "Strummed chords", how: "The plectrum is brushed across the wire courses for chordal accompaniment, a bright, jangling sound.", play: "strum" },
+    { name: "Plectrum melody", how: "Single courses are picked with the plectrum for divisions and tunes.", play: "normal" },
+  ],
 });
 INSTRUMENT_CATALOG.push({
   id: "mandolin", name: "mandolin", native: "mandolino · bandolim", zh: "曼陀林",
@@ -275,6 +367,11 @@ INSTRUMENT_CATALOG.push({
   skills: "Rapid plectrum tremolo to sustain notes, duo-style melody with accompaniment, and crisp crosspicking.",
   scenes: "Serenades, Neapolitan songs, mandolin orchestras, folk groups and festivals.",
   partners: ["guitar", "chitarra-battente", "violin"],
+  techniques: [
+    { name: "Tremolo", native: "tremolo", how: "The plectrum flicks rapidly back and forth on a pair of strings, turning the short plucked note into a sustained, singing line.", play: "tremolo" },
+    { name: "Plectrum picking", how: "Single down- and up-strokes of the plectrum for crisp, bright melody notes.", play: "normal" },
+    { name: "Strummed chords", how: "The plectrum brushes across all four courses for rhythmic chordal accompaniment.", play: "strum" },
+  ],
 });
 INSTRUMENT_CATALOG.push({
   id: "bandurria", name: "bandurria", native: "bandurria", zh: "班杜里亚琴",
@@ -287,6 +384,10 @@ INSTRUMENT_CATALOG.push({
   skills: "Fast tremolo on sustained notes, plectrum runs and ornaments in jotas and pasodobles.",
   scenes: "Rondallas, student tunas, jotas and village festivals.",
   partners: ["guitar"],
+  techniques: [
+    { name: "Tremolo", native: "trémolo", how: "Fast alternating plectrum strokes on a course sustain the melody in a shimmering stream, the classic sound of the rondalla.", play: "tremolo" },
+    { name: "Picked melody", native: "punteado", how: "Single plectrum strokes pick out bright, crisp melodic lines.", play: "normal" },
+  ],
 });
 INSTRUMENT_CATALOG.push({
   id: "guitar", name: "guitar (Spanish guitar)", native: "guitarra · kitarra", zh: "吉他",
@@ -299,6 +400,13 @@ INSTRUMENT_CATALOG.push({
   skills: "Flamenco rasgueado strumming, picado runs, golpe taps on the top, tremolo; in Maltese għana, the prim guitarist's improvised interludes between sung verses.",
   scenes: "Flamenco gatherings, serenades, concert halls, and Maltese għana in village bars and at festas.",
   partners: ["vihuela", "bandurria", "zaqq"],
+  techniques: [
+    { name: "Rasgueado", native: "rasgueado", how: "The fingers flick out across the strings one after another in fast fans and rolls, a loud, rattling strummed burst of flamenco.", play: "strum" },
+    { name: "Golpe", native: "golpe", how: "The ring finger taps the soundboard (on its tap plate) in rhythm, a percussive knock between strums.", play: "knock" },
+    { name: "Tremolo", native: "trémolo", how: "The thumb plays a bass note and the fingers pluck one treble string three or four times in rapid succession, giving a seemingly sustained melody.", play: "tremolo" },
+    { name: "Harmonics", native: "armónicos", how: "A finger lightly touches a node (at the 12th, 7th or 5th fret) as the string is plucked, giving a pure, bell-like tone.", play: "harmonic" },
+    { name: "Damped strum", native: "apagado", how: "The left hand or the palm deadens the strings right after a strum, giving short, dry, choked chords.", play: "mute" },
+  ],
 });
 INSTRUMENT_CATALOG.push({
   id: "viola-portuguesa", name: "viola (Portuguese guitar accompaniment)", native: "viola · viola de fado · viola baixo", zh: "葡萄牙六弦吉他",
@@ -311,6 +419,9 @@ INSTRUMENT_CATALOG.push({
   skills: "Following the singer's rubato, walking bass runs between chords, and the characteristic fado rhythms of the fado corrido and fado menor.",
   scenes: "Casas de fado in Lisbon's Alfama and Mouraria, Coimbra student serenades.",
   partners: ["guitarra-portuguesa", "cavaquinho"],
+  techniques: [
+    { name: "Fado accompaniment", how: "The thumb plays bass notes on the beat while the fingers brush the chord on the off-beats, a steady harmonic pulse under the guitarra.", play: "strum" },
+  ],
 });
 INSTRUMENT_CATALOG.push({
   id: "guitarra-portuguesa", name: "guitarra portuguesa", native: "guitarra portuguesa", zh: "葡萄牙吉他",
@@ -323,6 +434,10 @@ INSTRUMENT_CATALOG.push({
   skills: "Dedilho (rapid alternating index-finger strokes), tremolo, and ornamented counter-melodies answering the fado singer.",
   scenes: "Casas de fado, Coimbra serenades and concert stages.",
   partners: ["viola-portuguesa", "cavaquinho"],
+  techniques: [
+    { name: "Dedilho", native: "dedilho", how: "The index finger strikes the string down and up in rapid alternation, a trembling, sustained line typical of fado.", play: "tremolo" },
+    { name: "Figueta", native: "figueta", how: "The thumb and index finger alternate in plucking, for clear, articulate melodic runs.", play: "normal" },
+  ],
 });
 INSTRUMENT_CATALOG.push({
   id: "cavaquinho", name: "cavaquinho", native: "cavaquinho", zh: "卡瓦基尼奥琴",
@@ -335,6 +450,10 @@ INSTRUMENT_CATALOG.push({
   skills: "Fast rhythmic strumming patterns that drive dances, and bright melodic picking.",
   scenes: "Folk dances (vira, chula), romarias and village festivals.",
   partners: ["viola-portuguesa", "rabeca", "bombo-portugues"],
+  techniques: [
+    { name: "Strumming", native: "rasgado", how: "Fast rhythmic strumming of the four strings gives a bright, driving chordal accompaniment.", play: "strum" },
+    { name: "Picked melody", native: "ponteado", how: "Single strings are picked for the melody, light and bright.", play: "normal" },
+  ],
 });
 INSTRUMENT_CATALOG.push({
   id: "vihuela", name: "vihuela", native: "vihuela de mano", zh: "比韦拉琴",
@@ -347,6 +466,10 @@ INSTRUMENT_CATALOG.push({
   skills: "Polyphonic fantasías, diferencias (variations) and glosas, and accompanying romances; dedillo (index-finger strokes).",
   scenes: "Noble houses and courts of Castile and Portugal.",
   partners: ["viol", "arpa-de-dos-ordenes", "guitar"],
+  techniques: [
+    { name: "Plucked polyphony", native: "punteado", how: "Individual courses are plucked with the fingers so several voices sound clearly, as in a lute fantasia.", play: "normal" },
+    { name: "Redobles", native: "redobles · dedillo", how: "Fast scale passages are played by alternating fingers, or one finger stroking back and forth, for rapid ornamental runs.", play: "normal" },
+  ],
 });
 INSTRUMENT_CATALOG.push({
   id: "chitarra-battente", name: "chitarra battente", native: "chitarra battente", zh: "敲击吉他",
@@ -359,6 +482,9 @@ INSTRUMENT_CATALOG.push({
   skills: "Driving strummed rhythms with percussive strokes and tremolo, and drones from the re-entrant tuning.",
   scenes: "Tarantellas, serenades, religious festivals and dances in the south.",
   partners: ["friscalettu", "zampogna", "mandolin"],
+  techniques: [
+    { name: "Beaten strumming", native: "battente", how: "The strings are beaten in vigorous rhythmic strums with a plectrum or the fingers, a bright, metallic, driving chordal sound.", play: "strum" },
+  ],
 });
 INSTRUMENT_CATALOG.push({
   id: "arpa-de-dos-ordenes", name: "arpa de dos órdenes", native: "arpa de dos órdenes", zh: "西班牙双排竖琴",
@@ -371,6 +497,10 @@ INSTRUMENT_CATALOG.push({
   skills: "Chromatic playing between the two rows, continuo bass lines and improvised glosas.",
   scenes: "Cathedral chapels, royal courts and theatre music.",
   partners: ["vihuela", "guitar", "shawm"],
+  techniques: [
+    { name: "Plucking across two rows", how: "The fingers pluck the diatonic row and reach between strings for the chromatic notes of the second row.", play: "normal" },
+    { name: "Rolled continuo chords", how: "Chords are spread from the bass upward to accompany songs and dances.", play: "strum" },
+  ],
 });
 INSTRUMENT_CATALOG.push({
   id: "marranzanu", name: "marranzanu (Sicilian jaw harp)", native: "marranzanu", zh: "西西里口簧琴",
@@ -383,6 +513,10 @@ INSTRUMENT_CATALOG.push({
   skills: "Rapid rhythmic flicking, changing mouth shape and breath to pick out melodies in the overtones.",
   scenes: "Pastoral music, tarantellas, family gatherings and folk festivals.",
   partners: ["friscalettu", "chitarra-battente"],
+  techniques: [
+    { name: "Plucked twang", how: "The steel tongue is flicked in rhythm while held against the teeth, giving a buzzing, resonant twang.", play: "normal" },
+    { name: "Mouth-shaped melody", how: "Changing the shape of the mouth and the breath picks out different overtones of the drone, making a whistling melody.", play: "normal" },
+  ],
 });
 INSTRUMENT_CATALOG.push({
   id: "fife", name: "fife", native: "fifre · pífaro", zh: "军笛",
@@ -395,6 +529,10 @@ INSTRUMENT_CATALOG.push({
   skills: "Tonguing crisp march rhythms, quick grace notes and playing in the piercing high octave over drums.",
   scenes: "Military marches and parades, festivals and religious processions.",
   partners: ["timpani", "trumpet", "bombo-portugues", "hurdy-gurdy"],
+  techniques: [
+    { name: "Tonguing", how: "Each note is started with the tongue for sharp, articulate march rhythms.", play: "normal" },
+    { name: "Overblowing", how: "Stronger, narrower breath jumps to the upper octave, the shrill register that carries over drums.", play: "overblow" },
+  ],
 });
 INSTRUMENT_CATALOG.push({
   id: "tin-whistle", name: "tin whistle", native: "feadóg stáin · feadag", zh: "锡笛",
@@ -407,6 +545,12 @@ INSTRUMENT_CATALOG.push({
   skills: "Cuts, taps, rolls and crans, slides between notes, and breath-pulsed rhythmic lift in reels and jigs.",
   scenes: "Pub sessions, céilís, dances and slow airs.",
   partners: ["violin", "bodhran", "uilleann-pipes", "clarsach"],
+  techniques: [
+    { name: "Cut", how: "A finger flicks up off a hole above the note for an instant, a clipped grace that separates notes without tonguing.", play: "normal" },
+    { name: "Roll", how: "A note is decorated with a cut and a tap in quick succession, a fluttering turn typical of Irish music.", play: "flutter" },
+    { name: "Slide", how: "Fingers are slid slowly off or onto a hole, letting the pitch glide into a note.", play: "slide" },
+    { name: "Overblowing", how: "Stronger breath jumps the same fingering into the second octave.", play: "overblow" },
+  ],
 });
 INSTRUMENT_CATALOG.push({
   id: "txistu", name: "txistu", native: "txistu", zh: "巴斯克三孔笛",
@@ -419,6 +563,10 @@ INSTRUMENT_CATALOG.push({
   skills: "Overblowing into high harmonics, rapid ornaments, and playing melody and drum at once.",
   scenes: "Basque dances (aurresku), town festivals, processions and civic ceremonies.",
   partners: ["tabor", "gaita-galega", "guitar"],
+  techniques: [
+    { name: "Overblowing", how: "With only three holes, the upper harmonics are reached by overblowing; the breath picks the register.", play: "overblow" },
+    { name: "Pipe and drum", native: "txistu eta danbolina", how: "The left hand fingers the txistu while the right beats the danbolin drum, one player giving melody and rhythm.", play: "normal" },
+  ],
 });
 INSTRUMENT_CATALOG.push({
   id: "friscalettu", name: "friscalettu (Sicilian cane flute)", native: "friscalettu", zh: "西西里芦苇笛",
@@ -431,6 +579,10 @@ INSTRUMENT_CATALOG.push({
   skills: "Brilliant high-register runs, trills and ornaments in tarantellas, and overblowing for the upper octave.",
   scenes: "Pastoral music, tarantellas, festivals and Christmas novena music.",
   partners: ["marranzanu", "chitarra-battente", "zampogna", "mandolin"],
+  techniques: [
+    { name: "Overblowing", how: "Increased breath jumps the cane flute into its upper register.", play: "overblow" },
+    { name: "Trills", how: "Rapid finger shakes ornament the melody with a lively flutter.", play: "flutter" },
+  ],
 });
 INSTRUMENT_CATALOG.push({
   id: "flejguta", name: "flejguta (Maltese cane flute)", native: "flejguta", zh: "马耳他芦笛",
@@ -443,6 +595,9 @@ INSTRUMENT_CATALOG.push({
   skills: "Simple ornamented folk melodies and breath-shaped phrasing.",
   scenes: "Rural pastimes, village festas and folk revival performances.",
   partners: ["zaqq", "guitar"],
+  techniques: [
+    { name: "Overblowing", how: "Stronger breath lifts the cane flute into its upper register.", play: "overblow" },
+  ],
 });
 INSTRUMENT_CATALOG.push({
   id: "bagpipe", name: "bagpipe (English bagpipe and Highland pìob mhòr)", native: "pìob mhòr · bagpipe", zh: "风笛",
@@ -455,6 +610,11 @@ INSTRUMENT_CATALOG.push({
   skills: "Since the chanter never stops, notes are separated by gracenotes and embellishments: doublings, throws, grips, taorluaths and birls.",
   scenes: "Clan gatherings and battlefields, military pipe bands, weddings and funerals, and medieval fairs and pilgrimages.",
   partners: ["bodhran", "violin", "tin-whistle", "carnyx"],
+  techniques: [
+    { name: "Gracenotes", how: "Since the chanter never stops sounding, very quick grace notes and doublings are used to separate and accent the melody notes.", play: "normal" },
+    { name: "Birl", how: "A rapid flourish on low A made by sweeping the little finger across the bottom holes, a fluttering ornament.", play: "flutter" },
+    { name: "Taorluath and crunluath", native: "taorluath · crùnluath", how: "Complex grace-note clusters that build the variations of pìobaireachd, giving rapid ornamental bursts between melody notes.", play: "normal" },
+  ],
 });
 INSTRUMENT_CATALOG.push({
   id: "uilleann-pipes", name: "uilleann pipes", native: "píobaí uilleann", zh: "爱尔兰肘风笛",
@@ -467,6 +627,12 @@ INSTRUMENT_CATALOG.push({
   skills: "Tight (closed) and open fingering, cranns and rolls, popping the chanter off the knee, and rhythmic regulator chords.",
   scenes: "Sessions, slow airs, céilí dances and concerts.",
   partners: ["tin-whistle", "violin", "bodhran"],
+  techniques: [
+    { name: "Tight piping", how: "The chanter is lifted off and set back on the knee and holes closed between notes, giving clipped, staccato notes.", play: "mute" },
+    { name: "Second octave", how: "Extra bag pressure lifts the chanter into its upper octave.", play: "overblow" },
+    { name: "Regulator chords", how: "The wrist presses the keys of the regulators, adding rhythmic chords under the melody.", play: "normal" },
+    { name: "Cran", native: "cran", how: "A low-note ornament of several rapid cuts, a quick stuttering decoration.", play: "flutter" },
+  ],
 });
 INSTRUMENT_CATALOG.push({
   id: "musette", name: "musette de cour", native: "musette de cour", zh: "宫廷风笛",
@@ -479,6 +645,9 @@ INSTRUMENT_CATALOG.push({
   skills: "Sweet, quiet tone control, French ornaments (tremblements, pincés) and playing in two chanters to extend the range.",
   scenes: "Court pastorales and fêtes champêtres, chamber music and opera ballets.",
   partners: ["hurdy-gurdy", "recorder", "harpsichord"],
+  techniques: [
+    { name: "Ornamented melody", how: "Bellows-fed and steady, the chanters play graceful, ornamented French court melodies over the soft drones.", play: "normal" },
+  ],
 });
 INSTRUMENT_CATALOG.push({
   id: "gaita-galega", name: "gaita galega (Galician bagpipe)", native: "gaita galega", zh: "加利西亚风笛",
@@ -491,6 +660,10 @@ INSTRUMENT_CATALOG.push({
   skills: "Ornamented melodies (muiñeiras, alalás), open and semi-closed fingering, and playing in the high octave (the 'second octave').",
   scenes: "Romarías and village festivals, weddings, processions and Galician folk music.",
   partners: ["txistu", "guitar", "timpani"],
+  techniques: [
+    { name: "Upper register", how: "Increased bag pressure takes the chanter into its high register.", play: "overblow" },
+    { name: "Ornaments", how: "Quick grace notes and mordents articulate the melody, since the chanter cannot be tongued.", play: "normal" },
+  ],
 });
 INSTRUMENT_CATALOG.push({
   id: "gaita-transmontana", name: "gaita transmontana", native: "gaita de foles transmontana · gaita mirandesa", zh: "特拉斯山风笛",
@@ -503,6 +676,9 @@ INSTRUMENT_CATALOG.push({
   skills: "Old modal tunings, gracenote ornamentation and accompanying the stick dances (pauliteiros) of Miranda.",
   scenes: "Festas and romarias, the pauliteiros' dances, and processions.",
   partners: ["bombo-portugues", "fife"],
+  techniques: [
+    { name: "Melody over drone", how: "The chanter plays the dance tune with finger ornaments over a steady drone.", play: "normal" },
+  ],
 });
 INSTRUMENT_CATALOG.push({
   id: "zampogna", name: "zampogna", native: "zampogna · ciaramedda (Sicilian)", zh: "赞波尼亚风笛",
@@ -515,6 +691,9 @@ INSTRUMENT_CATALOG.push({
   skills: "Two-part playing between the chanters, continuous drone, and ornamented pastoral melodies.",
   scenes: "Christmas novenas, pastoral music and festivals.",
   partners: ["ciaramella", "friscalettu", "tamburo"],
+  techniques: [
+    { name: "Two-chanter playing", how: "Each hand plays its own chanter, a melody over a moving second voice with the drones beneath.", play: "normal" },
+  ],
 });
 INSTRUMENT_CATALOG.push({
   id: "zaqq", name: "żaqq (Maltese bagpipe)", native: "żaqq", zh: "马耳他风笛",
@@ -527,6 +706,9 @@ INSTRUMENT_CATALOG.push({
   skills: "Playing a melody on one pipe against a drone or harmony on the other, with continuous breath support.",
   scenes: "Village festas, Christmas, carnival and folk revival concerts, often with the tanbur drum.",
   partners: ["flejguta", "guitar"],
+  techniques: [
+    { name: "Double-chanter melody", how: "The twin-pipe chanter plays the melody with one pipe sounding a supporting part, to the beat of the tambourine.", play: "normal" },
+  ],
 });
 INSTRUMENT_CATALOG.push({
   id: "shawm", name: "shawm", native: "chalemie · chirimía · schalmei", zh: "肖姆管",
@@ -539,6 +721,10 @@ INSTRUMENT_CATALOG.push({
   skills: "Strong sustained breath, improvised counterpoint over a tenor in the alta capella, and fast divisions.",
   scenes: "Civic and court ceremonies, dances, processions and cathedral feasts.",
   partners: ["sackbut", "bombarde", "trumpet", "nakers"],
+  techniques: [
+    { name: "Pirouette blowing", how: "The lips rest against the pirouette and the reed vibrates freely inside the mouth, giving the loud, brassy, outdoor tone.", play: "normal" },
+    { name: "Overblowing", how: "Stronger breath pressure lifts the conical bore into its upper octave.", play: "overblow" },
+  ],
 });
 INSTRUMENT_CATALOG.push({
   id: "bombarde", name: "bombarde (alto/tenor shawm)", native: "bombarde · Pommer", zh: "邦巴德管",
@@ -551,6 +737,9 @@ INSTRUMENT_CATALOG.push({
   skills: "Holding the tenor line steady beneath improvised shawm counterpoint, and powerful sustained tone.",
   scenes: "Ducal ceremonies, banquets, processions and outdoor dances.",
   partners: ["shawm", "sackbut", "nakers"],
+  techniques: [
+    { name: "Sustained tenor line", how: "Strong, even breath through the pirouette holds a steady, buzzing tenor beneath the shawm's improvised counterpoint.", play: "normal" },
+  ],
 });
 INSTRUMENT_CATALOG.push({
   id: "ciaramella", name: "ciaramella", native: "ciaramella", zh: "恰拉梅拉双簧管",
@@ -563,6 +752,10 @@ INSTRUMENT_CATALOG.push({
   skills: "Strong, bright tone with continuous ornamentation and agile pastoral melodies.",
   scenes: "Christmas novenas, processions and village festivals.",
   partners: ["zampogna", "tamburo", "friscalettu"],
+  techniques: [
+    { name: "Ornamented melody", how: "Continuous trills and grace notes decorate the bright pastoral tune above the zampogna.", play: "flutter" },
+    { name: "Melody over the drones", how: "Strong breath on the reed gives a piercing, steady melody line over the bagpipe's chanters.", play: "normal" },
+  ],
 });
 INSTRUMENT_CATALOG.push({
   id: "trumpet", name: "trumpet (natural trumpet and clarion)", native: "trompette · tromba · trompet · trombeta · trompeta", zh: "小号（自然号）",
@@ -575,6 +768,11 @@ INSTRUMENT_CATALOG.push({
   skills: "Clarino playing in the high harmonics, lip trills, fanfare and signal calls, and on valved trumpets fast articulation and band solos.",
   scenes: "Court ceremonies, battles and tournaments, coronations, church festivals and, later, band processions at village festas.",
   partners: ["timpani", "nakers", "shawm", "sackbut"],
+  techniques: [
+    { name: "Clarino playing", native: "clarino", how: "Lip tension and breath push the natural trumpet high into its harmonic series, where the overtones lie close enough for melodies.", play: "overblow" },
+    { name: "Fanfare tonguing", how: "Crisp tonguing on the low harmonics gives the repeated-note calls and fanfares of heralds and armies.", play: "normal" },
+    { name: "Lip trill", how: "In the high register the lips flick rapidly between two neighbouring harmonics, a shaking trill.", play: "flutter" },
+  ],
 });
 INSTRUMENT_CATALOG.push({
   id: "signal-horn", name: "signal horn (cow horn)", native: "corn · cor · corno", zh: "牛角号",
@@ -587,6 +785,9 @@ INSTRUMENT_CATALOG.push({
   skills: "Rhythmic signal calls using one or two harmonics, and long sustained blasts.",
   scenes: "Hunting, herding, warfare, watchtowers and ships.",
   partners: ["olifant", "trumpet", "tabor"],
+  techniques: [
+    { name: "Signal blasts", how: "Buzzing lips give one or two loud, raw notes, blown long or in rhythmic patterns as calls and alarms.", play: "normal" },
+  ],
 });
 INSTRUMENT_CATALOG.push({
   id: "cor-de-chasse", name: "cor de chasse (French hunting horn)", native: "cor de chasse · trompe de chasse", zh: "法国狩猎号",
@@ -599,6 +800,10 @@ INSTRUMENT_CATALOG.push({
   skills: "Hunting fanfares (fanfares de vénerie) and the 'tayauté', a strong vibrato produced from the diaphragm.",
   scenes: "Royal hunts, hunting masses (messes de Saint-Hubert) and outdoor ceremonies.",
   partners: ["trumpet", "timpani"],
+  techniques: [
+    { name: "Tayauté", native: "tayauté", how: "A strong pulsing vibrato driven from the diaphragm, giving the throbbing, wavering sound of French hunting fanfares.", play: "tremolo" },
+    { name: "Fanfares", native: "fanfares de vénerie", how: "Tongued calls on the harmonics of the long coiled tube, each signalling a moment of the hunt.", play: "normal" },
+  ],
 });
 INSTRUMENT_CATALOG.push({
   id: "olifant", name: "olifant", native: "olifant · oliphant", zh: "象牙号角",
@@ -611,6 +816,9 @@ INSTRUMENT_CATALOG.push({
   skills: "Long, powerful signal blasts heard across a battlefield or hunt.",
   scenes: "War and hunting calls, courtly display and church treasuries.",
   partners: ["signal-horn", "rote", "vielle"],
+  techniques: [
+    { name: "Signal blast", how: "A single powerful, buzzing blast through the ivory horn, sounded to call or to rally.", play: "normal" },
+  ],
 });
 INSTRUMENT_CATALOG.push({
   id: "carnyx", name: "carnyx", native: "carnyx", zh: "卡尼克斯战号",
@@ -623,6 +831,10 @@ INSTRUMENT_CATALOG.push({
   skills: "Wide harmonic range, growls and roaring sustained blasts.",
   scenes: "Battlefields, ritual and ceremonial gatherings.",
   partners: ["dord", "bodhran", "bagpipe"],
+  techniques: [
+    { name: "Growls", how: "The buzzing lips and throat roughen the tone into a roaring, rattling growl.", play: "flutter" },
+    { name: "Harmonic calls", how: "Changing lip tension jumps across the long tube's wide range of harmonics.", play: "overblow" },
+  ],
 });
 INSTRUMENT_CATALOG.push({
   id: "dord", name: "Irish Bronze Age horn (dord)", native: "dord", zh: "爱尔兰青铜号角",
@@ -635,6 +847,9 @@ INSTRUMENT_CATALOG.push({
   skills: "Low drones with rhythmic tonguing and overtones, a technique sometimes compared with the didgeridoo.",
   scenes: "Probably ritual and ceremonial gatherings of Bronze Age Ireland.",
   partners: ["carnyx", "bodhran"],
+  techniques: [
+    { name: "Drone with rhythmic tonguing", how: "A deep side-blown drone is pulsed with the tongue and breath, with overtones shaped by the mouth.", play: "normal" },
+  ],
 });
 INSTRUMENT_CATALOG.push({
   id: "tromboni", name: "trombone (Venetian tromboni)", native: "trombone · tromboni", zh: "文艺复兴长号",
@@ -647,6 +862,9 @@ INSTRUMENT_CATALOG.push({
   skills: "Smooth slide legato, doubling voices in church music, and agile divisions in canzonas.",
   scenes: "St Mark's Basilica and other churches, civic processions and ceremonies.",
   partners: ["cornett", "church-organ", "violin"],
+  techniques: [
+    { name: "Soft tonguing", how: "Gentle, smooth tonguing and slide changes let the instrument blend with voices and cornetts.", play: "normal" },
+  ],
 });
 INSTRUMENT_CATALOG.push({
   id: "flauto-dolce", name: "flauto (Italian recorder)", native: "flauto · flauto dolce", zh: "意大利竖笛",
@@ -659,6 +877,11 @@ INSTRUMENT_CATALOG.push({
   skills: "Articulation syllables, fast divisions, trills and ornaments, and 'pinching' the thumb hole for the high register.",
   scenes: "Opera and church sinfonias, chamber music and pastoral scenes.",
   partners: ["violin", "theorbo", "harpsichord"],
+  techniques: [
+    { name: "Articulation syllables", native: "lingua", how: "The tongue shapes syllables such as 'te-re' or 'de-re' (as in Ganassi's Fontegara) to articulate fast passages smoothly.", play: "normal" },
+    { name: "Trills", native: "tremoli", how: "A finger shakes rapidly over a hole, trilling the note.", play: "flutter" },
+    { name: "Thumbhole pinching", how: "The back thumb half-opens its hole so the breath jumps into the upper register.", play: "overblow" },
+  ],
 });
 INSTRUMENT_CATALOG.push({
   id: "organo-di-legno", name: "organo di legno (wooden chamber organ)", native: "organo di legno", zh: "木管室内风琴",
@@ -671,6 +894,9 @@ INSTRUMENT_CATALOG.push({
   skills: "Continuo realisation from figured bass, sustained chords under singers, and improvised toccatas.",
   scenes: "Opera continuo, chapels and private music rooms.",
   partners: ["theorbo", "violin", "violone"],
+  techniques: [
+    { name: "Continuo chords", how: "Soft wooden flue pipes sustain chords from the figured bass beneath singers and instruments.", play: "normal" },
+  ],
 });
 INSTRUMENT_CATALOG.push({
   id: "cathedral-organ", name: "cathedral and parish organ (with bourdon)", native: "orgue · bourdon · orgni", zh: "大教堂管风琴",
@@ -683,6 +909,11 @@ INSTRUMENT_CATALOG.push({
   skills: "Registration, pedal bass lines, alternatim verses with the choir, and improvised preludes.",
   scenes: "Mass and vespers, feast days, processions and the festas of parish churches.",
   partners: ["church-bells", "vielle", "trumpet"],
+  techniques: [
+    { name: "Full plenum", native: "plein jeu", how: "Principals and mixtures are drawn together for a bright, powerful chorus that fills the nave.", play: "normal" },
+    { name: "Pedal bourdon", native: "bourdon", how: "A stopped bass pipe held down on the pedals sustains a deep drone under the music.", play: "normal" },
+    { name: "Tremulant", native: "tremblant", how: "A valve makes the wind pulse, so the pipes sound with a wavering beat.", play: "tremolo" },
+  ],
 });
 INSTRUMENT_CATALOG.push({
   id: "regal", name: "regal", native: "regaal · regal", zh: "簧管风琴",
@@ -695,6 +926,9 @@ INSTRUMENT_CATALOG.push({
   skills: "Continuo realisation and crisp, short articulation suited to its reedy tone.",
   scenes: "Chapels, homes, court music and theatre.",
   partners: ["cittern", "viol", "recorder"],
+  techniques: [
+    { name: "Reed chords", how: "Short beating reeds give a buzzing, nasal sound for chords and continuo.", play: "normal" },
+  ],
 });
 INSTRUMENT_CATALOG.push({
   id: "church-bells", name: "church bells", native: "cloche · campana · qanpiena · bell", zh: "教堂钟",
@@ -707,6 +941,11 @@ INSTRUMENT_CATALOG.push({
   skills: "Tolling, chiming and full-circle swinging; in England change ringing of methods by teams of ringers, in Italy and Malta festive patterns of fast, rhythmic peals.",
   scenes: "Calls to Mass and the Angelus, feasts and festas, victories, coronations, weddings and funerals.",
   partners: ["cathedral-organ", "church-organ", "trumpet"],
+  techniques: [
+    { name: "Full-circle ringing", how: "Ropes swing each bell through a full circle, so the clapper strikes once per swing in a steady peal.", play: "normal" },
+    { name: "Tolling", how: "A single bell is struck slowly, one stroke at a time, for funerals and the hours.", play: "normal" },
+    { name: "Muffled ringing", how: "Leather pads are tied on the clappers, giving a dulled, damped stroke for mourning.", play: "mute" },
+  ],
 });
 INSTRUMENT_CATALOG.push({
   id: "carillon", name: "carillon", native: "beiaard · carillon", zh: "排钟",
@@ -719,6 +958,10 @@ INSTRUMENT_CATALOG.push({
   skills: "Fist and foot technique, tremolo on held notes and arrangements that respect the bells' strong minor-third overtone.",
   scenes: "Town belfries, markets and civic festivals, and hourly tunes heard across the town.",
   partners: ["church-organ", "recorder", "trumpet"],
+  techniques: [
+    { name: "Baton playing", how: "The carillonneur strikes wooden batons with loosely closed fists and presses pedals for the bass bells.", play: "normal" },
+    { name: "Tremolo", how: "A bell is struck in rapid repetition so its note seems to sustain, a staple of slow carillon melodies.", play: "tremolo" },
+  ],
 });
 INSTRUMENT_CATALOG.push({
   id: "chime-bells", name: "chime bells (cymbala)", native: "cymbala · clochettes", zh: "中世纪小钟组",
@@ -731,6 +974,9 @@ INSTRUMENT_CATALOG.push({
   skills: "Picking out chant melodies and signals, and ringing sequences of pitches.",
   scenes: "Monasteries and chapels, music teaching and courtly ensembles.",
   partners: ["portative", "gothic-harp", "recorder"],
+  techniques: [
+    { name: "Struck with hammers", how: "Small tuned bells are struck in turn with a hammer, ringing a bright melodic scale.", play: "normal" },
+  ],
 });
 INSTRUMENT_CATALOG.push({
   id: "celtic-handbell", name: "Celtic saint's handbell (bangu, clog)", native: "bangu · clog", zh: "凯尔特圣徒手摇钟",
@@ -743,6 +989,9 @@ INSTRUMENT_CATALOG.push({
   skills: "Single strokes and simple rhythmic ringing to call to prayer or mark ritual moments.",
   scenes: "Monasteries, calls to prayer, processions and the oaths and rites connected with saints.",
   partners: ["crwth", "clarsach"],
+  techniques: [
+    { name: "Hand ringing", how: "The bell is swung by its handle so the clapper strikes the iron, a dull, clanging call.", play: "normal" },
+  ],
 });
 INSTRUMENT_CATALOG.push({
   id: "ships-bell", name: "ship's bell", native: "sino de bordo", zh: "船钟",
@@ -755,6 +1004,10 @@ INSTRUMENT_CATALOG.push({
   skills: "Ringing the watch strokes in their fixed patterns, and steady fog signals.",
   scenes: "Ships at sea, harbours and naval ceremonies.",
   partners: ["signal-horn", "trumpet"],
+  techniques: [
+    { name: "Striking the watch", how: "Strokes are struck in pairs to mark each half-hour of the watch.", play: "normal" },
+    { name: "Fog signal", how: "At anchor in fog the bell is rung rapidly for several seconds, a continuous clanging warning.", play: "tremolo" },
+  ],
 });
 INSTRUMENT_CATALOG.push({
   id: "timpani", name: "timpani (kettledrums)", native: "timpani · timbales · atabales · keteltrommen", zh: "定音鼓",
@@ -767,6 +1020,11 @@ INSTRUMENT_CATALOG.push({
   skills: "Rolls, cross-sticking, damping the head, and retuning between passages.",
   scenes: "Cavalry and royal ceremonies, opera and church music, and orchestral music.",
   partners: ["trumpet", "violin", "cor-de-chasse"],
+  techniques: [
+    { name: "Roll", how: "Rapid alternating strokes sustain a thundering roll on the kettle.", play: "roll" },
+    { name: "Damping", native: "étouffé", how: "The fingers or palm touch the head right after the stroke, cutting off the ring for a short, dry note.", play: "mute" },
+    { name: "Fanfare strokes", how: "Single strokes on the paired kettles mark the tonic and dominant beneath the trumpets.", play: "normal" },
+  ],
 });
 INSTRUMENT_CATALOG.push({
   id: "bodhran", name: "bodhrán", native: "bodhrán", zh: "宝思兰鼓",
@@ -779,6 +1037,12 @@ INSTRUMENT_CATALOG.push({
   skills: "Triplets and rolls with the double-ended tipper, and changing pitch by moving the back hand on the skin.",
   scenes: "Pub sessions, céilís, wren processions and folk concerts.",
   partners: ["violin", "tin-whistle", "uilleann-pipes", "bagpipe"],
+  techniques: [
+    { name: "Tipper strokes", native: "cipín", how: "A short double-ended stick is rocked from the wrist, striking with both ends for running triplets.", play: "normal" },
+    { name: "Hand pitch-bending", how: "The other hand presses against the back of the skin and moves, changing tension so the pitch rises and falls.", play: "slide" },
+    { name: "Rolls", how: "Fast tipper strokes in trebles and triplets give a rattling roll.", play: "roll" },
+    { name: "Rim shots", how: "The tipper strikes the wooden frame, a dry click between the drum strokes.", play: "knock" },
+  ],
 });
 INSTRUMENT_CATALOG.push({
   id: "bombo-portugues", name: "bombo (Portuguese bass drum)", native: "bombo", zh: "邦博大鼓",
@@ -791,6 +1055,10 @@ INSTRUMENT_CATALOG.push({
   skills: "Loud, steady processional rhythms played in unison by large groups.",
   scenes: "Romarias, processions, carnival and village festivals.",
   partners: ["gaita-transmontana", "fife", "cavaquinho"],
+  techniques: [
+    { name: "Mallet and stick", how: "A soft mallet thumps one head while a thin stick clacks out the rhythm on the other side.", play: "normal" },
+    { name: "Unison processional beat", how: "Large groups strike in unison for a loud, steady thunder.", play: "normal" },
+  ],
 });
 INSTRUMENT_CATALOG.push({
   id: "tamburo", name: "tamburo (Sicilian festival drum)", native: "tammuru · tamburo", zh: "西西里节庆鼓",
@@ -803,4 +1071,8 @@ INSTRUMENT_CATALOG.push({
   skills: "Long, tightly coordinated processional rhythms, rolls and accents played by groups of drummers.",
   scenes: "Saints' festas, Holy Week processions and town celebrations.",
   partners: ["ciaramella", "zampogna", "friscalettu"],
+  techniques: [
+    { name: "Processional strokes", how: "Sticks beat steady, accented festival rhythms while walking.", play: "normal" },
+    { name: "Rolls", how: "Rapid stick strokes build rattling rolls between the accents.", play: "roll" },
+  ],
 });

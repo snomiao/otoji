@@ -112,6 +112,65 @@ class Bowed {
   }
 }
 
+// A DC blocker.
+class DCBlock { constructor() { this.x = 0; this.y = 0; } tick(x) { const y = x - this.x + 0.995 * this.y; this.x = x; this.y = y; return y; } }
+// Shared wind breath: a pressure envelope with noise and vibrato.
+class Breath {
+  constructor(sr, p) { this.sr = sr; this.p = p; this.lvl = 0; this.vib = 0; }
+  tick(target, rate) { this.lvl += (target - this.lvl) * rate; this.vib += 2 * Math.PI * (this.p.vibRate || 5) / this.sr;
+    return this.lvl * (1 + (Math.random() * 2 - 1) * (this.p.noise ?? 0.12) + Math.sin(this.vib) * (this.p.vibDepth ?? 0.03)); }
+}
+// Flute (STK Flute): the breath jet strikes the edge; a cubic jet table drives the bore.
+class Flute {
+  constructor(sr, p) { this.sr = sr; this.p = p; this.bore = new Delay(Math.ceil(sr / 40) + 4); this.jet = new Delay(Math.ceil(sr / 40) + 4); this.lp = new OnePole(0.6); this.dc = new DCBlock(); this.breath = new Breath(sr, p); this.on = false; }
+  start(f, peak, dur, legato) { const jr = this.p.jetRatio || 0.32, bore = (this.sr / f) / (1 + jr); this.bore.setLen(bore + 0.1); this.jet.setLen(bore * jr); /* the jet is inside the loop */ this.peak = peak; this.release = Math.floor(this.sr * dur); this.t = 0; this.on = true; }
+  tick() {
+    if (!this.on) return 0;
+    const b = this.breath.tick(this.t < this.release ? (this.p.pressure || 0.9) : 0, this.t < this.release ? 0.004 : 0.002);
+    const temp = this.dc.tick(-this.lp.tick(this.bore.read()));
+    let pd = b - 0.5 * temp; this.jet.write(pd); pd = this.jet.read();
+    let jt = pd * (pd * pd - 1); jt = Math.max(-1, Math.min(1, jt));
+    const out = jt + 0.5 * temp; this.bore.write(out);
+    this.t++; if (this.t > this.release + this.sr * 0.5) this.on = false;
+    return out * 0.3 * this.peak * 2;
+  }
+}
+// Reed (after STK Clarinet): the reed is a pressure valve at the end of a bore.
+// conical (double reeds: shawm, suona, zurna) uses the whole period, so all
+// harmonics sound; a cylinder (clarinet-like) only the odd ones.
+class Reed {
+  constructor(sr, p) { this.sr = sr; this.p = p; this.bore = new Delay(Math.ceil(sr / 40) + 4); this.lp = new OnePole(p.bright || 0.5); this.dc = new DCBlock(); this.breath = new Breath(sr, { noise: 0.08, vibDepth: 0.02, ...p }); this.on = false; }
+  start(f, peak, dur) { const L = this.sr / f; this.bore.setLen(this.p.conical ? L : L * 0.5 - 1); this.peak = peak; this.release = Math.floor(this.sr * dur); this.t = 0; this.on = true; }
+  tick() {
+    if (!this.on) return 0;
+    const b = this.breath.tick(this.t < this.release ? (this.p.pressure || 0.8) : 0, this.t < this.release ? 0.006 : 0.003);
+    const refl = (this.p.conical ? 0.95 : -0.95) * this.lp.tick(this.bore.read());
+    const pd = refl - b; let reed = 0.7 - 0.3 * pd; reed = Math.max(-1, Math.min(1, reed));
+    const out = b + pd * reed; this.bore.write(out);
+    this.t++; if (this.t > this.release + this.sr * 0.4) this.on = false;
+    return this.dc.tick(out) * (this.p.conical ? 2.4 : 0.6) * this.peak * 2;
+  }
+}
+// Brass (STK Brass): buzzing lips (a resonant filter tuned to the note) against the bore.
+class Brass {
+  constructor(sr, p) { this.sr = sr; this.p = p; this.bore = new Delay(Math.ceil(sr / 20) + 8); this.dc = new DCBlock(); this.breath = new Breath(sr, { noise: 0.02, vibDepth: 0.01, ...p }); this.on = false; }
+  start(f, peak, dur) {
+    const sr = this.sr; this.bore.setLen(sr / f * 2 + 3);
+    const w = 2 * Math.PI * f / sr, r = 0.997; this.a1 = -2 * r * Math.cos(w); this.a2 = r * r; this.y1 = this.y2 = 0; this.g = 0.03;
+    this.peak = peak; this.release = Math.floor(sr * dur); this.t = 0; this.on = true;
+  }
+  tick() {
+    if (!this.on) return 0;
+    const mouth = this.breath.tick(this.t < this.release ? (this.p.pressure || 0.9) : 0, this.t < this.release ? 0.004 : 0.002) * 0.3;
+    const bore = this.bore.read();
+    let dp = mouth - bore; const y = this.g * dp - this.a1 * this.y1 - this.a2 * this.y2; this.y2 = this.y1; this.y1 = y; dp = y * y; if (dp > 1) dp = 1;
+    const out = dp * mouth + (1 - dp) * bore; this.bore.write(this.dc.tick(out) * 0.995);
+    this.t++; if (this.t > this.release + this.sr * 0.4) this.on = false;
+    return out * 0.8 * this.peak * 2;
+  }
+}
+const WINDS = { flute: Flute, reed: Reed, brass: Brass };
+
 class PM extends AudioWorkletProcessor {
   constructor(opts) {
     super();
@@ -124,6 +183,10 @@ class PM extends AudioWorkletProcessor {
       const k = Math.min(3, ev.idx || 0); let v = this.voices[k]; if (!v) this.voices[k] = v = new Bowed(sampleRate, this.p);
       const legato = v.on && v.t >= v.release - sampleRate * 0.03 && v.t <= v.release + sampleRate * 0.06;
       v.start(ev.f, ev.peak, ev.dur, ev.tech === "spiccato" ? false : legato || (v.on && ev.legato), ev.tech); return;
+    }
+    if (WINDS[this.model]) { // one voice per chord note; a held line re-tongues each note
+      const k = Math.min(3, ev.idx || 0); let v = this.voices[k]; if (!v) this.voices[k] = v = new WINDS[this.model](sampleRate, this.p);
+      v.start(ev.tech === "overblow" ? ev.f * 2 : ev.f, ev.peak, ev.dur); return;
     }
     let v = this.voices.find((x) => x && !x.on); if (!v) { if (this.voices.length < 8) this.voices.push(v = new Pluck(sampleRate, this.p)); else v = this.voices[0]; }
     v.start(ev.f, ev.peak, ev.dur, ev.tech, ev.bend);

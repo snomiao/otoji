@@ -12,6 +12,10 @@ INSTRUMENT_CATALOG.push(
     skills: "Circular breathing for an unbroken sound; the slight detuning between the pipes gives a rich beating tone.",
     scenes: "Banquets, harvest work and dances shown in tomb paintings.",
     partners: ["benet", "sesheshet", "sebi"],
+    techniques: [
+      { name: "drone-and-melody beating", how: "Both pipes are fingered together so their slightly different tunings beat against each other in a buzzing, wavering tone.", play: "normal" },
+      { name: "circular breathing", how: "Breathing in through the nose while pushing air from the cheeks keeps the reed sound unbroken.", play: "normal" },
+    ],
   },
   {
     id: "benet", name: "benet (arched harp)", native: "bnt (Egyptian)", zh: "埃及弓形竖琴",
@@ -24,6 +28,10 @@ INSTRUMENT_CATALOG.push(
     skills: "Plucking with both hands, damping strings, playing paired notes in fourths and fifths as tomb scenes suggest.",
     scenes: "Temple rites, banquets and funerary songs such as the Harper's Songs.",
     partners: ["memet", "sesheshet", "long-lute"],
+    techniques: [
+      { name: "two-handed plucking", how: "Both hands pluck strings from either side for a warm, gut-string tone.", play: "normal" },
+      { name: "damping", how: "A hand rests on ringing strings to stop them, leaving short, dry notes.", play: "mute" },
+    ],
   },
   {
     id: "sebi", name: "end-blown flute (sebi)", native: "sb3 (Egyptian)", zh: "埃及斜吹长笛",
@@ -36,6 +44,10 @@ INSTRUMENT_CATALOG.push(
     skills: "Lip and angle control for shading pitch; breathy, airy attacks.",
     scenes: "Herdsmen's music, banquets and temple ensembles.",
     partners: ["memet", "benet", "double-pipe"],
+    techniques: [
+      { name: "oblique rim blowing", how: "Air is blown across the sharp upper rim held at a slant, giving a breathy, airy tone.", play: "normal" },
+      { name: "pitch shading", how: "Changing the lip coverage and angle of the rim bends the pitch smoothly.", play: "slide" },
+    ],
   },
   {
     id: "sesheshet", name: "sistrum", native: "sššt (Egyptian) · σεῖστρον", zh: "叉铃",
@@ -48,6 +60,10 @@ INSTRUMENT_CATALOG.push(
     skills: "Rhythmic shaking in time with song and dance, often with the menat necklace as a second rattle.",
     scenes: "Temple rites of Hathor and Isis, processions and harvest songs.",
     partners: ["benet", "memet", "frame-drum"],
+    techniques: [
+      { name: "pulsed shaking", how: "Shaken in time with the dance or song so the pieces clash in a dry, crisp pulse.", play: "normal" },
+      { name: "continuous shake", how: "Shaken quickly without pause, the jingles blur into a sustained shimmering rustle.", play: "tremolo" },
+    ],
   },
   {
     id: "sheneb", name: "sheneb (trumpet)", native: "šnb (Egyptian)", zh: "埃及小号",
@@ -60,6 +76,10 @@ INSTRUMENT_CATALOG.push(
     skills: "Lip buzzing for a small number of harmonics; strong signal calls.",
     scenes: "Military parades and signals, religious processions.",
     partners: ["barrel-drum", "benet"],
+    techniques: [
+      { name: "signal call", how: "Lips buzz at the narrow end for a single loud, brassy blast.", play: "normal" },
+      { name: "lip slur between harmonics", how: "Tightening the lips jumps the tone up to the next natural overtone without a break.", play: "overblow" },
+    ],
   },
   {
     id: "barrel-drum", name: "long barrel drum", native: "(Egyptian name uncertain)", zh: "埃及长桶鼓",
@@ -72,6 +92,10 @@ INSTRUMENT_CATALOG.push(
     skills: "Hand drumming on both heads for low and high strokes.",
     scenes: "Military marches, processions and festivals.",
     partners: ["sheneb", "sesheshet"],
+    techniques: [
+      { name: "low-head stroke", how: "The flat hand strikes the larger, lower head for a deep, open tone.", play: "normal" },
+      { name: "high-head stroke", how: "Fingers strike the other, higher head for a sharper, brighter slap.", play: "knock" },
+    ],
   },
   {
     id: "long-lute", name: "long-necked lute", native: "(name uncertain; Greek πανδοῦρα for later forms)", zh: "长颈鲁特琴",
@@ -84,6 +108,11 @@ INSTRUMENT_CATALOG.push(
     skills: "Plectrum strumming and melodic runs along a fretless neck.",
     scenes: "Banquets, dancers and entertainers.",
     partners: ["benet", "double-pipe", "frame-drum"],
+    techniques: [
+      { name: "plectrum picking", how: "A plectrum picks single notes along the fretless neck for a bright, twangy line.", play: "normal" },
+      { name: "plectrum strumming", how: "The plectrum brushes across all strings for a rhythmic chord.", play: "strum" },
+      { name: "slide along the neck", how: "A left finger slides along the fretless neck, gliding between pitches.", play: "slide" },
+    ],
   },
 );
 INSTRUMENT_CATALOG.push(
@@ -98,6 +127,13 @@ INSTRUMENT_CATALOG.push(
     skills: "Vibrato, thumb position, pizzicato and long sustained bass lines.",
     scenes: "Orchestras, chamber music and the Egyptian firqa.",
     partners: ["violin", "double-bass", "qanun"],
+    techniques: [
+      { name: "arco", native: "arco", how: "The bow is drawn across the string for a sustained, singing tone.", play: "normal" },
+      { name: "pizzicato", native: "pizzicato", how: "The string is plucked with a finger for a round, short, resonant note.", play: "pizz" },
+      { name: "spiccato", native: "spiccato", how: "The bow bounces off the string in short, light, separated strokes.", play: "spiccato" },
+      { name: "col legno", native: "col legno", how: "The strings are struck with the wood of the bow for a dry, clicking pitch.", play: "col-legno" },
+      { name: "natural harmonics", how: "A finger lightly touches a node of the string, giving a pure, flute-like overtone.", play: "harmonic" },
+    ],
   },
   {
     id: "double-bass", name: "double bass", native: "contrabbasso · كونترباص", zh: "低音提琴",
@@ -110,6 +146,13 @@ INSTRUMENT_CATALOG.push(
     skills: "Walking bass lines, slapping in string bands, arco bowing.",
     scenes: "Orchestras, bluegrass and old-time bands, jazz and Arabic orchestras.",
     partners: ["violin", "banjo", "guitar", "cello"],
+    techniques: [
+      { name: "arco", native: "arco", how: "The bow is drawn across the heavy strings for a deep, sustained tone.", play: "normal" },
+      { name: "pizzicato", native: "pizzicato", how: "Plucked with the side of the finger for a round, booming walking-bass note.", play: "pizz" },
+      { name: "slap bass", how: "The string is pulled away and let snap back against the fingerboard, adding a percussive click to each note.", play: "knock" },
+      { name: "spiccato", native: "spiccato", how: "Short bounced bow strokes give light, detached bass notes.", play: "spiccato" },
+      { name: "harmonics", how: "Lightly touching a node gives a high, glassy overtone.", play: "harmonic" },
+    ],
   },
   {
     id: "sagat", name: "sagat (finger cymbals)", native: "صاجات", zh: "指钹",
@@ -122,6 +165,11 @@ INSTRUMENT_CATALOG.push(
     skills: "Fast alternating strokes, open ringing and muted clicks.",
     scenes: "Dance (raqs sharqi), zaffa wedding processions, folk ensembles.",
     partners: ["tabl-baladi", "mizmar"],
+    techniques: [
+      { name: "open ringing stroke", how: "The cymbals strike and separate at once so they ring with a bright, metallic chime.", play: "normal" },
+      { name: "closed click", how: "The cymbals are pressed together after striking, giving a short, muted clack.", play: "mute" },
+      { name: "rapid alternation", how: "Both hands alternate in fast strokes for a continuous jingling roll.", play: "tremolo" },
+    ],
   },
   {
     id: "mizmar", name: "mizmar", native: "مزمار", zh: "米兹玛尔双簧管",
@@ -134,6 +182,10 @@ INSTRUMENT_CATALOG.push(
     skills: "Circular breathing for continuous sound, ornamented maqam melodies.",
     scenes: "Weddings, saints' festivals (mulid) and tahtib stick-dance in Upper Egypt.",
     partners: ["tabl-baladi", "sagat"],
+    techniques: [
+      { name: "circular breathing", how: "The cheeks push air while the player breathes in through the nose, so the loud reedy tone never stops.", play: "normal" },
+      { name: "ornamental trills", how: "Quick finger shakes decorate maqam melodies with buzzing trills.", play: "flutter" },
+    ],
   },
   {
     id: "tabl-baladi", name: "tabl baladi", native: "طبل بلدي", zh: "埃及大鼓",
@@ -146,6 +198,11 @@ INSTRUMENT_CATALOG.push(
     skills: "Interlocking dum-tak patterns such as maqsum and saidi.",
     scenes: "Weddings, mulid festivals, processions.",
     partners: ["mizmar", "sagat"],
+    techniques: [
+      { name: "dum", native: "دُم", how: "The heavy beater strikes the center of the main head for a deep, booming tone.", play: "normal" },
+      { name: "tak", native: "تَك", how: "A thin stick strikes the other head for a sharp, high crack.", play: "knock" },
+      { name: "stick roll", how: "Rapid light strokes of the thin stick make a crackling roll between beats.", play: "roll" },
+    ],
   },
 );
 INSTRUMENT_CATALOG.push(
@@ -160,6 +217,10 @@ INSTRUMENT_CATALOG.push(
     skills: "Retuning by fifths and fourths between the seven named tunings, playing dyads (two-string intervals) as the tablets list.",
     scenes: "Temple hymns, laments and court music.",
     partners: ["embubu", "lilissu", "zagsal"],
+    techniques: [
+      { name: "finger plucking", how: "The fingers pluck single strings for a clear gut-string tone.", play: "normal" },
+      { name: "dyad", how: "Two strings are plucked together in one of the intervals named in the Babylonian tablets.", play: "strum" },
+    ],
   },
   {
     id: "embubu", name: "embūbu (reed pipe)", native: "embūbu (Akkadian) · gi-gíd (Sumerian)", zh: "芦管",
@@ -173,6 +234,10 @@ INSTRUMENT_CATALOG.push(
     skills: "Breath control and finger shading for bending notes.",
     scenes: "Laments, temple rites, shepherds' music and festivals.",
     partners: ["sammu", "lilissu", "double-pipe"],
+    techniques: [
+      { name: "fingered melody", how: "Fingers open and close the holes for a reedy, piping line.", play: "normal" },
+      { name: "note bending", how: "Partly covering a hole and changing breath bends the pitch smoothly.", play: "slide" },
+    ],
   },
   {
     id: "zagsal", name: "zagsal (harp)", native: "zag-sal (Sumerian)", zh: "扎格萨尔竖琴",
@@ -185,6 +250,9 @@ INSTRUMENT_CATALOG.push(
     skills: "Plucked chords and arpeggios; details of technique are unknown.",
     scenes: "Temple hymns of praise.",
     partners: ["sammu", "embubu"],
+    techniques: [
+      { name: "finger plucking", how: "The fingers pluck single strings to accompany a hymn.", play: "normal" },
+    ],
   },
   {
     id: "qarnu", name: "animal horn (qarnu)", native: "qarnu (Akkadian) · si (Sumerian)", zh: "号角",
@@ -198,6 +266,9 @@ INSTRUMENT_CATALOG.push(
     skills: "One or two loud notes with sharp attacks for signals.",
     scenes: "War, hunting signals, temple and city ceremonies.",
     partners: ["lilissu", "bronze-bell"],
+    techniques: [
+      { name: "signal call", how: "Lips buzz at the narrow end for a single loud, brassy blast.", play: "normal" },
+    ],
   },
   {
     id: "lilissu", name: "lilissu (kettledrum)", native: "lilissu (Akkadian) · lilis (Sumerian)", zh: "利利苏铜鼓",
@@ -210,6 +281,10 @@ INSTRUMENT_CATALOG.push(
     skills: "Slow ritual beats underpinning lament chants.",
     scenes: "Temple laments and eclipse rituals sung by the kalû priests.",
     partners: ["sammu", "embubu", "bronze-bell"],
+    techniques: [
+      { name: "ritual beat", how: "Slow, heavy strokes on the large head give a deep, resonant boom.", play: "normal" },
+      { name: "roll", how: "Fast alternating strokes swell into a rumbling roll.", play: "roll" },
+    ],
   },
   {
     id: "angle-harp", name: "horizontal angle harp", native: "(Akkadian name uncertain)", zh: "水平角形竖琴",
@@ -222,6 +297,10 @@ INSTRUMENT_CATALOG.push(
     skills: "Plectrum strokes across the strings with left-hand damping.",
     scenes: "Royal processions, victory celebrations and banquets.",
     partners: ["vertical-harp", "double-pipe", "adapu"],
+    techniques: [
+      { name: "plectrum stroke", how: "A long plectrum sweeps across the strings for a bright, ringing chord.", play: "strum" },
+      { name: "left-hand damping", how: "The other hand rests on strings that should not ring, leaving only chosen notes.", play: "mute" },
+    ],
   },
   {
     id: "vertical-harp", name: "vertical angle harp", native: "(Akkadian name uncertain)", zh: "垂直角形竖琴",
@@ -234,6 +313,10 @@ INSTRUMENT_CATALOG.push(
     skills: "Two-handed plucking with chords and melody.",
     scenes: "Court banquets, royal hunts and victory feasts.",
     partners: ["angle-harp", "double-pipe", "adapu"],
+    techniques: [
+      { name: "two-handed plucking", how: "Fingers of both hands pluck melody and chords.", play: "normal" },
+      { name: "damping", how: "A palm stops ringing strings for short, dry notes.", play: "mute" },
+    ],
   },
   {
     id: "adapu", name: "adapu (frame drum)", native: "adapu (Akkadian)", zh: "阿达普框鼓",
@@ -246,6 +329,10 @@ INSTRUMENT_CATALOG.push(
     skills: "Hand strokes at center and rim for low and high sounds.",
     scenes: "Processions, temple rites and palace music.",
     partners: ["angle-harp", "vertical-harp", "qarnu"],
+    techniques: [
+      { name: "center stroke", how: "The palm or fingers strike the middle of the head for a deep, open tone.", play: "normal" },
+      { name: "edge stroke", how: "Fingers strike near the rim for a higher, sharper slap.", play: "knock" },
+    ],
   },
   {
     id: "bull-lyre", name: "bull-headed lyre of Ur", native: "(Sumerian name uncertain; perhaps balag or zà-mí)", zh: "乌尔牛头里拉琴",
@@ -258,6 +345,10 @@ INSTRUMENT_CATALOG.push(
     skills: "Two-handed plucking and damping; details are unknown.",
     scenes: "Royal banquets, temple laments and funerary rites.",
     partners: ["silver-pipes", "bow-harp", "lilissu"],
+    techniques: [
+      { name: "plucking", how: "Fingers pluck the long strings for a deep, buzzing lyre tone.", play: "normal" },
+      { name: "damping", how: "Fingers rest on unused strings to keep them silent.", play: "mute" },
+    ],
   },
   {
     id: "silver-pipes", name: "silver pipes of Ur", native: "(Sumerian name uncertain)", zh: "乌尔银管",
@@ -270,6 +361,9 @@ INSTRUMENT_CATALOG.push(
     skills: "Playing two lines at once on paired pipes; technique unknown.",
     scenes: "Royal and temple music of Ur.",
     partners: ["bull-lyre", "bow-harp"],
+    techniques: [
+      { name: "paired-pipe playing", how: "Both pipes are blown together, one sounding a drone under the other's melody.", play: "normal" },
+    ],
   },
   {
     id: "copper-jingles", name: "copper jingles", native: "(Sumerian name uncertain)", zh: "铜铃片",
@@ -282,6 +376,10 @@ INSTRUMENT_CATALOG.push(
     skills: "Shimmering rhythmic shakes with dance steps.",
     scenes: "Dances, rites and processions.",
     partners: ["bull-lyre", "lilissu"],
+    techniques: [
+      { name: "steady shaking", how: "Shaken in time with the dance or song so the pieces clash in a dry, crisp pulse.", play: "normal" },
+      { name: "continuous shake", how: "Shaken quickly without pause, the jingles blur into a sustained shimmering rustle.", play: "tremolo" },
+    ],
   },
   {
     id: "bow-harp", name: "Sumerian bow harp", native: "(Sumerian name uncertain)", zh: "苏美尔弓形竖琴",
@@ -294,6 +392,9 @@ INSTRUMENT_CATALOG.push(
     skills: "Two-handed plucking; details unknown.",
     scenes: "Royal and temple music of Ur.",
     partners: ["bull-lyre", "silver-pipes"],
+    techniques: [
+      { name: "two-handed plucking", how: "Both hands pluck the strings for a soft, warm tone.", play: "normal" },
+    ],
   },
 );
 INSTRUMENT_CATALOG.push(
@@ -308,6 +409,10 @@ INSTRUMENT_CATALOG.push(
     skills: "Plucking with a plectrum and damping with the other hand; details unknown.",
     scenes: "Temple festivals and processions for the gods.",
     partners: ["hunzinar", "long-lute", "arkammi"],
+    techniques: [
+      { name: "plectrum strumming", how: "A plectrum brushes the strings for a light, bright chord.", play: "strum" },
+      { name: "plucking", how: "Single strings are plucked for melody.", play: "normal" },
+    ],
   },
   {
     id: "hunzinar", name: "hunzinar (great lyre)", native: "ḫunzinar (Hittite)", zh: "赫梯大里拉琴",
@@ -320,6 +425,9 @@ INSTRUMENT_CATALOG.push(
     skills: "Plucked bass and chordal playing; details unknown.",
     scenes: "Temple rites and cult festivals.",
     partners: ["zinar", "arkammi", "galgalturi"],
+    techniques: [
+      { name: "plucking", how: "Single strings are plucked for a deep, resonant tone.", play: "normal" },
+    ],
   },
   {
     id: "galgalturi", name: "galgalturi", native: "galgalturi (Hittite)", zh: "赫梯铙钹",
@@ -332,6 +440,10 @@ INSTRUMENT_CATALOG.push(
     skills: "Rhythmic clashes and sustained rings.",
     scenes: "Temple festivals and cult processions.",
     partners: ["arkammi", "zinar"],
+    techniques: [
+      { name: "clash", how: "The two plates are struck together and left to ring.", play: "normal" },
+      { name: "damped clash", how: "The plates are held together after striking for a short, dry crash.", play: "mute" },
+    ],
   },
   {
     id: "sawatar", name: "šawatar (horn)", native: "šawatar (Hittite)", zh: "赫梯号角",
@@ -344,6 +456,9 @@ INSTRUMENT_CATALOG.push(
     skills: "Signal calls of one or two notes.",
     scenes: "Festivals, rituals and signals.",
     partners: ["arkammi", "galgalturi"],
+    techniques: [
+      { name: "signal call", how: "Lips buzz at the narrow end for a single loud, brassy blast.", play: "normal" },
+    ],
   },
   {
     id: "arkammi", name: "arkammi (drum)", native: "arkammi (Hittite)", zh: "赫梯大鼓",
@@ -356,6 +471,10 @@ INSTRUMENT_CATALOG.push(
     skills: "Steady processional beats.",
     scenes: "Temple festivals and processions.",
     partners: ["galgalturi", "zinar", "hunzinar"],
+    techniques: [
+      { name: "center stroke", how: "The palm or fingers strike the middle of the head for a deep, open tone.", play: "normal" },
+      { name: "edge stroke", how: "Fingers strike near the rim for a higher, sharper slap.", play: "knock" },
+    ],
   },
   {
     id: "kinnor", name: "kinnor (lyre)", native: "כִּנּוֹר · 𐤊𐤍𐤓", zh: "琴诺里拉琴",
@@ -368,6 +487,11 @@ INSTRUMENT_CATALOG.push(
     skills: "Plucking with a plectrum while the other hand damps unwanted strings.",
     scenes: "Temple hymns, banquets and royal music.",
     partners: ["nevel", "halil", "tof"],
+    techniques: [
+      { name: "plectrum strumming", how: "A plectrum sweeps across the strings for a bright chord.", play: "strum" },
+      { name: "plucking", how: "The fingers pluck single strings for melody.", play: "normal" },
+      { name: "damping", how: "The other hand silences strings that should not ring.", play: "mute" },
+    ],
   },
   {
     id: "halil", name: "halil (double pipe)", native: "חָלִיל", zh: "哈利勒双管",
@@ -380,6 +504,10 @@ INSTRUMENT_CATALOG.push(
     skills: "A drone on one pipe under melody on the other.",
     scenes: "Festivals, processions, weddings and mourning.",
     partners: ["kinnor", "tof", "nevel"],
+    techniques: [
+      { name: "drone and melody", how: "One pipe holds a steady drone while the other plays the tune, both blown at once.", play: "normal" },
+      { name: "trills", how: "Fast finger shakes on one pipe decorate the melody.", play: "flutter" },
+    ],
   },
   {
     id: "nevel", name: "nevel (harp)", native: "נֵבֶל", zh: "内维尔竖琴",
@@ -392,6 +520,9 @@ INSTRUMENT_CATALOG.push(
     skills: "Plucked bass and chordal playing; details unknown.",
     scenes: "Temple music and royal ceremonies.",
     partners: ["kinnor", "halil", "tof"],
+    techniques: [
+      { name: "plucking", how: "The fingers pluck the strings for a warm harp tone.", play: "normal" },
+    ],
   },
   {
     id: "paamon", name: "pa'amon (small bell)", native: "פַּעֲמוֹן", zh: "小铜铃",
@@ -404,6 +535,10 @@ INSTRUMENT_CATALOG.push(
     skills: "Ringing in time with walking and dance.",
     scenes: "Temples and processions.",
     partners: ["kinnor", "tof"],
+    techniques: [
+      { name: "ringing with movement", how: "The bells swing and ring as the wearer walks.", play: "normal" },
+      { name: "continuous jingle", how: "Quick movement makes the bells ring in a continuous shimmer.", play: "tremolo" },
+    ],
   },
   {
     id: "shofar", name: "ram's horn (shofar)", native: "שׁוֹפָר", zh: "羊角号",
@@ -416,6 +551,12 @@ INSTRUMENT_CATALOG.push(
     skills: "Distinct call patterns: long blasts, broken calls and rapid staccato notes.",
     scenes: "Signals, festivals and rites.",
     partners: ["tof", "kinnor"],
+    techniques: [
+      { name: "tekiah", native: "תְּקִיעָה", how: "One long, unbroken blast.", play: "normal" },
+      { name: "shevarim", native: "שְׁבָרִים", how: "Three broken, wailing blasts, each rising from a lower note to a higher one.", play: "overblow" },
+      { name: "teruah", native: "תְּרוּעָה", how: "Nine or more rapid staccato bursts in a tremulous series.", play: "tremolo" },
+      { name: "tekiah gedolah", native: "תְּקִיעָה גְדוֹלָה", how: "A very long final blast held as long as the breath lasts.", play: "normal" },
+    ],
   },
   {
     id: "tof", name: "tof (frame drum)", native: "תֹּף · 𐤕𐤐", zh: "托夫框鼓",
@@ -428,6 +569,10 @@ INSTRUMENT_CATALOG.push(
     skills: "Finger and palm strokes, center and edge sounds.",
     scenes: "Women's dances, victory songs and temple rites.",
     partners: ["kinnor", "halil", "nevel"],
+    techniques: [
+      { name: "center stroke", how: "The palm or fingers strike the middle of the head for a deep, open tone.", play: "normal" },
+      { name: "edge stroke", how: "Fingers strike near the rim for a higher, sharper slap.", play: "knock" },
+    ],
   },
   {
     id: "lyre", name: "lyre", native: "λύρα", zh: "里拉琴",
@@ -440,6 +585,11 @@ INSTRUMENT_CATALOG.push(
     skills: "Plectrum strumming with left-hand damping, plucked melodies, retuning for different harmoniai.",
     scenes: "Song, schooling, banquets and religious festivals.",
     partners: ["aulos", "kithara", "double-pipe"],
+    techniques: [
+      { name: "plectrum stroke", how: "The right hand sweeps a plectrum across the strings for a bright, ringing chord.", play: "strum" },
+      { name: "finger plucking", how: "Left-hand fingers pluck single strings for a softer, rounder melody note.", play: "normal" },
+      { name: "left-hand damping", how: "Left-hand fingers rest on strings that should not sound, so the plectrum stroke leaves only the chosen notes ringing.", play: "mute" },
+    ],
   },
   {
     id: "triton-shell", name: "triton-shell trumpet", native: "κόχλος", zh: "法螺号",
@@ -452,6 +602,10 @@ INSTRUMENT_CATALOG.push(
     skills: "One loud fundamental, shaded by the hand in the opening.",
     scenes: "Ritual calls and signals at shrines and at sea.",
     partners: ["lyre", "sesheshet"],
+    techniques: [
+      { name: "blast", how: "Lips buzz in the cut tip for a single loud, hollow bellow.", play: "normal" },
+      { name: "hand shading", how: "A hand in the shell's opening lowers and darkens the tone.", play: "slide" },
+    ],
   },
 );
 INSTRUMENT_CATALOG.push(
@@ -466,6 +620,12 @@ INSTRUMENT_CATALOG.push(
     skills: "Plectrum strumming with left-hand damping, harmonics, and modulation between harmoniai.",
     scenes: "Musical contests, festivals and the singing of epic and hymns.",
     partners: ["aulos", "lyre", "hydraulis"],
+    techniques: [
+      { name: "plectrum stroke", how: "The right hand sweeps a plectrum across the strings for a bright, ringing chord.", play: "strum" },
+      { name: "finger plucking", how: "Left-hand fingers pluck single strings for a softer, rounder melody note.", play: "normal" },
+      { name: "left-hand damping", how: "Left-hand fingers rest on strings that should not sound, so the plectrum stroke leaves only the chosen notes ringing.", play: "mute" },
+      { name: "harmonics", how: "A finger lightly touches the middle of a string while plucking, giving a high, bell-like overtone.", play: "harmonic" },
+    ],
   },
   {
     id: "aulos", name: "aulos (tibia)", native: "αὐλός · tibia", zh: "阿夫洛斯管",
@@ -479,6 +639,12 @@ INSTRUMENT_CATALOG.push(
     skills: "Circular breathing, drone-and-melody playing, half-holing for chromatic and enharmonic notes.",
     scenes: "Theatre choruses, sacrifices, symposia, marches and athletic games.",
     partners: ["kithara", "lyre", "tympanon"],
+    techniques: [
+      { name: "drone and melody", how: "One pipe sustains a drone while the other carries the tune, both reeds blown at once with the phorbeia strap.", play: "normal" },
+      { name: "circular breathing", how: "Air stored in the cheeks keeps the reeds sounding without a break.", play: "normal" },
+      { name: "half-holing", how: "Partly covering a hole bends the note to chromatic and enharmonic pitches between scale steps.", play: "slide" },
+      { name: "syrinx (speaker hole)", native: "σῦριγξ", how: "Opening a small hole near the reed throws the pipe into its upper register.", play: "overblow" },
+    ],
   },
   {
     id: "syrinx", name: "syrinx (pan pipes)", native: "σῦριγξ", zh: "排箫",
@@ -491,6 +657,10 @@ INSTRUMENT_CATALOG.push(
     skills: "Quick shifts between pipes and breathy attacks.",
     scenes: "Pastoral music, shepherds' songs.",
     partners: ["aulos", "lyre"],
+    techniques: [
+      { name: "breathy attack", how: "Breath across the pipe tops starts each note with a soft, airy chiff.", play: "normal" },
+      { name: "pipe-sweep", how: "The pipes are moved quickly across the lip for running scales.", play: "gliss" },
+    ],
   },
   {
     id: "kodon", name: "kodon (bell)", native: "κώδων", zh: "希腊铜铃",
@@ -503,6 +673,10 @@ INSTRUMENT_CATALOG.push(
     skills: "Steady ringing pulses.",
     scenes: "Military watches, rituals and festivals.",
     partners: ["salpinx", "tympanon"],
+    techniques: [
+      { name: "ringing pulse", how: "The bell is shaken in steady pulses for a clear ring.", play: "normal" },
+      { name: "continuous ring", how: "Rapid shaking makes the clapper ring without pause.", play: "tremolo" },
+    ],
   },
   {
     id: "salpinx", name: "salpinx", native: "σάλπιγξ", zh: "萨尔平克斯号",
@@ -515,6 +689,10 @@ INSTRUMENT_CATALOG.push(
     skills: "Loud signal calls on a few natural harmonics.",
     scenes: "Battle signals, games and sacrifices.",
     partners: ["keras", "tympanon", "kodon"],
+    techniques: [
+      { name: "signal call", how: "Lips buzz at the narrow end for a single loud, brassy blast.", play: "normal" },
+      { name: "lip slur between harmonics", how: "Tightening the lips jumps the tone up to the next natural overtone without a break.", play: "overblow" },
+    ],
   },
   {
     id: "hydraulis", name: "hydraulis (water organ)", native: "ὕδραυλις · hydraulus", zh: "水压管风琴",
@@ -527,6 +705,10 @@ INSTRUMENT_CATALOG.push(
     skills: "Sustained chords and loud melodies on the keys.",
     scenes: "Arena games, theatres, banquets and imperial ceremonies.",
     partners: ["cornu", "kithara", "tuba-roman"],
+    techniques: [
+      { name: "sustained chords", how: "Keys are held while water pressure keeps the wind steady, giving long, organ-like tones.", play: "normal" },
+      { name: "melodic runs", how: "Quick keystrokes play bright, piping melodies.", play: "normal" },
+    ],
   },
   {
     id: "tympanon", name: "tympanon (frame drum)", native: "τύμπανον · tympanum", zh: "希腊框鼓",
@@ -539,6 +721,11 @@ INSTRUMENT_CATALOG.push(
     skills: "Driving ecstatic rhythms with palm and finger strokes.",
     scenes: "Rites of Dionysus and Cybele, processions and dances.",
     partners: ["aulos", "cymbala", "kithara"],
+    techniques: [
+      { name: "palm stroke", how: "The flat palm strikes the head for a deep, booming tone.", play: "normal" },
+      { name: "finger stroke", how: "Fingertips flick the edge for a sharp, high tap.", play: "knock" },
+      { name: "roll", how: "Fingers drum rapidly for a rumbling roll in ecstatic dances.", play: "roll" },
+    ],
   },
   {
     id: "barbitos", name: "barbitos", native: "βάρβιτος", zh: "巴尔比托斯琴",
@@ -551,6 +738,11 @@ INSTRUMENT_CATALOG.push(
     skills: "Plectrum strokes with left-hand damping, accompanying solo song.",
     scenes: "Symposia, the drinking parties of Athenian men, and Dionysian scenes.",
     partners: ["aulos", "chelys"],
+    techniques: [
+      { name: "plectrum stroke", how: "The right hand sweeps a plectrum across the strings for a bright, ringing chord.", play: "strum" },
+      { name: "finger plucking", how: "Left-hand fingers pluck single strings for a softer, rounder melody note.", play: "normal" },
+      { name: "left-hand damping", how: "Left-hand fingers rest on strings that should not sound, so the plectrum stroke leaves only the chosen notes ringing.", play: "mute" },
+    ],
   },
   {
     id: "chelys", name: "chelys (tortoise-shell lyre)", native: "χέλυς · λύρα", zh: "龟甲里拉琴",
@@ -563,6 +755,11 @@ INSTRUMENT_CATALOG.push(
     skills: "Plectrum strumming, finger-plucking and damping; tuning in different harmoniai.",
     scenes: "Schooling, symposia and domestic song.",
     partners: ["barbitos", "aulos"],
+    techniques: [
+      { name: "plectrum stroke", how: "The right hand sweeps a plectrum across the strings for a bright, ringing chord.", play: "strum" },
+      { name: "finger plucking", how: "Left-hand fingers pluck single strings for a softer, rounder melody note.", play: "normal" },
+      { name: "left-hand damping", how: "Left-hand fingers rest on strings that should not sound, so the plectrum stroke leaves only the chosen notes ringing.", play: "mute" },
+    ],
   },
   {
     id: "cymbala", name: "kymbala (cymbals)", native: "κύμβαλα · cymbala", zh: "古希腊铙钹",
@@ -575,6 +772,10 @@ INSTRUMENT_CATALOG.push(
     skills: "Sharp clashes and rhythmic patterns for dancing.",
     scenes: "Ecstatic cult rites, dances and processions.",
     partners: ["tympanon", "aulos"],
+    techniques: [
+      { name: "clash", how: "The two small cymbals are struck together and ring brightly.", play: "normal" },
+      { name: "damped click", how: "The cymbals are held together after the strike for a short, dry click.", play: "mute" },
+    ],
   },
   {
     id: "phorminx", name: "phorminx", native: "φόρμιγξ", zh: "福尔明克斯琴",
@@ -587,6 +788,10 @@ INSTRUMENT_CATALOG.push(
     skills: "Accompanying sung epic with simple plucked patterns.",
     scenes: "Epic song, feasts and religious hymns.",
     partners: ["aulos", "lyre"],
+    techniques: [
+      { name: "plectrum stroke", how: "A plectrum sweeps across the few strings to punctuate sung epic.", play: "strum" },
+      { name: "plucking", how: "Single strings are plucked for simple melody.", play: "normal" },
+    ],
   },
   {
     id: "keras", name: "keras (horn)", native: "κέρας", zh: "希腊号角",
@@ -599,6 +804,9 @@ INSTRUMENT_CATALOG.push(
     skills: "Loud signal calls of a few notes.",
     scenes: "Army signals and hunts.",
     partners: ["salpinx", "tympanon"],
+    techniques: [
+      { name: "signal call", how: "Lips buzz at the narrow end for a single loud, brassy blast.", play: "normal" },
+    ],
   },
   {
     id: "cornu", name: "cornu", native: "cornu", zh: "罗马弧形号",
@@ -611,6 +819,10 @@ INSTRUMENT_CATALOG.push(
     skills: "Signal calls on natural harmonics.",
     scenes: "Legion signals, gladiator games and funerals.",
     partners: ["tuba-roman", "buccina", "hydraulis"],
+    techniques: [
+      { name: "signal call", how: "Lips buzz at the narrow end for a single loud, brassy blast.", play: "normal" },
+      { name: "lip slur between harmonics", how: "Tightening the lips jumps the tone up to the next natural overtone without a break.", play: "overblow" },
+    ],
   },
   {
     id: "tuba-roman", name: "tuba (Roman trumpet)", native: "tuba", zh: "罗马直号",
@@ -623,6 +835,10 @@ INSTRUMENT_CATALOG.push(
     skills: "Commanding signal calls on a few harmonics.",
     scenes: "Battle, sacrifices, games and funerals.",
     partners: ["cornu", "lituus", "buccina"],
+    techniques: [
+      { name: "signal call", how: "Lips buzz at the narrow end for a single loud, brassy blast.", play: "normal" },
+      { name: "lip slur between harmonics", how: "Tightening the lips jumps the tone up to the next natural overtone without a break.", play: "overblow" },
+    ],
   },
   {
     id: "lituus", name: "lituus", native: "lituus", zh: "利图斯号",
@@ -635,6 +851,10 @@ INSTRUMENT_CATALOG.push(
     skills: "Signal calls on natural harmonics.",
     scenes: "Cavalry signals, religious rites and funerals.",
     partners: ["tuba-roman", "cornu"],
+    techniques: [
+      { name: "signal call", how: "Lips buzz at the narrow end for a single loud, brassy blast.", play: "normal" },
+      { name: "lip slur between harmonics", how: "Tightening the lips jumps the tone up to the next natural overtone without a break.", play: "overblow" },
+    ],
   },
   {
     id: "buccina", name: "buccina", native: "buccina", zh: "布契纳号",
@@ -647,6 +867,9 @@ INSTRUMENT_CATALOG.push(
     skills: "Short signal calls.",
     scenes: "Camp watches, assemblies and signals.",
     partners: ["cornu", "tuba-roman"],
+    techniques: [
+      { name: "signal call", how: "Lips buzz at the narrow end for a single loud, brassy blast.", play: "normal" },
+    ],
   },
   {
     id: "tintinnabulum", name: "tintinnabulum (bell)", native: "tintinnabulum", zh: "罗马风铃",
@@ -659,6 +882,10 @@ INSTRUMENT_CATALOG.push(
     skills: "Free ringing; in music, shaken in rhythm.",
     scenes: "Doorways, gardens, processions and rites.",
     partners: ["cymbala", "tympanon"],
+    techniques: [
+      { name: "free ringing", how: "Hung in the wind, the bells ring irregularly with a light chime.", play: "normal" },
+      { name: "shaken in rhythm", how: "Shaken quickly in the hand, the bells jingle continuously.", play: "tremolo" },
+    ],
   },
 );
 INSTRUMENT_CATALOG.push(
@@ -673,6 +900,11 @@ INSTRUMENT_CATALOG.push(
     skills: "Overblowing, flutter tonguing and bird-like ornaments.",
     scenes: "Temple festivals, dances and processions.",
     partners: ["huehuetl", "teponaztli", "atecocolli"],
+    techniques: [
+      { name: "tongued melody", how: "Notes are started with the tongue through the duct for clear, whistling articulation.", play: "normal" },
+      { name: "overblowing", how: "Blowing harder makes the tone jump up to its upper register, shrill and bright.", play: "overblow" },
+      { name: "flutter-tonguing", how: "Rolling the tongue while blowing gives a whirring, bird-like tone.", play: "flutter" },
+    ],
   },
   {
     id: "teponaztli", name: "teponaztli (slit drum)", native: "teponāztli", zh: "特波纳斯特利木鼓",
@@ -685,6 +917,10 @@ INSTRUMENT_CATALOG.push(
     skills: "Two-tone patterns and rolls, interlocking with the huehuetl.",
     scenes: "Temple rituals, dances of the cuicacalli and warfare.",
     partners: ["huehuetl", "tlapitzalli", "atecocolli"],
+    techniques: [
+      { name: "two-tone stroke", how: "Rubber-headed mallets strike the two tongues, each giving its own woody pitch.", play: "normal" },
+      { name: "roll", how: "Rapid alternating strokes on one tongue make a rolling, hollow rumble.", play: "roll" },
+    ],
   },
   {
     id: "death-whistle", name: "death whistle", native: "(Nahuatl name uncertain)", zh: "死亡哨",
@@ -697,6 +933,10 @@ INSTRUMENT_CATALOG.push(
     skills: "Varying breath pressure to change the scream from a hiss to a howl.",
     scenes: "Rituals and ceremonies; today used in sound demonstrations and film.",
     partners: ["tlapitzalli", "teponaztli"],
+    techniques: [
+      { name: "scream", how: "A hard breath through the short duct makes a shrieking, rushing howl.", play: "normal" },
+      { name: "pressure swell", how: "Changing breath pressure moves the sound from a hiss to a scream.", play: "slide" },
+    ],
   },
   {
     id: "tetzilacatl", name: "tetzilacatl (copper gong)", native: "tetzilācatl", zh: "铜锣",
@@ -709,6 +949,10 @@ INSTRUMENT_CATALOG.push(
     skills: "Single resonant strokes marking ritual moments.",
     scenes: "Temple rites and ceremonies.",
     partners: ["huehuetl", "teponaztli"],
+    techniques: [
+      { name: "single stroke", how: "A beater strikes the hanging copper plate for a long, resonant ring.", play: "normal" },
+      { name: "damped stroke", how: "A hand stops the plate after striking for a short, metallic clang.", play: "mute" },
+    ],
   },
   {
     id: "atecocolli", name: "atecocolli (conch trumpet)", native: "ātecocolli", zh: "海螺号",
@@ -721,6 +965,10 @@ INSTRUMENT_CATALOG.push(
     skills: "A deep bellow shaded by the hand in the opening.",
     scenes: "Temple signals, war and festivals; still blown at dances today.",
     partners: ["huehuetl", "teponaztli", "tlapitzalli"],
+    techniques: [
+      { name: "bellow", how: "Lips buzz at the cut tip for a deep, hollow call.", play: "normal" },
+      { name: "hand shading", how: "A hand in the opening bends and darkens the tone.", play: "slide" },
+    ],
   },
   {
     id: "huehuetl", name: "huehuetl (upright drum)", native: "huēhuētl", zh: "韦韦特尔立鼓",
@@ -733,6 +981,11 @@ INSTRUMENT_CATALOG.push(
     skills: "Hand strokes at the center and edge, rolling patterns for dancers.",
     scenes: "Dances, temple festivals and warfare; still central to Mexica dance groups today.",
     partners: ["teponaztli", "tlapitzalli", "atecocolli"],
+    techniques: [
+      { name: "center stroke (low)", how: "The palm or fingers strike the middle of the head for a deep, open tone.", play: "normal" },
+      { name: "edge stroke (high)", how: "Fingers strike near the rim for a higher, sharper slap.", play: "knock" },
+      { name: "roll", how: "Rapid alternating hands make a rolling beat for dancers.", play: "roll" },
+    ],
   },
   {
     id: "ocarina", name: "Mesoamerican ocarina", native: "(name varies by people)", zh: "陶笛",
@@ -745,6 +998,10 @@ INSTRUMENT_CATALOG.push(
     skills: "Cross-fingering and breath control for pitch, trills.",
     scenes: "Rituals, burials and festivals; also children's toys.",
     partners: ["tunkul", "pax", "capador"],
+    techniques: [
+      { name: "fingered melody", how: "Opening holes raises the pitch for a pure, round tone.", play: "normal" },
+      { name: "trill", how: "A finger shakes over a hole for a fast warble.", play: "flutter" },
+    ],
   },
   {
     id: "whistle-pot", name: "whistling vessel", native: "(Maya name unknown)", zh: "鸣壶",
@@ -757,6 +1014,10 @@ INSTRUMENT_CATALOG.push(
     skills: "Gentle tilting to sustain a soft, breathy tone.",
     scenes: "Rituals and offerings.",
     partners: ["ocarina", "xul"],
+    techniques: [
+      { name: "water-driven whistle", how: "Tilting the vessel moves water and pushes air through the whistle for a soft, breathy tone.", play: "normal" },
+      { name: "blown whistle", how: "Blowing into the spout gives a stronger, steady whistle.", play: "normal" },
+    ],
   },
   {
     id: "xul", name: "xul (cane flute)", native: "xul", zh: "玛雅竹笛",
@@ -769,6 +1030,11 @@ INSTRUMENT_CATALOG.push(
     skills: "High ornamented melodies, trills and overblown notes.",
     scenes: "Dance-dramas, cofradía processions and fiestas.",
     partners: ["tambor", "tunkul", "chirimia"],
+    techniques: [
+      { name: "tongued melody", how: "Notes are started with the tongue through the duct for clear, whistling articulation.", play: "normal" },
+      { name: "trill", how: "A finger shakes rapidly over a hole, alternating two neighbouring pitches.", play: "flutter" },
+      { name: "overblowing", how: "Blowing harder makes the tone jump up to its upper register, shrill and bright.", play: "overblow" },
+    ],
   },
   {
     id: "copper-bell", name: "copper bell", native: "(Maya name uncertain)", zh: "铜铃",
@@ -781,6 +1047,10 @@ INSTRUMENT_CATALOG.push(
     skills: "Rhythmic jingling with dance steps.",
     scenes: "Dances, offerings and processions.",
     partners: ["tunkul", "pax"],
+    techniques: [
+      { name: "jingling", how: "Shaken in time with the dance or song so the pieces clash in a dry, crisp pulse.", play: "normal" },
+      { name: "continuous shake", how: "Shaken quickly without pause, the jingles blur into a sustained shimmering rustle.", play: "tremolo" },
+    ],
   },
   {
     id: "hom", name: "hom (wooden trumpet)", native: "hom", zh: "玛雅长木号",
@@ -793,6 +1063,10 @@ INSTRUMENT_CATALOG.push(
     skills: "Sustained low drones and calls on a few harmonics.",
     scenes: "Royal processions, war, and dance-dramas such as the Rabinal Achí.",
     partners: ["pax", "tunkul", "xul"],
+    techniques: [
+      { name: "drone", how: "Lips buzz steadily for a sustained, low drone.", play: "normal" },
+      { name: "lip slur between harmonics", how: "Tightening the lips jumps the tone up to the next natural overtone without a break.", play: "overblow" },
+    ],
   },
   {
     id: "pax", name: "pax (upright drum)", native: "pax", zh: "帕克斯立鼓",
@@ -805,6 +1079,10 @@ INSTRUMENT_CATALOG.push(
     skills: "Hand strokes at center and rim, steady processional beats.",
     scenes: "Royal processions, dances and rituals.",
     partners: ["tunkul", "hom", "ocarina"],
+    techniques: [
+      { name: "center stroke", how: "The palm or fingers strike the middle of the head for a deep, open tone.", play: "normal" },
+      { name: "edge stroke", how: "Fingers strike near the rim for a higher, sharper slap.", play: "knock" },
+    ],
   },
   {
     id: "tunkul", name: "tunk'ul / tun (slit drum)", native: "tunk'ul · tun", zh: "通库尔木鼓",
@@ -817,6 +1095,10 @@ INSTRUMENT_CATALOG.push(
     skills: "Two-tone patterns and rolls.",
     scenes: "Rituals, dances and the Rabinal Achí.",
     partners: ["pax", "hom", "xul"],
+    techniques: [
+      { name: "two-tone stroke", how: "Sticks strike the two tongues for two woody pitches.", play: "normal" },
+      { name: "roll", how: "Fast alternating sticks give a rolling rumble.", play: "roll" },
+    ],
   },
   {
     id: "marimba", name: "marimba (Guatemala)", native: "marimba · k'ojom", zh: "马林巴琴",
@@ -829,6 +1111,10 @@ INSTRUMENT_CATALOG.push(
     skills: "The redoble tremolo roll, interlocking parts for treble, centre and bass players.",
     scenes: "Fiestas, cofradía celebrations, weddings and dances in every town.",
     partners: ["chirimia", "tambor", "tunkul"],
+    techniques: [
+      { name: "single stroke", how: "A rubber mallet strikes a bar for a short, warm note with a buzzing membrane.", play: "normal" },
+      { name: "redoble", native: "redoble", how: "Rapid alternating mallets on one bar sustain a note as a shimmering roll.", play: "tremolo" },
+    ],
   },
   {
     id: "chirimia", name: "chirimía (shawm)", native: "chirimía", zh: "奇里米亚双簧管",
@@ -841,6 +1127,10 @@ INSTRUMENT_CATALOG.push(
     skills: "Circular breathing, ornamented melodies over the drum.",
     scenes: "Cofradía processions, saints' days and dance-dramas.",
     partners: ["tambor", "marimba", "xul"],
+    techniques: [
+      { name: "circular breathing", how: "Air stored in the cheeks keeps the reedy tone unbroken.", play: "normal" },
+      { name: "trill ornament", how: "Fast finger shakes decorate the melody.", play: "flutter" },
+    ],
   },
   {
     id: "tambor", name: "tambor (side drum)", native: "tambor", zh: "侧鼓",
@@ -853,6 +1143,11 @@ INSTRUMENT_CATALOG.push(
     skills: "Steady processional patterns and rolls under the chirimía.",
     scenes: "Cofradía processions, saints' days and dance-dramas.",
     partners: ["chirimia", "xul", "marimba"],
+    techniques: [
+      { name: "stick stroke", how: "A stick strikes the head for a crisp, snappy beat.", play: "normal" },
+      { name: "roll", how: "Two sticks alternate rapidly for a sustained roll.", play: "roll" },
+      { name: "rim stroke", how: "The stick strikes the wooden shell or rim for a dry click.", play: "knock" },
+    ],
   },
 );
 INSTRUMENT_CATALOG.push(
@@ -867,6 +1162,13 @@ INSTRUMENT_CATALOG.push(
     skills: "Breath vibrato, glides, trills and the expressive overblown upper register of yaraví laments.",
     scenes: "Fiestas, laments, courtship and modern Andean bands.",
     partners: ["siku", "charango", "bombo"],
+    techniques: [
+      { name: "notch-blown melody", how: "Breath split on the notch gives a breathy, haunting tone.", play: "normal" },
+      { name: "breath vibrato", how: "Pulses of breath make the note waver.", play: "normal" },
+      { name: "glide", how: "Sliding the fingers off the holes bends the note.", play: "slide" },
+      { name: "trill", how: "Fast finger shakes ornament the tune.", play: "flutter" },
+      { name: "overblown register", how: "Stronger breath lifts the tone into the piercing upper octave of yaraví laments.", play: "overblow" },
+    ],
   },
   {
     id: "siku", name: "siku (pan pipes)", native: "siku · antara (Quechua) · zampoña", zh: "西库排箫",
@@ -879,6 +1181,11 @@ INSTRUMENT_CATALOG.push(
     skills: "Hocket (interlocking halves), breathy accented attacks, parallel octaves and fifths in tropas.",
     scenes: "Fiestas, community processions and dance troupes.",
     partners: ["quena", "wankar", "bombo"],
+    techniques: [
+      { name: "hocket", native: "ira · arka", how: "Two players share one scale, each row playing every other note, interlocking into one melody.", play: "normal" },
+      { name: "accented breath attack", how: "A sharp, breathy puff starts each note with a chiff.", play: "normal" },
+      { name: "tremulant breath", how: "A pulsing, fluttering breath makes the tone throb.", play: "flutter" },
+    ],
   },
   {
     id: "antara", name: "antara (single-row pan pipe)", native: "antara", zh: "安塔拉排箫",
@@ -891,6 +1198,11 @@ INSTRUMENT_CATALOG.push(
     skills: "Fast runs across the tubes and fluttering breath accents.",
     scenes: "Rituals, festivals and herding music.",
     partners: ["siku", "quena", "wankar"],
+    techniques: [
+      { name: "blown note", how: "Breath across a tube top gives a pure, breathy tone.", play: "normal" },
+      { name: "run across the tubes", how: "The pipes slide quickly across the lip for a sweeping scale.", play: "gliss" },
+      { name: "fluttering breath", how: "A fluttering breath makes a throbbing accent.", play: "flutter" },
+    ],
   },
   {
     id: "pinkillu", name: "pinkillu (duct flute)", native: "pinkillu", zh: "平基鲁笛",
@@ -903,6 +1215,11 @@ INSTRUMENT_CATALOG.push(
     skills: "Shrill overblown melodies and trills, often in parallel groups.",
     scenes: "Carnival and rainy-season agricultural festivals.",
     partners: ["wankar", "quena"],
+    techniques: [
+      { name: "tongued melody", how: "Notes are started with the tongue through the duct for clear, whistling articulation.", play: "normal" },
+      { name: "overblowing", how: "Blowing harder makes the tone jump up to its upper register, shrill and bright.", play: "overblow" },
+      { name: "trill", how: "A finger shakes rapidly over a hole, alternating two neighbouring pitches.", play: "flutter" },
+    ],
   },
   {
     id: "chilchil", name: "chilchil (bells)", native: "chilchil", zh: "铃串",
@@ -915,6 +1232,10 @@ INSTRUMENT_CATALOG.push(
     skills: "Rhythmic jingling with dance steps.",
     scenes: "Dances and festivals.",
     partners: ["wankar", "siku"],
+    techniques: [
+      { name: "jingling", how: "Shaken in time with the dance or song so the pieces clash in a dry, crisp pulse.", play: "normal" },
+      { name: "continuous shake", how: "Shaken quickly without pause, the jingles blur into a sustained shimmering rustle.", play: "tremolo" },
+    ],
   },
   {
     id: "pututu", name: "pututu (conch trumpet)", native: "pututu", zh: "普图图海螺号",
@@ -927,6 +1248,10 @@ INSTRUMENT_CATALOG.push(
     skills: "A deep, carrying call shaped by the hand in the opening.",
     scenes: "Ceremonies, assemblies, war in Inca times and festivals today.",
     partners: ["wankar", "siku"],
+    techniques: [
+      { name: "call", how: "Lips buzz at the tip for a deep, carrying call.", play: "normal" },
+      { name: "hand shading", how: "A hand in the opening bends and darkens the tone.", play: "slide" },
+    ],
   },
   {
     id: "wankar", name: "wankar (drum)", native: "wankar", zh: "万卡尔大鼓",
@@ -939,6 +1264,10 @@ INSTRUMENT_CATALOG.push(
     skills: "Steady pulses that anchor siku and pinkillu ensembles.",
     scenes: "Festivals, harvests and processions.",
     partners: ["siku", "quena", "pututu"],
+    techniques: [
+      { name: "stick stroke", how: "A stick strikes the head for a deep, steady beat.", play: "normal" },
+      { name: "rim stroke", how: "The stick strikes the wooden rim for a dry click.", play: "knock" },
+    ],
   },
   {
     id: "charango", name: "charango", native: "charango", zh: "恰朗戈",
@@ -951,6 +1280,11 @@ INSTRUMENT_CATALOG.push(
     skills: "Rasgueo strumming, fast tremolo, and campanella (bell-like) picking across courses.",
     scenes: "Huayno dances, courtship songs, fiestas and Andean bands.",
     partners: ["quena", "siku", "bombo"],
+    techniques: [
+      { name: "rasgueo", native: "rasgueo", how: "Fingers flick across all the courses for a bright, rhythmic strum.", play: "strum" },
+      { name: "trémolo", native: "trémolo", how: "Rapid alternate picking on one course sustains a shimmering note.", play: "tremolo" },
+      { name: "campanella", native: "campanella", how: "Melody notes are spread across different courses so each rings over the next like bells.", play: "normal" },
+    ],
   },
   {
     id: "arpa-andina", name: "Andean harp", native: "arpa andina · arpa india", zh: "安第斯竖琴",
@@ -963,6 +1297,11 @@ INSTRUMENT_CATALOG.push(
     skills: "Bass lines in the left hand, melody runs in the right, golpe percussion on the box.",
     scenes: "Huayno and yaraví, fiestas, weddings and processions.",
     partners: ["quena", "charango", "bombo"],
+    techniques: [
+      { name: "plucking", how: "Right hand plucks melody while the left plays bass lines.", play: "normal" },
+      { name: "golpe", native: "golpe", how: "A second player beats the soundbox with the hands like a drum.", play: "knock" },
+      { name: "damping", how: "A palm stops ringing bass strings for short, dry notes.", play: "mute" },
+    ],
   },
   {
     id: "waqra-phuku", name: "waqra phuku (cow-horn trumpet)", native: "waqra phuku", zh: "牛角螺旋号",
@@ -975,6 +1314,10 @@ INSTRUMENT_CATALOG.push(
     skills: "Calls on the natural harmonics, wide bright overtones.",
     scenes: "Cattle-branding festivals (Santiago), village fiestas.",
     partners: ["bombo", "quena"],
+    techniques: [
+      { name: "signal call", how: "Lips buzz at the narrow end for a single loud, brassy blast.", play: "normal" },
+      { name: "lip slur between harmonics", how: "Tightening the lips jumps the tone up to the next natural overtone without a break.", play: "overblow" },
+    ],
   },
   {
     id: "bombo", name: "bombo (bass drum)", native: "bombo · wankara", zh: "邦博大鼓",
@@ -987,6 +1330,10 @@ INSTRUMENT_CATALOG.push(
     skills: "The huayno long-short-short pattern, rim and head alternation.",
     scenes: "Huayno dances, fiestas and Andean folk bands.",
     partners: ["quena", "charango", "siku"],
+    techniques: [
+      { name: "head stroke", how: "A padded stick strikes the head for a deep boom.", play: "normal" },
+      { name: "rim stroke", how: "A thin stick strikes the wooden rim for a dry click.", play: "knock" },
+    ],
   },
   {
     id: "native-flute", name: "Native American flute (siyótȟaŋka)", native: "siyótȟaŋka", zh: "北美原住民长笛",
@@ -999,6 +1346,12 @@ INSTRUMENT_CATALOG.push(
     skills: "Breath vibrato, grace notes, half-holing and expressive slides.",
     scenes: "Courtship, solo meditative playing, ceremonies.",
     partners: ["big-drum", "water-drum"],
+    techniques: [
+      { name: "breath vibrato", how: "Pulsing breath makes the soft, breathy note waver.", play: "normal" },
+      { name: "grace notes", how: "A quick lifted finger flicks a short note before the main one.", play: "normal" },
+      { name: "slide", how: "Fingers roll slowly off the holes so the pitch glides.", play: "slide" },
+      { name: "half-holing", how: "Partly covering a hole gives a note between scale steps.", play: "slide" },
+    ],
   },
   {
     id: "turtle-rattle", name: "turtle-shell rattle", native: "(Haudenosaunee name not recorded here)", zh: "龟壳摇铃",
@@ -1011,6 +1364,10 @@ INSTRUMENT_CATALOG.push(
     skills: "Rhythmic striking in time with the singer.",
     scenes: "Longhouse ceremonies such as the Feather Dance.",
     partners: ["water-drum", "horn-rattle"],
+    techniques: [
+      { name: "strike on bench", how: "The rattle is struck down on a bench for a sharp, clacking beat.", play: "knock" },
+      { name: "shaking", how: "Shaken in the hand for a dry rattle.", play: "normal" },
+    ],
   },
   {
     id: "water-drum", name: "water drum", native: "(Haudenosaunee name not recorded here)", zh: "水鼓",
@@ -1023,6 +1380,9 @@ INSTRUMENT_CATALOG.push(
     skills: "Tuning by wetting the hide and shaking the water, fast steady beats for the singers.",
     scenes: "Social dances in the longhouse, ceremonies.",
     partners: ["horn-rattle", "turtle-rattle"],
+    techniques: [
+      { name: "stick beat", how: "A small carved stick strikes the wet head for a bright, ringing beat.", play: "normal" },
+    ],
   },
   {
     id: "horn-rattle", name: "cow-horn rattle", native: "(Haudenosaunee name not recorded here)", zh: "牛角摇铃",
@@ -1035,6 +1395,10 @@ INSTRUMENT_CATALOG.push(
     skills: "Steady shaking with sharp accents marking song sections.",
     scenes: "Social dances and ceremonies.",
     partners: ["water-drum", "turtle-rattle"],
+    techniques: [
+      { name: "steady shaking", how: "Shaken in time with the dance or song so the pieces clash in a dry, crisp pulse.", play: "normal" },
+      { name: "continuous shake", how: "Shaken quickly without pause, the jingles blur into a sustained shimmering rustle.", play: "tremolo" },
+    ],
   },
   {
     id: "whistle", name: "whistle", native: "(name varies by people)", zh: "哨子",
@@ -1047,6 +1411,10 @@ INSTRUMENT_CATALOG.push(
     skills: "Short shrill bursts timed with dance.",
     scenes: "Ceremonies and dances.",
     partners: ["water-drum", "horn-rattle"],
+    techniques: [
+      { name: "short blast", how: "A sharp breath gives a shrill burst.", play: "normal" },
+      { name: "trill", how: "Rapid breath pulses give a warbling whistle.", play: "flutter" },
+    ],
   },
   {
     id: "eagle-bone", name: "eagle-bone whistle", native: "(Lakota name not recorded here)", zh: "鹰骨哨",
@@ -1059,6 +1427,9 @@ INSTRUMENT_CATALOG.push(
     skills: "Repeated shrill blasts in time with the drum.",
     scenes: "The Sun Dance (wiwáŋyang wačhípi) and other ceremonies.",
     partners: ["big-drum", "hoof-rattle"],
+    techniques: [
+      { name: "shrill blast", how: "Sharp breaths give piercing, repeated blasts in time with the drum.", play: "normal" },
+    ],
   },
   {
     id: "hoof-rattle", name: "deer-hoof rattle", native: "(Lakota name not recorded here)", zh: "蹄铃",
@@ -1071,6 +1442,10 @@ INSTRUMENT_CATALOG.push(
     skills: "Keeping time with the drum and dance steps.",
     scenes: "Ceremonies and dances.",
     partners: ["big-drum", "eagle-bone"],
+    techniques: [
+      { name: "steady shaking", how: "Shaken in time with the dance or song so the pieces clash in a dry, crisp pulse.", play: "normal" },
+      { name: "continuous shake", how: "Shaken quickly without pause, the jingles blur into a sustained shimmering rustle.", play: "tremolo" },
+    ],
   },
   {
     id: "big-drum", name: "big drum (čhaŋčhéga)", native: "čhaŋčhéga", zh: "大鼓",
@@ -1083,6 +1458,10 @@ INSTRUMENT_CATALOG.push(
     skills: "Unison beats, accented honor beats and changes in tempo following the lead singer.",
     scenes: "Powwows, ceremonies and dances.",
     partners: ["native-flute", "eagle-bone", "hoof-rattle"],
+    techniques: [
+      { name: "unison beat", how: "Several singers strike the head together for a deep, steady pulse.", play: "normal" },
+      { name: "honor beats", how: "Hard accented strokes, louder than the steady beat, mark special points in the song.", play: "normal" },
+    ],
   },
 );
 INSTRUMENT_CATALOG.push(
@@ -1097,6 +1476,13 @@ INSTRUMENT_CATALOG.push(
     skills: "Clawhammer (frailing) downstroke, drop-thumb, and three-finger Scruggs rolls.",
     scenes: "Old-time dances, string bands, bluegrass and porch music.",
     partners: ["violin", "guitar", "double-bass"],
+    techniques: [
+      { name: "clawhammer", native: "clawhammer · frailing", how: "The back of a fingernail strikes down on a string and the thumb catches the fifth string, a driving bum-ditty rhythm.", play: "normal" },
+      { name: "Scruggs roll", how: "Thumb and two fingers pick in rolling patterns for rapid, cascading notes.", play: "tremolo" },
+      { name: "slide", how: "A left finger slides along the fret to glide into a note.", play: "slide" },
+      { name: "harmonics", how: "A finger lightly touches the string over the 12th fret for a chime.", play: "harmonic" },
+      { name: "strum", how: "The hand brushes all strings for a bright chord.", play: "strum" },
+    ],
   },
   {
     id: "cornet", name: "cornet (town band)", native: "cornet", zh: "短号",
@@ -1109,6 +1495,11 @@ INSTRUMENT_CATALOG.push(
     skills: "Valve technique, double and triple tonguing, lyrical solos.",
     scenes: "Town brass bands, parades, picnics and Civil War regiments.",
     partners: ["bugle", "rope-bass-drum"],
+    techniques: [
+      { name: "legato melody", how: "Valves and smooth breath give a warm, lyrical tone.", play: "normal" },
+      { name: "double tonguing", how: "Alternating 'tu-ku' syllables give rapid repeated notes.", play: "tremolo" },
+      { name: "flutter-tonguing", how: "A rolled tongue gives a growling, buzzing tone.", play: "flutter" },
+    ],
   },
   {
     id: "pump-organ", name: "pump organ (reed organ)", native: "pump organ · harmonium", zh: "簧风琴",
@@ -1121,6 +1512,10 @@ INSTRUMENT_CATALOG.push(
     skills: "Steady pedalling, stop selection, sustained hymn chords.",
     scenes: "Parlors, country churches, hymn singing and singing schools.",
     partners: ["violin", "banjo"],
+    techniques: [
+      { name: "sustained chords", how: "Steady pedalling keeps wind in the reeds for long, held hymn chords.", play: "normal" },
+      { name: "tremolo stop", how: "A stop pulses the wind so the tone throbs.", play: "tremolo" },
+    ],
   },
   {
     id: "rope-bass-drum", name: "rope-tension bass drum", native: "bass drum", zh: "绳索低音鼓",
@@ -1133,6 +1528,10 @@ INSTRUMENT_CATALOG.push(
     skills: "Steady march beats and accents under the fifes.",
     scenes: "Parades, militia musters, Civil War regiments and town bands.",
     partners: ["fife", "cornet", "bugle"],
+    techniques: [
+      { name: "march beat", how: "A padded beater strikes the head for a deep, steady boom.", play: "normal" },
+      { name: "muffled beat", how: "A hand rests on the head to damp it for a short, dull thump.", play: "mute" },
+    ],
   },
   {
     id: "bugle", name: "bugle", native: "bugle", zh: "军号",
@@ -1145,6 +1544,10 @@ INSTRUMENT_CATALOG.push(
     skills: "Lip slurs between harmonics, clear tonguing of calls.",
     scenes: "Cavalry and army calls, funerals (Taps), drum corps.",
     partners: ["rope-bass-drum", "fife"],
+    techniques: [
+      { name: "tongued call", how: "Each note of the call is started clearly with the tongue.", play: "normal" },
+      { name: "lip slur", how: "Without tonguing, lip tension slides between harmonics.", play: "overblow" },
+    ],
   },
   {
     id: "valve-trumpet", name: "valve trumpet (mariachi)", native: "trompeta", zh: "小号",
@@ -1157,6 +1560,11 @@ INSTRUMENT_CATALOG.push(
     skills: "Bright vibrato, shakes, lip trills and parallel thirds with a second trumpet.",
     scenes: "Mariachi serenades, fiestas, weddings and charreadas.",
     partners: ["violin", "vihuela", "guitarron"],
+    techniques: [
+      { name: "bright vibrato", how: "A rapid pulse in the lips or hand makes the note shimmer in mariachi style.", play: "normal" },
+      { name: "shake", how: "The lips flip quickly between two harmonics for a wide trill.", play: "flutter" },
+      { name: "glissando", how: "Half-pressed valves and the lips slide between notes.", play: "slide" },
+    ],
   },
   {
     id: "guitarron", name: "guitarrón mexicano", native: "guitarrón", zh: "墨西哥低音吉他",
@@ -1169,6 +1577,10 @@ INSTRUMENT_CATALOG.push(
     skills: "Octave plucking, bass runs and syncopated patterns in son jalisciense.",
     scenes: "Mariachi serenades and fiestas.",
     partners: ["vihuela", "violin", "valve-trumpet"],
+    techniques: [
+      { name: "octave pluck", how: "Two strings are plucked together in octaves for a deep, punchy bass.", play: "normal" },
+      { name: "damped note", how: "The palm stops the strings right after plucking for a short, thumping note.", play: "mute" },
+    ],
   },
   {
     id: "arpa-grande", name: "arpa grande", native: "arpa grande", zh: "墨西哥大竖琴",
@@ -1181,6 +1593,11 @@ INSTRUMENT_CATALOG.push(
     skills: "Bass lines and fast melodic runs, tapping on the soundbox.",
     scenes: "Old-style mariachi, fiestas and son abajeño.",
     partners: ["violin", "vihuela", "guitarron"],
+    techniques: [
+      { name: "plucking", how: "Bass in the left hand, fast melodic runs in the right.", play: "normal" },
+      { name: "tapping on the box", native: "tamboreo", how: "The soundbox is struck by hand (tamboreo) as percussion.", play: "knock" },
+      { name: "glissando", how: "A finger sweeps across the strings.", play: "gliss" },
+    ],
   },
   {
     id: "pito", name: "pito (cane flute)", native: "pito", zh: "皮托笛",
@@ -1193,6 +1610,10 @@ INSTRUMENT_CATALOG.push(
     skills: "High ornamented dance tunes.",
     scenes: "Village fiestas and traditional dances.",
     partners: ["tambora", "violin"],
+    techniques: [
+      { name: "dance tune", how: "A shrill, ornamented melody played with one hand while the other beats a drum.", play: "normal" },
+      { name: "trill", how: "Finger shakes ornament the tune.", play: "flutter" },
+    ],
   },
   {
     id: "tambora", name: "tambora (bass drum)", native: "tambora", zh: "坦博拉鼓",
@@ -1205,6 +1626,10 @@ INSTRUMENT_CATALOG.push(
     skills: "Syncopated off-beats and accents under brass.",
     scenes: "Tamborazo bands, processions, weddings and fiestas.",
     partners: ["valve-trumpet", "pito"],
+    techniques: [
+      { name: "beater stroke", how: "A beater strikes the head for a deep boom.", play: "normal" },
+      { name: "cymbal or rim stroke", how: "A stick hits the mounted cymbal or the rim for a sharp accent.", play: "knock" },
+    ],
   },
   {
     id: "trutruka", name: "trutruka", native: "trutruka", zh: "特鲁特鲁卡号",
@@ -1217,6 +1642,10 @@ INSTRUMENT_CATALOG.push(
     skills: "Playing the natural overtones in strong, sustained calls.",
     scenes: "Ngillatun ceremonies, palin games and gatherings.",
     partners: ["kultrun", "pifilka", "kaskawilla"],
+    techniques: [
+      { name: "overtone call", how: "Lips buzz in the cane horn for strong, sustained calls on the natural overtones.", play: "normal" },
+      { name: "lip slur between harmonics", how: "Tightening the lips jumps the tone up to the next natural overtone without a break.", play: "overblow" },
+    ],
   },
   {
     id: "pifilka", name: "pifilka (whistle)", native: "pifülka", zh: "皮菲尔卡哨",
@@ -1229,6 +1658,10 @@ INSTRUMENT_CATALOG.push(
     skills: "Rhythmic blasts in alternation between players.",
     scenes: "Ngillatun ceremonies and dances.",
     partners: ["kultrun", "trutruka"],
+    techniques: [
+      { name: "short blast", how: "A sharp breath across the closed tube gives a shrill, single-pitched burst.", play: "normal" },
+      { name: "alternating blasts", how: "Two players alternate quick blasts in an interlocking rhythm.", play: "normal" },
+    ],
   },
   {
     id: "kull-kull", name: "kull kull (horn)", native: "kullkull", zh: "库尔库尔牛角号",
@@ -1241,6 +1674,10 @@ INSTRUMENT_CATALOG.push(
     skills: "Strong calls on one or two notes.",
     scenes: "Calls to assemblies, ngillatun ceremonies.",
     partners: ["trutruka", "kultrun"],
+    techniques: [
+      { name: "signal call", how: "Lips buzz at the narrow end for a single loud, brassy blast.", play: "normal" },
+      { name: "lip slur between harmonics", how: "Tightening the lips jumps the tone up to the next natural overtone without a break.", play: "overblow" },
+    ],
   },
   {
     id: "trompe", name: "trompe (jaw harp)", native: "trompe", zh: "口簧",
@@ -1253,6 +1690,11 @@ INSTRUMENT_CATALOG.push(
     skills: "Changing mouth shape to select overtones, breathing through the instrument for rhythm.",
     scenes: "Personal music, courtship, gatherings.",
     partners: ["kultrun", "pifilka"],
+    techniques: [
+      { name: "plucking the tongue", how: "A finger plucks the steel tongue, setting a twanging drone.", play: "normal" },
+      { name: "overtone selection", how: "Changing mouth shape picks out overtones as a melody above the drone.", play: "harmonic" },
+      { name: "breath rhythm", how: "Breathing in and out through the instrument adds rhythm and swells.", play: "tremolo" },
+    ],
   },
   {
     id: "kaskawilla", name: "kaskawilla (bells)", native: "kaskawilla", zh: "铃铛串",
@@ -1265,6 +1707,10 @@ INSTRUMENT_CATALOG.push(
     skills: "Rhythmic shaking with the kultrun beat.",
     scenes: "Ngillatun and machi healing ceremonies.",
     partners: ["kultrun", "trutruka"],
+    techniques: [
+      { name: "steady shaking", how: "Shaken in time with the dance or song so the pieces clash in a dry, crisp pulse.", play: "normal" },
+      { name: "continuous shake", how: "Shaken quickly without pause, the jingles blur into a sustained shimmering rustle.", play: "tremolo" },
+    ],
   },
   {
     id: "nolkin", name: "nolkin (stem trumpet)", native: "ñolkiñ", zh: "诺尔金吸奏号",
@@ -1277,6 +1723,10 @@ INSTRUMENT_CATALOG.push(
     skills: "Inhaled tone production, short repeated calls.",
     scenes: "Ceremonies and gatherings.",
     partners: ["trutruka", "kultrun"],
+    techniques: [
+      { name: "inhaled tone", how: "Air is drawn inward through the mouth end for a harsh, buzzing note.", play: "normal" },
+      { name: "repeated calls", how: "Short repeated inhalations give pulsing calls.", play: "tremolo" },
+    ],
   },
   {
     id: "kultrun", name: "kultrun (drum)", native: "kultrung", zh: "库尔特伦鼓",
@@ -1289,6 +1739,10 @@ INSTRUMENT_CATALOG.push(
     skills: "Steady and accelerating beats that guide trance and prayer.",
     scenes: "Machi healing rites (machitun), ngillatun ceremonies.",
     partners: ["trutruka", "kaskawilla", "pifilka"],
+    techniques: [
+      { name: "steady beat", how: "A single stick strikes the head in an even pulse under the machi's song.", play: "normal" },
+      { name: "accelerating roll", how: "Strokes speed up into a rapid, rumbling roll leading toward trance.", play: "roll" },
+    ],
   },
   {
     id: "kunkulkawe", name: "kunkulkawe (rubbed musical bow)", native: "kunkulkawe", zh: "摩擦乐弓",
@@ -1301,6 +1755,10 @@ INSTRUMENT_CATALOG.push(
     skills: "Rubbing for a trembling sustain, shaping overtones with the mouth.",
     scenes: "Personal music and ceremonies.",
     partners: ["kultrun", "trompe"],
+    techniques: [
+      { name: "rubbing", how: "One bow's string is rubbed with the other, giving a trembling sustained buzz.", play: "tremolo" },
+      { name: "mouth-shaped overtones", how: "Changing mouth shape over the bow selects overtones.", play: "harmonic" },
+    ],
   },
   {
     id: "capador", name: "capador (pan pipes)", native: "capador", zh: "卡帕多排箫",
@@ -1313,6 +1771,11 @@ INSTRUMENT_CATALOG.push(
     skills: "Rapid scale runs and fluttering breath accents.",
     scenes: "Rural festivals and street calls.",
     partners: ["ocarina", "clay-flute", "fotuto"],
+    techniques: [
+      { name: "blown note", how: "Breath across the tube top gives a breathy tone.", play: "normal" },
+      { name: "rapid run", how: "Pipes slide quickly across the lip for scale runs.", play: "gliss" },
+      { name: "fluttering breath", how: "A fluttering breath gives throbbing accents.", play: "flutter" },
+    ],
   },
   {
     id: "clay-flute", name: "clay flute", native: "(Muisca name unknown)", zh: "陶笛",
@@ -1325,6 +1788,10 @@ INSTRUMENT_CATALOG.push(
     skills: "Ornamented melodies and trills.",
     scenes: "Festivals and rituals.",
     partners: ["capador", "ocarina", "fotuto"],
+    techniques: [
+      { name: "tongued melody", how: "Notes are started with the tongue through the duct for clear, whistling articulation.", play: "normal" },
+      { name: "trill", how: "A finger shakes rapidly over a hole, alternating two neighbouring pitches.", play: "flutter" },
+    ],
   },
   {
     id: "bone-flute", name: "bone flute", native: "(name varies by people)", zh: "骨笛",
@@ -1337,6 +1804,9 @@ INSTRUMENT_CATALOG.push(
     skills: "Short, piercing melodic figures.",
     scenes: "War rituals, feasts and dances.",
     partners: ["maraca", "inubia", "capador"],
+    techniques: [
+      { name: "piercing figure", how: "Short, sharp breaths give a high, piercing melodic figure.", play: "normal" },
+    ],
   },
   {
     id: "gold-bells", name: "gold jingles", native: "(Muisca name unknown)", zh: "金铃",
@@ -1349,6 +1819,10 @@ INSTRUMENT_CATALOG.push(
     skills: "Rhythmic shimmer through dance.",
     scenes: "Festivals and ceremonies.",
     partners: ["capador", "fotuto"],
+    techniques: [
+      { name: "jingling", how: "Shaken in time with the dance or song so the pieces clash in a dry, crisp pulse.", play: "normal" },
+      { name: "continuous shake", how: "Shaken quickly without pause, the jingles blur into a sustained shimmering rustle.", play: "tremolo" },
+    ],
   },
   {
     id: "fotuto", name: "fotuto (trumpet)", native: "fotuto", zh: "福图托号",
@@ -1361,6 +1835,9 @@ INSTRUMENT_CATALOG.push(
     skills: "Loud, carrying calls.",
     scenes: "Festivals, war and assemblies.",
     partners: ["capador", "log-drum"],
+    techniques: [
+      { name: "signal call", how: "Lips buzz at the narrow end for a single loud, brassy blast.", play: "normal" },
+    ],
   },
   {
     id: "log-drum", name: "log drum", native: "(Muisca name unknown)", zh: "原木鼓",
@@ -1373,6 +1850,10 @@ INSTRUMENT_CATALOG.push(
     skills: "Steady festival beats.",
     scenes: "Festivals and dances.",
     partners: ["fotuto", "capador"],
+    techniques: [
+      { name: "stroke", how: "Hands or sticks strike the log for a deep, woody boom.", play: "normal" },
+      { name: "roll", how: "Rapid strokes give a rumbling roll.", play: "roll" },
+    ],
   },
   {
     id: "urua", name: "uruá (long flute)", native: "uruá", zh: "乌鲁阿长笛",
@@ -1385,6 +1866,9 @@ INSTRUMENT_CATALOG.push(
     skills: "Interlocking low tones between the two players.",
     scenes: "Ceremonial dances.",
     partners: ["maraca", "bone-flute"],
+    techniques: [
+      { name: "interlocking low tones", how: "Two players each sound one deep tone on their long flute, alternating in a pattern.", play: "normal" },
+    ],
   },
   {
     id: "seed-rattle", name: "seed-pod rattle", native: "(Tupi name varies)", zh: "种子摇铃",
@@ -1397,6 +1881,10 @@ INSTRUMENT_CATALOG.push(
     skills: "Rhythmic stamping steps.",
     scenes: "Dances and ceremonies.",
     partners: ["maraca", "stamping-tubes"],
+    techniques: [
+      { name: "stamped rattle", how: "Stamping steps shake the seed pods for a crisp rustle.", play: "normal" },
+      { name: "continuous rustle", how: "Quick steps keep the pods rustling without pause.", play: "tremolo" },
+    ],
   },
   {
     id: "maraca", name: "maracá (gourd rattle)", native: "mbaraká", zh: "沙锤",
@@ -1409,6 +1897,10 @@ INSTRUMENT_CATALOG.push(
     skills: "Steady shakes, accents and tremolo rolls.",
     scenes: "Shamanic rites, dances and healing.",
     partners: ["bone-flute", "stamping-tubes"],
+    techniques: [
+      { name: "steady shake", how: "Seeds hit the gourd wall on each shake for a crisp beat.", play: "normal" },
+      { name: "tremolo roll", how: "A fast, continuous shake gives a sustained rustle.", play: "tremolo" },
+    ],
   },
   {
     id: "taquara", name: "taquara (bamboo trumpet)", native: "takûara", zh: "竹号",
@@ -1421,6 +1913,9 @@ INSTRUMENT_CATALOG.push(
     skills: "Deep sustained tones and calls.",
     scenes: "Feasts, dances and war.",
     partners: ["inubia", "maraca"],
+    techniques: [
+      { name: "sustained tone", how: "Buzzing lips give a deep, sustained tone.", play: "normal" },
+    ],
   },
   {
     id: "inubia", name: "inúbia (war trumpet)", native: "inûbîa", zh: "伊努比亚战号",
@@ -1433,6 +1928,9 @@ INSTRUMENT_CATALOG.push(
     skills: "Loud war calls.",
     scenes: "War and gatherings.",
     partners: ["taquara", "maraca"],
+    techniques: [
+      { name: "signal call", how: "Lips buzz at the narrow end for a single loud, brassy blast.", play: "normal" },
+    ],
   },
   {
     id: "stamping-tubes", name: "bamboo stamping tubes", native: "(Tupi name unknown)", zh: "竹筒顿击器",
@@ -1445,5 +1943,8 @@ INSTRUMENT_CATALOG.push(
     skills: "Steady stamped pulses in time with dance.",
     scenes: "Dances and ceremonies.",
     partners: ["maraca", "seed-rattle"],
+    techniques: [
+      { name: "stamped pulse", how: "The open bottom pounds the ground for a hollow, pitched thump.", play: "knock" },
+    ],
   },
 );

@@ -18,6 +18,11 @@ INSTRUMENT_CATALOG.push(
     skills: "Plectrum tremolo, slides between microtonal pitches, ornaments such as quick hammered grace notes, and improvised preludes in the modes.",
     scenes: "Sasanian court banquets and royal hunts; today Persian classical concerts and ensembles.",
     partners: ["chang","ney","tar","kamancheh","tombak"],
+    techniques: [
+      { name: "Plectrum tremolo", native: "ریز", how: "The mezrab flicks rapidly up and down on one course, turning a plucked note into a sustained, shimmering line.", play: "tremolo" },
+      { name: "Slide", how: "A left-hand finger glides along the fretless neck between notes, giving a vocal portamento through microtonal steps.", play: "slide" },
+      { name: "Hammered grace note", how: "A left-hand finger hammers onto the string just before the main note, giving a quick, light ornament without a new stroke.", play: "normal" },
+    ],
   },
   {
     id: "chang",
@@ -36,6 +41,11 @@ INSTRUMENT_CATALOG.push(
     skills: "Two-handed plucking with melody and accompaniment, glissando cascades, and damping strings with the palm.",
     scenes: "Royal banquets, hunts and processions of Achaemenid and Sasanian courts, and later Persian miniatures of courtly music.",
     partners: ["barbat","ney","double-pipe","frame-drum"],
+    techniques: [
+      { name: "Glissando", how: "A finger sweeps across the row of strings, giving a rippling cascade of notes.", play: "gliss" },
+      { name: "Palm damping", how: "The palm is laid on the strings to stop them ringing, giving short, dry notes.", play: "mute" },
+      { name: "Two-handed plucking", how: "Both hands pluck from either side of the strings, one carrying the melody and the other an accompaniment.", play: "normal" },
+    ],
   },
   {
     id: "ney",
@@ -54,6 +64,11 @@ INSTRUMENT_CATALOG.push(
     skills: "Breathy tone shaping, half-holing and head angle for microtones, vibrato, octave overblowing, and long taqsim improvisations.",
     scenes: "Sufi ceremonies (sema), classical maqam and dastgah ensembles, and contemplative solo music.",
     partners: ["oud","qanun","tanbur","kamancheh","kemence"],
+    techniques: [
+      { name: "Octave overblowing", how: "Stronger, more focused breath makes the reed jump to its upper octave and higher registers.", play: "overblow" },
+      { name: "Half-holing and head turn", how: "Partly covering a hole or turning the head changes the angle of the air jet, bending the pitch smoothly into microtones.", play: "slide" },
+      { name: "Trill", how: "A finger flutters quickly over a hole, alternating two neighbouring notes as an ornament.", play: "flutter" },
+    ],
   },
   {
     id: "sanj",
@@ -72,6 +87,10 @@ INSTRUMENT_CATALOG.push(
     skills: "Accents on the strong beats of the rhythmic cycle, damped clashes against the body, and rolling crashes.",
     scenes: "Military bands, court processions, festivals and dance.",
     partners: ["naqqara","karnay","nafir","kos"],
+    techniques: [
+      { name: "Open clash", how: "The pair of cymbals is struck together and left to ring with a bright, shimmering crash.", play: "normal" },
+      { name: "Damped clash", how: "The cymbals are pressed against the body right after the clash, cutting the sound to a short, dry accent.", play: "mute" },
+    ],
   },
   {
     id: "karnay",
@@ -90,6 +109,10 @@ INSTRUMENT_CATALOG.push(
     skills: "Powerful sustained calls, octave leaps between natural harmonics, and loud rhythmic blasts in alternation with other horns.",
     scenes: "Royal gate bands, battle, weddings, Navruz and public celebrations.",
     partners: ["surnay","naqqara","sanj","doira"],
+    techniques: [
+      { name: "Natural-harmonic leaps", how: "Tightening the lips jumps the long valveless horn between its natural harmonics, giving wide, blaring intervals.", play: "overblow" },
+      { name: "Sustained call", how: "A long, powerful held note on one harmonic, often in turns with other karnays.", play: "normal" },
+    ],
   },
   {
     id: "double-pipe",
@@ -108,6 +131,10 @@ INSTRUMENT_CATALOG.push(
     skills: "Circular breathing for an unbroken sound, drone-and-melody playing, and rapid trills.",
     scenes: "Banquets, religious processions, dance and pastoral music.",
     partners: ["chang","frame-drum","barbat"],
+    techniques: [
+      { name: "Circular breathing", how: "Air stored in the cheeks keeps the reeds sounding while the player breathes in through the nose, giving an unbroken tone over the drone.", play: "normal" },
+      { name: "Trill", how: "Fingers flutter rapidly over the holes of the melody pipe, adding quick ornaments over the steady drone.", play: "flutter" },
+    ],
   },
   {
     id: "naqqara",
@@ -126,6 +153,10 @@ INSTRUMENT_CATALOG.push(
     skills: "Interlocking strokes between the high and low drum, rolls and loud accented patterns.",
     scenes: "City gates and palaces at set hours, battle, festivals and shrine music.",
     partners: ["karnay","sanj","nafir","surnay"],
+    techniques: [
+      { name: "Roll", how: "Fast alternating sticks on the small kettledrum make a continuous rumble.", play: "roll" },
+      { name: "Interlocking strokes", how: "High and low drums are struck in alternation, building a dry, punchy rhythmic pattern.", play: "normal" },
+    ],
   },
   {
     id: "kamancheh",
@@ -144,6 +175,11 @@ INSTRUMENT_CATALOG.push(
     skills: "Turning the body to change strings, vibrato, slides, fast tremolo bowing, and singing ornaments that follow the voice.",
     scenes: "Classical Persian concerts, Caucasian wedding and folk music, and accompaniment of avaz song.",
     partners: ["tar","santur","tombak","ney"],
+    techniques: [
+      { name: "Bowed tremolo", how: "Very fast short bow strokes on one note give a trembling, intense sound.", play: "tremolo" },
+      { name: "Slide", how: "A finger glides along the fingerboard between notes, imitating the slides of the voice.", play: "slide" },
+      { name: "Turning the instrument", how: "Instead of moving the bow, the player rotates the spike fiddle on its foot to bring a different string under the bow.", play: "normal" },
+    ],
   },
   {
     id: "tar",
@@ -162,6 +198,11 @@ INSTRUMENT_CATALOG.push(
     skills: "Plectrum tremolo (riz), hammered and pulled notes, microtonal fret positions, and improvisation through the gushe of a dastgah.",
     scenes: "Persian classical music, Azerbaijani mugham and Caucasian weddings.",
     partners: ["kamancheh","santur","tombak","setar"],
+    techniques: [
+      { name: "Tremolo", native: "ریز", how: "The brass plectrum strikes the course in rapid alternating strokes, sustaining a note as a rolling shimmer.", play: "tremolo" },
+      { name: "Dorrab", native: "درّاب", how: "A quick three-stroke figure — two light grace strokes leading into the main note — giving a rhythmic flourish.", play: "normal" },
+      { name: "Hammered note", native: "اشاره", how: "A left-hand finger strikes the string to sound a note without a plectrum stroke, giving a soft ornament.", play: "normal" },
+    ],
   },
   {
     id: "ghaychak",
@@ -180,6 +221,10 @@ INSTRUMENT_CATALOG.push(
     skills: "Drone bowing, sympathetic resonance, slides and ornamented vocal-style melodies.",
     scenes: "Baluchi healing ceremonies and folk song, and modern Persian ensembles.",
     partners: ["kamancheh","tar","santur"],
+    techniques: [
+      { name: "Drone bowing", how: "The bow sounds an open string alongside the melody, with sympathetic strings ringing behind it.", play: "normal" },
+      { name: "Slide", how: "The finger glides between pitches to follow a vocal melody.", play: "slide" },
+    ],
   },
   {
     id: "santur",
@@ -198,6 +243,11 @@ INSTRUMENT_CATALOG.push(
     skills: "Riz (rolling tremolo with both hammers), fast runs, octave doubling, and damping for clarity.",
     scenes: "Persian classical concerts and ensembles, and the Iraqi maqam ensemble (chalghi).",
     partners: ["tar","kamancheh","tombak","ney"],
+    techniques: [
+      { name: "Tremolo roll", native: "ریز", how: "The two light hammers (mezrab) alternate very fast on one course, turning the struck note into a sustained, glittering roll.", play: "tremolo" },
+      { name: "Dorrab", native: "درّاب", how: "A quick triple stroke of grace notes leading into the main note, a basic rhythmic ornament of Persian music.", play: "normal" },
+      { name: "Damping", how: "The hand or fingers rest on the strings to stop the long resonance, making fast passages clearer and drier.", play: "mute" },
+    ],
   },
   {
     id: "zang",
@@ -216,6 +266,9 @@ INSTRUMENT_CATALOG.push(
     skills: "Rhythmic ringing patterns and, for church bells, peals marking the hours of worship.",
     scenes: "Church services and feasts in Armenia, and dance and festival music in Iran.",
     partners: ["kamancheh","duduk","tar"],
+    techniques: [
+      { name: "Rhythmic ringing", how: "The bell is swung or shaken in a steady pattern so the clapper strikes repeatedly.", play: "normal" },
+    ],
   },
   {
     id: "tanbur",
@@ -234,6 +287,11 @@ INSTRUMENT_CATALOG.push(
     skills: "Finger rolls (shor) on the Kurdish tanbur, precise microtonal fretting, and slow, singing taksim on the Turkish tanbur.",
     scenes: "Ottoman court and Sufi music, Kurdish Yarsan ceremonies, and classical concerts.",
     partners: ["ney","kemence","kanun","oud"],
+    techniques: [
+      { name: "Finger roll", native: "شور", how: "On the Kurdish tanbur the right-hand fingers roll across the strings in rapid succession, a rustling strummed tremolo.", play: "strum" },
+      { name: "Single-note picking", how: "On the Turkish tanbur a tortoiseshell plectrum picks single notes that ring long on the large body.", play: "normal" },
+      { name: "Microtonal slide", how: "The finger slides along the long neck between the many fret positions, gliding through microtones.", play: "slide" },
+    ],
   },
   {
     id: "rababa",
@@ -252,6 +310,10 @@ INSTRUMENT_CATALOG.push(
     skills: "Following and answering the sung line, ornamented turns, drone-like repeated bowing and rhythmic bow accents.",
     scenes: "Night gatherings by the tent fire, coffee hospitality and the recitation of nabati poetry.",
     partners: ["shabbaba","oud","frame-drum"],
+    techniques: [
+      { name: "Slide and vibrato", how: "The finger touches the single horsehair string from the side and slides or wavers to follow the singer.", play: "slide" },
+      { name: "Bow accents", how: "Short repeated bow strokes mark the rhythm under the poet's song.", play: "normal" },
+    ],
   },
   {
     id: "shabbaba",
@@ -270,6 +332,10 @@ INSTRUMENT_CATALOG.push(
     skills: "Breathy timbre, quick ornamental trills, overblowing to the upper octave and circular breathing among some players.",
     scenes: "Pastures, village weddings and dabke dances.",
     partners: ["rababa","darbuka","mijwiz"],
+    techniques: [
+      { name: "Overblowing", how: "Harder breath sends the flute to its upper octave for bright, piercing dance tunes.", play: "overblow" },
+      { name: "Trill", how: "Quick finger ornaments flutter between neighbouring notes.", play: "flutter" },
+    ],
   },
   {
     id: "oud",
@@ -288,6 +354,11 @@ INSTRUMENT_CATALOG.push(
     skills: "Taqsim improvisation through maqam, plectrum tremolo, slides and microtonal intonation, and rapid alternate picking.",
     scenes: "Court and salon music, weddings, Sufi gatherings and modern concert stages from Morocco to Iraq.",
     partners: ["qanun","ney","rebab","riq","darbuka"],
+    techniques: [
+      { name: "Plectrum tremolo", how: "The risha flicks rapidly up and down on one course to sustain a note.", play: "tremolo" },
+      { name: "Slide", how: "A finger glides along the fretless neck, sliding into and between microtonal pitches.", play: "slide" },
+      { name: "Hammer-on and pull-off", how: "Left-hand fingers strike or pull the string to sound notes after a single plectrum stroke, giving fluid legato runs.", play: "normal" },
+    ],
   },
   {
     id: "camel-bells",
@@ -306,6 +377,9 @@ INSTRUMENT_CATALOG.push(
     skills: "Mostly free ringing; in music, shaken in rhythm or struck for colour.",
     scenes: "Desert caravans, pilgrim journeys and evocations of the desert in song.",
     partners: ["rababa","shabbaba"],
+    techniques: [
+      { name: "Shaking", how: "The bells swing with the animal's stride or are shaken by hand, jangling freely.", play: "normal" },
+    ],
   },
   {
     id: "nafir",
@@ -324,6 +398,9 @@ INSTRUMENT_CATALOG.push(
     skills: "Sustained signal calls, loud blasts and long held notes.",
     scenes: "Military bands, princely processions and the Ramadan nights in Moroccan towns.",
     partners: ["naqqara","kos","sanj","zurna"],
+    techniques: [
+      { name: "Signal blast", how: "A long, loud held note on the straight trumpet, used for calls and announcements.", play: "normal" },
+    ],
   },
   {
     id: "qanun",
@@ -342,6 +419,12 @@ INSTRUMENT_CATALOG.push(
     skills: "Octave doubling with both hands, flicking levers mid-phrase for microtonal shifts, tremolo and rapid scalar runs.",
     scenes: "Arab takht ensembles, Ottoman fasıl, Armenian and Iranian classical music and accompaniment of singers.",
     partners: ["oud","ney","rebab","riq"],
+    techniques: [
+      { name: "Lever change", native: "mandal / عُرَب", how: "A small metal lever under a course is flipped while the string rings, shifting its pitch by a microtone mid-phrase.", play: "slide" },
+      { name: "Tremolo", how: "The ring-mounted plectra pluck one course in rapid alternation, sustaining it as a shimmer.", play: "tremolo" },
+      { name: "Glissando", how: "A finger sweeps across the strings, giving a rippling run.", play: "gliss" },
+      { name: "Octave doubling", how: "Both hands pluck the same melody an octave apart, the characteristic full sound of the qanun.", play: "normal" },
+    ],
   },
   {
     id: "rebab",
@@ -360,6 +443,10 @@ INSTRUMENT_CATALOG.push(
     skills: "Vocal ornaments, slides and vibrato, bowed drones and following the singer's line.",
     scenes: "Courtly and Sufi music, epic recitation and accompaniment of poets.",
     partners: ["oud","qanun","ney","riq"],
+    techniques: [
+      { name: "Ornamented slide", how: "The finger slides and wavers on the string to follow the vocal line.", play: "slide" },
+      { name: "Bowed drone", how: "A sustained bowed note supports the melody in Andalusian ensembles.", play: "normal" },
+    ],
   },
   {
     id: "buq",
@@ -378,6 +465,10 @@ INSTRUMENT_CATALOG.push(
     skills: "Signal calls and long held notes.",
     scenes: "Battle, the court tablkhana and processions.",
     partners: ["naqqara","sanj","nafir"],
+    techniques: [
+      { name: "Signal call", how: "Long held notes and short calls on the horn's few natural tones.", play: "normal" },
+      { name: "Harmonic leap", how: "Changing lip tension jumps between the horn's natural tones.", play: "overblow" },
+    ],
   },
   {
     id: "kawala",
@@ -396,6 +487,11 @@ INSTRUMENT_CATALOG.push(
     skills: "Breathy ornaments, trills and fast dance figures.",
     scenes: "Village weddings, Sufi and folk ensembles, and popular music.",
     partners: ["oud","darbuka","rebab"],
+    techniques: [
+      { name: "Overblowing", how: "Stronger breath lifts the end-blown flute into its upper register.", play: "overblow" },
+      { name: "Trill", how: "Quick finger flutters add ornaments to dance melodies.", play: "flutter" },
+      { name: "Breath glide", how: "Changing the angle and strength of the breath bends notes for a breathy, sliding tone.", play: "slide" },
+    ],
   },
   {
     id: "kos",
@@ -414,6 +510,10 @@ INSTRUMENT_CATALOG.push(
     skills: "Slow, powerful strokes marking the main beats of the march, and thunderous rolls.",
     scenes: "Battles, sieges, royal processions and the mehter band.",
     partners: ["naqqara","zurna","boru","zil","davul"],
+    techniques: [
+      { name: "Thunder roll", how: "Fast alternating strokes on the great kettledrum produce a sustained thunderous rumble.", play: "roll" },
+      { name: "March stroke", how: "Slow, heavy single strokes mark the main beats of the march.", play: "normal" },
+    ],
   },
   {
     id: "kopuz",
@@ -432,6 +532,10 @@ INSTRUMENT_CATALOG.push(
     skills: "Strummed accompaniment of epic song, drones on open strings and rhythmic rasgueado-like strokes.",
     scenes: "Epic recitation of the ozan bards at feasts and gatherings.",
     partners: ["kaval","davul","kemence"],
+    techniques: [
+      { name: "Strummed accompaniment", how: "The fingers or a plectrum strum across the strings in rhythm under epic song.", play: "strum" },
+      { name: "Open-string drone", how: "Open strings ring as a drone while one string carries the melody.", play: "normal" },
+    ],
   },
   {
     id: "kaval",
@@ -450,6 +554,11 @@ INSTRUMENT_CATALOG.push(
     skills: "Cross-fingered microtones, a growling low register (kaba), overblowing to upper registers and circular breathing.",
     scenes: "Pastures, village dances and laments.",
     partners: ["kopuz","baglama","davul"],
+    techniques: [
+      { name: "Overblowing", how: "Breath pressure jumps the rim-blown flute into upper registers, from the low kaba to bright high notes.", play: "overblow" },
+      { name: "Cross-fingered microtone", how: "Partial and cross fingerings bend notes to microtonal pitches.", play: "slide" },
+      { name: "Trill", how: "Rapid finger ornaments flutter between adjacent notes.", play: "flutter" },
+    ],
   },
   {
     id: "kemence",
@@ -468,6 +577,11 @@ INSTRUMENT_CATALOG.push(
     skills: "Fingernail stopping, double-stop drones, fast bowing for dance tunes, and ornamented taksim.",
     scenes: "Ottoman classical fasıl, and Black Sea weddings and horon dances.",
     partners: ["tanbur","ney","qanun","oud"],
+    techniques: [
+      { name: "Fingernail stopping", how: "The strings are touched from the side with the fingernails rather than pressed down, giving a light, nasal tone.", play: "normal" },
+      { name: "Slide", how: "The fingernail glides along the string between notes, giving vocal glissandi.", play: "slide" },
+      { name: "Double-stop drone", how: "The bow sounds two strings at once, one as a drone under the melody.", play: "normal" },
+    ],
   },
   {
     id: "baglama",
@@ -486,6 +600,11 @@ INSTRUMENT_CATALOG.push(
     skills: "Şelpe finger-tapping, tremolo and rapid strummed patterns, and microtonal fretting.",
     scenes: "Aşık song duels, Alevi cem ceremonies, village weddings and popular music.",
     partners: ["kaval","davul","zurna","kemence"],
+    techniques: [
+      { name: "Şelpe", native: "şelpe", how: "The plectrum is put aside and the fingers of both hands tap, hammer and pluck the strings on the neck, giving a percussive, tapped sound.", play: "knock" },
+      { name: "Plectrum tremolo", how: "The tezene flicks rapidly on the strings to sustain a note.", play: "tremolo" },
+      { name: "Strummed pattern", how: "The tezene strums all courses in rhythmic up- and down-strokes for dance tunes.", play: "strum" },
+    ],
   },
   {
     id: "zil",
@@ -504,6 +623,10 @@ INSTRUMENT_CATALOG.push(
     skills: "Accents on the strong beats of usul rhythms, rolls and damped strokes.",
     scenes: "Mehter marches, dance and festivals.",
     partners: ["kos","davul","zurna","boru"],
+    techniques: [
+      { name: "Open clash", how: "The cymbals are clashed together on the strong beat and left to ring.", play: "normal" },
+      { name: "Damped stroke", how: "The cymbals are clashed and immediately pressed together or against the body, cutting the sound short.", play: "mute" },
+    ],
   },
   {
     id: "zurna",
@@ -522,6 +645,10 @@ INSTRUMENT_CATALOG.push(
     skills: "Circular breathing for unbroken melody, ornamented trills, and a second zurna holding a drone.",
     scenes: "Weddings, village festivals, wrestling matches and mehter marches.",
     partners: ["davul","kos","zil","boru"],
+    techniques: [
+      { name: "Circular breathing", how: "The player breathes in through the nose while pushing air from the cheeks, so the shrill melody never breaks.", play: "normal" },
+      { name: "Trill", how: "Fast finger trills and turns ornament the piercing melody.", play: "flutter" },
+    ],
   },
   {
     id: "davul",
@@ -540,6 +667,11 @@ INSTRUMENT_CATALOG.push(
     skills: "Bass and switch strokes combined into rhythmic cycles, rolls and dramatic accents for dancers.",
     scenes: "Weddings, festivals, wrestling and military marches.",
     partners: ["zurna","kos","zil","duduk"],
+    techniques: [
+      { name: "Bass stroke", native: "tokmak", how: "The heavy wooden beater strikes the main head for a deep, booming beat.", play: "normal" },
+      { name: "Switch stroke", native: "çubuk", how: "A thin stick snaps on the other head for light, crisp off-beats.", play: "knock" },
+      { name: "Roll", how: "Fast strokes of the switch make a rattling roll before a dance accent.", play: "roll" },
+    ],
   },
   {
     id: "boru",
@@ -558,6 +690,10 @@ INSTRUMENT_CATALOG.push(
     skills: "Fanfares and calls on natural notes, sustained tones under the zurna melody.",
     scenes: "Mehter marches and military ceremonies.",
     partners: ["zurna","kos","davul","zil"],
+    techniques: [
+      { name: "Fanfare on natural notes", how: "Lip changes jump between the natural harmonics of the valveless trumpet for calls.", play: "overblow" },
+      { name: "Held tone", how: "A sustained note under the zurna melody.", play: "normal" },
+    ],
   },
   {
     id: "duduk",
@@ -576,6 +712,10 @@ INSTRUMENT_CATALOG.push(
     skills: "Circular breathing for the dam, lip bends and microtonal sliding, soft vibrato and expressive ornaments.",
     scenes: "Weddings, funerals, laments, folk ensembles and film music.",
     partners: ["kamancheh","davul","zurna","shvi"],
+    techniques: [
+      { name: "Lip bend", how: "Changing lip pressure on the large double reed bends notes and slides smoothly between them.", play: "slide" },
+      { name: "Vibrato and ornaments", how: "Gentle breath and finger vibrato and grace notes shape the soft, mournful tone.", play: "normal" },
+    ],
   },
   {
     id: "shvi",
@@ -594,6 +734,10 @@ INSTRUMENT_CATALOG.push(
     skills: "Quick trills and grace notes, overblowing to the upper octave and dance-tune articulation.",
     scenes: "Shepherd music, village dances and folk ensembles.",
     partners: ["duduk","davul","kamancheh"],
+    techniques: [
+      { name: "Trill", how: "Quick finger trills and grace notes flutter on the small fipple flute.", play: "flutter" },
+      { name: "Overblowing", how: "Harder breath sounds the upper octave.", play: "overblow" },
+    ],
   },
   {
     id: "panduri",
@@ -612,6 +756,10 @@ INSTRUMENT_CATALOG.push(
     skills: "Strummed chordal accompaniment, rhythmic rasgueado patterns and drone-based harmony beneath the voice.",
     scenes: "Feasts (supra), mountain songs and epic ballads.",
     partners: ["chonguri","salamuri","doli","chuniri"],
+    techniques: [
+      { name: "Strummed chords", how: "The fingers strum the three strings in rhythmic patterns to accompany song.", play: "strum" },
+      { name: "Plucked melody", how: "Single strings are plucked for a melodic line between strummed passages.", play: "normal" },
+    ],
   },
   {
     id: "chonguri",
@@ -630,6 +778,10 @@ INSTRUMENT_CATALOG.push(
     skills: "Characteristic strumming patterns (dzgera), open-string chords and accompaniment of three-voice song.",
     scenes: "Western Georgian feasts, women's songs and folk ensembles.",
     partners: ["panduri","salamuri","doli"],
+    techniques: [
+      { name: "Strumming", how: "The fingers strum across the fretless strings, the short drone string ringing in every chord.", play: "strum" },
+      { name: "Open-string chord", how: "Open strings sound together as a held chord behind polyphonic song.", play: "normal" },
+    ],
   },
   {
     id: "salamuri",
@@ -648,6 +800,10 @@ INSTRUMENT_CATALOG.push(
     skills: "Trills, grace notes, overblowing and imitations of birdsong.",
     scenes: "Pastures, festivals and folk ensembles.",
     partners: ["panduri","chonguri","doli"],
+    techniques: [
+      { name: "Trill", how: "Fast finger trills and grace notes, often imitating birds.", play: "flutter" },
+      { name: "Overblowing", how: "Stronger breath sounds the upper octave.", play: "overblow" },
+    ],
   },
   {
     id: "zari",
@@ -666,6 +822,9 @@ INSTRUMENT_CATALOG.push(
     skills: "Rhythmic peals and patterns marking hours and feasts.",
     scenes: "Church services, feast days and funerals.",
     partners: ["chuniri","salamuri"],
+    techniques: [
+      { name: "Peal", how: "The bell is rung in rhythmic patterns to mark hours and feasts.", play: "normal" },
+    ],
   },
   {
     id: "buki",
@@ -684,6 +843,9 @@ INSTRUMENT_CATALOG.push(
     skills: "Signal calls on a few natural tones.",
     scenes: "War, hunting and ceremonial calls.",
     partners: ["diplipito","doli"],
+    techniques: [
+      { name: "Signal call", how: "A few natural tones are blown as loud calls.", play: "normal" },
+    ],
   },
   {
     id: "gudastviri",
@@ -702,6 +864,9 @@ INSTRUMENT_CATALOG.push(
     skills: "Drone-and-melody playing on the double chanter and continuous sound from bag pressure.",
     scenes: "Mountain festivals, round dances and the singing of epic verse.",
     partners: ["doli","panduri","salamuri"],
+    techniques: [
+      { name: "Drone and melody", how: "Bag pressure keeps both pipes of the chanter sounding, one as a drone and one as the tune, without a break.", play: "normal" },
+    ],
   },
   {
     id: "diplipito",
@@ -720,6 +885,10 @@ INSTRUMENT_CATALOG.push(
     skills: "Interlocking strokes on the two drums and rapid rolls.",
     scenes: "Folk ensembles, dances and festivals.",
     partners: ["doli","buki","gudastviri"],
+    techniques: [
+      { name: "Roll", how: "Rapid alternating sticks on the pair of small kettledrums make a continuous roll.", play: "roll" },
+      { name: "Interlocking strokes", how: "The larger and smaller drums are struck in alternation for rhythmic patterns.", play: "normal" },
+    ],
   },
   {
     id: "chuniri",
@@ -738,6 +907,9 @@ INSTRUMENT_CATALOG.push(
     skills: "Chordal bowing across strings and drone accompaniment of song.",
     scenes: "Svan songs, laments and mountain feasts.",
     partners: ["chonguri","panduri"],
+    techniques: [
+      { name: "Chordal bowing", how: "The bow crosses all three strings at once, giving chords to accompany song.", play: "normal" },
+    ],
   },
   {
     id: "bronze-bell",
@@ -756,6 +928,9 @@ INSTRUMENT_CATALOG.push(
     skills: "Simple shaken rhythms and ringing in processions.",
     scenes: "Horse harness, processions, temples and protective charms.",
     partners: ["frame-drum","karnay","chang"],
+    techniques: [
+      { name: "Shaking", how: "The bell is shaken in simple rhythms so the clapper rings it.", play: "normal" },
+    ],
   },
   {
     id: "frame-drum",
@@ -774,6 +949,11 @@ INSTRUMENT_CATALOG.push(
     skills: "Finger rolls, snaps, rim and centre strokes, and shaking the jingles.",
     scenes: "Temples, processions, weddings and Sufi gatherings.",
     partners: ["chang","double-pipe","sanj"],
+    techniques: [
+      { name: "Finger roll", native: "ریز", how: "The fingers strike the skin in rapid succession, making a rolling rumble with the inner rings jingling.", play: "roll" },
+      { name: "Centre and rim strokes", how: "A deep stroke in the centre and a sharp stroke near the rim alternate to build the rhythm.", play: "normal" },
+      { name: "Jingle shake", how: "The frame is shaken so the metal rings inside rattle continuously.", play: "tremolo" },
+    ],
   },
   {
     id: "igil",
@@ -792,6 +972,10 @@ INSTRUMENT_CATALOG.push(
     skills: "Bowing both strings for drones, imitating hoofbeats and horses' neighing, and accompanying throat singing.",
     scenes: "Herders' songs, accompaniment of khöömei and epic tales.",
     partners: ["topshur","khoomei","dungur"],
+    techniques: [
+      { name: "Two-string drone bowing", how: "The bow sounds both horsehair strings together, a melody over a drone that supports throat singing.", play: "normal" },
+      { name: "Slide", how: "Fingers touching the strings from the side glide between notes, imitating neighing horses and the voice.", play: "slide" },
+    ],
   },
   {
     id: "topshur",
@@ -810,6 +994,10 @@ INSTRUMENT_CATALOG.push(
     skills: "Rhythmic strumming that imitates galloping horses, and drone accompaniment of epic song.",
     scenes: "Epic recitation (kai) and herders' gatherings.",
     partners: ["igil","khoomei"],
+    techniques: [
+      { name: "Galloping strum", how: "The fingers strum both strings in an uneven rhythm that imitates a horse's gait.", play: "strum" },
+      { name: "Drone accompaniment", how: "The open strings ring as a steady drone under epic song.", play: "normal" },
+    ],
   },
   {
     id: "khoomei",
@@ -828,6 +1016,12 @@ INSTRUMENT_CATALOG.push(
     skills: "Sygyt whistling overtones, kargyraa ventricular-fold growl, borbangnadyr trills, and long controlled breath phrases.",
     scenes: "Herders' songs, ensembles with igil and topshur, and festivals.",
     partners: ["igil","topshur","khoomii","dombra"],
+    techniques: [
+      { name: "Sygyt", native: "сыгыт", how: "A pressed throat drone with the tongue shaping a single high, whistling overtone melody above it.", play: "harmonic" },
+      { name: "Kargyraa", native: "каргыраа", how: "The ventricular folds vibrate with the vocal folds, adding a growling sub-octave under the fundamental.", play: "normal" },
+      { name: "Borbangnadyr", native: "борбаңнадыр", how: "Rapid lip and tongue movements make the overtones trill and warble over the drone.", play: "flutter" },
+      { name: "Khöömei", native: "хөөмей", how: "A soft, breathy throat drone with gentle overtones floating above it.", play: "normal" },
+    ],
   },
   {
     id: "uzlyau",
@@ -846,6 +1040,10 @@ INSTRUMENT_CATALOG.push(
     skills: "Overtone melody over a held drone and singing into the kurai.",
     scenes: "Bashkir epic songs, horse songs and folk ensembles.",
     partners: ["kurai","kubyz","dumbyra"],
+    techniques: [
+      { name: "Overtone melody", how: "A throat drone is held while the mouth cavity selects high overtones to form a whistling melody.", play: "harmonic" },
+      { name: "Held drone", how: "A deep, steady throat tone underlies the melody or the kurai.", play: "normal" },
+    ],
   },
   {
     id: "chatkhan",
@@ -864,6 +1062,10 @@ INSTRUMENT_CATALOG.push(
     skills: "Pressing strings to bend pitch, plucked arpeggios and accompaniment of epic singing.",
     scenes: "Epic recitation and Khakas folk ensembles.",
     partners: ["khoomei","topshur","igil"],
+    techniques: [
+      { name: "Pressing bend", how: "The left hand presses the string beyond the movable bridge, raising its pitch in a smooth bend.", play: "slide" },
+      { name: "Plucked arpeggio", how: "The fingers pluck strings in succession to accompany epic singing.", play: "normal" },
+    ],
   },
   {
     id: "tsuur",
@@ -882,6 +1084,10 @@ INSTRUMENT_CATALOG.push(
     skills: "Humming a throat drone while blowing, overtone melodies and imitations of wind and water.",
     scenes: "Herders' music and invocations to nature spirits.",
     partners: ["khoomei","topshur","igil"],
+    techniques: [
+      { name: "Hummed drone", how: "The player hums a throat drone while blowing, so the flute and voice sound together.", play: "normal" },
+      { name: "Overtone melody", how: "Varying the breath selects overtones of the long, few-holed tube for the melody.", play: "overblow" },
+    ],
   },
   {
     id: "shaman-bells",
@@ -900,6 +1106,9 @@ INSTRUMENT_CATALOG.push(
     skills: "Shaking in rhythm with the drum to build trance.",
     scenes: "Shamanic rituals, healing and invocations.",
     partners: ["dungur","khoomei","igil"],
+    techniques: [
+      { name: "Shaking", how: "The bells hanging on the costume ring as the shaman moves, in time with the drum.", play: "normal" },
+    ],
   },
   {
     id: "dungur",
@@ -918,6 +1127,10 @@ INSTRUMENT_CATALOG.push(
     skills: "Steady trance rhythms, accelerations and imitations of galloping.",
     scenes: "Shamanic rituals and healing ceremonies.",
     partners: ["shaman-bells","khoomei","igil"],
+    techniques: [
+      { name: "Steady beat", how: "A beater strikes the frame drum in a steady pulse that drives the ritual.", play: "normal" },
+      { name: "Accelerating roll", how: "The strokes quicken into a continuous rumble as the trance builds.", play: "roll" },
+    ],
   },
   {
     id: "dombra",
@@ -936,6 +1149,11 @@ INSTRUMENT_CATALOG.push(
     skills: "Fast strumming patterns (qağys) with up- and down-strokes, kui storytelling, and galloping rhythms.",
     scenes: "Kui performances, aitys singer contests, feasts and epic song.",
     partners: ["kobyz","sybyzgy","zhetigen","dauylpaz"],
+    techniques: [
+      { name: "Tökpe", native: "төкпе", how: "A vigorous style in which the whole hand strums the two strings in fast down- and up-strokes.", play: "strum" },
+      { name: "Shertpe", native: "шертпе", how: "A gentler style in which single fingers flick and pluck the strings for a clear melodic line.", play: "normal" },
+      { name: "Galloping stroke", how: "Uneven strummed rhythms imitate a running horse in kui pieces.", play: "strum" },
+    ],
   },
   {
     id: "kobyz",
@@ -954,6 +1172,11 @@ INSTRUMENT_CATALOG.push(
     skills: "Rich overtone-laden bowing, harmonics, imitation of animal cries and wind, and drones.",
     scenes: "Shamanic healing, epic recitation and kui performance.",
     partners: ["dombra","sybyzgy","khoomei"],
+    techniques: [
+      { name: "Harmonics", how: "Horsehair strings touched lightly from the side by the fingers bring out flute-like overtones.", play: "harmonic" },
+      { name: "Drone bowing", how: "Both strings sound together, a raspy, overtone-rich drone under the melody.", play: "normal" },
+      { name: "Slide", how: "Fingers glide along the string, imitating animal cries and wind.", play: "slide" },
+    ],
   },
   {
     id: "zhetigen",
@@ -972,6 +1195,10 @@ INSTRUMENT_CATALOG.push(
     skills: "Plucked arpeggios, pitch bends by pressing beside the bridges and tremolo.",
     scenes: "Kazakh folk ensembles and storytelling.",
     partners: ["dombra","kobyz","sybyzgy"],
+    techniques: [
+      { name: "Pressing bend", how: "The left hand presses the string beside its bridge, bending the pitch up.", play: "slide" },
+      { name: "Plucked arpeggio", how: "Fingers pluck the strings in succession over their movable bridges.", play: "normal" },
+    ],
   },
   {
     id: "sybyzgy",
@@ -990,6 +1217,10 @@ INSTRUMENT_CATALOG.push(
     skills: "Humming a throat drone while playing, overblowing and kui melodies.",
     scenes: "Pastures, kui performance and folk ensembles.",
     partners: ["dombra","kobyz","khoomei"],
+    techniques: [
+      { name: "Throat drone", how: "The player hums a low throat drone while blowing the rim-blown flute, so voice and flute sound together.", play: "normal" },
+      { name: "Overblowing", how: "Stronger breath reaches higher overtones of the open tube.", play: "overblow" },
+    ],
   },
   {
     id: "asatayak",
@@ -1008,6 +1239,9 @@ INSTRUMENT_CATALOG.push(
     skills: "Rhythmic shaking and accents to accompany song.",
     scenes: "Shamanic rites in the past; folk ensembles today.",
     partners: ["dombra","kobyz","dauylpaz"],
+    techniques: [
+      { name: "Shaking", how: "The staff is shaken or struck on the ground so its metal rings jangle in rhythm.", play: "normal" },
+    ],
   },
   {
     id: "dauylpaz",
@@ -1026,6 +1260,10 @@ INSTRUMENT_CATALOG.push(
     skills: "Loud signal rhythms and rolls.",
     scenes: "War, hunting and festivals.",
     partners: ["kerney","dombra","asatayak"],
+    techniques: [
+      { name: "Signal beat", how: "Loud strokes in a fixed rhythm call warriors or hunters.", play: "normal" },
+      { name: "Roll", how: "Fast strokes make a rumbling roll.", play: "roll" },
+    ],
   },
   {
     id: "kurai",
@@ -1044,6 +1282,10 @@ INSTRUMENT_CATALOG.push(
     skills: "Humming a drone (uzlyau) into the flute, overblowing to many harmonics and long ornamented melodies.",
     scenes: "Folk song, horse and hunting songs, and ensembles.",
     partners: ["kubyz","dumbyra","uzlyau"],
+    techniques: [
+      { name: "Uzlyau with the flute", native: "өзләү", how: "The player hums a throat drone while blowing, so the flute melody floats over a vocal tone.", play: "normal" },
+      { name: "Overblowing", how: "With only a few holes, much of the range comes from overblowing to successive overtones of the tube.", play: "overblow" },
+    ],
   },
   {
     id: "dumbyra",
@@ -1062,6 +1304,10 @@ INSTRUMENT_CATALOG.push(
     skills: "Strummed accompaniment, rhythmic patterns and tremolo.",
     scenes: "Epic recitation, folk song and ensembles.",
     partners: ["kurai","kubyz","kobyz"],
+    techniques: [
+      { name: "Strummed accompaniment", how: "The fingers strum the strings in rhythmic patterns under song.", play: "strum" },
+      { name: "Tremolo", how: "Rapid repeated strokes on a string sustain a note.", play: "tremolo" },
+    ],
   },
   {
     id: "kubyz",
@@ -1080,6 +1326,10 @@ INSTRUMENT_CATALOG.push(
     skills: "Changing mouth shape and breath to play overtone melodies, rhythmic breathing and imitation of horses.",
     scenes: "Home music, dances and folk ensembles.",
     partners: ["kurai","dumbyra","uzlyau"],
+    techniques: [
+      { name: "Overtone melody", how: "The tongue of the jaw harp is plucked while the mouth changes shape, picking out an overtone melody over the drone.", play: "normal" },
+      { name: "Rhythmic breathing", how: "Breathing in and out through the instrument shapes rhythmic accents, as in imitations of a galloping horse.", play: "normal" },
+    ],
   },
   {
     id: "kusle",
@@ -1098,6 +1348,11 @@ INSTRUMENT_CATALOG.push(
     skills: "Strummed chords with damped strings and plucked melodies.",
     scenes: "Weddings, family celebrations and village festivals.",
     partners: ["kurai","dumbyra","kubyz"],
+    techniques: [
+      { name: "Strummed chord", how: "The fingers strum across the strings to sound a chord.", play: "strum" },
+      { name: "Damped chord", how: "Fingers of the other hand rest on unwanted strings so only the chord tones ring.", play: "mute" },
+      { name: "Plucked melody", how: "Single strings are plucked for a melodic line.", play: "normal" },
+    ],
   },
   {
     id: "kungyrau",
@@ -1116,6 +1371,9 @@ INSTRUMENT_CATALOG.push(
     skills: "Shaken rhythms imitating riding.",
     scenes: "Horse riding, weddings and folk ensembles.",
     partners: ["kurai","dombra","kobyz"],
+    techniques: [
+      { name: "Shaking", how: "The bells are shaken in a rhythm imitating riding.", play: "normal" },
+    ],
   },
   {
     id: "doira",
@@ -1134,6 +1392,11 @@ INSTRUMENT_CATALOG.push(
     skills: "Finger snaps, rolls, rim and centre strokes, and complex usul rhythmic cycles.",
     scenes: "Weddings, dance, shashmaqam and festivals.",
     partners: ["karnay","kurai","dumbyra"],
+    techniques: [
+      { name: "Finger snap", how: "A finger is snapped against the skin near the rim for a sharp, cracking accent.", play: "knock" },
+      { name: "Roll", how: "The fingers strike in quick succession, a rolling rumble with the inner rings rattling.", play: "roll" },
+      { name: "Centre and rim strokes", how: "Deep centre strokes and bright rim strokes alternate to build the usul cycle.", play: "normal" },
+    ],
   },
   {
     id: "bure",
@@ -1152,6 +1415,9 @@ INSTRUMENT_CATALOG.push(
     skills: "Long low drones and signal calls.",
     scenes: "Military signals, Buddhist ceremonies and festivals.",
     partners: ["gong","naqqara","karnay"],
+    techniques: [
+      { name: "Low drone", how: "A long, deep held tone in Buddhist ritual or as a signal.", play: "normal" },
+    ],
   },
   {
     id: "imzad",
@@ -1170,6 +1436,10 @@ INSTRUMENT_CATALOG.push(
     skills: "Fine bow control, harmonics, ornaments following the voice, and touching the string lightly for pitch.",
     scenes: "Evening gatherings (ahal), courtship poetry and celebrations.",
     partners: ["tbel","loutar"],
+    techniques: [
+      { name: "Harmonics", how: "The single string is touched lightly instead of pressed down, giving soft, flute-like tones.", play: "harmonic" },
+      { name: "Slide ornament", how: "The finger slides between pitches, following the singer's line.", play: "slide" },
+    ],
   },
   {
     id: "loutar",
@@ -1188,6 +1458,10 @@ INSTRUMENT_CATALOG.push(
     skills: "Fast strummed ostinatos, drones and melodic runs between sung verses.",
     scenes: "Weddings, festivals and Amazigh popular song.",
     partners: ["bendir","gimbri","ghaita","imzad"],
+    techniques: [
+      { name: "Strummed ostinato", how: "Fast strumming of all strings drives the dance rhythm between sung verses.", play: "strum" },
+      { name: "Melodic run", how: "Single strings are picked for quick melodic passages.", play: "normal" },
+    ],
   },
   {
     id: "gimbri",
@@ -1206,6 +1480,10 @@ INSTRUMENT_CATALOG.push(
     skills: "Percussive thumb slaps on the skin, deep repeated bass ostinatos and call-and-response with singers.",
     scenes: "Gnawa lila nights of healing, festivals and Maghrebi folk music.",
     partners: ["qraqeb","loutar","bendir"],
+    techniques: [
+      { name: "Skin slap", how: "The thumb or fingers slap the skin soundboard between plucks, giving a percussive thump.", play: "knock" },
+      { name: "Bass ostinato", how: "Deep plucked notes repeat a hypnotic bass line under the call-and-response song.", play: "normal" },
+    ],
   },
   {
     id: "qasba",
@@ -1224,6 +1502,10 @@ INSTRUMENT_CATALOG.push(
     skills: "Breathy ornaments, humming and long melodies over the gallal drum.",
     scenes: "Pastures, sung poetry and weddings.",
     partners: ["bendir","loutar","gimbri"],
+    techniques: [
+      { name: "Breathy tone", how: "Blowing across the rim of the long cane flute gives a soft, airy sound.", play: "normal" },
+      { name: "Breath glide", how: "Changes of breath angle and partial holing bend the notes into each other.", play: "slide" },
+    ],
   },
   {
     id: "qraqeb",
@@ -1242,6 +1524,10 @@ INSTRUMENT_CATALOG.push(
     skills: "Rapid interlocking clacks, accents and sustained trance grooves.",
     scenes: "Gnawa ceremonies, processions and festivals.",
     partners: ["gimbri","bendir","tbel"],
+    techniques: [
+      { name: "Triplet clack", how: "Opening and closing the paired iron castanets in each hand gives the characteristic galloping triplet.", play: "normal" },
+      { name: "Rapid clatter", how: "Very fast interlocking strokes of both hands make a continuous metallic rattle.", play: "tremolo" },
+    ],
   },
   {
     id: "ghaita",
@@ -1260,6 +1546,10 @@ INSTRUMENT_CATALOG.push(
     skills: "Circular breathing, piercing ornaments and trills.",
     scenes: "Weddings, festivals, Sufi brotherhood processions and royal ceremonies.",
     partners: ["tbel","bendir","loutar"],
+    techniques: [
+      { name: "Circular breathing", how: "Cheek-stored air keeps the shawm sounding while the player breathes in.", play: "normal" },
+      { name: "Trill", how: "Fast finger trills and ornaments over the piercing tone.", play: "flutter" },
+    ],
   },
   {
     id: "tbel",
@@ -1278,6 +1568,10 @@ INSTRUMENT_CATALOG.push(
     skills: "Bass-and-switch patterns, rolls and dance rhythms.",
     scenes: "Weddings, festivals and processions.",
     partners: ["ghaita","bendir","qraqeb"],
+    techniques: [
+      { name: "Bass and switch strokes", how: "A curved stick strikes one head for deep beats while a thin switch snaps on the other.", play: "normal" },
+      { name: "Roll", how: "Fast strokes make a roll leading into dance accents.", play: "roll" },
+    ],
   },
   {
     id: "masenqo",
@@ -1296,6 +1590,10 @@ INSTRUMENT_CATALOG.push(
     skills: "Ornamented phrases in the qenet modes, slides and call-and-response with the voice.",
     scenes: "Azmari houses (azmari bet), weddings and feasts.",
     partners: ["krar","kebero","washint"],
+    techniques: [
+      { name: "Slide", how: "The finger touches the single horsehair string from the side and slides between notes of the qenet mode.", play: "slide" },
+      { name: "Vocal ornament", how: "Fast bow-and-finger ornaments answer the singer phrase by phrase.", play: "normal" },
+    ],
   },
   {
     id: "krar",
@@ -1314,6 +1612,10 @@ INSTRUMENT_CATALOG.push(
     skills: "Blocking strings with the fingers while strumming, plucked melodies and quick strummed accompaniment.",
     scenes: "Azmari houses, love songs and popular music.",
     partners: ["masenqo","washint","kebero"],
+    techniques: [
+      { name: "Strummed blocking", how: "A plectrum strums all strings while the left-hand fingers block the ones that should not sound.", play: "strum" },
+      { name: "Plucked melody", how: "Single strings are plucked with the fingers for a melodic line.", play: "normal" },
+    ],
   },
   {
     id: "begena",
@@ -1332,6 +1634,9 @@ INSTRUMENT_CATALOG.push(
     skills: "Plucking with a buzzing tone, slow meditative ostinatos and accompaniment of religious song.",
     scenes: "Private prayer, Lent and devotional gatherings.",
     partners: ["washint","tsenatsil"],
+    techniques: [
+      { name: "Buzzing pluck", how: "Strings plucked with the fingers buzz against leather pieces at the bridge, giving a deep, humming tone.", play: "normal" },
+    ],
   },
   {
     id: "washint",
@@ -1350,6 +1655,10 @@ INSTRUMENT_CATALOG.push(
     skills: "Breathy ornaments, glides in the qenet modes and humming with the tone.",
     scenes: "Pastures, folk songs and ensembles.",
     partners: ["krar","masenqo","kebero"],
+    techniques: [
+      { name: "Glide", how: "Breath and partial holing glide between the notes of the qenet mode.", play: "slide" },
+      { name: "Humming with the tone", how: "The player hums while blowing, adding a buzzing vocal layer to the flute.", play: "normal" },
+    ],
   },
   {
     id: "tsenatsil",
@@ -1368,6 +1677,9 @@ INSTRUMENT_CATALOG.push(
     skills: "Rhythmic shaking coordinated with the kebero drum and the slow sway of liturgical dance.",
     scenes: "Church liturgy and religious festivals such as Timkat.",
     partners: ["kebero","begena","meleket"],
+    techniques: [
+      { name: "Shaking", how: "The sistrum is shaken so the metal discs on its rods rattle, in time with the kebero drum.", play: "normal" },
+    ],
   },
   {
     id: "meleket",
@@ -1386,6 +1698,9 @@ INSTRUMENT_CATALOG.push(
     skills: "Single-tone calls combined in hocket by several players.",
     scenes: "Royal and church ceremonies, processions and festivals.",
     partners: ["negarit","embilta","tsenatsil"],
+    techniques: [
+      { name: "Single-tone call", how: "The long trumpet sounds one note, combined in hocket with other players.", play: "normal" },
+    ],
   },
   {
     id: "embilta",
@@ -1404,6 +1719,9 @@ INSTRUMENT_CATALOG.push(
     skills: "Hocket, interlocking single notes among players to form a melody.",
     scenes: "Royal ceremonies, festivals and processions.",
     partners: ["meleket","negarit"],
+    techniques: [
+      { name: "Hocket", how: "Each flute sounds only one or two notes, and several players interlock them to form a melody.", play: "normal" },
+    ],
   },
   {
     id: "negarit",
@@ -1422,6 +1740,10 @@ INSTRUMENT_CATALOG.push(
     skills: "Slow, resonant proclamatory strokes and rolls.",
     scenes: "Royal proclamations, mobilisation for war and great ceremonies.",
     partners: ["meleket","embilta","kebero"],
+    techniques: [
+      { name: "Proclamation stroke", how: "Slow, resonant single strokes announce the ruler's decrees.", play: "normal" },
+      { name: "Roll", how: "Fast strokes build a rumbling roll.", play: "roll" },
+    ],
   },
   {
     id: "kora",
@@ -1440,6 +1762,10 @@ INSTRUMENT_CATALOG.push(
     skills: "Kumbengo (ostinato accompaniment) and birimintingo (improvised runs), playing bass, melody and runs at once.",
     scenes: "Praise songs, the Sunjata epic, weddings and naming ceremonies.",
     partners: ["balafon","ngoni","djembe","bolon"],
+    techniques: [
+      { name: "Kumbengo", how: "The thumbs and index fingers play a repeating accompaniment ostinato combining bass and melody.", play: "normal" },
+      { name: "Birimintingo", how: "Fast improvised melodic runs break out between the sung verses.", play: "normal" },
+    ],
   },
   {
     id: "balafon",
@@ -1458,6 +1784,10 @@ INSTRUMENT_CATALOG.push(
     skills: "Interlocking ostinatos, rapid melodic improvisation and buzzing timbre.",
     scenes: "Griot praise songs, festivals and dances.",
     partners: ["kora","ngoni","djembe"],
+    techniques: [
+      { name: "Interlocking ostinato", how: "Mallets in both hands repeat interlocking patterns, the gourd resonators buzzing under each bar.", play: "normal" },
+      { name: "Octave doubling", how: "Both mallets strike the same note in two octaves for a fuller melody.", play: "normal" },
+    ],
   },
   {
     id: "ngoni",
@@ -1476,6 +1806,10 @@ INSTRUMENT_CATALOG.push(
     skills: "Fast plucked runs, rhythmic ostinatos and ornaments.",
     scenes: "Praise songs, epics and festivities.",
     partners: ["kora","balafon","djembe"],
+    techniques: [
+      { name: "Plucked runs", how: "Thumb and index finger pluck rapid melodic lines and ostinatos.", play: "normal" },
+      { name: "Hammer-on and pull-off", how: "Left-hand fingers strike or pull the strings to add notes without a new pluck.", play: "normal" },
+    ],
   },
   {
     id: "bolon",
@@ -1494,6 +1828,10 @@ INSTRUMENT_CATALOG.push(
     skills: "Deep plucked bass ostinatos combined with percussive taps on the body.",
     scenes: "Warrior and hunter music and griot ensembles.",
     partners: ["kora","djembe","balafon"],
+    techniques: [
+      { name: "Bass ostinato", how: "Deep plucked strings repeat a low bass figure.", play: "normal" },
+      { name: "Gourd tap", how: "The gourd body is struck with the hand, adding a percussive beat to the bass.", play: "knock" },
+    ],
   },
   {
     id: "fula-flute",
@@ -1512,6 +1850,10 @@ INSTRUMENT_CATALOG.push(
     skills: "Singing into the flute while blowing, overblowing and quick ornaments.",
     scenes: "Herding, griot ensembles and festivals.",
     partners: ["kora","balafon","djembe"],
+    techniques: [
+      { name: "Singing into the flute", how: "The player sings or hums while blowing, mixing voice and flute in one breathy sound.", play: "normal" },
+      { name: "Overblowing", how: "Stronger breath sounds the upper registers.", play: "overblow" },
+    ],
   },
   {
     id: "karignan",
@@ -1530,6 +1872,9 @@ INSTRUMENT_CATALOG.push(
     skills: "Steady timeline patterns and accents.",
     scenes: "Praise songs, weddings and festivities.",
     partners: ["kora","balafon","ngoni"],
+    techniques: [
+      { name: "Scraping", how: "A metal rod is scraped along the notched iron tube, giving a steady rasping timeline.", play: "normal" },
+    ],
   },
   {
     id: "ivory-horn",
@@ -1548,6 +1893,9 @@ INSTRUMENT_CATALOG.push(
     skills: "Speaking praise names in tonal patterns and calls.",
     scenes: "Royal courts, processions and ceremonies.",
     partners: ["tabala","kora","balafon"],
+    techniques: [
+      { name: "Speaking calls", how: "The side-blown horn imitates the tones of speech to sound praise names and calls.", play: "normal" },
+    ],
   },
   {
     id: "soku",
@@ -1566,6 +1914,10 @@ INSTRUMENT_CATALOG.push(
     skills: "Ornamented melodic lines and repetitive bowed ostinatos.",
     scenes: "Village festivals, dance and praise songs.",
     partners: ["kora","ngoni","balafon"],
+    techniques: [
+      { name: "Slide", how: "Fingers glide along the string between notes of the melody.", play: "slide" },
+      { name: "Bowed ostinato", how: "A repeated bowed figure accompanies singing and dance.", play: "normal" },
+    ],
   },
   {
     id: "tabala",
@@ -1584,6 +1936,9 @@ INSTRUMENT_CATALOG.push(
     skills: "Proclamation rhythms and powerful single strokes.",
     scenes: "Royal courts, gatherings and announcements.",
     partners: ["ivory-horn","kora","balafon"],
+    techniques: [
+      { name: "Proclamation stroke", how: "Powerful single strokes on the great kettledrum announce events and gatherings.", play: "normal" },
+    ],
   },
   {
     id: "goje",
@@ -1602,6 +1957,10 @@ INSTRUMENT_CATALOG.push(
     skills: "Melismatic ornaments, slides and fast bowed figures following the singer.",
     scenes: "Praise singing, bori ceremonies and festivities.",
     partners: ["kalangu","garaya","kakaki"],
+    techniques: [
+      { name: "Slide", how: "The finger slides along the horsehair string, following melismatic vocal lines.", play: "slide" },
+      { name: "Fast bowed figure", how: "Quick ornamented bowing answers the singer.", play: "normal" },
+    ],
   },
   {
     id: "algaita",
@@ -1620,6 +1979,10 @@ INSTRUMENT_CATALOG.push(
     skills: "Circular breathing and ornamented praise phrases.",
     scenes: "Emirs' courts, Sallah durbar festivals and processions.",
     partners: ["kakaki","tambari","kalangu"],
+    techniques: [
+      { name: "Circular breathing", how: "Cheek-stored air keeps the shawm sounding through long praise phrases.", play: "normal" },
+      { name: "Trill", how: "Rapid finger ornaments decorate the bright melody.", play: "flutter" },
+    ],
   },
   {
     id: "garaya",
@@ -1638,6 +2001,9 @@ INSTRUMENT_CATALOG.push(
     skills: "Rhythmic plucked ostinatos and buzzing tones.",
     scenes: "Bori ceremonies, hunters' music and entertainment.",
     partners: ["goje","kalangu"],
+    techniques: [
+      { name: "Plucked ostinato", how: "The two strings are plucked in repeating rhythmic patterns, with a buzzing tone.", play: "normal" },
+    ],
   },
   {
     id: "kuntigi",
@@ -1656,6 +2022,9 @@ INSTRUMENT_CATALOG.push(
     skills: "Fast plucked figures and melodic runs.",
     scenes: "Entertainment and praise singing.",
     partners: ["goje","garaya","kalangu"],
+    techniques: [
+      { name: "Plucked run", how: "The single string is plucked quickly while the left hand changes notes, for fast melodic figures.", play: "normal" },
+    ],
   },
   {
     id: "molo",
@@ -1674,6 +2043,10 @@ INSTRUMENT_CATALOG.push(
     skills: "Rhythmic plucked patterns and tremolo.",
     scenes: "Praise singing and entertainment.",
     partners: ["goje","kalangu","garaya"],
+    techniques: [
+      { name: "Plucked pattern", how: "Rhythmic plucked patterns accompany song.", play: "normal" },
+      { name: "Tremolo", how: "Rapid repeated plucks sustain a note.", play: "tremolo" },
+    ],
   },
   {
     id: "sarewa",
@@ -1692,6 +2065,9 @@ INSTRUMENT_CATALOG.push(
     skills: "Humming while playing and ornamented melodies.",
     scenes: "Herding and entertainment.",
     partners: ["goje","kalangu"],
+    techniques: [
+      { name: "Humming while playing", how: "The player hums into the flute while blowing, adding a buzzing layer.", play: "normal" },
+    ],
   },
   {
     id: "kuge",
@@ -1710,6 +2086,9 @@ INSTRUMENT_CATALOG.push(
     skills: "Steady timeline patterns and two-tone accents.",
     scenes: "Royal courts and festivals.",
     partners: ["kakaki","tambari","kalangu"],
+    techniques: [
+      { name: "Timeline strokes", how: "The double bell is struck in a steady two-tone pattern.", play: "normal" },
+    ],
   },
   {
     id: "kakaki",
@@ -1728,6 +2107,9 @@ INSTRUMENT_CATALOG.push(
     skills: "Long resonant calls and alternating tones in honour of the emir.",
     scenes: "Emirs' courts, Sallah durbar parades and royal ceremonies.",
     partners: ["algaita","tambari","kuge"],
+    techniques: [
+      { name: "Royal call", how: "The very long trumpet alternates a few loud resonant tones in honour of the emir.", play: "normal" },
+    ],
   },
   {
     id: "tambari",
@@ -1746,5 +2128,9 @@ INSTRUMENT_CATALOG.push(
     skills: "Majestic proclamation rhythms and rolls.",
     scenes: "Emirs' courts, installations and festivals.",
     partners: ["kakaki","algaita","kuge"],
+    techniques: [
+      { name: "Proclamation stroke", how: "Majestic single strokes on the kettledrum announce the emir.", play: "normal" },
+      { name: "Roll", how: "Rapid strokes build a rolling rumble.", play: "roll" },
+    ],
   },
 );
