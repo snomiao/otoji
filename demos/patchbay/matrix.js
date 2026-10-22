@@ -36,10 +36,10 @@ const ACTIVITIES = {
   birth:  { zh: "诞生", glyph: "生", en: "Birth", about: "a birth: a risky night, then hope. No one knows what history this child will make, what fortune it brings; some hope it will save us, some are afraid", bpm: 66, mode: "dark", grid: 8,
     tune: [["x---x-x-", "step", 2, 3], ["x-x-x---", "sigh", 4, 2], ["x-xxx-x-", "step", 2, 5], ["x-x-x---", "leap", 4, 5]], climb: false, prog: ["1", "4,", "6,", "5,"], second: "long", horn: "long", timp: null, perc: "heart", climax: "bright", open: true,
     adds: ["drone", "perc", "trem", "second", "bell", "pad", "choir"] },
-  siege:  { zh: "围城", glyph: "围", en: "Siege", about: "a siege: walls, hunger, holding out for months; then the last assault", bpm: 70, mode: "dark", grid: 8,
+  siege:  { zh: "围城", glyph: "围", en: "Siege", about: "besieged or encircled: behind walls, a wagon-fort or a mountain refuge; hunger, holding out, the last stand", bpm: 70, mode: "dark", grid: 8,
     tune: [["x---x---", "repeat", 1, 1], ["x-x-x---", "step", 1, 0], ["x---x-x-", "step", 2, 4], ["x-x-x---", "step", 3, 0]], climb: true, prog: ["1", "1", "6,", "7,"], second: "third", horn: "long", timp: "pulse", perc: "march", climax: "oct",
     adds: ["ostinato", "perc", "horns", "second", "timp", "drive", "melee"] },
-  triumph: { zh: "凯旋", glyph: "胜", en: "Triumph", about: "victory, a triumph or a coronation: fanfares, bells, the crowd cheers", bpm: 112, mode: "bright", grid: 8,
+  triumph: { zh: "凯旋", glyph: "胜", en: "Triumph", about: "victory: the warriors come home, fanfares and bells, the crowd cheers", bpm: 112, mode: "bright", grid: 8,
     tune: [["x-xxx---", "leap", 0, 4], ["x-x-xxx-", "step", 4, 5], ["x-xxx-x-", "leap", 5, 7], ["x-x-----", "step", 7, 5]], climb: false, prog: ["1", "4", "5", "1"], second: "third", horn: "fanfare", timp: "pulse", perc: "march", climax: "oct",
     adds: ["perc", "horns", "low", "second", "timp", "choir", "bell"] },
   build:  { zh: "营造", glyph: "筑", en: "Building", about: "building together: hammers and chisels, hauling stone, a work song keeps everyone in time", bpm: 96, mode: "scale", grid: 8,
@@ -296,6 +296,8 @@ function compose(civ, actId) {
   const lead = pick("lead", civ.lead, "strings@lead"), second = pick("second", civ.second, "pluck@second"), drone = pick("drone", civ.drone, "strings@drone oct=3");
   const grooves = { ...DEFAULT_GROOVES, ...(civ.grooves || {}) }, kit = civ.kit || "rock";
   const L = [], names = { [scale]: true, [scaleOf("bright")]: true, song: true, clock: true };
+  // A fixed line ("kind@name …") gets a free name if a culture's instrument took it.
+  const own = (l) => l.replace(/^([a-z-]+)@([\w-]+)/, (_, k, n) => { let id = n; for (let j = 2; names[id]; j++) id = `${n}${j}`; names[id] = true; return `${k}@${id}`; });
   // One line: a node playing a phrase from bar `a` to bar `b` (1-based, inclusive).
   const line = (r, extra, phrase, a, b, scaleArg = sc) => {
     let id = r.name; for (let k = 2; names[id]; k++) id = `${r.name}${k}`; names[id] = true;
@@ -403,7 +405,7 @@ function compose(civ, actId) {
   if (civ.extra) line(role(civ.extra), "grid=4", q(["1", "-", "-", "-"]), 9, 10);
   if (civ.cymbals !== false && !["death", "gather", "birth", "drought", "plague", "winter", "build", "voyage"].includes(actId)) drum("crash", "orch", "................|................|x...............", 9, 9);
   // Voices: the culture's war cry at the climax; people chatting while they gather.
-  if (actId === "battle") for (const l of lookup(WAR_CRIES, civ) || ['crowd@cry shout "HAA" "x-------........"']) L.push(`. ${l} ?song.9-10`);
+  if (actId === "battle") for (const l of lookup(WAR_CRIES, civ) || ['crowd@cry shout "HAA" "x-------........"']) L.push(`. ${own(l)} ?song.9-10`);
   if (actId === "gather") {
     const pool = lookup(MURMUR, civ);
     L.push(`. crowd@talk murmur${pool ? ` "${pool}"` : ""} voices=10 vol=0.7 ?song.3-8`);
@@ -413,7 +415,7 @@ function compose(civ, actId) {
   }
   // Sounds of each scene.
   const cry = lookup(WAR_CRIES, civ) || ['crowd@cry shout "HAA" "x-------........"'];
-  if (actId === "siege") { for (const l of cry) L.push(`. ${l} ?song.9-10`); L.push(". crowd@hungry murmur voices=6 vol=0.4 pitch=0.85 ?song.3-6"); }
+  if (actId === "siege") { for (const l of cry) L.push(`. ${own(l)} ?song.9-10`); L.push(". crowd@hungry murmur voices=6 vol=0.4 pitch=0.85 ?song.3-6"); }
   if (actId === "triumph" || actId === "games" || actId === "festival") {
     L.push(`. crowd@people murmur${lookup(MURMUR, civ) ? ` "${lookup(MURMUR, civ)}"` : ""} voices=14 vol=0.8 ?song.2-10`);
     L.push(`. crowd@cheer shout "${actId === "games" ? "O" : "HEI"}" "x-------........" voices=30 voice=mixed ?song.9-10`);

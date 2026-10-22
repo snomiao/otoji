@@ -4,8 +4,8 @@ import { readFileSync, readdirSync } from "fs";
 const dir = new URL(".", import.meta.url).pathname, src = readFileSync(dir + "../src.html", "utf8");
 const lit = (start) => { const i = src.indexOf(start) + start.length - 1; let d = 0, j = i; for (; j < src.length; j++) { if (src[j] === "{") d++; if (src[j] === "}" && !--d) break; } return new Function("return " + src.slice(i, j + 1))(); };
 const SCALES = { ...lit("const SCALES = {"), ...lit("Object.assign(SCALES, {") };
-const KITS = { ...lit("const KITS = {"), ...lit("Object.assign(KITS, {"), orch: ["gran", "side", "crash"], zhangu: [], sky: [], temple: [], work: [], clash: [], woodshield: [], rattan: [], hide: [] };
-const KINDS = ["piano", "bass", "strings", "pluck", "flute", "organ", "choir", "bell", "marimba", "brass", "timpani", "throat"];
+const KITS = { ...lit("const KITS = {"), ...lit("Object.assign(KITS, {"), orch: ["gran", "side", "crash"], zhangu: [], daf: [], sky: [], temple: [], work: [], clash: [], woodshield: [], rattan: [], hide: [] };
+const KINDS = ["piano", "bass", "strings", "pluck", "flute", "organ", "choir", "bell", "marimba", "brass", "timpani", "throat", "reed", "jawharp", "hurdygurdy", "bagpipe"];
 const ACTS = ["hunt", "battle", "gather", "ritual", "rain", "flood", "wind", "fire", "thunder", "birth", "death"];
 const REGIONS = ["East Asia", "South & Southeast Asia", "Steppe & Central Asia", "Middle East", "Africa", "Ancient Mediterranean & Near East",
   "Western Europe", "Northern & Central Europe", "Eastern Europe & Byzantium", "Americas"];
