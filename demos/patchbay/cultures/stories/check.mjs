@@ -10,7 +10,7 @@ const NEVER = new Function("return " + /const NEVER = (\{[^}]*\})/.exec(mx)[1])(
 const never = (c, a) => (NEVER[a] || "").split(" ").includes(c.id);
 let bad = 0, n = 0;
 for (const c of CIVS) for (const a of ACTS) {
-  if ((c.skip || []).includes(a) || never(c, a) || a === "showcase") continue; // 楽 shows the instruments; the people's intro stands in for a story
+  if ((c.skip || []).includes(a) || never(c, a)) continue; // (the 楽 story is a history of the people's music)
   const s = STORIES[`${c.id}:${a}`]; n++;
   if (!s) { console.log(`✗ missing ${c.id}:${a}`); bad++; continue; }
   const words = s.trim().split(/\s+/).length;

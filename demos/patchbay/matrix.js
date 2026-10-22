@@ -130,7 +130,7 @@ const SHIELDS = {
 };
 function shieldOf(civ) {
   if (civ.shield) return civ.shield;
-  for (const [m, ids] of Object.entries(SHIELDS)) if (ids.split(" ").includes(civ.id)) return m;
+  for (const [m, ids] of Object.entries(SHIELDS)) if (named(ids, civ)) return m;
   return "metal";
 }
 // Funerals sound different in every culture: the death piece takes one of these.
@@ -193,7 +193,7 @@ const FUNERAL_LEAD = { koreans: "brass@taepyeongso oct=4", choson: "brass@taepye
   americans: "brass@trumpet oct=4", mexicans: "brass@trompeta oct=4", mongols: "throat@kargyraa oct=3" };
 function funeralOf(civ) {
   if (civ.funeral) return civ.funeral;
-  for (const [k, ids] of Object.entries(FUNERAL_OF)) if (ids.split(" ").includes(civ.id)) return k;
+  for (const [k, ids] of Object.entries(FUNERAL_OF)) if (named(ids, civ)) return k;
   return /Europe/.test(civ.region) ? "requiem" : "keening";
 }
 // Where a scene feels different to a people: overrides on the activity.
@@ -250,7 +250,7 @@ Object.assign(MOODS, {
     ids: "greeks athenians spartans macedonians romans minoans",
     lines: ['crowd@paean chant "i-E PAI-an" "x-x-x---........" voices=24 pitch=0.9 ?song.4-8'] },
 });
-const moodOf = (civ, act) => Object.values(MOODS).find((m) => m.act === act && m.ids.split(" ").includes(civ.id));
+const moodOf = (civ, act) => Object.values(MOODS).find((m) => m.act === act && named(m.ids, civ));
 // What "gathering" is for a people that doesn't farm or forage the usual way, and its rhythm.
 const GATHER_AS = [
   ["mongols huns cumans tatars golden-horde", "milking the mares, making felt, moving with the herds", "ride"],
@@ -268,7 +268,7 @@ const GATHER_AS = [
 const WAR_DRUMS = { zhangu: "chinese shang shu wei wu zhu-xis-legacy jurchens khitans" };
 function warDrumOf(civ) {
   if (civ.warDrum) return civ.warDrum;
-  for (const [k, ids] of Object.entries(WAR_DRUMS)) if (ids.split(" ").includes(civ.id)) return k;
+  for (const [k, ids] of Object.entries(WAR_DRUMS)) if (named(ids, civ)) return k;
   return null;
 }
 // Battle cries at the climax (synthesized voices, crowd node): [ids, lines].
@@ -290,7 +290,11 @@ const MURMUR = [
   ["saracens abbasids ayyubids berbers egyptians palmyrans phoenicians carthaginians", "al ha ma ya wa la bi ka fi na ru sa"],
   ["romans italians sicilians spanish portuguese mexicans", "la ma te ri no si ca bo de lo pa ra"],
 ];
-const lookup = (table, civ) => (table.find(([ids]) => ids.split(" ").includes(civ.id)) || [])[1];
+const lookup = (table, civ) => (table.find(([ids]) => named(ids, civ)) || [])[1];
+// Does an id list name this culture? An era row (like: "chinese") also matches its parent's id.
+const named = (ids, civ) => { const l = ids.split(" "); return l.includes(civ.id) || (!!civ.like && l.includes(civ.like)); };
+// "汉 Han · late", with the era when a people has several rows.
+const civLabel = (civ) => `${civ.zh} ${civ.name}${civ.era ? ` · ${civ.era}` : ""}`;
 // Deterministic randomness per civilization × activity.
 function seeded(str) {
   let h = 2166136261; for (const ch of str) h = Math.imul(h ^ ch.codePointAt(0), 16777619);
@@ -350,8 +354,9 @@ function composeShowcase(civ) {
   for (const [k, r] of one.filter(([k]) => ["lead", "second", "harp", "low", "drone", "pad"].includes(k)))
     lineOf(r, ["drone", "pad", "low"].includes(k) ? q(["1+5", ...hold(7)]) : q(motif.slice(0, 16)), 8, tutti, tutti + 1);
   secs.push("together", "together2");
-  const head = [`# ${civ.zh} ${civ.name} × 楽器 Instruments — ${A.about}`, `# ${civ.signature || civ.note || ""}`,
+  const head = [`# ${civLabel(civ)} × 楽器 Instruments — ${A.about}`, `# ${civ.signature || civ.note || ""}`,
     `# one at a time: ${one.map(([, r]) => r.name).join(", ")}; then ${civ.kit} drums; then together`,
+    ...storyBlock(STORIES[`${civ.id}:showcase`] || civ.intro),
     `. clock ${bpm} 4/4`, `. arrange@song ${secs.map((x) => `${x.replace(/[^\p{L}\p{N}_-]/gu, "")}:1bars`).join(" ")}`, `. scale@${scale} ${formatScaleDef(SCALES[scale])}`, ""];
   const text = [...head, ...L, "", "*> reverb 2.5s wet=0.3", "> speaker 0.5", ""].join("\n");
   try { return formatPatch(parsePatch(text.replace(/\n$/, ""))) + "\n"; } catch (e) { return text; }
@@ -359,11 +364,11 @@ function composeShowcase(civ) {
 function compose(civ, actId) {
   if (actId === "showcase") return composeShowcase(civ);
   const fun = actId === "death" ? funeralOf(civ) : null;
-  const mood = moodOf(civ, actId), gatherAs = actId === "gather" ? GATHER_AS.find(([ids]) => ids.split(" ").includes(civ.id)) : null;
+  const mood = moodOf(civ, actId), gatherAs = actId === "gather" ? GATHER_AS.find(([ids]) => named(ids, civ)) : null;
   const A = { ...ACTIVITIES[actId], ...(fun ? FUNERALS[fun] : {}), ...(mood || {}) }, R = A.roles || {};
   if (gatherAs) A.about = `together: ${gatherAs[1]}; light and happy, unhurried`;
   // A role: the activity's override ("@flute" = the culture's own flute), else the culture's, else a default.
-  const pick = (k, civSpec, def) => { let x = R[k]; if (x && x.startsWith("@")) x = civ[x.slice(1)]; if (k === "lead" && fun && FUNERAL_LEAD[civ.id]) x = FUNERAL_LEAD[civ.id]; return role(x || civSpec, def); };
+  const pick = (k, civSpec, def) => { let x = R[k]; if (x && x.startsWith("@")) x = civ[x.slice(1)]; if (k === "lead" && fun && FUNERAL_LEAD[civ.id] || FUNERAL_LEAD[civ.like]) x = FUNERAL_LEAD[civ.id] || FUNERAL_LEAD[civ.like]; return role(x || civSpec, def); };
   const scaleOf = (mode) => (mode === "dark" ? civ.dark : mode === "bright" ? civ.bright : null) || civ.scale;
   const scale = scaleOf(A.mode), key = civ.key, sc = `${scale} ${key}`;
   const gapped = (SCALES[scale] || []).includes(null);
@@ -493,7 +498,7 @@ function compose(civ, actId) {
     L.push(`. crowd@talk murmur${pool ? ` "${pool}"` : ""} voices=10 vol=0.7 ?song.3-8`);
     if (gatherAs && gatherAs[2] === "row") L.push('. crowd@rowers chant "HEI ya" "x---....x---...." voices=12 pitch=0.9 ?song.5-10'); // pulling together
     if (gatherAs && gatherAs[2] === "ride") L.push(`. drums@ride kit=${kit} "x..x..x.x..x..x.|................|..x.....x.....x." ?song.3-10`); // the gait of the horses
-    if (["japanese", "yamato", "sengoku-daimyo"].includes(civ.id)) L.push('. crowd@hayashi chant "i-YA SA-SA" "x-x-x-x-........" voices=10 voice=mixed ?song.9-10'); // イヤサッサ
+    if (named("japanese yamato sengoku-daimyo", civ)) L.push('. crowd@hayashi chant "i-YA SA-SA" "x-x-x-x-........" voices=10 voice=mixed ?song.9-10'); // イヤサッサ
   }
   // Sounds of each scene.
   const cry = lookup(WAR_CRIES, civ) || ['crowd@cry shout "HAA" "x-------........"'];
@@ -521,7 +526,7 @@ function compose(civ, actId) {
   const label = (k) => ({ woodfish: "mokugyo", muffled: "drum", melee: { metal: "steel", wood: "shields", rattan: "rattan", hide: "hide" }[shieldOf(civ)], second: second.name, perc: kit, drone: drone.name, horns: "horns", timp: "timpani", drive: "drive" })[k] || k;
   const secs = [lead.name, ...adds.map(label), "climax", "peak", "ebb", "end"].map((x) => `${x.replace(/[^\p{L}\p{N}_-]/gu, "")}:1bars`);
   const head = [
-    `# ${civ.zh} ${civ.name} × ${A.zh} ${A.en}${fun ? ` (${fun})` : ""} — ${A.about}`,
+    `# ${civLabel(civ)} × ${A.zh} ${A.en}${fun ? ` (${fun})` : ""} — ${A.about}`,
     `# ${scale} on ${key} · ${bpm} bpm · bar 1: ${lead.name} alone; each bar adds one layer: ${adds.map(label).join(", ")} · climax · ebb · it loops`,
     civ.note ? `# ${civ.note}` : null,
     ...storyBlock(STORIES[`${civ.id}:${actId}`]),
@@ -561,7 +566,7 @@ const isHistory = (civ, a) => { const st = storyOf(civ, a); return !!st && !/Ima
 const REGION_ORDER = ["East Asia", "South & Southeast Asia", "Steppe & Central Asia", "Middle East", "Africa", "Ancient Mediterranean & Near East",
   "Western Europe", "Northern & Central Europe", "Eastern Europe & Byzantium", "Americas"];
 function civKey(civ, act) { return `m:${civ.id}:${act}`; }
-function activitiesFor(civ) { return ACTIVITY_IDS.filter((a) => !(civ.skip || []).includes(a) && !(NEVER[a] || "").split(" ").includes(civ.id)); }
+function activitiesFor(civ) { return ACTIVITY_IDS.filter((a) => !(civ.skip || []).includes(a) && !named(NEVER[a] || "", civ)); }
 for (const civ of CIVS) for (const a of activitiesFor(civ)) Object.defineProperty(EXAMPLES, civKey(civ, a), { get: () => compose(civ, a), enumerable: false });
 function renderMatrix() {
   const d = document.createElement("details"); d.className = "matrix"; d.open = true;
@@ -575,7 +580,7 @@ function renderMatrix() {
   const ful = document.createElement("ul");
   for (const [k, kind, why] of FEATURED) {
     const key = featuredKey(k), [id, act] = k.split(":"), civ = act && CIVS.find((c) => c.id === id);
-    const label = civ ? `${civ.zh} ${civ.name} × ${ACTIVITIES[act].zh}` : (EXAMPLE_TREE.flatMap((n) => [...(n.items || []), ...(n.children || []).flatMap((c) => c.items || [])]).find((x) => x[0] === k) || [k, k])[1];
+    const label = civ ? `${civLabel(civ)} × ${ACTIVITIES[act].zh}` : (EXAMPLE_TREE.flatMap((n) => [...(n.items || []), ...(n.children || []).flatMap((c) => c.items || [])]).find((x) => x[0] === k) || [k, k])[1];
     const li = document.createElement("li"), btn = document.createElement("button");
     btn.type = "button"; btn.dataset.ex = key; btn.setAttribute("aria-current", "false");
     btn.append(label, Object.assign(document.createElement("span"), { className: "why", textContent: `${kind}: ${why}` }));
@@ -592,7 +597,7 @@ function renderMatrix() {
     for (const civ of civs) {
       const li = document.createElement("li");
       const nm = document.createElement("span"); nm.className = "civ";
-      nm.append(`${civ.zh} ${civ.name}`);
+      nm.append(civLabel(civ));
       nm.title = civ.note || "";
       const chips = document.createElement("span"); chips.className = "chips";
       for (const a of ACTIVITY_IDS) {
@@ -646,7 +651,7 @@ function renderPlayer() {
     if (my !== switching) return; // another click came in while fading
     loadExample(key); await start(); fadeIn(1.0);
     const A = ACTIVITIES[a], f = FEATURED.find(([k]) => featuredKey(k) === key);
-    now.querySelector(".title").textContent = `${civ.zh} ${civ.name} × ${A.zh} ${A.en}${f ? " ★ " + f[2] : ""}`;
+    now.querySelector(".title").textContent = `${civLabel(civ)} × ${A.zh} ${A.en}${f ? " ★ " + f[2] : ""}`;
     const kind = storyOf(civ, a) ? (isHistory(civ, a) ? ["history", "recorded history"] : ["imagined", "an imagined scene"]) : null;
     let kb = now.querySelector(".kind"); if (!kb) { kb = document.createElement("span"); now.querySelector(".title").after(kb); }
     kb.className = "kind " + (kind ? kind[0] : ""); kb.textContent = kind ? kind[1] : "";
@@ -659,7 +664,7 @@ function renderPlayer() {
     rr.append(Object.assign(document.createElement("th"), { textContent: reg, colSpan: ACTIVITY_IDS.length + 2, scope: "colgroup" })); body.append(rr);
     for (const civ of CIVS.filter((c) => c.region === reg)) {
       const tr = document.createElement("tr");
-      tr.append(Object.assign(document.createElement("th"), { textContent: `${civ.zh} ${civ.name}`, scope: "row", title: civ.note || "" }));
+      tr.append(Object.assign(document.createElement("th"), { textContent: civLabel(civ), scope: "row", title: civ.note || "" }));
       const intro = document.createElement("td"); intro.className = "sig"; intro.title = civ.note || "";
       if (civ.signature) intro.append(Object.assign(document.createElement("b"), { textContent: civ.signature }));
       intro.append(civ.intro || (civ.signature ? "" : civ.note || ""));
