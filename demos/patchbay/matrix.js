@@ -461,6 +461,16 @@ function compose(civ, actId) {
     return bar.map((x) => (typeof x === "number" ? jp.fmt((() => { const r = Math.round((x + shift) * Q.length / P.length), o = Math.floor(r / Q.length); return { acc: "", i: Q[r - o * Q.length] + 7 * o }; })()) : x));
   };
   const phrase = (sc2, shiftOf) => bars.flatMap((bar, k) => render(bar, sc2, shiftOf(k)));
+  // 起承转合: one melody through the piece, each bar a development of the motifs.
+  const mapNotes = (bar, fn) => { const ns = bar.filter((x) => typeof x === "number"), out = fn(ns); let k = 0; return bar.map((x) => (typeof x === "number" ? out[k++] : x)); };
+  const shiftB = (bar, k) => mapNotes(bar, (ns) => ns.map((r) => r + k));
+  const invertB = (bar) => mapNotes(bar, (ns) => ns.map((r) => 2 * ns[0] - r));
+  const retroB = (bar) => mapNotes(bar, (ns) => ns.slice().reverse());
+  const fifth = Math.round(3 * P.length / 5); // the 5th, in this scale's ranks
+  const halfCad = (bar) => mapNotes(bar, (ns) => [...ns.slice(0, -1), fifth]);
+  const [b0, b1, b2, b3] = bars;
+  const qiCheng = [b0, b1, shiftB(b0, 1), b2, retroB(b3), halfCad(invertB(b1))];          // 起 bars 1–3, 承 bars 4–6
+  const zhuan = [shiftB(b0, 2), shiftB(b2, 3), shiftB(b1, P.length), shiftB(b3, P.length - 1)]; // 转 bars 7–10: climbing to the peak
   // A named piece in the story whose tune survives: the lead plays it.
   // The story's named piece; if its melody is lost, a well-known piece for the scene (cultures/famous/).
   const storyPiece = PIECES[`${civ.id}:${actId}`], famous = FAMOUS[`${civ.id}:${actId}`];
@@ -470,8 +480,8 @@ function compose(civ, actId) {
     line(lead, `grid=${piece.grid || 8}`, q(tune), 1, 6, `${piece.scale} ${piece.key || key}`);
     line(lead, `grid=${piece.grid || 8}`, q(up), 7, 10, `${piece.scale} ${piece.key || key}`);
   } else
-  // Bars 1–6: the tune (once, then its first half again as layers pile up).
-  line(lead, `grid=${g}`, q(phrase(scale, () => 0)), 1, 6);
+  // Bars 1–6 (起承): the motif, its answer, the motif a step up; a new phrase, the answer turned back, a half cadence.
+  line(lead, `grid=${g}`, q(qiCheng.flatMap((b) => render(b, scale))), 1, 6);
   // Bars 7–10: once more, an octave up, or climbing a step each bar.
   const hiShift = (k) => (A.climb ? k + (k > 1 ? 1 : 0) : P.length);
   const prog = A.prog, roots = prog.map((t) => jp.parse(t));
@@ -486,14 +496,16 @@ function compose(civ, actId) {
   else if (A.climax === "bright") {
     line(lead, `grid=${g}`, q(phrase(scale, hiShift).slice(0, 2 * g * (g === 4 ? 1 : 1))), 7, 8);
     line(lead, `grid=${g}`, q(phrase(scaleOf("bright"), hiShift).slice(2 * g)), 9, 10, `${scaleOf("bright")} ${key}`);
-  } else line(lead, `grid=${g}`, q(phrase(scale, hiShift)), 7, 10);
+  } else line(lead, `grid=${g}`, q((A.climb ? phrase(scale, hiShift) : zhuan.flatMap((b) => render(b, scale)))), 7, 10); // 转
   // Bars 11–12: the opening slowed down, settling on the tonic.
   const firstNotes = bars.flat().filter((x) => typeof x === "number").slice(0, 5);
   // (a birth ends unresolved, on the 5th: its story is not written yet)
   line(lead, "grid=4", q([...render(firstNotes, A.open ? scaleOf("bright") : scale), A.open ? "5" : "1", "-", "-"]), 11, 12, A.open ? `${scaleOf("bright")} ${key}` : sc);
   const layers = {
     drone: (a) => line(drone, "grid=8", q(["1+5", ...hold(7)]), a, 12),
-    low: (a) => line(pick("low", civ.low, "strings@cellos oct=2 vol=0.8"), "grid=8", q(perBar(prog, 8)), a, 11),
+    // the long line under everything: one note a bar, an arch that peaks at bar 9
+    low: (a) => line(pick("low", civ.low, "strings@cellos oct=2 vol=0.8"), "grid=8",
+      q(perBar(render([0, 0, 1, 2, 1, 3, 2, 4, 5, 4, 1, 0].map((r) => Math.round(r * P.length / 5)), scale).slice(a - 1, 11), 8)), a, 11),
     ostinato: (a) => line(role(civ.low, "strings@cellos oct=2 vol=0.8"), "grid=16",
       q(roots.flatMap((r) => [r, r, r, r, r, r, jp.up(r, -3), r, r, r, r, r, jp.up(r, 2), r, jp.up(r, -3), r].map(jp.fmt))), a, 10),
     second: (a) => {
