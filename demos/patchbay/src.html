@@ -323,7 +323,7 @@ ul.ideas { margin: 0; padding-left: 18px; display: grid; gap: 6px; font-size: 14
 const ID = /^[A-Za-z0-9_-]+$/;
 const ENV_NEEDS = { metro: ["clock"], drums: ["clock"], piano: ["clock"], bass: ["clock"], delay: ["clock"], learn: ["clock"],
   strings: ["clock"], pluck: ["clock"], flute: ["clock"], organ: ["clock"], choir: ["clock"], bell: ["clock"],
-  env: ["clock"], fadein: ["clock"], fadeout: ["clock"] };
+  env: ["clock"], fadein: ["clock"], fadeout: ["clock"], arrange: ["clock"], rain: ["clock"], marimba: ["clock"] };
 const STATUS_SYMS = ["~", "-", "/", ".", "!", "?"];
 
 function isStatusComment(c) {
@@ -469,9 +469,9 @@ function nodeSource(n) {
 }
 // What each kind outputs and accepts, so `*>` only picks inputs that fit:
 // a speaker takes audio, never a mic signal, a vad's control or a clock.
-const AUDIO_OUT = ["metro", "drums", "piano", "bass", "strings", "pluck", "flute", "organ", "choir", "bell",
+const AUDIO_OUT = ["metro", "drums", "piano", "bass", "strings", "pluck", "flute", "organ", "choir", "bell", "marimba", "rain",
   "mix", "delay", "reverb", "filter", "drive", "chorus", "phaser", "tremolo", "pan", "eq", "comp", "env", "fadein", "fadeout"];
-const OUT_TYPE = { clock: "env", mic: "mic", vad: "control", learn: null, speaker: null, ...Object.fromEntries(AUDIO_OUT.map((k) => [k, "audio"])) };
+const OUT_TYPE = { clock: "env", mic: "mic", vad: "control", arrange: "control", learn: null, speaker: null, ...Object.fromEntries(AUDIO_OUT.map((k) => [k, "audio"])) };
 const ACCEPTS = { speaker: ["audio"], vad: ["mic"], learn: ["mic"],
   ...Object.fromEntries(["mix", "delay", "reverb", "filter", "drive", "chorus", "phaser", "tremolo", "pan", "eq", "comp", "env", "fadein", "fadeout"].map((k) => [k, ["audio"]])) };
 // Groups are paragraphs: separated by blank lines or `---`.
@@ -675,8 +675,10 @@ const KINDS = {
   fadeout: { build: (o) => ({ attack: { n: 10, unit: "ms" }, release: lenOf(o.len, { n: 2, unit: "bar" }), after: lenOf(o.after, { n: 8, unit: "bar" }) }) },
   speaker: { build: (o) => ({ volume: num(o, "volume", 0.5, 0, 1) }) },
 };
+KINDS.arrange = { control: true, build: () => ({}) }; // built from its section list in rebuild()
+KINDS.rain = { source: true, build: (o) => ({ level: num(o, "level", 0.5, 0, 1), drops: num(o, "drops", 0.35, 0, 1) }) };
 // Melodic instruments share one set of options (scale, key, phrase, chords…).
-for (const k of ["piano", "bass", "strings", "pluck", "flute", "organ", "choir", "bell"]) KINDS[k] = { source: true, build: (o) => buildMelodic(k, o) };
+for (const k of ["piano", "bass", "strings", "pluck", "flute", "organ", "choir", "bell", "marimba"]) KINDS[k] = { source: true, build: (o) => buildMelodic(k, o) };
 
 // ── autocomplete catalog: what each kind is, takes and accepts ────────
 // args: [key, default, doc, allowed values?]
@@ -721,7 +723,7 @@ const CATALOG = {
   fadeout: { doc: "Fade out after a while (alias of env after= release=).", args: [["len", "2bars", "how long the fade takes", null, { re: /^\d+(\.\d+)?(ms|s|beats?|bars?)$/ }], ["after", "8bars", "when it starts"]] },
   speaker: { doc: "Output. Only what reaches a speaker is heard.", args: [["volume", "0.5", "0–1", null, { re: /^(0|1|0?\.\d+)$/ }]] },
 };
-const SOURCE_KINDS = ["clock", "mic", "metro", "drums", "piano", "bass", "strings", "pluck", "flute", "organ", "choir", "bell"];
+const SOURCE_KINDS = ["clock", "mic", "arrange", "metro", "drums", "piano", "bass", "strings", "pluck", "flute", "organ", "choir", "bell", "marimba", "rain"];
 const AUDIO_KINDS = AUDIO_OUT;
 // Kinds that make sense after `refs>`, given the kinds of the refs.
 function consumersFor(inKinds) {
@@ -751,14 +753,17 @@ const volume = () => Number(document.getElementById("vol").value) / 100;
 
 function rebuild() {
   // Fade out and drop the old audio nodes; keep clock positions.
-  for (const n of live.values()) if (n.out && ctx) { n.out.gain.setTargetAtTime(0, ctx.currentTime, 0.015); const o = n.out; setTimeout(() => o.disconnect(), 120); }
+  for (const n of live.values()) if (n.out && ctx) {
+    n.out.gain.setTargetAtTime(0, ctx.currentTime, 0.015); const o = n.out, src = n.src;
+    setTimeout(() => { o.disconnect(); if (src) try { src.stop(); } catch (e) { /* already stopped */ } }, 120);
+  }
   live = new Map();
   const eff = effectiveInputs(patch);
   for (const n of nodes(patch)) {
     const spec = KINDS[n.kind];
     const r = { node: n, busy: [], detail: "", error: null, out: null, inGain: null };
     if (!spec) r.error = `unknown kind \`${n.kind}\` (try clock, metro, drums, piano, bass, mix, delay, reverb, speaker)`;
-    else try { r.cfg = spec.build(argMap(n.kind, n.args)); } catch (e) { r.error = e.message; }
+    else try { r.cfg = n.kind === "arrange" ? arrangeSections(n.args.filter((a) => !parseControl(a))) : spec.build(argMap(n.kind, n.args)); } catch (e) { r.error = e.message; }
     const inKinds = r.error ? [] : eff.get(n.id).filter((x) => !x.implicit).map((x) => kindOfId(x.node));
     if (!r.error && inKinds.includes("mic") && n.kind !== "vad" && n.kind !== "learn") r.error = "mic is input only: feed it to a vad or learn (mic> vad)";
     else if (!r.error && n.kind === "learn" && !inKinds.includes("mic")) r.error = "needs a mic: write `mic> learn beat 1bar`";
@@ -771,6 +776,12 @@ function rebuild() {
       const ctl = controlsOf(n);
       r.trigger = n.kind === "drums" && ctl.some((c) => c.kind === "on");
       const badOn = ctl.find((c) => c.kind === "on" && (n.kind !== "drums" || kindOfId(c.node) !== "vad"));
+      const arrGate = ctl.find((c) => c.kind !== "on" && kindOfId(c.node) === "arrange");
+      if (arrGate) {
+        const an = nodes(patch).find((m) => m.id === arrGate.node);
+        let secs = null; try { secs = arrangeSections(an.args); } catch (e) { /* reported on its own line */ }
+        if (secs && !arrangeRange(secs, arrGate.port)) r.error = `\`${arrGate.tok}${arrGate.port ? "." + arrGate.port : ""}\`: name a section, e.g. ?${arrGate.node}.2 or ?${arrGate.node}.2-3 (${secs.sections.map((x, i) => `${i + 1} ${x.name}`).join(", ")})`;
+      }
       if (badOn) r.error = `\`${badOn.tok}\`: for now only drums react to a vad's onsets (\`. drums kick ^vad\`)`;
       r.gates = ctl.filter((c) => c.kind !== "on");
     }
@@ -785,6 +796,14 @@ function rebuild() {
     if (KINDS[k].control) continue;
     r.out = ctx.createGain(); r.out.gain.value = r.node.enabled ? 1 : 0;
     if (k === "clock") continue;
+    if (k === "rain") { // continuous filtered noise; droplets come per step
+      const len = ctx.sampleRate * 2, buf = ctx.createBuffer(1, len, ctx.sampleRate), d = buf.getChannelData(0);
+      for (let i = 0; i < len; i++) d[i] = Math.random() * 2 - 1;
+      const src = ctx.createBufferSource(), bp = ctx.createBiquadFilter(), lp = ctx.createBiquadFilter(), g = ctx.createGain();
+      src.buffer = buf; src.loop = true; bp.type = "highpass"; bp.frequency.value = 500; lp.type = "lowpass"; lp.frequency.value = 5000; g.gain.value = 0.18 * r.cfg.level;
+      src.connect(bp).connect(lp).connect(g).connect(r.out); src.start(); r.src = src;
+      continue;
+    }
     if (!KINDS[k].source) {
       r.inGain = ctx.createGain();
       if (k === "delay") {
@@ -1041,7 +1060,7 @@ const KITS = {
   taiko: ["don", "ka", "shime"],      // Japanese
   opera: ["ban", "luo", "bo"],        // 京剧: 板 clapper, 锣 gong, 钹 cymbals
 };
-function kitHit(out, lane, t, accent) {
+let kitHit = function (out, lane, t, accent) {
   const a = accent ? 1.3 : 1;
   switch (lane) {
     case "kick": voice(out, t, { freq: 150, endFreq: 42, dur: 0.32, peak: 0.72 * a }); break;
@@ -1056,7 +1075,58 @@ function kitHit(out, lane, t, accent) {
     case "luo": voice(out, t, { freq: 340, endFreq: 420, dur: 0.9, peak: 0.3 * a, type: "triangle" }); voice(out, t, { freq: 937, dur: 0.7, peak: 0.08 }); break;
     case "bo": noise(out, t, 0.6, 0.2 * a, 5000); break;
   }
-}
+};
+// More kits: same x/X/. lanes.
+Object.assign(KITS, {
+  aztec: ["huehuetl", "teponaztli", "rattle"],   // Mexica / Maya
+  african: ["dundun", "djembe", "bell"],         // West African
+  tabla: ["dha", "na", "ge"],                    // Hindustani
+  gamelan: ["kendang", "ketuk", "gong"],         // Javanese
+  celtic: ["bodhran", "rim", "shaker"],          // Irish
+  flamenco: ["cajon", "slap", "palmas"],
+});
+const kitHitBase = kitHit;
+kitHit = function (out, lane, t, accent) {
+  const a = accent ? 1.3 : 1;
+  switch (lane) {
+    case "huehuetl": voice(out, t, { freq: 75, endFreq: 52, dur: 0.8, peak: 0.8 * a }); noise(out, t, 0.05, 0.06, 300); break;
+    case "teponaztli": voice(out, t, { freq: t % 2 < 1 ? 330 : 440, dur: 0.18, peak: 0.35 * a, type: "triangle" }); noise(out, t, 0.02, 0.08, 1500); break;
+    case "rattle": for (let k = 0; k < 4; k++) noise(out, t + k * 0.012, 0.03, 0.08 * a, 5000); break;
+    case "dundun": voice(out, t, { freq: 85, endFreq: 60, dur: 0.5, peak: 0.75 * a }); break;
+    case "djembe": voice(out, t, { freq: 260, endFreq: 220, dur: 0.18, peak: 0.4 * a, type: "triangle" }); noise(out, t, 0.04, 0.15 * a, 1800); break;
+    case "bell": voice(out, t, { freq: 1480, dur: 0.12, peak: 0.18 * a, type: "triangle" }); voice(out, t, { freq: 2210, dur: 0.08, peak: 0.06 }); break;
+    case "dha": voice(out, t, { freq: 95, endFreq: 82, dur: 0.45, peak: 0.55 * a }); voice(out, t, { freq: 680, dur: 0.35, peak: 0.18 * a }); break;
+    case "na": voice(out, t, { freq: 690, dur: 0.4, peak: 0.25 * a }); noise(out, t, 0.02, 0.06, 3000); break;
+    case "ge": voice(out, t, { freq: 75, endFreq: 115, dur: 0.5, peak: 0.6 * a }); break;
+    case "kendang": voice(out, t, { freq: 190, endFreq: 150, dur: 0.22, peak: 0.45 * a, type: "triangle" }); break;
+    case "ketuk": voice(out, t, { freq: 760, dur: 0.25, peak: 0.18 * a }); voice(out, t, { freq: 1530, dur: 0.15, peak: 0.05 }); break;
+    case "gong": voice(out, t, { freq: 62, dur: 4, peak: 0.45 * a, attack: 0.02 }); voice(out, t, { freq: 131, dur: 3, peak: 0.15, attack: 0.03 }); voice(out, t, { freq: 177, dur: 2.5, peak: 0.07, attack: 0.03 }); break;
+    case "bodhran": voice(out, t, { freq: 110, endFreq: 80, dur: 0.3, peak: 0.6 * a }); noise(out, t, 0.03, 0.06, 600); break;
+    case "rim": voice(out, t, { freq: 420, dur: 0.06, peak: 0.2 * a, type: "triangle" }); noise(out, t, 0.02, 0.1, 2500); break;
+    case "shaker": noise(out, t, 0.06, 0.08 * a, 6000); break;
+    case "cajon": voice(out, t, { freq: 90, endFreq: 65, dur: 0.25, peak: 0.6 * a }); noise(out, t, 0.04, 0.08, 400); break;
+    case "slap": noise(out, t, 0.08, 0.35 * a, 1800); break;
+    case "palmas": for (let k = 0; k < 3; k++) noise(out, t + k * 0.009, 0.05, 0.22 * a, 1200); break;
+    default: kitHitBase(out, lane, t, accent);
+  }
+};
+// More scales (cents for 简谱 degrees 1–7; null = not in the scale).
+Object.assign(SCALES, {
+  penta: [0, 200, 400, null, 700, 900, null], minorpenta: [0, null, 300, 500, 700, null, 1000],
+  yaman: [0, 200, 400, 600, 700, 900, 1100], bhairav: [0, 100, 400, 500, 700, 800, 1100],
+  slendro: [0, 240, 480, null, 720, 960, null], pelog: [0, 120, 270, 540, 670, 785, 950],
+  freygish: [0, 100, 400, 500, 700, 800, 1000],
+});
+// Balafon / marimba: woody bar with a quick decay.
+INSTRUMENTS.marimba = { adsr: [0.002, 0.5, 0, 0.2], play(out, t, f, dur, adsr, peak) {
+  const g = ctx.createGain(); const stop = envGain(g, t, Math.max(dur, 0.4), peak, adsr);
+  for (const [mul, lvl] of [[1, 1], [4, 0.3], [9.9, 0.08]]) {
+    const o = ctx.createOscillator(); o.type = "sine"; o.frequency.value = f * mul;
+    const l = ctx.createGain(); l.gain.value = lvl; o.connect(l).connect(g); o.start(t); o.stop(stop);
+  }
+  g.connect(out);
+} };
+MELODIC.push("marimba");
 
 // ── effects: build(r) wires r.inGain → … → r.out ───────────────────────
 function lfo(rate, depth, target) {
@@ -1174,12 +1244,14 @@ const MELODIC_ARGS = [
   ["vol", "1", "level 0–2"],
 ];
 MELODIC_ARGS[1][3] = Object.keys(SCALES); MELODIC_ARGS[1][4] = { re: new RegExp(`^(${Object.keys(SCALES).join("|")})$`) };
-for (const [k, doc] of [["piano", "Piano: chords, or a melody by phrase= / notes=."], ["bass", "Bass: chord roots on beats 1 and 3, or a phrase."],
+CATALOG.arrange = { doc: "Song form: sections in bars, looping. Lines play in them with ?song.2 or ?song.2-3 (or a section name).", args: [] };
+CATALOG.rain = { doc: "Rain: soft noise and droplets, for a quiet ending.", args: [["level", "0.5", "0–1", null, { re: /^(0|1|0?\.\d+)$/ }], ["drops", "0.35", "droplets per step, 0–1"]] };
+for (const [k, doc] of [["marimba", "Marimba / balafon: wooden bars."], ["piano", "Piano: chords, or a melody by phrase= / notes=."], ["bass", "Bass: chord roots on beats 1 and 3, or a phrase."],
   ["strings", "提琴 strings (violin, cello, 京胡): bowed, with vibrato."], ["pluck", "Plucked strings: koto, guzheng, pipa, oud."],
   ["flute", "Flute: ney, shakuhachi, dizi."], ["organ", "Pipe organ."], ["choir", "Choir 'ah'."], ["bell", "Bell: 编钟, temple or church bell."]]) {
   CATALOG[k] = { doc, args: MELODIC_ARGS };
 }
-CATALOG.drums.args.push(["kit", "rock", "rock (kick|snare|hat), darbuka (dum|tek|ka), taiko (don|ka|shime), opera (ban|luo|bo — 京剧 板 锣 钹)", Object.keys(KITS), { re: /^(rock|darbuka|taiko|opera)$/ }]);
+CATALOG.drums.args.push(["kit", "rock", "rock, darbuka, taiko, opera (京剧), aztec, african, tabla, gamelan, celtic, flamenco", Object.keys(KITS), { re: new RegExp(`^(${Object.keys(KITS).join("|")})$`) }]);
 CATALOG.drums.args[1][3] = [...new Set(Object.values(KITS).flat())];
 CATALOG.drums.args[1][4] = { re: new RegExp(`^(${[...new Set(Object.values(KITS).flat())].join("|")})$`) };
 
@@ -1200,6 +1272,10 @@ function playStep(r, c, step, t) {
     r.detail = `step ${String(i + 1).padStart(2)}/${len}`;
   }
   if (MELODIC.includes(k)) playMelodic(r, c, step, t);
+  if (k === "rain") {
+    for (let i = 0; i < 2; i++) if (Math.random() < cfg.drops) voice(out, t + Math.random() * stepDur, { freq: 1800 + Math.random() * 2600, endFreq: 900, dur: 0.03, peak: 0.05 * cfg.level, type: "sine" });
+    mark(r, t, stepDur); r.detail = "rain";
+  }
 }
 
 // ── mic + vad ─────────────────────────────────────────────────────────
@@ -1259,26 +1335,28 @@ function runLearn(eff) {
       learnState.set(r.node.id, st); capture.chunks = []; capture.active = true;
     }
     if (st.phase === "armed" && now >= st.start) st.phase = "rec";
+    // While recording, re-analyse what's been heard so far, twice a second.
+    if (st.phase === "rec" && now - (st.liveAt || 0) > 0.5) {
+      st.liveAt = now;
+      try { const res = learnResult(r, st, now); st.live = res ? res.msg.replace(/^learnt \S+: /, "so far: ") : "so far: nothing yet"; } catch (e) { /* keep the last one */ }
+    }
     if (st.phase === "rec" && now >= st.end + 0.35) { st.phase = "analyse"; finishLearn(r, st); }
   }
 }
-function finishLearn(r, st) {
-  capture.active = false;
-  const sr = ctx.sampleRate, from = st.start - 0.05, to = st.end + 0.05;
+// Analyse what was recorded up to time `to`: the drum lanes or the melody,
+// as { target, kind, key, token, msg }, or null if nothing was heard yet.
+// Used live while recording (partial) and once at the end (final).
+function learnResult(r, st, to) {
+  const sr = ctx.sampleRate, from = st.start - 0.05;
   const parts = capture.chunks.filter((ch) => ch.t + ch.d.length / sr > from && ch.t < to);
-  if (!parts.length) { learnState.delete(r.node.id); return; }
+  if (!parts.length) return null;
   const t0 = parts[0].t, total = parts.reduce((a, p) => a + p.d.length, 0), x = new Float32Array(total);
   let o = 0; for (const p of parts) { x.set(p.d, o); o += p.d.length; }
   const target = nodes(patch).find((n) => n.id === r.cfg.to);
-  const ownLine = patch.lines.indexOf(r.node) + 1, targetLine = target ? patch.lines.indexOf(target) + 1 : 0;
   const melodic = target && target.kind !== "drums";
   const hits = melodic ? [] : analyseVoice(x, sr, t0, st);
   const melody = melodic ? melodyFor(target, x, sr, t0, st) : null;
-  if (!target || (melodic ? !melody : !hits.length)) {
-    learnNote.set(r.node.id, "heard nothing, listening again");
-    learnState.delete(r.node.id); // re-arms at the next bar
-    return;
-  }
+  if (!target || (melodic ? !melody : !hits.length)) return null;
   const kind = target.kind;
   let token, msg, key = "pattern";
   if (kind === "drums") {
@@ -1291,6 +1369,18 @@ function finishLearn(r, st) {
     const names = KITS[kit] || KITS.rock;
     msg = `learnt ${target.id}: ` + lanes.map((l, i) => `${names[i]} ${l.join("")}`).filter((t) => /[xX]/.test(t)).join(" · ") + ` (${hits.length} hits)`;
   } else ({ token, msg, key } = melody);
+  return { target, kind, key, token, msg };
+}
+function finishLearn(r, st) {
+  capture.active = false;
+  const res = learnResult(r, st, st.end + 0.05);
+  if (!res) {
+    learnNote.set(r.node.id, "heard nothing, listening again");
+    learnState.delete(r.node.id); // re-arms at the next bar
+    return;
+  }
+  const { target, kind, key, token, msg } = res;
+  const ownLine = patch.lines.indexOf(r.node) + 1, targetLine = patch.lines.indexOf(target) + 1;
   // Rewrite the target's pattern=/notes= (keeping the key style used), else append it.
   const shape = { pattern: /^"?[xX.|]+"?$/, notes: /^"(([A-G][#b]?\d|\.)\s*)+"$/, phrase: /^"(([#b]?[0-7]['’,]*|-)\s*)+"$/ }[key];
   const old = target.args.find((a) => a.startsWith(key + "=")) || target.args.find((a) => shape.test(a));
@@ -1472,14 +1562,65 @@ function gridTime(d, eff) {
   return t;
 }
 
-// `?x` / `!x`: is x active right now? (a vad: speaking; anything else: sounding)
-function activeNow(id) {
+// ── arrange: named sections in bars; lines play in them with ?song.2-3 ──
+function arrangeSections(args) {
+  const secs = args.map((a, i) => {
+    const m = /^(?:([A-Za-z_][\w-]*):)?(\d+)bars?$/.exec(a);
+    if (!m) throw new Error(`\`${a}\`: a section is like intro:4bars or 8bars`);
+    return { name: m[1] || String(i + 1), bars: Number(m[2]) };
+  });
+  if (!secs.length) throw new Error("list the sections: `. song=arrange intro:4bars verse:8bars …`");
+  let at = 0; for (const s of secs) { s.start = at; at += s.bars; }
+  return { sections: secs, total: at };
+}
+// Which sections a port names: "2", "2-4" (1-based) or a section name. → [a, b] 0-based.
+function arrangeRange(cfg, port) {
+  if (!port) return null;
+  const m = /^(\d+)(?:-(\d+))?$/.exec(port);
+  if (m) { const a = Number(m[1]) - 1, b = Number(m[2] || m[1]) - 1; return a >= 0 && b < cfg.sections.length && a <= b ? [a, b] : null; }
+  const i = cfg.sections.findIndex((s) => s.name === port);
+  return i < 0 ? null : [i, i];
+}
+function arrangeAt(cfg, step, c) {
+  const barSteps = 4 * c.sig, bar = Math.max(0, Math.floor(step / barSteps));
+  const cycle = Math.floor(bar / cfg.total), pos = bar % cfg.total;
+  const idx = cfg.sections.findIndex((s) => pos >= s.start && pos < s.start + s.bars);
+  return { idx, pos, cycle, barSteps, bar };
+}
+// Step (since Start) of a scheduled time, on the first clock.
+function stepAtTime(t) {
+  const fc = firstClock(); if (!fc || !fc.c) return 0;
+  return Math.round((t - startedAt) / (60 / fc.c.bpm / 4));
+}
+
+// `?x` / `!x`: is x active at time t? (a vad: speaking; an arrange: its
+// section given by the port is playing; anything else: sounding)
+function activeNow(id, port, t = ctx.currentTime) {
   const x = live.get(id); if (!x || x.error || !x.node.enabled) return false;
   if (x.node.kind === "vad") return !!(x.vad && x.vad.speaking);
+  if (x.node.kind === "arrange") {
+    const fc = firstClock(), rg = arrangeRange(x.cfg, port);
+    if (!fc || !fc.c || !rg) return false;
+    const at = arrangeAt(x.cfg, stepAtTime(t), fc.c);
+    return at.idx >= rg[0] && at.idx <= rg[1];
+  }
   return soundingAt(x, ctx.currentTime) || upstreamSounding(id, effectiveInputs(patch), ctx.currentTime);
 }
-function gateOpen(r) {
-  return (r.gates || []).every((g) => (g.kind === "while" ? activeNow(g.node) : !activeNow(g.node)));
+function gateOpen(r, t) {
+  return (r.gates || []).every((g) => (g.kind === "while" ? activeNow(g.node, g.port, t) : !activeNow(g.node, g.port, t)));
+}
+// Where a gated line's phrase starts: the first step of the section run it
+// plays in (?song.2-3 → start of §2), so melodies enter on their first note.
+function phaseOf(r, step, c) {
+  let p = 0;
+  for (const g of r.gates || []) {
+    const x = live.get(g.node);
+    if (g.kind !== "while" || !x || x.node.kind !== "arrange" || x.error) continue;
+    const rg = arrangeRange(x.cfg, g.port); if (!rg) continue;
+    const at = arrangeAt(x.cfg, step, c);
+    p = Math.max(p, (at.cycle * x.cfg.total + x.cfg.sections[rg[0]].start) * at.barSteps);
+  }
+  return p;
 }
 // Gated nodes also fade their output, so sustained notes duck smoothly.
 function applyGates() {
@@ -1505,8 +1646,8 @@ function tick() {
       for (const r of live.values()) {
         if (r.error || !r.node.enabled || !KINDS[r.node.kind]?.source || r.node.kind === "clock") continue;
         if (!eff.get(r.node.id).some((x) => x.node === cid)) continue;
-        if (!gateOpen(r)) continue;
-        playStep(r, c, c.step, c.nextTime);
+        if (!gateOpen(r, c.nextTime)) continue;
+        playStep(r, c, c.step - phaseOf(r, c.step, c), c.nextTime);
       }
       // Tempo-synced delays follow the clock they take.
       for (const r of live.values()) if (r.delay && eff.get(r.node.id).some((x) => x.node === cid)) r.delay.delayTime.setTargetAtTime(Math.min(3.9, r.cfg.beats * 60 / c.bpm), ctx.currentTime, 0.05);
@@ -1553,7 +1694,7 @@ function nodeStatusInner(r, eff) {
     if (!st) return ["-", `waiting for the next bar${note}`];
     const beat = st.stepDur * 4;
     if (st.phase === "armed") return [".", `get ready: recording ${what} in ${Math.max(1, Math.ceil((st.start - now) / beat))} beat(s)`];
-    if (st.phase === "rec") return ["~", `recording ${Math.min(st.steps / 4, Math.floor((now - st.start) / beat) + 1)}/${st.steps / 4} beats`];
+    if (st.phase === "rec") return ["~", `recording ${Math.min(st.steps / 4, Math.floor((now - st.start) / beat) + 1)}/${st.steps / 4} beats` + (st.live ? ` · ${st.live}` : "")];
     return ["/", "analysing"];
   }
   if (k === "mic") {
@@ -1568,8 +1709,16 @@ function nodeStatusInner(r, eff) {
     const st = r.vad || { speaking: false, onsets: 0 };
     return [st.speaking ? "~" : "-", `${st.speaking ? "speech" : "silence"} · ${st.onsets} onset${st.onsets === 1 ? "" : "s"} · ${thr}`];
   }
+  if (k === "arrange") {
+    const fc = firstClock();
+    const list = r.cfg.sections.map((x, i) => `${i + 1} ${x.name}`).join(" · ");
+    if (!running || !fc || !fc.c) return ["-", `${r.cfg.total}-bar loop: ${list}`];
+    const at = arrangeAt(r.cfg, Math.max(0, fc.c.step - 1), fc.c), sec = r.cfg.sections[at.idx];
+    return ["~", `§${at.idx + 1} ${sec.name} · bar ${at.pos - sec.start + 1}/${sec.bars} · then §${(at.idx + 1) % r.cfg.sections.length + 1}`];
+  }
   if (running && r.gates && r.gates.length && !gateOpen(r)) {
-    const g = r.gates.find((x) => (x.kind === "while") !== activeNow(x.node)) || r.gates[0];
+    const g = r.gates.find((x) => (x.kind === "while") !== activeNow(x.node, x.port)) || r.gates[0];
+    if (kindOfId(g.node) === "arrange") return ["-", `${g.kind === "while" ? "plays in" : "rests in"} §${g.port}`];
     const what = kindOfId(g.node) === "vad" ? "speech" : g.node;
     return ["-", g.kind === "while" ? `waiting for ${what}` : `ducked during ${what}`];
   }
