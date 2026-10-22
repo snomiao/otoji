@@ -1226,6 +1226,7 @@ async function ensureMic() {
 // ── learn: record → analyse → rewrite a line ────────────────────────────
 const learnState = new Map(); // learn node id → { phase, start, end, stepDur, steps }
 const learnNote = new Map();  // learn node id → what it last wrote (survives rebuilds)
+const learntInto = new Map(); // target node id → until when its status says "just learnt"
 let capture = { proc: null, chunks: [], active: false };
 function ensureCapture() {
   if (capture.proc || !mic.source) return;
@@ -1285,8 +1286,10 @@ function finishLearn(r, st) {
     const loud = hits.map((h) => h.level).sort((a, b) => a - b)[Math.floor(hits.length / 2)];
     for (const h of hits) lanes[LANES.indexOf(h.drum)][h.step] = h.level > loud * 1.8 ? "X" : "x";
     token = `"${lanes.map((l) => l.join("")).join("|")}"`;
-    const n = (d) => hits.filter((h) => h.drum === d).length;
-    msg = `wrote ${hits.length} hits into ${target.id} (${n("kick")} kick, ${n("snare")} snare, ${n("hat")} hat)`;
+    // What it learnt, lane by lane, in the target kit's lane names.
+    let kit = "rock"; try { kit = argMap(target.kind, target.args).kit || "rock"; } catch (e) { /* rock */ }
+    const names = KITS[kit] || KITS.rock;
+    msg = `learnt ${target.id}: ` + lanes.map((l, i) => `${names[i]} ${l.join("")}`).filter((t) => /[xX]/.test(t)).join(" · ") + ` (${hits.length} hits)`;
   } else ({ token, msg, key } = melody);
   // Rewrite the target's pattern=/notes= (keeping the key style used), else append it.
   const shape = { pattern: /^"?[xX.|]+"?$/, notes: /^"(([A-G][#b]?\d|\.)\s*)+"$/, phrase: /^"(([#b]?[0-7]['’,]*|-)\s*)+"$/ }[key];
@@ -1294,6 +1297,7 @@ function finishLearn(r, st) {
   const lineText = ui.getText().split("\n")[targetLine - 1];
   const fresh = old ? lineText.replace(old, old.startsWith(key + "=") ? `${key}=${token}` : token) : `${lineText.trimEnd()} ${kind === "drums" ? token : key + "=" + token}`;
   learnNote.set(r.node.id, msg);
+  learntInto.set(target.id, Date.now() + 30000); // the target's status says so for 30 s
   learnState.delete(r.node.id);
   ui.setLine(targetLine, fresh);
   ui.toggleLines([ownLine]); // done: the learn line turns itself off (Ctrl+T records again)
@@ -1380,11 +1384,11 @@ function melodyFor(target, x, sr, t0, st) {
       tokens[a] = tok; for (let j = a + 1; j < b; j++) tokens[j] = "-";
       degs.push(tok);
     });
-    return { key: "phrase", token: `"${tokens.join(" ")}"`, msg: `wrote ${notes.length} notes into ${target.id}: ${degs.join(" ")} (${cfg.scaleName} on ${cfg.key}; heard ${heard})` };
+    return { key: "phrase", token: `"${tokens.join(" ")}"`, msg: `learnt ${target.id}: ${tokens.join(" ").replace(/( 0)+$/, "")} (${cfg.scaleName} on ${cfg.key}; heard ${heard})` };
   }
   const steps = new Array(st.steps).fill(".");
   for (const n of notes) steps[n.step] = midiName(Math.max(36, Math.min(84, Math.round(n.midi))));
-  return { key: "notes", token: `"${steps.join(" ")}"`, msg: `wrote ${notes.length} notes into ${target.id}: ${heard}` };
+  return { key: "notes", token: `"${steps.join(" ")}"`, msg: `learnt ${target.id}: ${steps.join(" ").replace(/( \.)+$/, "")} (heard ${heard})` };
 }
 // Onsets on the step grid; per onset a drum class (by zero-crossing rate:
 // boom → kick, ka → snare, ts → hat) and a pitch (autocorrelation).
@@ -1528,7 +1532,9 @@ function micSpark() {
   return mic.history.map((v) => "▁▂▃▅▆▇"[Math.min(5, Math.floor(Math.sqrt(v / 0.15) * 6))]).join("");
 }
 function nodeStatus(r, eff) {
-  const base = nodeStatusInner(r, eff);
+  const base0 = nodeStatusInner(r, eff);
+  const until = learntInto.get(r.node.id);
+  const base = until && Date.now() < until ? [base0[0], "★ just learnt from your voice" + (base0[1] ? " · " + base0[1] : "")] : base0;
   if (r.node.head.kind !== "all" || base[0] === "!" ) return base;
   const picked = (eff.get(r.node.id) || []).filter((x) => !x.implicit).map((x) => x.node);
   return [base[0], (base[1] ? base[1] + " · " : "") + (picked.length ? `← ${picked.join(", ")}` : "nothing to take in this group")];
