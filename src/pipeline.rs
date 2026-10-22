@@ -30,10 +30,22 @@ pub const DEFAULT_PIPELINE: &str = "\
 .           mic
 mic>        stt       sensevoice
 stt>        overlay
-#stt.final> polish    auto
+#.          llm       ollama gemma3:4b
+#stt.final> polish
 #stt.final> translate en
 #stt.final> append    transcripts/$date.stt
 ";
+
+/// Environment kinds a node kind needs. Each need is filled implicitly by
+/// the first enabled node of that kind, unless the line names one in its
+/// inputs (`llm2,stt.final> polish`). No special syntax: an environment node
+/// is an ordinary source line (`. llm gemma3:4b`).
+pub fn env_needs(kind: &str) -> &'static [&'static str] {
+    match kind {
+        "polish" | "translate" => &["llm"],
+        _ => &[],
+    }
+}
 
 /// One `ref` inside `| … >`.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -522,6 +534,29 @@ impl Pipeline {
         out
     }
 
+    /// [`inputs`](Self::inputs) plus implicit environment inputs (see
+    /// [`env_needs`]). The bool marks an implicit ref. Not written by the
+    /// formatter; this is the graph that actually runs.
+    pub fn effective_inputs(&self) -> BTreeMap<String, Vec<(InputRef, bool)>> {
+        let kind_of: HashMap<&str, &str> = self.nodes().map(|n| (n.id.as_str(), n.kind.as_str())).collect();
+        let mut out = BTreeMap::new();
+        for (id, refs) in self.inputs() {
+            let kind = kind_of.get(id.as_str()).copied().unwrap_or("");
+            let mut all: Vec<(InputRef, bool)> = refs.into_iter().map(|r| (r, false)).collect();
+            for need in env_needs(kind) {
+                let named = all.iter().any(|(r, _)| kind_of.get(r.node.as_str()) == Some(need));
+                if named {
+                    continue;
+                }
+                if let Some(env) = self.nodes().find(|n| n.enabled && n.kind == *need) {
+                    all.push((InputRef { node: env.id.clone(), port: None, policy: None }, true));
+                }
+            }
+            out.insert(id, all);
+        }
+        out
+    }
+
     /// Canonical text: `|>` made explicit once the graph branches, columns
     /// aligned per block (blank-line separated), status comments dropped.
     /// Idempotent.
@@ -672,7 +707,7 @@ impl Pipeline {
     /// `config[key]`; other args → `config.args`. Edges use `out` / `in` when
     /// no port is named; `enabled: false` is kept in `config`.
     pub fn to_graph_json(&self) -> Value {
-        let inputs = self.inputs();
+        let inputs = self.effective_inputs();
         let mut nodes = Map::new();
         let mut edges = Vec::new();
         for (row, n) in self.nodes().enumerate() {
@@ -704,7 +739,7 @@ impl Pipeline {
                     "config": config,
                 }),
             );
-            for r in &inputs[&n.id] {
+            for (r, implicit) in &inputs[&n.id] {
                 let mut e = json!({
                     "id": format!("{}-{}", r.node, n.id),
                     "source": r.node,
@@ -714,6 +749,9 @@ impl Pipeline {
                 });
                 if let Some(p) = &r.policy {
                     e["policy"] = json!(p);
+                }
+                if *implicit {
+                    e["implicit"] = json!(true);
                 }
                 edges.push(e);
             }
@@ -731,6 +769,9 @@ impl Pipeline {
             let (Some(src), Some(dst)) = (e["source"].as_str(), e["target"].as_str()) else {
                 return Err("edge without source/target".into());
             };
+            if e["implicit"].as_bool() == Some(true) {
+                continue; // environment edge: re-derived, never written
+            }
             let port = e["sourceHandle"].as_str().filter(|p| *p != "out").map(String::from);
             let policy = e["policy"].as_str().map(String::from);
             ins.entry(dst).or_default().push(InputRef { node: src.into(), port, policy });
@@ -1156,6 +1197,28 @@ stt.final> log=append $date.stt          # -
         assert!((c.fraction(t + ms(1000)) - 1.0).abs() < 0.01);
         c.end(t + ms(1000));
         assert!(c.fraction(t + ms(1500)) > 0.49);
+    }
+
+    #[test]
+    fn env_nodes_attach_to_nodes_that_need_them() {
+        let src = ". mic\nmic> stt\n. llm gemma3:4b\n. llm2=llm gpt-4.1-mini\nstt.final> polish\nllm2,stt.final> translate en\n";
+        let p = Pipeline::parse(src).unwrap();
+        let eff = p.effective_inputs();
+        let ids = |id: &str| eff[id].iter().map(|(r, i)| (r.node.clone(), *i)).collect::<Vec<_>>();
+        // polish: implicit first llm; translate: the named llm2, nothing implicit.
+        assert_eq!(ids("polish"), [("stt".into(), false), ("llm".into(), true)]);
+        assert_eq!(ids("translate"), [("llm2".into(), false), ("stt".into(), false)]);
+        assert_eq!(ids("stt"), [("mic".into(), false)]);
+        // The implicit input is never written back.
+        assert!(p.format().contains("\nstt.final>      polish\n"), "{}", p.format());
+        // Graph JSON marks it, and reading it back drops it again.
+        let g = p.to_graph_json();
+        let imp = g["edges"].as_array().unwrap().iter().filter(|e| e["implicit"] == true).count();
+        assert_eq!(imp, 1);
+        assert_eq!(Pipeline::from_graph_json(&g).unwrap().to_graph_json(), g);
+        // A disabled llm is skipped; the next enabled one is used.
+        let p = Pipeline::parse("#. llm a\n. llm2=llm b\n. x\nx> polish\n").unwrap();
+        assert_eq!(p.effective_inputs()["polish"].last().unwrap().0.node, "llm2");
     }
 
     #[test]

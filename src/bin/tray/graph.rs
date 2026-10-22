@@ -24,7 +24,7 @@ pub fn path() -> std::path::PathBuf {
 }
 
 /// Node kinds runtime v1 can run.
-const KINDS: &[&str] = &["mic", "stt", "overlay", "polish", "translate", "append"];
+const KINDS: &[&str] = &["mic", "stt", "overlay", "polish", "translate", "append", "llm"];
 
 struct State {
     pipeline: Pipeline,
@@ -194,12 +194,12 @@ pub fn on_final(text: &str) {
         return;
     }
     let text = text.to_string();
-    if let Some((_, args)) = polish {
-        spawn_llm(Job::Polish, model_spec("polish", &args), text.clone());
+    if let Some((id, _)) = polish {
+        spawn_llm(Job::Polish, model_words(&p, &id), text.clone());
     }
-    if let Some((_, args)) = translate {
+    if let Some((id, args)) = translate {
         let lang = args.first().cloned().unwrap_or_else(|| "en".into());
-        spawn_llm(Job::Translate(lang), model_spec("translate", &args), text);
+        spawn_llm(Job::Translate(lang), model_words(&p, &id), text);
     }
 }
 
@@ -246,93 +246,221 @@ fn runtime() -> &'static tokio::runtime::Runtime {
     })
 }
 
-/// Resolve a polish/translate model spec to a polisher and a short label.
+/// A resolved LLM: the client, a short label for the menu, and — for an
+/// Ollama server — (base URL, model) to health-check.
+#[derive(Clone)]
+struct Llm {
+    polisher: Arc<dyn otoji::polish::Polisher>,
+    label: String,
+    probe: Option<(String, String)>,
+}
+type Resolved = Result<Llm, String>;
+
+const PROVIDERS: &[&str] = &["auto", "openai", "ollama", "local", "gemini", "anthropic"];
+const OPENAI_URL: &str = "https://api.openai.com/v1";
+
+fn env_key(k: &str) -> Option<String> {
+    std::env::var(k).ok().filter(|v| !v.trim().is_empty())
+}
+
+fn host_of(url: &str) -> &str {
+    url.split("://").nth(1).unwrap_or(url).split('/').next().unwrap_or(url)
+}
+
+/// Resolve the words of an `llm` line (or a polish/translate model word):
 ///
-/// - `auto` (default): the first cloud key found — gemini → openai → anthropic
-/// - `gemini` / `openai` / `anthropic` / `ollama`: that provider's default model
-/// - a model name, routed by its spelling: `gemini-*` → Gemini, `gpt-*` /
-///   `o1*` / `o3*` / `o4*` → OpenAI, `claude-*` → Anthropic, anything else
-///   (Ollama's `name:tag`, e.g. `gemma3:4b`) → local Ollama
-/// - `provider/model` forces the provider (`openai/my-model`, `ollama/qwen3`)
-///
-/// Cloud providers need GEMINI_API_KEY / OPENAI_API_KEY / ANTHROPIC_API_KEY
-/// (env or `<data>/.env`). Ollama (OTOJI_POLISH_BASE_URL, default
-/// localhost:11434) runs on this Mac's GPU, so it is never picked by `auto`.
-fn resolve_model(spec: &str) -> Result<(Arc<dyn otoji::polish::Polisher>, String), String> {
-    use otoji::polish::{AnthropicPolisher, GeminiPolisher, OpenAiPolisher, Polisher};
-    let key = |k: &str| std::env::var(k).ok().filter(|v| !v.trim().is_empty());
-    let need = |k: &str| key(k).ok_or_else(|| format!("needs {k}: add it to otoji/.env"));
-    let build = |provider: &str, model: Option<&str>| -> Result<(Arc<dyn Polisher>, String), String> {
-        match provider {
-            "gemini" => {
-                let m = model.unwrap_or("gemini-2.5-flash-lite");
-                Ok((Arc::new(GeminiPolisher::new(need("GEMINI_API_KEY")?, m)), m.to_string()))
-            }
-            "openai" => {
-                let m = model
-                    .map(String::from)
-                    .or_else(|| key("OTOJI_OPENAI_MODEL"))
-                    .unwrap_or_else(|| "gpt-4.1-mini".into());
-                let p = OpenAiPolisher::new("https://api.openai.com/v1", need("OPENAI_API_KEY")?, m.clone());
-                Ok((Arc::new(p), m))
-            }
-            "anthropic" => {
-                let m = model.unwrap_or("claude-haiku-4-5");
-                Ok((Arc::new(AnthropicPolisher::new(need("ANTHROPIC_API_KEY")?, m)), m.to_string()))
-            }
-            "ollama" | "local" => {
-                let base = key("OTOJI_POLISH_BASE_URL").unwrap_or_else(|| "http://localhost:11434/v1".into());
-                let m = model
-                    .map(String::from)
-                    .or_else(|| key("OTOJI_POLISH_MODEL"))
-                    .unwrap_or_else(|| "gemma3:4b".into());
-                let p = OpenAiPolisher::new(base, key("OTOJI_POLISH_API_KEY").unwrap_or_default(), m.clone());
-                Ok((Arc::new(p), format!("{m} (local GPU)")))
-            }
-            other => Err(format!("unknown provider `{other}`")),
+/// - `<provider> [url] [key=…] [model]` with provider `openai` (default URL
+///   api.openai.com, OPENAI_API_KEY), `ollama` (= openai at
+///   http://localhost:11434/v1, no key), `gemini`, `anthropic`, or `auto`
+///   (first cloud key: gemini → openai → anthropic; never the local GPU).
+///   A word starting with `http(s)://` is the base URL; `key=$VAR` reads the
+///   key from the environment / `<data>/.env` (`key=literal` also works);
+///   the remaining word is the model.
+/// - a bare model word, routed by spelling: `gemini-*`, `gpt-*`/`o1*`/`o3*`/
+///   `o4*`, `claude-*`, anything else (Ollama's `name:tag`) → ollama;
+///   `provider/model` forces the provider.
+fn resolve_llm(words: &[String]) -> Resolved {
+    use otoji::polish::{AnthropicPolisher, GeminiPolisher, OpenAiPolisher};
+    let words: Vec<String> = words.iter().map(|w| w.trim_matches('"').to_string()).collect();
+    let first = words.first().map(String::as_str).unwrap_or("auto");
+    if !PROVIDERS.contains(&first) {
+        // A single model word.
+        let route = |p: &str, m: &str| resolve_llm(&[p.to_string(), m.to_string()]);
+        if let Some((p, m)) = first.split_once('/').filter(|(p, _)| PROVIDERS.contains(p)) {
+            return route(p, m);
         }
-    };
-    let spec = spec.trim_matches('"');
-    if let Some((provider, model)) = spec.split_once('/') {
-        return build(provider, Some(model));
+        return match first {
+            m if m.starts_with("gemini-") => route("gemini", m),
+            m if m.starts_with("gpt-") || ["o1", "o3", "o4"].iter().any(|p| m.starts_with(p)) => {
+                route("openai", m)
+            }
+            m if m.starts_with("claude-") => route("anthropic", m),
+            m => route("ollama", m),
+        };
     }
-    match spec {
-        "" | "auto" => build("gemini", None)
-            .or_else(|_| build("openai", None))
-            .or_else(|_| build("anthropic", None))
-            .map_err(|_| "needs an LLM API key: add GEMINI_API_KEY=… to otoji/.env".to_string()),
-        "gemini" | "openai" | "anthropic" | "ollama" | "local" => build(spec, None),
-        m if m.starts_with("gemini-") => build("gemini", Some(m)),
-        m if m.starts_with("gpt-") || ["o1", "o3", "o4"].iter().any(|p| m.starts_with(p)) => {
-            build("openai", Some(m))
+    let (mut url, mut key, mut model) = (None::<String>, None::<String>, None::<String>);
+    for w in &words[1..] {
+        if w.starts_with("http://") || w.starts_with("https://") {
+            url = Some(w.trim_end_matches('/').to_string());
+        } else if let Some(k) = w.strip_prefix("key=") {
+            key = Some(match k.strip_prefix('$') {
+                Some(var) => env_key(var).ok_or_else(|| format!("needs {var}: add it to otoji/.env"))?,
+                None => k.to_string(),
+            });
+        } else if model.is_none() {
+            model = Some(w.clone());
+        } else {
+            return Err(format!("unexpected word `{w}`"));
         }
-        m if m.starts_with("claude-") => build("anthropic", Some(m)),
-        m => build("ollama", Some(m)),
+    }
+    let need = |k: &str| env_key(k).ok_or_else(|| format!("needs {k}: add it to otoji/.env"));
+    let no_url = |p: &str| match &url {
+        Some(_) => Err(format!("`{p}` takes no URL")),
+        None => Ok(()),
+    };
+    match first {
+        "auto" => ["gemini", "openai", "anthropic"]
+            .iter()
+            .find_map(|p| resolve_llm(&[p.to_string()]).ok())
+            .ok_or_else(|| "needs an LLM API key: add OPENAI_API_KEY=… (or GEMINI_/ANTHROPIC_) to otoji/.env".into()),
+        "openai" => {
+            let base = url.clone().unwrap_or_else(|| OPENAI_URL.into());
+            let official = base == OPENAI_URL;
+            // Custom OpenAI-compatible servers may need no key.
+            let key = match key {
+                Some(k) => k,
+                None if official => need("OPENAI_API_KEY")?,
+                None => String::new(),
+            };
+            let m = match model {
+                Some(m) => m,
+                None if official => env_key("OTOJI_OPENAI_MODEL").unwrap_or_else(|| "gpt-4.1-mini".into()),
+                None => return Err(format!("needs a model name for {}", host_of(&base))),
+            };
+            let label = if official { m.clone() } else { format!("{m} @ {}", host_of(&base)) };
+            Ok(Llm { polisher: Arc::new(OpenAiPolisher::new(base, key, m)), label, probe: None })
+        }
+        "ollama" | "local" => {
+            let base = url
+                .or_else(|| env_key("OTOJI_POLISH_BASE_URL"))
+                .unwrap_or_else(|| "http://localhost:11434/v1".into());
+            let m = model.or_else(|| env_key("OTOJI_POLISH_MODEL")).unwrap_or_else(|| "gemma3:4b".into());
+            let host = host_of(&base);
+            let label = if host.starts_with("localhost") || host.starts_with("127.") {
+                format!("{m} (local GPU)")
+            } else {
+                format!("{m} @ {host}")
+            };
+            let p = OpenAiPolisher::new(base.clone(), key.unwrap_or_default(), m.clone());
+            Ok(Llm { polisher: Arc::new(p), label, probe: Some((base, m)) })
+        }
+        "gemini" => {
+            no_url("gemini")?;
+            let m = model.unwrap_or_else(|| "gemini-2.5-flash-lite".into());
+            let k = key.map(Ok).unwrap_or_else(|| need("GEMINI_API_KEY"))?;
+            Ok(Llm { polisher: Arc::new(GeminiPolisher::new(k, m.clone())), label: m, probe: None })
+        }
+        "anthropic" => {
+            no_url("anthropic")?;
+            let m = model.unwrap_or_else(|| "claude-haiku-4-5".into());
+            let k = key.map(Ok).unwrap_or_else(|| need("ANTHROPIC_API_KEY"))?;
+            Ok(Llm { polisher: Arc::new(AnthropicPolisher::new(k, m.clone())), label: m, probe: None })
+        }
+        _ => unreachable!(),
     }
 }
 
-type Resolved = Result<(Arc<dyn otoji::polish::Polisher>, String), String>;
-
-/// [`resolve_model`], cached per spec: the menu refreshes 10×/s and building
+/// [`resolve_llm`], cached by its words: the menu refreshes 10×/s and building
 /// an HTTP client each time would be wasteful. Keys only change on restart.
-fn resolve_cached(spec: &str) -> Resolved {
+fn resolve_cached(words: &[String]) -> Resolved {
     static CACHE: Mutex<Option<HashMap<String, Resolved>>> = Mutex::new(None);
     let mut g = CACHE.lock().unwrap();
     g.get_or_insert_with(HashMap::new)
-        .entry(spec.to_string())
-        .or_insert_with(|| resolve_model(spec))
+        .entry(words.join(" "))
+        .or_insert_with(|| resolve_llm(words))
         .clone()
 }
 
-/// The model spec of a polish/translate node: `polish <model>`,
-/// `translate <lang> <model>`.
-fn model_spec(kind: &str, args: &[String]) -> String {
-    let i = if kind == "translate" { 1 } else { 0 };
-    args.get(i).map(|a| a.trim_matches('"').to_string()).unwrap_or_else(|| "auto".into())
+/// For a local (Ollama) model: whether the server runs and has the model.
+/// Probed in the background every 30 s (a cheap HTTP call; it never loads
+/// the model onto the GPU). Cloud models → ready.
+fn ollama_check(probe: &Option<(String, String)>) -> (NodeState, Option<String>) {
+    let Some((base, model)) = probe.clone() else {
+        return (NodeState::Idle, None);
+    };
+    static PROBES: Mutex<Option<HashMap<String, (Instant, Option<Result<Vec<String>, String>>)>>> = Mutex::new(None);
+    let key = base.clone();
+    let (stale, result) = {
+        let mut g = PROBES.lock().unwrap();
+        let m = g.get_or_insert_with(HashMap::new);
+        let e = m.entry(key.clone()).or_insert((Instant::now() - Duration::from_secs(3600), None));
+        let stale = e.0.elapsed() > Duration::from_secs(30);
+        if stale {
+            e.0 = Instant::now();
+        }
+        (stale, e.1.clone())
+    };
+    if stale {
+        runtime().spawn(async move {
+            let url = format!("{base}/models");
+            let res = async {
+                let r = reqwest::Client::new()
+                    .get(&url)
+                    .timeout(Duration::from_secs(2))
+                    .send()
+                    .await
+                    .map_err(|_| format!("ollama not running at {}", base.trim_end_matches("/v1")))?;
+                let v: serde_json::Value = r.json().await.map_err(|e| e.to_string())?;
+                Ok(v["data"]
+                    .as_array()
+                    .map(|a| a.iter().filter_map(|m| m["id"].as_str().map(String::from)).collect())
+                    .unwrap_or_default())
+            }
+            .await;
+            if let Some(m) = PROBES.lock().unwrap().as_mut() {
+                if let Some(e) = m.get_mut(&key) {
+                    e.1 = Some(res);
+                }
+            }
+        });
+    }
+    match result {
+        None => (NodeState::Loading, Some("checking ollama".into())),
+        Some(Err(e)) => (NodeState::Error, Some(e)),
+        Some(Ok(models)) => {
+            // Ollama lists `name:tag`; a bare name means `:latest`.
+            let want = if model.contains(':') { model.clone() } else { format!("{model}:latest") };
+            if models.iter().any(|m| *m == want || *m == model) {
+                (NodeState::Idle, Some("ready".into()))
+            } else {
+                (NodeState::NeedsUser, Some(format!("run: ollama pull {model}")))
+            }
+        }
+    }
 }
 
-fn spawn_llm(job: Job, spec: String, text: String) {
-    let Ok((p, _)) = resolve_cached(&spec) else {
+/// The LLM words a polish/translate node uses: its own model word
+/// (`polish <model>`, `translate <lang> <model>`), else its `llm`
+/// environment node's words (implicit: the first enabled `llm` line), else
+/// `auto`.
+fn model_words(p: &Pipeline, id: &str) -> Vec<String> {
+    let auto = || vec!["auto".to_string()];
+    let Some(n) = p.nodes().find(|n| n.id == id) else { return auto() };
+    let own = if n.kind == "translate" { 1 } else { 0 };
+    if let Some(m) = n.args.get(own) {
+        return vec![m.clone()];
+    }
+    let llm = p.effective_inputs().get(id).and_then(|refs| {
+        refs.iter().find_map(|(r, _)| p.nodes().find(|m| m.id == r.node && m.kind == "llm"))
+    });
+    match llm {
+        Some(l) if !l.args.is_empty() => l.args.clone(),
+        _ => auto(),
+    }
+}
+
+fn spawn_llm(job: Job, words: Vec<String>, text: String) {
+    let Ok(Llm { polisher: p, .. }) = resolve_cached(&words) else {
         return; // the status row shows why (`?` missing key, `!` bad spec)
     };
     let is_polish = matches!(job, Job::Polish);
@@ -480,6 +608,38 @@ pub fn statuses(mic_authorized: bool) -> HashMap<String, NodeStatus> {
                         }
                         state
                     }
+                    "llm" => {
+                        let words = if n.args.is_empty() { vec!["auto".to_string()] } else { n.args.clone() };
+                        let users: Vec<String> = p
+                            .effective_inputs()
+                            .iter()
+                            .filter(|(_, refs)| refs.iter().any(|(r, _)| r.node == n.id))
+                            .filter(|(id, _)| p.nodes().any(|m| m.id == **id && m.enabled))
+                            .map(|(id, _)| id.clone())
+                            .collect();
+                        if !n.enabled {
+                            NodeState::Off
+                        } else {
+                            match resolve_cached(&words) {
+                                Err(why) => {
+                                    let st = if why.starts_with("needs") { NodeState::NeedsUser } else { NodeState::Error };
+                                    detail.push(why);
+                                    st
+                                }
+                                Ok(Llm { label, probe, .. }) => {
+                                    let (st, note) = ollama_check(&probe);
+                                    detail.push(label);
+                                    if let Some(note) = note {
+                                        detail.push(note);
+                                    }
+                                    if !users.is_empty() {
+                                        detail.push(format!("for {}", users.join(", ")));
+                                    }
+                                    st
+                                }
+                            }
+                        }
+                    }
                     "overlay" => {
                         detail.push("captions on screen".into());
                         if st.live { NodeState::Streaming } else { NodeState::Idle }
@@ -491,7 +651,7 @@ pub fn statuses(mic_authorized: bool) -> HashMap<String, NodeStatus> {
                         } else {
                             (&s.translate_err, s.translate_done, &s.translate_last)
                         };
-                        let resolved = resolve_cached(&model_spec(&n.kind, &n.args));
+                        let resolved = resolve_cached(&model_words(&p, &n.id));
                         if !n.enabled {
                             NodeState::Off
                         } else if let Err(why) = &resolved {
@@ -504,8 +664,8 @@ pub fn statuses(mic_authorized: bool) -> HashMap<String, NodeStatus> {
                         } else {
                             let a = if is_polish { &mut s.polish } else { &mut s.translate };
                             let state = duty(a, now, NodeState::Chunk);
-                            if let Ok((_, label)) = &resolved {
-                                detail.push(label.clone());
+                            if let Ok(l) = &resolved {
+                                detail.push(l.label.clone());
                             }
                             detail.push(format!("{done} done"));
                             if !last.is_empty() {
@@ -543,15 +703,16 @@ fn wants_listen_of(p: &Pipeline) -> bool {
 /// Runtime v1 topology: mic is a source; everything else reads stt or mic.
 fn wiring_supported(p: &Pipeline, kind: &str, head: &Head) -> bool {
     let inputs: Vec<String> = match head {
-        Head::Source => return kind == "mic",
+        Head::Source => return kind == "mic" || kind == "llm",
         Head::Previous => return kind != "mic",
         Head::Refs(r) => r.iter().map(|r| r.node.clone()).collect(),
     };
     let kind_of = |id: &str| p.nodes().find(|n| n.id == id).map(|n| n.kind.clone());
     match kind {
-        "mic" => false,
+        "mic" | "llm" => false,
         "stt" => inputs.iter().all(|i| kind_of(i).as_deref() == Some("mic")),
-        _ => inputs.iter().all(|i| kind_of(i).as_deref() == Some("stt")),
+        // polish/translate may also name their `llm` environment.
+        _ => inputs.iter().all(|i| matches!(kind_of(i).as_deref(), Some("stt") | Some("llm"))),
     }
 }
 

@@ -72,6 +72,29 @@ name, kind, id, port, policy, key := [A-Za-z0-9_-]+
 - **Ids are names, not indexes.** Sequence vs parallel is a property of the
   graph shape.
 
+## Environment nodes
+
+Some kinds need an environment, e.g. `polish` and `translate` need an `llm`
+(`pipeline::env_needs`). An environment node is an ordinary source line —
+no extra syntax:
+
+```
+.           llm       ollama gemma3:4b
+.           llm2=llm  openai gpt-4.1-mini
+stt.final>  polish                 # implicitly llm,stt.final> (first enabled llm)
+llm2,stt.final> translate en       # names its llm explicitly
+```
+
+- A node's need is filled by the **first enabled** node of that kind, unless
+  its input list names one. The implicit input is never written to the file;
+  `Pipeline::effective_inputs` returns it (flagged), and the graph JSON marks
+  such edges `"implicit": true` (dropped again when reading JSON back).
+- Model precedence for polish/translate: the node's own model word, else its
+  `llm` node's, else `auto`.
+- The `llm` row shows the model, who uses it, and for a local model whether
+  Ollama is running and has it (`? run: ollama pull gemma3:4b`). The check is
+  a plain HTTP call every 30 s; it never loads the model onto the GPU.
+
 ## Errors keep the rest running
 
 Parsing is lenient (`Pipeline::parse_lenient`). A line with a syntax error,
@@ -154,21 +177,33 @@ enabled node of each kind is used):
 | `overlay` | caption panel; off = no captions | |
 | `polish` | LLM polish of each final | model (default `auto`) |
 | `translate` | LLM translation of each final | target language (default `en`), then model |
+| `llm` | environment for polish/translate (see above) | `openai`/`ollama`/`gemini`/`anthropic`/`auto`, then URL, `key=`, model |
 | `append` | append `HH:MM:SS<TAB>text` per final to a file under the data dir | path (default `transcripts/$date.stt`) |
 
 - `mic` and `stt` both on = the `otoji listen` child runs; either off stops it.
   Fn+/ (or Alt+CapsLock) flips the `mic` line.
 - `polish` and `translate` run in parallel on each final.
-- Model argument (one word): `auto` = the first cloud key found (Gemini →
-  OpenAI → Anthropic). A provider name (`gemini`, `openai`, `anthropic`,
-  `ollama`) uses its default model. A model name is routed by its spelling:
-  `gemini-*` → Gemini, `gpt-*` / `o1*` / `o3*` / `o4*` → OpenAI, `claude-*` →
-  Anthropic, anything else — Ollama's `name:tag`, e.g. `gemma3:4b` — → local
-  Ollama. `provider/model` forces a provider (`openai/my-model`).
-- Ollama runs the model on this Mac's GPU, so it is only used when written
-  explicitly; `auto` never picks it. Its status says `(local GPU)`.
-- Translation is implemented by the Gemini and OpenAI clients; Anthropic only
-  polishes.
+- LLM words (an `llm` line, or one model word on a polish/translate line):
+  - `openai [url] [key=…] [model]`: an OpenAI-compatible API. Default URL
+    api.openai.com with `OPENAI_API_KEY` and `gpt-4.1-mini`
+    (`OTOJI_OPENAI_MODEL`). With a custom URL the key is optional (local
+    servers) and the model is required.
+  - `ollama [url] [key=…] [model]`: `openai` with the URL prefilled to
+    `http://localhost:11434/v1`, no key, default model `gemma3:4b`. Its row
+    checks that the server runs and has the model.
+  - `gemini [model]`, `anthropic [model]`: their own APIs and keys.
+  - `auto`: the first cloud key found (Gemini → OpenAI → Anthropic); never
+    the local GPU.
+  - A bare model word is routed by spelling: `gemini-*` → Gemini, `gpt-*` /
+    `o1*` / `o3*` / `o4*` → OpenAI, `claude-*` → Anthropic, anything else
+    (Ollama's `name:tag`) → Ollama; `provider/model` forces a provider.
+  - A word starting with `http(s)://` is the base URL; `key=$VAR` reads the
+    key from the environment or `<data>/.env` (`key=literal` also works).
+- Ollama on localhost runs the model on this Mac's GPU, so it is only used
+  when written explicitly. Its status says `(local GPU)`; a remote URL shows
+  `model @ host`.
+- Translation is implemented by the Gemini and OpenAI-compatible clients;
+  Anthropic only polishes.
 - Keys come from the tray's environment or `<data>/.env` (`KEY=value` lines),
   since a LaunchAgent does not inherit the login shell's environment.
 - Wiring the v1 runtime doesn't execute (e.g. `polish` fed by `mic`) is
