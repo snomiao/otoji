@@ -1,0 +1,995 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>otoji Patchbay</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans+Condensed:wght@400;500;600;700&display=swap">
+<style>
+/* Layout: a hardware-sampler front panel — transport strip on top, the
+   patch (code + live status column) as the instrument's screen, legend and
+   node reference below as the printed panel labels. */
+:root {
+  --bg: #e9ecef;          /* panel aluminium, slight blue bias */
+  --panel: #f7f8fa;       /* screen surround */
+  --screen: #fcfcfb;      /* editor paper */
+  --ink: #1d232b;
+  --muted: #5f6a77;
+  --line: #ccd3db;
+  --signal: #c98a00;      /* beat lamp / streaming: amber, readable on light */
+  --signal-soft: #f6dc8f;
+  --ok: #2f7d55;
+  --warn: #b5541d;
+  --bad: #b3262e;
+  --focus: #2f6db3;
+  --font-ui: "IBM Plex Sans Condensed", "Arial Narrow", system-ui, sans-serif;
+  --font-code: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  --code-size: 13px;
+  --code-lh: 22px;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #12161c; --panel: #181d24; --screen: #0f1318; --ink: #e3e8ee; --muted: #93a0ae;
+    --line: #2a323c; --signal: #f2c230; --signal-soft: #4a3c12; --ok: #5cc28d; --warn: #e5894e;
+    --bad: #ef6b72; --focus: #6aa7ef; color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #12161c; --panel: #181d24; --screen: #0f1318; --ink: #e3e8ee; --muted: #93a0ae;
+  --line: #2a323c; --signal: #f2c230; --signal-soft: #4a3c12; --ok: #5cc28d; --warn: #e5894e;
+  --bad: #ef6b72; --focus: #6aa7ef; color-scheme: dark;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; }
+body {
+  background: var(--bg); color: var(--ink); font-family: var(--font-ui); font-size: 15px; line-height: 1.5;
+  padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px));
+  padding-block: 20px 40px;
+}
+main { max-width: 1120px; margin: 0 auto; display: grid; gap: 18px; }
+h1 { font-size: 26px; font-weight: 700; letter-spacing: 0.01em; margin: 0; text-wrap: balance; }
+h1 small { font-weight: 500; color: var(--muted); font-size: 15px; margin-left: 8px; }
+h2 { font-size: 13px; text-transform: uppercase; letter-spacing: 0.12em; color: var(--muted); margin: 0 0 8px; font-weight: 600; }
+p { margin: 0; max-width: 68ch; }
+.intro { color: var(--muted); }
+
+/* transport */
+.transport {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 12px 18px;
+  background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px;
+}
+button, select, input { font: inherit; color: inherit; }
+.btn {
+  border: 1px solid var(--line); background: var(--screen); border-radius: 7px; padding: 7px 14px;
+  font-weight: 600; cursor: pointer; display: inline-flex; align-items: center; gap: 8px;
+}
+.btn:hover { border-color: var(--muted); }
+.btn.primary { background: var(--ink); color: var(--panel); border-color: var(--ink); }
+.btn.primary[aria-pressed="true"] { background: var(--signal); border-color: var(--signal); color: #1d1a10; }
+:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+.vol { display: flex; align-items: center; gap: 8px; font-size: 14px; color: var(--muted); }
+.vol input { width: 120px; accent-color: var(--signal); }
+.lamps { display: flex; gap: 6px; align-items: center; }
+.lamp { width: 12px; height: 12px; border-radius: 50%; border: 1px solid var(--line); background: var(--screen); }
+.lamp.on { background: var(--signal); border-color: var(--signal); box-shadow: 0 0 8px var(--signal); }
+.lamp.on.down { transform: scale(1.25); }
+.readout { font-family: var(--font-code); font-size: 13px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.safety { font-size: 13px; color: var(--muted); flex-basis: 100%; }
+.safety kbd { font-family: var(--font-code); font-size: 12px; border: 1px solid var(--line); border-radius: 4px; padding: 0 5px; background: var(--screen); }
+
+/* patch editor */
+.patch { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 12px; display: grid; gap: 10px; }
+.patch-bar { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; justify-content: space-between; }
+.patch-bar .left { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+.count { font-size: 13px; color: var(--muted); }
+.count.has-errors { color: var(--bad); font-weight: 600; }
+.screen-wrap { overflow-x: auto; border: 1px solid var(--line); border-radius: 7px; background: var(--screen); }
+.screen { display: grid; grid-template-columns: minmax(420px, 1.25fr) minmax(300px, 1fr); min-width: 720px; }
+.code, .status {
+  font-family: var(--font-code); font-size: var(--code-size); line-height: var(--code-lh);
+  padding: 10px 12px; margin: 0; white-space: pre; tab-size: 2;
+}
+.code {
+  border: 0; resize: none; background: transparent; color: var(--ink); overflow: hidden; width: 100%;
+  border-right: 1px dashed var(--line); outline: none; min-height: calc(var(--code-lh) * 10 + 20px);
+}
+.code:focus-visible { box-shadow: inset 0 0 0 2px var(--focus); }
+.status { color: var(--muted); overflow: hidden; }
+.srow { display: block; height: var(--code-lh); overflow: hidden; text-overflow: ellipsis; cursor: default; border-radius: 4px; padding-inline: 4px; margin-inline: -4px; }
+.srow.node { cursor: pointer; }
+.srow.node:hover { background: var(--bg); }
+.srow .sym { display: inline-block; width: 2.6ch; font-weight: 600; }
+.srow.s-stream .sym { color: var(--signal); }
+.srow.s-stream { color: var(--ink); }
+.srow.s-err, .srow.s-err .sym { color: var(--bad); }
+.srow.s-user .sym, .srow.s-user { color: var(--warn); }
+.srow.s-off { opacity: 0.55; }
+.srow.s-load .sym { color: var(--focus); }
+
+.monaco-host { height: 440px; min-width: 0; }
+.monaco-host[hidden] { display: none; }
+/* status: pure text injected after each line (Monaco `after` decorations) */
+.st { color: var(--muted) !important; font-style: normal; }
+.st-stream { color: var(--signal) !important; }
+.st-err { color: var(--bad) !important; }
+.st-user { color: var(--warn) !important; }
+.st-off { opacity: 0.6; }
+.pending-line { background: var(--signal-soft); }
+.keys { display: flex; flex-wrap: wrap; gap: 6px 14px; font-size: 13px; color: var(--muted); }
+.keys kbd { font-family: var(--font-code); font-size: 12px; border: 1px solid var(--line); border-radius: 4px; padding: 0 5px; background: var(--screen); color: var(--ink); }
+
+/* reference */
+.ref { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 18px; }
+.card { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px; min-width: 0; }
+table { border-collapse: collapse; width: 100%; font-size: 14px; }
+td { padding: 5px 8px 5px 0; vertical-align: top; border-top: 1px solid var(--line); }
+tr:first-child td { border-top: 0; }
+td code, p code, li code { font-family: var(--font-code); font-size: 12.5px; }
+td:first-child { white-space: nowrap; }
+.sym-cell { font-family: var(--font-code); font-weight: 600; width: 3ch; }
+.sym-cell.stream { color: var(--signal); }
+.sym-cell.err { color: var(--bad); }
+.sym-cell.user { color: var(--warn); }
+.scroll-x { overflow-x: auto; }
+ul.ideas { margin: 0; padding-left: 18px; display: grid; gap: 6px; font-size: 14px; }
+@media (prefers-reduced-motion: reduce) { .lamp.on.down { transform: none; } }
+/*MONACO_CSS*/
+</style>
+
+<main>
+  <header style="display:grid; gap:6px">
+    <h1>otoji Patchbay <small>music nodes in the pipeline language</small></h1>
+    <p class="intro">Each line is a node. Edit the patch and it applies as you type; the column on the right is generated live and is never part of the source. Click a status to mute or unmute that line.</p>
+  </header>
+
+  <section class="transport" aria-label="Transport">
+    <button class="btn primary" id="startBtn" aria-pressed="false">▶ Start audio</button>
+    <button class="btn" id="stopBtn">■ Stop</button>
+    <label class="vol" for="vol">Volume <input id="vol" type="range" min="0" max="100" value="30"> <span id="volText" class="readout">30%</span></label>
+    <div class="lamps" id="lamps" aria-label="Beat lamps"></div>
+    <span class="readout" id="pos">stopped</span>
+    <p class="safety">Nothing plays until you press Start. <kbd>Esc</kbd> stops at any time; switching tabs stops too. Output goes through a limiter.</p>
+  </section>
+
+  <section class="patch" aria-label="Patch editor">
+    <div class="patch-bar">
+      <div class="left">
+        <label for="example" class="count">Example</label>
+        <select id="example" class="btn">
+          <option value="groove">Groove: drums, arpeggio, bass</option>
+          <option value="metro">Metronome 节拍器</option>
+          <option value="poly">Two tempos, 3 against 2</option>
+          <option value="dub">Dub chords with delay</option>
+        </select>
+        <button class="btn" id="fmtBtn" title="Align columns and tidy inputs">Format</button>
+      </div>
+      <span class="count" id="count">—</span>
+    </div>
+    <div id="monaco" class="monaco-host screen-wrap" aria-label="Patch source"></div>
+    <div class="keys" id="keys">
+      <span><kbd>Ctrl</kbd>+<kbd>T</kbd> mute/unmute line now</span>
+      <span><kbd>Ctrl</kbd>+<kbd>E</kbd> mute/unmute at the next bar</span>
+      <span><kbd>Ctrl</kbd>+<kbd>B</kbd> play/stop</span>
+      <span><kbd>Esc</kbd> stop</span>
+      <span>Click a <code># status</code> to mute/unmute</span>
+    </div>
+    <div class="screen-wrap" id="fallback" hidden>
+      <div class="screen">
+        <textarea id="code" class="code" spellcheck="false" autocapitalize="off" autocomplete="off" wrap="off" aria-label="Patch source"></textarea>
+        <div id="status" class="status" aria-live="off"></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="ref">
+    <div class="card">
+      <h2>Status column</h2>
+      <table>
+        <tr><td class="sym-cell stream">~</td><td>sounding or streaming right now; flashes with the music</td></tr>
+        <tr><td class="sym-cell">-</td><td>ready, nothing playing</td></tr>
+        <tr><td class="sym-cell">.</td><td>loading (building the reverb)</td></tr>
+        <tr><td class="sym-cell err">!</td><td>error on this line only; the rest keeps playing</td></tr>
+        <tr><td class="sym-cell user">?</td><td>waiting on you (press Start)</td></tr>
+        <tr><td class="sym-cell">off</td><td>the line starts with <code>#</code></td></tr>
+      </table>
+    </div>
+    <div class="card scroll-x">
+      <h2>Nodes</h2>
+      <table>
+        <tr><td><code>clock</code></td><td><code>bpm=92 sig=4</code> · environment: music nodes take the first one automatically</td></tr>
+        <tr><td><code>metro</code></td><td>节拍器, accent on beat 1 · <code>tone=1000</code></td></tr>
+        <tr><td><code>drums</code></td><td><code>pattern="kick|snare|hat"</code>, 16 steps, <code>x</code> hit, <code>X</code> accent</td></tr>
+        <tr><td><code>piano</code></td><td><code>chords="Am F C G"</code> one per bar · <code>style=arp|block</code> <code>oct=4</code></td></tr>
+        <tr><td><code>bass</code></td><td><code>chords="…"</code> roots on beats 1 and 3</td></tr>
+        <tr><td><code>mix</code></td><td>sums its inputs</td></tr>
+        <tr><td><code>delay</code></td><td><code>time=3/16 feedback=0.35 mix=0.3</code>, tempo-synced</td></tr>
+        <tr><td><code>reverb</code></td><td><code>size=2 mix=0.25</code></td></tr>
+        <tr><td><code>speaker</code></td><td><code>volume=0.5</code> · only what reaches a speaker is heard</td></tr>
+      </table>
+    </div>
+    <div class="card">
+      <h2>Syntax</h2>
+      <table>
+        <tr><td><code>. drums</code></td><td>a source; the name defaults to the kind</td></tr>
+        <tr><td><code>drums,piano&gt; mix</code></td><td>inputs; spaces allowed, <code>|</code> optional</td></tr>
+        <tr><td><code>&gt; speaker</code></td><td>input from the previous line</td></tr>
+        <tr><td><code>. metro2=metro</code></td><td>a second node of a kind (unnamed ones become <code>metro2</code>)</td></tr>
+        <tr><td><code>clock2&gt; metro</code></td><td>pick an environment instead of the first <code>clock</code></td></tr>
+        <tr><td><code>#. metro</code></td><td>muted; <code># text</code> is a comment</td></tr>
+      </table>
+    </div>
+    <div class="card">
+      <h2>Next nodes to try in otoji</h2>
+      <ul class="ideas">
+        <li><code>vad&gt; drums</code>: speech onsets trigger hits.</li>
+        <li><code>mic&gt; pitch&gt; piano</code>: hum a melody, hear it on piano.</li>
+        <li><code>stt.final&gt; lyrics</code>: transcript lines land on the bar.</li>
+        <li><code>tap&gt; clock</code>: tap tempo drives every node.</li>
+      </ul>
+      <p class="count" style="margin-top:8px">The browser demo has no microphone, so these live in the desktop app.</p>
+    </div>
+  </section>
+</main>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.52.2/min/vs/loader.js"></script>
+<script>
+"use strict";
+// <parser> — the otoji pipeline language (mirrors src/pipeline.rs)
+const ID = /^[A-Za-z0-9_-]+$/;
+const ENV_NEEDS = { metro: ["clock"], drums: ["clock"], piano: ["clock"], bass: ["clock"], delay: ["clock"] };
+const STATUS_SYMS = ["~", "-", "/", ".", "!", "?"];
+
+function isStatusComment(c) {
+  c = c.trim();
+  return c === "off" || STATUS_SYMS.some((s) => c === s || c.startsWith(s + " "));
+}
+function stripStatus(raw) {
+  let i = -1;
+  while ((i = raw.indexOf(" #", i + 1)) !== -1) if (isStatusComment(raw.slice(i + 2))) return raw.slice(0, i).trimEnd();
+  return raw.trimEnd();
+}
+function tokenize(s) {
+  const tokens = []; let i = 0;
+  while (i < s.length) {
+    if (/\s/.test(s[i])) { i++; continue; }
+    if (s[i] === "#") return { tokens, comment: s.slice(i + 1).trim() };
+    let tok = "", q = false;
+    while (i < s.length && (q || !/\s/.test(s[i]))) {
+      const c = s[i++]; tok += c;
+      if (q && c === "\\" && i < s.length) tok += s[i++];
+      else if (c === '"') q = !q;
+    }
+    if (q) throw new Error(`unterminated quote in ${tok}`);
+    tokens.push(tok);
+  }
+  return { tokens, comment: null };
+}
+function parseRef(s) {
+  const m = /^([A-Za-z0-9_-]+)(?:\.([A-Za-z0-9_-]+))?(?::([A-Za-z0-9_-]+))?$/.exec(s);
+  if (!m) throw new Error(`bad input ref \`${s}\``);
+  return { node: m[1], port: m[2] || null, policy: m[3] || null };
+}
+const refText = (r) => r.node + (r.port ? "." + r.port : "") + (r.policy ? ":" + r.policy : "");
+// Returns null when the text is not a node line at all.
+function splitHead(body) {
+  body = body.trimStart();
+  if (body.startsWith(".")) return { head: { kind: "source" }, rest: body.slice(1) };
+  const piped = body.startsWith("|");
+  const rest = piped ? body.slice(1) : body;
+  const close = rest.indexOf(">");
+  if (close < 0) { if (piped) throw new Error("`|` without a closing `>`"); return null; }
+  const inner = rest.slice(0, close).trim();
+  if (!inner) return { head: { kind: "prev" }, rest: rest.slice(close + 1) };
+  try { return { head: { kind: "refs", refs: inner.split(",").map((r) => parseRef(r.trim())) }, rest: rest.slice(close + 1) }; }
+  catch (e) { if (piped) throw e; return null; }
+}
+function parseNode(head, rest, enabled) {
+  const { tokens, comment } = tokenize(rest);
+  if (!tokens.length) throw new Error("missing node kind");
+  const tok = tokens.shift();
+  const eq = tok.indexOf("=");
+  const [id, kind, named] = eq >= 0 ? [tok.slice(0, eq), tok.slice(eq + 1), true] : [tok, tok, false];
+  if (!ID.test(id) || !ID.test(kind)) throw new Error(`bad node \`${tok}\` (want kind or name=kind)`);
+  return { type: "node", enabled, head, id, kind, named, args: tokens, comment: comment && !isStatusComment(comment) ? comment : null };
+}
+function parsePatch(src) {
+  const lines = src.split("\n").map((raw) => {
+    const t = raw.trim();
+    const invalid = (e) => ({ type: "invalid", raw: stripStatus(raw), error: e.message, id: null });
+    if (!t) return { type: "blank" };
+    try {
+      if (t.startsWith("#")) {
+        const h = splitHead(t.slice(1));
+        return h ? parseNode(h.head, h.rest, false) : { type: "comment", text: t.slice(1).trim() };
+      }
+      const h = splitHead(t);
+      if (!h) throw new Error("a node line starts with `.` (source) or `input>`");
+      return parseNode(h.head, h.rest, true);
+    } catch (e) { return invalid(e); }
+  });
+  const p = { lines };
+  for (let k = 0; k <= lines.length; k++) {
+    assignIds(p);
+    const before = errors(p).length;
+    check(p);
+    if (errors(p).length === before) break;
+  }
+  return p;
+}
+const nodes = (p) => p.lines.filter((l) => l.type === "node");
+const errors = (p) => p.lines.map((l, i) => l.type === "invalid" ? { line: i + 1, message: l.error } : null).filter(Boolean);
+function assignIds(p) {
+  const taken = new Set(nodes(p).filter((n) => n.named).map((n) => n.id));
+  for (const n of nodes(p)) {
+    if (n.named) continue;
+    let k = 1, id = n.kind;
+    while (taken.has(id)) id = n.kind + (++k);
+    taken.add(id); n.id = id;
+  }
+}
+function check(p) {
+  for (;;) {
+    const seen = new Map(); let prevValid = null; let bad = null;
+    const invalidIds = new Set(p.lines.filter((l) => l.type === "invalid" && l.id).map((l) => l.id));
+    const valid = new Set(nodes(p).map((n) => n.id));
+    for (let i = 0; i < p.lines.length && !bad; i++) {
+      const l = p.lines[i];
+      if (l.type === "invalid") { prevValid = false; continue; }
+      if (l.type !== "node") continue;
+      let err = null;
+      if (seen.has(l.id)) err = `duplicate node name \`${l.id}\` (first on line ${seen.get(l.id)})`;
+      else if (l.head.kind === "prev") err = prevValid === null ? "`>` with no previous node" : prevValid === false ? "`>` but the previous line has an error" : null;
+      else if (l.head.kind === "refs") {
+        for (const r of l.head.refs) {
+          if (r.node === l.id) { err = `node \`${l.id}\` takes input from itself`; break; }
+          if (valid.has(r.node)) continue;
+          err = invalidIds.has(r.node) ? `input \`${r.node}\` has an error` : `unknown node \`${r.node}\``; break;
+        }
+      }
+      if (err) bad = { i, err };
+      else { seen.set(l.id, i + 1); prevValid = true; }
+    }
+    if (!bad) return;
+    const l = p.lines[bad.i];
+    p.lines[bad.i] = { type: "invalid", raw: nodeSource(l), error: bad.err, id: l.id };
+  }
+}
+function headText(h) { return h.kind === "source" ? "." : h.kind === "prev" ? ">" : h.refs.map(refText).join(",") + ">"; }
+const token = (n) => (n.id !== n.kind ? `${n.id}=${n.kind}` : n.kind);
+function nodeSource(n) {
+  return `${n.enabled ? "" : "#"}${headText(n.head)} ${[token(n), ...n.args].join(" ")}${n.comment ? "  # " + n.comment : ""}`;
+}
+function inputs(p) {
+  const out = new Map(); let prev = null;
+  for (const n of nodes(p)) {
+    out.set(n.id, n.head.kind === "source" ? [] : n.head.kind === "prev" ? (prev ? [{ node: prev, port: null, policy: null }] : []) : n.head.refs);
+    prev = n.id;
+  }
+  return out;
+}
+// Inputs plus implicit environment inputs (first enabled node of the needed kind).
+function effectiveInputs(p) {
+  const kindOf = new Map(nodes(p).map((n) => [n.id, n.kind]));
+  const out = new Map();
+  for (const [id, refs] of inputs(p)) {
+    const all = refs.map((r) => ({ ...r, implicit: false }));
+    for (const need of ENV_NEEDS[kindOf.get(id)] || []) {
+      if (all.some((r) => kindOf.get(r.node) === need)) continue;
+      const env = nodes(p).find((m) => m.enabled && m.kind === need);
+      if (env) all.push({ node: env.id, port: null, policy: null, implicit: true });
+    }
+    out.set(id, all);
+  }
+  return out;
+}
+// Canonical text: columns aligned per block, `>` made explicit once the graph branches.
+function formatPatch(p) {
+  const ins = inputs(p); const fan = new Map();
+  for (const refs of ins.values()) for (const r of refs) fan.set(r.node, (fan.get(r.node) || 0) + 1);
+  const branching = [...fan.values()].some((c) => c > 1);
+  const out = []; let block = [];
+  const flush = () => {
+    const cells = block.filter((b) => b.cells).map((b) => b.cells);
+    const wh = Math.max(0, ...cells.map((c) => c.head.length));
+    const wi = Math.max(0, ...cells.map((c) => c.node.length));
+    for (const b of block) {
+      if (!b.cells) { out.push(b.text); continue; }
+      const c = b.cells;
+      let line = `${c.head.padEnd(wh)} ${c.node.padEnd(wi)} ${c.args}`.trimEnd();
+      if (c.comment) line += "  # " + c.comment;
+      out.push(line);
+    }
+    block = [];
+  };
+  for (const l of p.lines) {
+    if (l.type === "blank") { flush(); out.push(""); continue; }
+    if (l.type === "comment") { block.push({ text: ("# " + l.text).trimEnd() }); continue; }
+    if (l.type === "invalid") { block.push({ text: l.raw }); continue; }
+    let head = l.head.kind === "prev" && !branching ? ">" : l.head.kind === "source" ? "." : ins.get(l.id).map(refText).join(",") + ">";
+    if (!l.enabled) head = "#" + head;
+    block.push({ cells: { head, node: token(l), args: l.args.join(" "), comment: l.comment } });
+  }
+  flush();
+  return out.join("\n").replace(/\n+$/, "") + "\n";
+}
+// </parser>
+
+// ── music ──────────────────────────────────────────────────────────────
+const NOTE = { C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 };
+const QUAL = { "": [0, 4, 7], m: [0, 3, 7], "7": [0, 4, 7, 10], maj7: [0, 4, 7, 11], m7: [0, 3, 7, 10], dim: [0, 3, 6], sus2: [0, 2, 7], sus4: [0, 5, 7] };
+function parseChord(s) {
+  const m = /^([A-G])([#b]?)(maj7|m7|m|7|dim|sus2|sus4)?$/.exec(s);
+  if (!m) throw new Error(`bad chord \`${s}\``);
+  const root = (NOTE[m[1]] + (m[2] === "#" ? 1 : m[2] === "b" ? -1 : 0) + 12) % 12;
+  return { name: s, root, ivs: QUAL[m[3] || ""] };
+}
+const midiHz = (n) => 440 * Math.pow(2, (n - 69) / 12);
+const NAMES = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
+function argMap(args) {
+  const o = { _: [] };
+  for (const a of args) {
+    const i = a.indexOf("=");
+    if (i > 0) o[a.slice(0, i)] = a.slice(i + 1).replace(/^"(.*)"$/, "$1"); else o._.push(a.replace(/^"(.*)"$/, "$1"));
+  }
+  return o;
+}
+function num(o, k, def, lo, hi) {
+  if (o[k] === undefined) return def;
+  const v = Number(o[k]);
+  if (!Number.isFinite(v) || v < lo || v > hi) throw new Error(`${k}= wants ${lo}–${hi}`);
+  return v;
+}
+function fraction(s) { // "3/16" → beats
+  const m = /^(\d+)\/(\d+)$/.exec(s || "3/16");
+  if (!m) throw new Error("time= wants a note length like 3/16");
+  return (Number(m[1]) / Number(m[2])) * 4;
+}
+
+const KINDS = {
+  clock: { source: true, build: (o) => ({ bpm: num(o, "bpm", 92, 30, 260), sig: num(o, "sig", 4, 2, 12) }) },
+  metro: { source: true, build: (o) => ({ tone: num(o, "tone", 1000, 200, 4000) }) },
+  drums: {
+    source: true,
+    build: (o) => {
+      const lanes = (o.pattern || "x...x...x...x...|....x.......x...|..x...x...x...x.").split("|");
+      if (lanes.length > 3) throw new Error("pattern= takes up to 3 lanes: kick|snare|hat");
+      for (const l of lanes) if (!/^[xX.]+$/.test(l)) throw new Error("pattern= uses x, X and .");
+      return { lanes };
+    },
+  },
+  piano: {
+    source: true,
+    build: (o) => ({ chords: (o.chords || "Am F C G").split(/\s+/).map(parseChord), style: o.style === "block" ? "block" : "arp", oct: num(o, "oct", 4, 2, 6) }),
+  },
+  bass: { source: true, build: (o) => ({ chords: (o.chords || "Am F C G").split(/\s+/).map(parseChord) }) },
+  mix: { build: () => ({}) },
+  delay: { build: (o) => ({ beats: fraction(o.time), feedback: num(o, "feedback", 0.35, 0, 0.9), mix: num(o, "mix", 0.3, 0, 1) }) },
+  reverb: { build: (o) => ({ size: num(o, "size", 2, 0.3, 6), mix: num(o, "mix", 0.25, 0, 1) }) },
+  speaker: { build: (o) => ({ volume: num(o, "volume", 0.5, 0, 1) }) },
+};
+
+// ── runtime ────────────────────────────────────────────────────────────
+let ctx = null, master = null, running = false;
+let patch = parsePatch(""), live = new Map(); // id → runtime node
+const clocks = new Map(); // id → { nextTime, step, bpm, sig }
+const STEP_AHEAD = 0.12;
+
+function ensureAudio() {
+  if (ctx) return;
+  ctx = new (window.AudioContext || window.webkitAudioContext)();
+  const limiter = ctx.createDynamicsCompressor();
+  limiter.threshold.value = -12; limiter.knee.value = 6; limiter.ratio.value = 20; limiter.attack.value = 0.003; limiter.release.value = 0.2;
+  master = ctx.createGain(); master.gain.value = volume();
+  master.connect(limiter).connect(ctx.destination);
+}
+const volume = () => Number(document.getElementById("vol").value) / 100;
+
+function rebuild() {
+  // Fade out and drop the old audio nodes; keep clock positions.
+  for (const n of live.values()) if (n.out && ctx) { n.out.gain.setTargetAtTime(0, ctx.currentTime, 0.015); const o = n.out; setTimeout(() => o.disconnect(), 120); }
+  live = new Map();
+  const eff = effectiveInputs(patch);
+  for (const n of nodes(patch)) {
+    const spec = KINDS[n.kind];
+    const r = { node: n, busy: [], detail: "", error: null, out: null, inGain: null };
+    if (!spec) r.error = `unknown kind \`${n.kind}\` (try clock, metro, drums, piano, bass, mix, delay, reverb, speaker)`;
+    else try { r.cfg = spec.build(argMap(n.args)); } catch (e) { r.error = e.message; }
+    if (!r.error && spec.source && eff.get(n.id).some((x) => !x.implicit && KINDS[kindOfId(x.node)]?.source && kindOfId(x.node) !== "clock")) r.error = `${n.kind} makes its own sound and takes no audio input`;
+    if (!r.error && ENV_NEEDS[n.kind] && !eff.get(n.id).some((x) => kindOfId(x.node) === "clock")) r.error = "needs a clock: add `. clock bpm=92`";
+    live.set(n.id, r);
+  }
+  if (!ctx) return;
+  // Audio nodes: every node gets an output gain; non-sources get an input gain.
+  for (const r of live.values()) {
+    if (r.error) continue;
+    const k = r.node.kind;
+    r.out = ctx.createGain(); r.out.gain.value = r.node.enabled ? 1 : 0;
+    if (k === "clock") continue;
+    if (!KINDS[k].source) {
+      r.inGain = ctx.createGain();
+      if (k === "delay") {
+        const d = ctx.createDelay(4), fb = ctx.createGain(), wet = ctx.createGain();
+        r.delay = d; fb.gain.value = r.cfg.feedback; wet.gain.value = r.cfg.mix;
+        r.inGain.connect(r.out); r.inGain.connect(d); d.connect(fb).connect(d); d.connect(wet).connect(r.out);
+      } else if (k === "reverb") {
+        const conv = ctx.createConvolver(), wet = ctx.createGain();
+        wet.gain.value = r.cfg.mix; conv.buffer = impulse(r.cfg.size);
+        r.inGain.connect(r.out); r.inGain.connect(conv).connect(wet).connect(r.out);
+      } else if (k === "speaker") {
+        r.inGain.connect(r.out); r.out.gain.value = r.node.enabled ? r.cfg.volume : 0; r.out.connect(master);
+      } else r.inGain.connect(r.out);
+    }
+  }
+  for (const r of live.values()) {
+    if (!r.inGain) continue;
+    for (const x of eff.get(r.node.id)) {
+      const src = live.get(x.node);
+      if (src && src.out && kindOfId(x.node) !== "clock") src.out.connect(r.inGain);
+    }
+  }
+  for (const r of live.values()) if (r.node.kind === "clock" && !r.error) {
+    const c = clocks.get(r.node.id) || { nextTime: ctx.currentTime + 0.05, step: 0 };
+    c.bpm = r.cfg.bpm; c.sig = r.cfg.sig; clocks.set(r.node.id, c);
+  }
+}
+function kindOfId(id) { const n = nodes(patch).find((m) => m.id === id); return n ? n.kind : null; }
+
+function impulse(seconds) {
+  const len = Math.floor(ctx.sampleRate * seconds), buf = ctx.createBuffer(2, len, ctx.sampleRate);
+  for (let ch = 0; ch < 2; ch++) { const d = buf.getChannelData(ch); for (let i = 0; i < len; i++) d[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / len, 2.6); }
+  return buf;
+}
+// One envelope-shaped voice into `dest`.
+function voice(dest, t, { type = "sine", freq, dur, peak = 0.3, attack = 0.004, endFreq = null, filter = null }) {
+  const o = ctx.createOscillator(), g = ctx.createGain();
+  o.type = type; o.frequency.setValueAtTime(freq, t);
+  if (endFreq) o.frequency.exponentialRampToValueAtTime(endFreq, t + dur * 0.8);
+  g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(peak, t + attack); g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+  let head = o;
+  if (filter) { const f = ctx.createBiquadFilter(); f.type = filter.type; f.frequency.value = filter.freq; f.Q.value = filter.q || 0.7; o.connect(f); head = f; }
+  head.connect(g).connect(dest); o.start(t); o.stop(t + dur + 0.02);
+}
+let noiseBuf = null;
+function noise(dest, t, dur, peak, hp) {
+  if (!noiseBuf) { noiseBuf = ctx.createBuffer(1, ctx.sampleRate, ctx.sampleRate); const d = noiseBuf.getChannelData(0); for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1; }
+  const s = ctx.createBufferSource(), f = ctx.createBiquadFilter(), g = ctx.createGain();
+  s.buffer = noiseBuf; f.type = "highpass"; f.frequency.value = hp;
+  g.gain.setValueAtTime(peak, t); g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+  s.connect(f).connect(g).connect(dest); s.start(t); s.stop(t + dur + 0.02);
+}
+const mark = (r, t, dur) => { r.busy.push([t, t + Math.max(dur, 0.1)]); if (r.busy.length > 64) r.busy.shift(); };
+
+function playStep(r, c, step, t) {
+  const k = r.node.kind, cfg = r.cfg, out = r.out;
+  const stepDur = 60 / c.bpm / 4, beat = Math.floor(step / 4) % c.sig, bar = Math.floor(step / (4 * c.sig));
+  if (k === "metro" && step % 4 === 0) {
+    voice(out, t, { freq: beat === 0 ? cfg.tone * 1.6 : cfg.tone, dur: 0.05, peak: beat === 0 ? 0.5 : 0.3, type: "square", filter: { type: "lowpass", freq: 5000 } });
+    mark(r, t, 0.12); r.detail = `beat ${beat + 1}/${c.sig}`;
+  }
+  if (k === "drums") {
+    const i = step % 16; const [kick = "", snare = "", hat = ""] = cfg.lanes; let hit = false;
+    const at = (lane) => lane[i % lane.length];
+    if (kick && at(kick) !== ".") { voice(out, t, { freq: 150, endFreq: 42, dur: 0.32, peak: at(kick) === "X" ? 0.95 : 0.75 }); hit = true; }
+    if (snare && at(snare) !== ".") { noise(out, t, 0.16, at(snare) === "X" ? 0.5 : 0.35, 1400); voice(out, t, { freq: 190, dur: 0.1, peak: 0.18, type: "triangle" }); hit = true; }
+    if (hat && at(hat) !== ".") { noise(out, t, 0.045, at(hat) === "X" ? 0.22 : 0.13, 7000); hit = true; }
+    if (hit) mark(r, t, 0.1);
+    r.detail = `step ${String(i + 1).padStart(2)}/16`;
+  }
+  if (k === "piano" || k === "bass") {
+    const ch = cfg.chords[bar % cfg.chords.length];
+    if (k === "piano") {
+      const base = 12 * (cfg.oct + 1) + ch.root;
+      if (cfg.style === "block" && step % (4 * c.sig) === 0) {
+        for (const iv of ch.ivs) voice(out, t, { type: "triangle", freq: midiHz(base + iv), dur: stepDur * 4 * c.sig * 0.95, peak: 0.12, attack: 0.01 });
+        mark(r, t, stepDur * 4 * c.sig);
+      } else if (cfg.style === "arp" && step % 2 === 0) {
+        const seq = [...ch.ivs, ch.ivs[1] + 12]; const iv = seq[(step / 2) % seq.length];
+        voice(out, t, { type: "triangle", freq: midiHz(base + iv), dur: stepDur * 3, peak: 0.16, attack: 0.006 });
+        mark(r, t, stepDur * 1.6);
+      }
+      r.detail = `${ch.name} · ${cfg.style}`;
+    } else if (step % (2 * 4) === 0) {
+      const n = 36 + ch.root;
+      voice(out, t, { type: "sawtooth", freq: midiHz(n), dur: stepDur * 6, peak: 0.28, attack: 0.008, filter: { type: "lowpass", freq: 420, q: 4 } });
+      mark(r, t, stepDur * 5); r.detail = `${NAMES[ch.root]}${2}`;
+    }
+  }
+}
+
+function tick() {
+  if (!running) return;
+  const eff = effectiveInputs(patch);
+  for (const [cid, c] of clocks) {
+    const cr = live.get(cid);
+    if (!cr || cr.error) continue;
+    while (c.nextTime < ctx.currentTime + STEP_AHEAD) {
+      applyPendingAtBar(cid, c);
+      for (const r of live.values()) {
+        if (r.error || !r.node.enabled || !KINDS[r.node.kind]?.source || r.node.kind === "clock") continue;
+        if (!eff.get(r.node.id).some((x) => x.node === cid)) continue;
+        playStep(r, c, c.step, c.nextTime);
+      }
+      // Tempo-synced delays follow the clock they take.
+      for (const r of live.values()) if (r.delay && eff.get(r.node.id).some((x) => x.node === cid)) r.delay.delayTime.setTargetAtTime(Math.min(3.9, r.cfg.beats * 60 / c.bpm), ctx.currentTime, 0.05);
+      if (c.step % 4 === 0) { mark(cr, c.nextTime, 0.12); c.beatAt = c.nextTime; }
+      c.nextTime += 60 / c.bpm / 4; c.step++;
+    }
+  }
+}
+
+// ── status ─────────────────────────────────────────────────────────────
+function reaches(id, kind, eff, seen = new Set()) { // does `id` feed a node of `kind`?
+  if (seen.has(id)) return false; seen.add(id);
+  for (const [tid, refs] of eff) if (refs.some((x) => x.node === id && !x.implicit)) { if (kindOfId(tid) === kind || reaches(tid, kind, eff, seen)) return true; }
+  return false;
+}
+function soundingAt(r, t) { return r.busy.some(([a, b]) => a <= t && t <= b); }
+function upstreamSounding(id, eff, t, seen = new Set()) {
+  if (seen.has(id)) return false; seen.add(id);
+  return (eff.get(id) || []).some((x) => { const s = live.get(x.node); return s && s.node.enabled && (soundingAt(s, t) || upstreamSounding(x.node, eff, t, seen)); });
+}
+function nodeStatus(r, eff) {
+  const n = r.node, k = n.kind, t = ctx ? ctx.currentTime : 0;
+  if (r.error) return ["!", r.error];
+  if (!n.enabled) return ["off", ""];
+  if (k === "speaker") {
+    if (!running) return ["?", `press Start · vol ${Math.round(r.cfg.volume * 100)}%`];
+    return [upstreamSounding(n.id, eff, t) ? "~" : "-", `vol ${Math.round(r.cfg.volume * 100)}% · out`];
+  }
+  if (k === "clock") {
+    const c = clocks.get(n.id);
+    if (!running || !c) return ["-", `${r.cfg.bpm} bpm · ${r.cfg.sig}/4 · stopped`];
+    const step = Math.max(0, c.step - 1), beat = Math.floor(step / 4) % c.sig, bar = Math.floor(step / (4 * c.sig)) + 1;
+    return [soundingAt(r, t) ? "~" : "-", `${c.bpm} bpm · bar ${bar} · beat ${beat + 1}/${c.sig}`];
+  }
+  const routed = k === "speaker" || reaches(n.id, "speaker", eff);
+  const extra = routed ? "" : " · not routed to a speaker";
+  if (k === "reverb" && running && !r.out) return [".", "building"];
+  if (!KINDS[k].source) {
+    const ins = (eff.get(n.id) || []).filter((x) => kindOfId(x.node) !== "clock").length;
+    const what = k === "delay" ? `${n.args.find((a) => a.startsWith("time=")) || "time=3/16"}` : k === "reverb" ? `size ${r.cfg.size}s · mix ${Math.round(r.cfg.mix * 100)}%` : `${ins} input${ins === 1 ? "" : "s"}`;
+    return [running && upstreamSounding(n.id, eff, t) ? "~" : "-", what + extra];
+  }
+  if (!running) return ["-", "stopped" + extra];
+  return [soundingAt(r, t) ? "~" : "-", (r.detail || "waiting for the bar") + extra];
+}
+const SYM_CLASS = { "~": "stream", "!": "err", "?": "user", off: "off", ".": "load" };
+// One row per source line: { sym, detail, node } (sym "" = no status).
+function statusRows() {
+  const eff = effectiveInputs(patch);
+  return patch.lines.map((l) => {
+    if (l.type === "node") {
+      const r = live.get(l.id); const [sym, detail] = r ? nodeStatus(r, eff) : ["-", ""];
+      return { node: true, sym, detail };
+    }
+    if (l.type === "invalid") return { node: false, sym: "!", detail: l.error };
+    return { node: false, sym: "", detail: "" };
+  });
+}
+let rowsKey = "";
+function renderStatus() {
+  const rows = statusRows();
+  // Pending Ctrl+E toggles show on their line until the next bar.
+  for (const ln of ui.pendingLines()) if (rows[ln - 1]) rows[ln - 1].detail += ` · toggles at bar ${nextBarNumber()}`;
+  const key = rows.map((r) => r.sym + r.detail).join("\n") + "|" + ui.textVersion();
+  if (key === rowsKey) return;
+  rowsKey = key;
+  ui.renderStatus(rows);
+  const errs = rows.filter((r) => r.sym === "!").length;
+  const cnt = document.getElementById("count");
+  cnt.textContent = `${nodes(patch).length} nodes · ${errs ? errs + " with errors (the rest keeps playing)" : "no errors"}`;
+  cnt.classList.toggle("has-errors", errs > 0);
+}
+function firstClock() {
+  const r = [...live.values()].find((x) => x.node.kind === "clock" && x.node.enabled && !x.error);
+  return r ? { r, c: clocks.get(r.node.id) } : null;
+}
+function nextBarNumber() {
+  const fc = firstClock(); if (!fc || !fc.c) return 1;
+  return Math.floor(fc.c.step / (4 * fc.c.sig)) + 2;
+}
+function renderLamps() {
+  const fc = firstClock(); const c = fc && fc.c; const sig = fc ? fc.r.cfg.sig : 4;
+  const box = document.getElementById("lamps");
+  if (box.children.length !== sig) box.replaceChildren(...Array.from({ length: sig }, () => Object.assign(document.createElement("span"), { className: "lamp" })));
+  const beat = running && c ? Math.floor(Math.max(0, c.step - 1) / 4) % c.sig : -1;
+  const lit = running && c && ctx.currentTime - (c.beatAt || 0) < 0.12;
+  [...box.children].forEach((el, i) => { el.classList.toggle("on", i === beat); el.classList.toggle("down", i === beat && lit); });
+  document.getElementById("pos").textContent = running && c ? `${c.bpm} bpm · bar ${Math.floor(Math.max(0, c.step - 1) / (4 * c.sig)) + 1}` : "stopped";
+}
+
+// ── line toggling (the `#` prefix) ─────────────────────────────────────
+// Returns the toggled text, or null for lines that aren't nodes (comments,
+// blanks, broken lines stay as they are).
+function toggledLine(t) {
+  const trimmed = t.trimStart(), indent = t.slice(0, t.length - trimmed.length);
+  try {
+    if (trimmed.startsWith("#")) return splitHead(trimmed.slice(1)) ? indent + trimmed.slice(1) : null;
+    return splitHead(trimmed) ? indent + "#" + trimmed : null;
+  } catch (e) { return null; }
+}
+
+// ── editor (Monaco, with a plain textarea fallback) ────────────────────
+const EXAMPLES = {
+  groove: `# Edit any line; it applies as you type. Ctrl+T mutes a line, Ctrl+E at the next bar.
+.                       clock   bpm=92 sig=4
+#.                      metro
+.                       drums   pattern="x.....x...x.....|....x.......x...|x.x.x.x.x.x.x.xX"
+.                       piano   chords="Am F C G" style=arp oct=4
+.                       bass    chords="Am F C G"
+metro,drums,piano,bass> mix
+>                       reverb  size=2 mix=0.25
+>                       speaker volume=0.5
+`,
+  metro: `# 节拍器: accent on beat 1, three beats to the bar
+. clock  bpm=72 sig=3
+. metro  tone=900
+> speaker volume=0.4
+`,
+  poly: `# Two clocks, 90 and 135 bpm: three clicks against two
+.               clock        bpm=90
+.               clock2=clock bpm=135
+.               metro        tone=800
+clock2>         metro2=metro tone=1500
+metro,metro2>   speaker      volume=0.4
+`,
+  dub: `# Block chords through a tempo-synced delay
+.               clock   bpm=76
+.               drums   pattern="x.......x.......|....x.......x..."
+.               piano   chords="Dm7 Gm7 C Fmaj7" style=block oct=4
+piano>          delay   time=3/16 feedback=0.45 mix=0.35
+drums,delay>    reverb  size=3 mix=0.3
+>               speaker volume=0.5
+`,
+};
+
+function applyText(text) {
+  patch = parsePatch(text.replace(/\n$/, ""));
+  rebuild(); rowsKey = ""; renderStatus();
+  try { localStorage.setItem("otoji-patchbay", text); } catch (e) { /* storage unavailable */ }
+}
+
+// Fallback UI: textarea + status column (used if Monaco can't load).
+function textareaUI() {
+  const code = document.getElementById("code");
+  document.getElementById("fallback").hidden = false;
+  document.getElementById("monaco").hidden = true;
+  let version = 0, timer = 0;
+  const fit = () => { code.style.height = "auto"; code.style.height = code.scrollHeight + "px"; };
+  const changed = () => { version++; fit(); clearTimeout(timer); timer = setTimeout(() => applyText(code.value), 120); };
+  code.addEventListener("input", changed);
+  const toggleLines = (lns) => {
+    const lines = code.value.split("\n");
+    for (const ln of lns) { const t = toggledLine(lines[ln - 1] ?? ""); if (t !== null) lines[ln - 1] = t; }
+    code.value = lines.join("\n"); version++; fit(); applyText(code.value);
+  };
+  const cursorLines = () => {
+    const before = code.value.slice(0, code.selectionStart).split("\n").length;
+    const after = code.value.slice(0, code.selectionEnd).split("\n").length;
+    return Array.from({ length: after - before + 1 }, (_, i) => before + i);
+  };
+  let pending = new Set();
+  code.addEventListener("keydown", (e) => {
+    if (!e.ctrlKey || e.metaKey) return;
+    const k = e.key.toLowerCase();
+    if (k === "t") { e.preventDefault(); toggleLines(cursorLines()); }
+    if (k === "e") { e.preventDefault(); if (!running) toggleLines(cursorLines()); else { cursorLines().forEach((l) => pending.add(l)); rowsKey = ""; } }
+  });
+  document.getElementById("status").addEventListener("click", (e) => {
+    const row = e.target.closest(".srow.node"); if (row) toggleLines([Number(row.dataset.line) + 1]);
+  });
+  return {
+    getText: () => code.value,
+    setText: (t) => { code.value = t; changed(); },
+    textVersion: () => version,
+    toggleLines,
+    pendingLines: () => [...pending],
+    takePending: () => { const p = [...pending]; pending = new Set(); return p; },
+    renderStatus: (rows) => {
+      document.getElementById("status").replaceChildren(...rows.map((r, i) => {
+        const d = document.createElement("span");
+        d.className = "srow" + (r.node ? " node" : "") + (SYM_CLASS[r.sym] ? " s-" + SYM_CLASS[r.sym] : "");
+        d.dataset.line = i;
+        if (r.sym) d.textContent = "# " + r.sym + (r.detail ? " " + r.detail : "");
+        return d;
+      }));
+    },
+  };
+}
+
+// Monaco UI: status is plain text injected after each line, aligned per block.
+function monacoUI(monaco) {
+  const css = getComputedStyle(document.documentElement);
+  const v = (n) => css.getPropertyValue(n).trim();
+  const theme = (dark) => ({
+    base: dark ? "vs-dark" : "vs", inherit: true,
+    rules: [
+      { token: "comment", foreground: v("--muted").slice(1), fontStyle: "italic" },
+      { token: "disabled", foreground: v("--muted").slice(1) },
+      { token: "keyword", foreground: v("--signal").slice(1), fontStyle: "bold" },
+      { token: "type", foreground: v("--focus").slice(1) },
+      { token: "function", foreground: v("--ink").slice(1), fontStyle: "bold" },
+      { token: "attribute.name", foreground: v("--ok").slice(1) },
+      { token: "string", foreground: v("--warn").slice(1) },
+      { token: "number", foreground: v("--warn").slice(1) },
+    ],
+    colors: { "editor.background": v("--screen"), "editor.foreground": v("--ink"), "editorLineNumber.foreground": v("--muted") },
+  });
+  const isDark = () => matchMedia("(prefers-color-scheme: dark)").matches && document.documentElement.dataset.theme !== "light" || document.documentElement.dataset.theme === "dark";
+  monaco.languages.register({ id: "otoji" });
+  monaco.languages.setMonarchTokensProvider("otoji", {
+    tokenizer: { root: [
+      [/^\s*#(?=\s*(\.|\||[\w.,:\- ]*>)).*$/, "disabled"],
+      [/^\s*#.*$/, "comment"],
+      [/^(\s*)(\.)(\s+)([\w-]+(?:=[\w-]+)?)/, ["", "keyword", "", "function"]],
+      [/^(\s*\|?\s*[\w.,:\- ]*>)(\s*)([\w-]+(?:=[\w-]+)?)/, ["type", "", "function"]],
+      [/\s#.*$/, "comment"],
+      [/"([^"\\]|\\.)*"/, "string"],
+      [/[\w-]+(?==)/, "attribute.name"],
+      [/\$\{?\w+\}?/, "variable"],
+      [/\d+(\.\d+)?(\/\d+)?/, "number"],
+    ] },
+  });
+  const host = document.getElementById("monaco");
+  monaco.editor.defineTheme("otoji-light", theme(false));
+  // Dark palette: read it while the dark tokens apply.
+  const prev = document.documentElement.dataset.theme;
+  document.documentElement.dataset.theme = "dark";
+  const darkCss = getComputedStyle(document.documentElement);
+  const dv = (n) => darkCss.getPropertyValue(n).trim();
+  monaco.editor.defineTheme("otoji-dark", {
+    base: "vs-dark", inherit: true,
+    rules: theme(true).rules.map((r) => ({ ...r, foreground: dv(Object.entries({ comment: "--muted", disabled: "--muted", keyword: "--signal", type: "--focus", function: "--ink", "attribute.name": "--ok", string: "--warn", number: "--warn" }).find(([t]) => t === r.token)[1]).slice(1) })),
+    colors: { "editor.background": dv("--screen"), "editor.foreground": dv("--ink"), "editorLineNumber.foreground": dv("--muted") },
+  });
+  if (prev) document.documentElement.dataset.theme = prev; else delete document.documentElement.dataset.theme;
+
+  const editor = monaco.editor.create(host, {
+    language: "otoji", theme: isDark() ? "otoji-dark" : "otoji-light",
+    fontFamily: v("--font-code"), fontSize: 13, lineHeight: 22, minimap: { enabled: false },
+    wordWrap: "off", scrollBeyondLastLine: false, automaticLayout: true, renderWhitespace: "none",
+    tabSize: 2, insertSpaces: true, lineNumbersMinChars: 3, glyphMargin: false, folding: false,
+    padding: { top: 10, bottom: 10 }, fixedOverflowWidgets: true,
+  });
+  matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => monaco.editor.setTheme(isDark() ? "otoji-dark" : "otoji-light"));
+  const model = editor.getModel();
+  let timer = 0;
+  model.onDidChangeContent(() => { clearTimeout(timer); timer = setTimeout(() => applyText(model.getValue()), 120); });
+
+  const MOD = /Mac|iPhone|iPad/.test(navigator.platform) ? monaco.KeyMod.WinCtrl : monaco.KeyMod.CtrlCmd;
+  const selLines = () => {
+    const set = new Set();
+    for (const s of editor.getSelections()) for (let l = s.startLineNumber; l <= s.endLineNumber; l++) set.add(l);
+    return [...set];
+  };
+  const toggleLines = (lns) => {
+    const edits = [];
+    for (const ln of lns) {
+      const t = toggledLine(model.getLineContent(ln));
+      if (t !== null) edits.push({ range: new monaco.Range(ln, 1, ln, model.getLineMaxColumn(ln)), text: t });
+    }
+    if (!edits.length) return;
+    editor.pushUndoStop(); editor.executeEdits("toggle", edits); editor.pushUndoStop();
+    clearTimeout(timer); applyText(model.getValue());
+  };
+  // Pending Ctrl+E toggles are decorations, so they follow edits above them.
+  let pendingIds = [];
+  const pendingLines = () => pendingIds.map((id) => model.getDecorationRange(id)).filter(Boolean).map((r) => r.startLineNumber);
+  editor.addCommand(MOD | monaco.KeyCode.KeyT, () => toggleLines(selLines()));
+  editor.addCommand(MOD | monaco.KeyCode.KeyE, () => {
+    if (!running) return toggleLines(selLines());
+    const add = selLines().filter((l) => !pendingLines().includes(l)).map((l) => ({
+      range: new monaco.Range(l, 1, l, 1), options: { isWholeLine: true, className: "pending-line", stickiness: 1 },
+    }));
+    pendingIds = pendingIds.concat(editor.deltaDecorations([], add)); rowsKey = "";
+  });
+  editor.addCommand(MOD | monaco.KeyCode.KeyB, () => toggleTransport());
+  editor.onMouseDown((e) => {
+    if (e.target.detail && e.target.detail.injectedText && e.target.position) toggleLines([e.target.position.lineNumber]);
+  });
+
+  let statusIds = [], version = 0;
+  model.onDidChangeContent(() => version++);
+  return {
+    getText: () => model.getValue(),
+    setText: (t) => { editor.pushUndoStop(); editor.executeEdits("load", [{ range: model.getFullModelRange(), text: t }]); editor.pushUndoStop(); },
+    textVersion: () => version,
+    toggleLines,
+    pendingLines,
+    takePending: () => { const l = pendingLines(); editor.deltaDecorations(pendingIds, []); pendingIds = []; return l; },
+    renderStatus: (rows) => {
+      // Align the status column per block (runs of non-blank lines).
+      const n = model.getLineCount(), cols = new Array(n).fill(0);
+      for (let i = 0; i < n; ) {
+        if (!model.getLineContent(i + 1).trim()) { i++; continue; }
+        let j = i, w = 0;
+        while (j < n && model.getLineContent(j + 1).trim()) { if (!model.getLineContent(j + 1).trim().startsWith("# ")) w = Math.max(w, model.getLineLength(j + 1)); j++; }
+        for (let k = i; k < j; k++) cols[k] = w;
+        i = j;
+      }
+      const decos = [];
+      rows.forEach((r, i) => {
+        if (!r.sym || i >= n) return;
+        const len = model.getLineLength(i + 1);
+        const pad = " ".repeat(Math.max(2, cols[i] - len + 2));
+        decos.push({
+          range: new monaco.Range(i + 1, len + 1, i + 1, len + 1),
+          options: { showIfCollapsed: true, after: { content: `${pad}# ${r.sym}${r.detail ? " " + r.detail : ""}`, inlineClassName: "st" + (SYM_CLASS[r.sym] ? " st-" + SYM_CLASS[r.sym] : ""), cursorStops: 0 } },
+        });
+      });
+      statusIds = editor.deltaDecorations(statusIds, decos);
+    },
+    focus: () => editor.focus(),
+  };
+}
+
+let ui = { getText: () => "", setText: () => {}, textVersion: () => 0, toggleLines: () => {}, pendingLines: () => [], takePending: () => [], renderStatus: () => {} };
+function boot(chosen) {
+  ui = chosen;
+  let saved = null;
+  try { saved = localStorage.getItem("otoji-patchbay"); } catch (e) { /* storage unavailable */ }
+  const text = saved || EXAMPLES.groove;
+  ui.setText(text); applyText(text);
+}
+document.getElementById("fmtBtn").addEventListener("click", () => { const t = formatPatch(parsePatch(ui.getText().replace(/\n$/, ""))); ui.setText(t); applyText(t); });
+document.getElementById("example").addEventListener("change", (e) => { ui.setText(EXAMPLES[e.target.value]); applyText(EXAMPLES[e.target.value]); });
+
+// Pending (Ctrl+E) toggles land when the first clock starts a new bar.
+function applyPendingAtBar(cid, c) {
+  const fc = firstClock();
+  if (!fc || fc.r.node.id !== cid || c.step % (4 * c.sig) !== 0) return;
+  const lines = ui.takePending();
+  if (lines.length) ui.toggleLines(lines);
+}
+
+// ── transport ──────────────────────────────────────────────────────────
+const startBtn = document.getElementById("startBtn");
+async function start() {
+  ensureAudio(); await ctx.resume();
+  master.gain.setTargetAtTime(volume(), ctx.currentTime, 0.02);
+  running = true; rebuild();
+  for (const c of clocks.values()) { c.nextTime = ctx.currentTime + 0.06; c.step = 0; }
+  startBtn.setAttribute("aria-pressed", "true"); startBtn.textContent = "● Playing";
+}
+function stop() {
+  running = false;
+  if (ctx) { master.gain.setTargetAtTime(0, ctx.currentTime, 0.01); setTimeout(() => { if (!running && ctx) ctx.suspend(); }, 80); }
+  clocks.clear();
+  startBtn.setAttribute("aria-pressed", "false"); startBtn.textContent = "▶ Start audio";
+  rowsKey = ""; renderStatus();
+}
+function toggleTransport() { running ? stop() : start(); }
+startBtn.addEventListener("click", toggleTransport);
+document.getElementById("stopBtn").addEventListener("click", stop);
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape") stop();
+  // Ctrl+B outside the editor too (inside, Monaco handles it).
+  if (e.ctrlKey && !e.metaKey && e.key.toLowerCase() === "b" && !e.target.closest(".monaco-editor")) { e.preventDefault(); toggleTransport(); }
+});
+document.addEventListener("visibilitychange", () => { if (document.hidden) stop(); });
+document.getElementById("vol").addEventListener("input", () => {
+  document.getElementById("volText").textContent = volume() * 100 + "%";
+  if (ctx) master.gain.setTargetAtTime(running ? volume() : 0, ctx.currentTime, 0.02);
+});
+
+setInterval(tick, 25);
+setInterval(() => { renderStatus(); renderLamps(); }, 50);
+
+// Monaco from cdnjs; its CSS is inlined above (the loader's own <link>
+// stylesheets are switched off). Falls back to the textarea after 10 s.
+let booted = false;
+const fallback = setTimeout(() => { if (!booted) { booted = true; boot(textareaUI()); } }, 10000);
+if (window.require && window.require.config) {
+  window.MonacoEnvironment = {
+    getWorkerUrl: () => URL.createObjectURL(new Blob([
+      'self.MonacoEnvironment={baseUrl:"https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.52.2/min/"};importScripts("https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.52.2/min/vs/base/worker/workerMain.js");',
+    ], { type: "text/javascript" })),
+  };
+  require.config({ paths: { vs: "https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.52.2/min/vs" }, "vs/css": { disabled: true } });
+  require(["vs/editor/editor.main"], () => {
+    if (booted) return;
+    booted = true; clearTimeout(fallback); boot(monacoUI(window.monaco));
+  }, () => { if (!booted) { booted = true; clearTimeout(fallback); boot(textareaUI()); } });
+} else { booted = true; clearTimeout(fallback); boot(textareaUI()); }
+</script>
