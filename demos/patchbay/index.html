@@ -871,13 +871,35 @@ function ensureAudio() {
   limiter.threshold.value = -12; limiter.knee.value = 6; limiter.ratio.value = 20; limiter.attack.value = 0.003; limiter.release.value = 0.2;
   master = ctx.createGain(); master.gain.value = volume();
   master.connect(limiter).connect(ctx.destination);
+  // Physical models (pm-worklet.js); until they load, the oscillator voices play.
+  if (ctx.audioWorklet && !/[?&]pm=0\b/.test(location.search)) ctx.audioWorklet.addModule("pm-worklet.js").then(() => { pmReady = true; }, () => { pmReady = false; });
+}
+let pmReady = false;
+// Which physical model and preset an instrument line gets, from its kind and its name.
+function pmFor(kind, id) {
+  const n = id.toLowerCase(), has = (re) => re.test(n);
+  if (kind === "pluck") {
+    if (has(/sitar|veena|vina|tanpura|tambura|rudra|been|ektara|dotara/)) return { model: "pluck", params: { t60: 4, bright: 0.55, pos: 0.12, buzz: true, body: [[160, 2], [700, 3]] } };
+    if (has(/pipa|biwa|koto|zheng|guzheng|qin|gayageum|geomungo|ajaeng|dan-tranh|kanklės|kankles|kantele|gusli|psalter|santur|qanun|kanun|cimbalom|hackbrett|yangqin/)) return { model: "pluck", params: { t60: 3.2, bright: 0.6, pos: 0.1, body: [[220, 2], [900, 3]] } };
+    if (has(/harp|kora|chang|konghou|telyn|clarsach|arpa|lyre|lyra|kithara|kinnor|benet|saung|krar|begena|barbitos|phorminx/)) return { model: "pluck", params: { t60: 3.5, bright: 0.45, pos: 0.3, body: [[150, 1.5], [450, 2]] } };
+    if (has(/charango|mandolin|bandurria|cavaquinho|balalaika|ukulele|jarana|bandolim|domra|tiple/)) return { model: "pluck", params: { t60: 1.3, bright: 0.75, pos: 0.15, mute: true, body: [[300, 2], [1100, 3]] } };
+    if (has(/banjo|shamisen|sanxian|gimbri|guembri|ngoni|xalam|akonting/)) return { model: "pluck", params: { t60: 1.2, bright: 0.8, pos: 0.08, buzz: true, mute: true, body: [[400, 3], [1500, 4]] } };
+    return { model: "pluck", params: { t60: 2.2, bright: 0.4, pos: 0.18, body: [[110, 1.5], [260, 2], [520, 3]] } }; // oud, lute, tar, guitar, pipa-like lutes
+  }
+  if (kind === "strings") {
+    if (has(/erhu|huqin|jinghu|banhu|gehu|haegeum|dan-nhi|sihu/)) return { model: "bowed", params: { beta: 0.1, force: 0.7, vibDepth: 0.009, vibRate: 6, glide: 0.09, body: [[700, 3], [1600, 4], [3100, 5]] } };
+    if (has(/morin|khuur|igil|kobyz|tagelharpa|gudok|gadulka|lyra|kemen|kaman|rebab|rababa|masenqo|sarangi|esraj|goje|imzad|ghaychak|sorud/)) return { model: "bowed", params: { beta: 0.13, force: 0.75, vibDepth: 0.007, vibRate: 5, glide: 0.1, body: [[350, 2], [1100, 3], [2600, 4]] } };
+    if (has(/cello|bass|viol|bigoe|bőgő|tenor|low/)) return { model: "bowed", params: { beta: 0.14, force: 0.6, vibDepth: 0.004, vibRate: 5, body: [[200, 2], [600, 3], [1500, 4]] } };
+    return { model: "bowed", params: { beta: 0.127, force: 0.6, vibDepth: 0.005, vibRate: 5.5, body: [[480, 2], [1300, 3], [2900, 4]] } }; // violin family
+  }
+  return null;
 }
 const volume = () => Number(document.getElementById("vol").value) / 100;
 
 function rebuild() {
   // Fade out and drop the old audio nodes; keep clock positions.
   for (const n of live.values()) if (n.out && ctx) {
-    n.out.gain.setTargetAtTime(0, ctx.currentTime, 0.015); const o = n.out, src = n.src, lfos = n.lfos || [];
+    n.out.gain.setTargetAtTime(0, ctx.currentTime, 0.015); const o = n.out, src = n.src, lfos = n.lfos || []; if (n.pm) { const pm = n.pm; setTimeout(() => { pm.port.postMessage("stop"); pm.disconnect(); }, 200); }
     setTimeout(() => { o.disconnect(); for (const x of src ? [src, ...lfos] : lfos) try { x.stop(); } catch (e) { /* already stopped */ } }, 120);
   }
   live = new Map();
@@ -1207,7 +1229,12 @@ function buildMelodic(kind, o) {
 function playMelodic(r, c, step, t) {
   const cfg = r.cfg, out = r.out, stepDur = 60 / c.bpm / 4, bar = Math.floor(step / (4 * c.sig)), barSteps = 4 * c.sig;
   const peak = 0.22 * cfg.vol;
-  const note = (f, dur, p = peak) => { cfg.inst.play(out, t, f, dur, cfg.adsr, p, cfg); mark(r, t, Math.min(dur, 1.5)); midiNote(r, 69 + 12 * Math.log2(f / 440), peak > 0 ? 100 * p / peak : 0, t, dur, false); };
+  const note = (f, dur, p = peak, idx = 0) => {
+    const pm = pmReady && (r.pmSpec !== undefined ? r.pmSpec : (r.pmSpec = pmFor(r.node.kind, r.node.id)));
+    if (pm) {
+      if (!r.pm) { r.pm = new AudioWorkletNode(ctx, "pm", { numberOfInputs: 0, outputChannelCount: [1], processorOptions: pm }); r.pm.connect(out); }
+      r.pm.port.postMessage({ t, f, dur, peak: p * 1.6, idx });
+    } else cfg.inst.play(out, t, f, dur, cfg.adsr, p, cfg); mark(r, t, Math.min(dur, 1.5)); midiNote(r, 69 + 12 * Math.log2(f / 440), peak > 0 ? 100 * p / peak : 0, t, dur, false); };
   if (cfg.phrase) {
     const per = 16 / cfg.grid;
     if (step % per) return;
@@ -1217,7 +1244,7 @@ function playMelodic(r, c, step, t) {
     const name = (x) => `${x.deg}${"'".repeat(Math.max(0, x.oct))}${",".repeat(Math.max(0, -x.oct))}`;
     for (const x of tok.chord || [tok]) {
       const cents = degreeCents(cfg.scale, x.deg) + x.acc + 1200 * x.oct;
-      note(midiHz(keyMidi(cfg.key, cfg.oct)) * Math.pow(2, cents / 1200), stepDur * per * hold * 0.95, tok.chord ? peak * 0.6 : peak);
+      note(midiHz(keyMidi(cfg.key, cfg.oct)) * Math.pow(2, cents / 1200), stepDur * per * hold * 0.95, tok.chord ? peak * 0.6 : peak, (tok.chord || [tok]).indexOf(x));
     }
     r.detail = `${(tok.chord || [tok]).map(name).join("+")} · ${cfg.scaleName} on ${cfg.key}`;
     return;
