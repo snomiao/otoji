@@ -215,6 +215,35 @@ ul.ideas { margin: 0; padding-left: 18px; display: grid; gap: 6px; font-size: 14
 .tree ul.civs .chips { display: flex; flex-wrap: wrap; gap: 1px; max-width: 100%; }
 .tree ul.civs .chips button { display: inline-block; width: 1.6em; padding: 2px 0; font-size: 12px; text-align: center; }
 .tree ul.civs .chips button:disabled { opacity: 0.25; }
+/* instruments page */
+body.instruments-mode #app, body.instruments-mode #player { display: none; }
+#instruments { display: none; width: 100%; }
+body.instruments-mode #instruments { display: block; }
+#instruments header { display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: baseline; margin-bottom: 8px; }
+#instruments h1 { margin: 0; font-size: 22px; }
+#instruments .find { font: inherit; padding: 4px 10px; border: 1px solid var(--line); border-radius: 6px; background: var(--screen); color: var(--ink); min-width: 220px; }
+#instruments .legend { font-size: 13px; color: var(--muted); }
+#instruments .stop { font: inherit; padding: 2px 12px; cursor: pointer; }
+#instruments .fams { display: flex; flex-wrap: wrap; gap: 6px 14px; margin: 6px 0 12px; font-size: 14px; }
+#instruments .fams a { color: var(--focus); }
+#instruments h2 { font-size: 17px; margin: 18px 0 8px; border-bottom: 1px solid var(--line); padding-bottom: 4px; }
+#instruments .cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 12px; }
+#instruments .cards h2 { grid-column: 1 / -1; }
+#instruments article { display: grid; grid-template-columns: 72px 1fr; gap: 4px 12px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--screen); }
+#instruments article:target { outline: 2px solid var(--feature); }
+#instruments .icon { all: unset; grid-row: span 3; width: 72px; height: 72px; color: var(--ink); cursor: pointer; border-radius: 8px; }
+#instruments .icon:hover, #instruments .icon:focus-visible { background: var(--signal-soft); }
+#instruments .icon svg { width: 72px; height: 72px; }
+#instruments h3 { margin: 0; font-size: 16px; display: inline; }
+#instruments .native { margin-left: 8px; color: var(--muted); }
+#instruments .peoples, #instruments dd { display: flex; flex-wrap: wrap; gap: 3px 6px; }
+#instruments .chip { font-size: 12px; padding: 0 6px; border-radius: 10px; background: var(--bg); color: var(--ink); text-decoration: none; }
+#instruments .keys { display: flex; flex-wrap: wrap; gap: 3px; }
+#instruments .keys button { font: inherit; font-size: 12px; min-width: 26px; padding: 2px 4px; cursor: pointer; }
+#instruments .keys .tune { margin-left: 6px; }
+#instruments dl { grid-column: 1 / -1; margin: 6px 0 0; font-size: 13px; display: grid; grid-template-columns: max-content 1fr; gap: 3px 10px; }
+#instruments dt { color: var(--muted); }
+#instruments dd { margin: 0; display: block; }
 /* featured demos */
 .tree ul.civs .chips button.history { color: var(--history); box-shadow: inset 0 -2px 0 var(--history); }
 .tree ul.civs .chips button.featured { box-shadow: inset 0 0 0 1.5px var(--feature); color: var(--feature); font-weight: 700; }
@@ -251,6 +280,10 @@ body.player-mode #player { display: block; }
 #player tbody th small.endonym { display: block; font-weight: 400; font-size: 12px; color: var(--muted); }
 #player td.sig, #player th.sig { text-align: left; font-size: 12px; color: var(--muted); padding: 4px 12px; min-width: 220px; width: 40%; line-height: 1.35; }
 #player td.sig b { color: var(--ink); font-weight: 600; display: block; }
+#player td button.piece { position: relative; }
+#player td button.piece::after { content: "♫"; position: absolute; top: -3px; right: -1px; font-size: 10px; color: var(--signal); }
+#player .now .pieceline { font-size: 14px; margin-top: 6px; color: var(--signal); }
+#player .legend .pc { color: var(--signal); }
 #player td button[aria-pressed="true"] { background: var(--signal-soft); color: var(--ink); }
 #player .legend { font-size: 13px; color: var(--muted); }
 #player .lang { font: inherit; font-size: 13px; padding: 2px 6px; margin-left: auto; }
@@ -265,7 +298,7 @@ body.player-mode #player { display: block; }
 </aside>
 <main>
   <header style="display:grid; gap:6px">
-    <h1>otoji Patchbay <small>music nodes in the pipeline language</small> <a class="to-player" href="?player">▶ Player: every piece, no code</a></h1>
+    <h1>otoji Patchbay <small>music nodes in the pipeline language</small> <a class="to-player" href="?player">▶ Player: every piece, no code</a> <a class="to-player" href="?instruments">🪕 Instruments</a></h1>
     <p class="intro">Each line is a node. Edit the patch and it applies as you type; the column on the right is generated live and is never part of the source. <kbd>Alt</kbd>+<kbd>T</kbd> mutes or unmutes the line under the cursor.</p>
   </header>
 
@@ -378,7 +411,18 @@ body.player-mode #player { display: block; }
 </aside>
 </div>
 
-<script>var CIVS = [], CULTURE_SCALES = {}, STORIES = {}, I18N = { "zh-CN": { stories: {}, text: {} } };</script>
+<script>var CIVS = [], CULTURE_SCALES = {}, STORIES = {}, I18N = { "zh-CN": { stories: {}, text: {} } }, INSTRUMENT_CATALOG = [], PIECES = {};</script>
+<script src="cultures/pieces/asia.js"></script>
+<script src="cultures/pieces/asia-south.js"></script>
+<script src="cultures/pieces/westasia-africa.js"></script>
+<script src="cultures/pieces/ancient-americas.js"></script>
+<script src="cultures/pieces/europe-west.js"></script>
+<script src="cultures/pieces/europe-northeast.js"></script>
+<script src="cultures/instruments/asia.js"></script>
+<script src="cultures/instruments/westasia-africa.js"></script>
+<script src="cultures/instruments/ancient-americas.js"></script>
+<script src="cultures/instruments/europe-west.js"></script>
+<script src="cultures/instruments/europe-northeast.js"></script>
 <script src="cultures/asia.js"></script>
 <script src="cultures/westasia-africa.js"></script>
 <script src="cultures/ancient-americas.js"></script>
@@ -3354,3 +3398,4 @@ if (window.require && window.require.config) {
 } else { booted = true; clearTimeout(fallback); boot(textareaUI()); }
 </script>
 <script src="matrix.js"></script>
+<script src="instruments.js"></script>

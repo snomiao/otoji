@@ -461,12 +461,19 @@ function compose(civ, actId) {
     return bar.map((x) => (typeof x === "number" ? jp.fmt((() => { const r = Math.round((x + shift) * Q.length / P.length), o = Math.floor(r / Q.length); return { acc: "", i: Q[r - o * Q.length] + 7 * o }; })()) : x));
   };
   const phrase = (sc2, shiftOf) => bars.flatMap((bar, k) => render(bar, sc2, shiftOf(k)));
+  // A named piece in the story whose tune survives: the lead plays it.
+  const piece = PIECES[`${civ.id}:${actId}`], tune = piece && piece.melody && SCALES[piece.scale] ? piece.melody.trim().split(/\s+/) : null;
+  if (tune) {
+    const up = tune.map((t) => (/^[#b]?[1-7]/.test(t) ? t.replace(/^([#b]?[1-7])([',]*)$/, (_, d, o) => d + (o.includes(",") ? o.slice(1) : o + "'")) : t));
+    line(lead, `grid=${piece.grid || 8}`, q(tune), 1, 6, `${piece.scale} ${piece.key || key}`);
+    line(lead, `grid=${piece.grid || 8}`, q(up), 7, 10, `${piece.scale} ${piece.key || key}`);
+  } else
   // Bars 1–6: the tune (once, then its first half again as layers pile up).
   line(lead, `grid=${g}`, q(phrase(scale, () => 0)), 1, 6);
   // Bars 7–10: once more, an octave up, or climbing a step each bar.
   const hiShift = (k) => (A.climb ? k + (k > 1 ? 1 : 0) : P.length);
   const prog = A.prog, roots = prog.map((t) => jp.parse(t));
-  if (A.danger) { // bars 7–8: a predator; the music turns dark and holds its breath, then 9–10 relief
+  if (tune) { /* the named piece carries bars 7–10 too */ } else if (A.danger) { // bars 7–8: a predator; the music turns dark and holds its breath, then 9–10 relief
     const dk = scaleOf("dark"), stalk = [["x---0---x-0-0---", "repeat", 1, 1], ["x-0-x-0-0-x-x---", "neighbor", 1, 2]].map(([m, sh, f, t]) => shapeBar(m, sh, Math.round(f * P.length / 5), Math.round(t * P.length / 5), rnd));
     line(lead, "grid=16", q(stalk.flatMap((b) => render(b, dk))), 7, 8, `${dk} ${key}`);
     line(pick("trem", civ.trem, "strings@tremolo vol=0.5"), "grid=16", q(roots.slice(0, 2).flatMap((r) => Array(16).fill(chordOf(jp.fmt(r), true)))), 7, 8, `${dk} ${key}`);
@@ -584,10 +591,11 @@ function compose(civ, actId) {
     `# ${civLabel(civ)} × ${A.zh} ${A.en}${fun ? ` (${fun})` : ""} — ${A.about}`,
     `# ${scale} on ${key} · ${bpm} bpm · bar 1: ${lead.name} alone; each bar adds one layer: ${adds.map(label).join(", ")} · climax · ebb · it loops`,
     civ.note ? `# ${civ.note}` : null,
+    ...(piece ? [`# ♫ ${piece.title}${piece.native ? ` (${piece.native})` : ""} — ${piece.about || ""}${tune ? " · its melody leads (" + (piece.source || "") + ")" : piece.source === "lost" ? " · the melody is lost" : ""}`] : []),
     ...storyBlock(storyText(`${civ.id}:${actId}`), LANG),
     `. clock ${bpm} 4/4`,
     `. arrange@song ${secs.join(" ")}`,
-    ...[...new Set([scale, A.climax === "bright" || A.climax === "dance" || A.open ? scaleOf("bright") : scale, A.danger ? scaleOf("dark") : scale])].map((n) => `. scale@${n} ${formatScaleDef(SCALES[n])}`),
+    ...[...new Set([scale, A.climax === "bright" || A.climax === "dance" || A.open ? scaleOf("bright") : scale, A.danger ? scaleOf("dark") : scale, tune ? piece.scale : scale])].map((n) => `. scale@${n} ${formatScaleDef(SCALES[n])}`),
     "",
   ].filter((x) => x !== null);
   const text = [...head, ...L, "", `*> reverb ${A.bpm < 70 ? "3.5s wet=0.38" : "2.5s wet=0.3"}`, "> speaker 0.5", ""].join("\n");
@@ -679,8 +687,8 @@ renderMatrix();
 function renderPlayer() {
   const root = document.createElement("section"); root.id = "player"; root.setAttribute("aria-label", "Player");
   const legend = tr("{n} peoples × {m} scenes · each piece starts with one instrument and adds one every bar").replace("{n}", CIVS.length).replace("{m}", ACTIVITY_IDS.length);
-  root.innerHTML = `<header><h1>${tr("otoji · music of the world's peoples")}</h1><a class="to-player" href="?lang=${LANG}">${tr("✎ open the editor")}</a>
-    <span class="legend">${legend} · <b>${tr("violet")}</b> = ${tr("featured")} · <i>${tr("teal")}</i> = ${tr("from recorded history (the rest are imagined scenes)")}</span>
+  root.innerHTML = `<header><h1>${tr("otoji · music of the world's peoples")}</h1><a class="to-player" href="?lang=${LANG}">${tr("✎ open the editor")}</a> <a class="to-player" href="?instruments&lang=${LANG}">${tr("🪕 instruments")}</a>
+    <span class="legend">${legend} · <b>${tr("violet")}</b> = ${tr("featured")} · <i>${tr("teal")}</i> = ${tr("from recorded history (the rest are imagined scenes)")} · <span class="pc">♫</span> = ${tr("a named piece of music")}</span>
     <select class="lang" aria-label="Language">${Object.entries(LANGS).map(([k, v]) => `<option value="${k}"${k === LANG ? " selected" : ""}>${v}</option>`).join("")}</select></header>
     <div class="now" aria-live="polite"><span class="title">${tr("Pick a piece below.")}</span><div class="story"></div></div>`;
   root.querySelector(".lang").addEventListener("change", (e) => {
@@ -716,6 +724,9 @@ function renderPlayer() {
     const A = ACTIVITIES[a], f = FEATURED.find(([k]) => featuredKey(k) === key);
     now.querySelector(".title").textContent = `${civLabel(civ)} × ${A.zh}${LANG === "zh-CN" ? "" : " " + A.en}${f ? " ★ " + tr(f[2]) : ""}`;
     const kind = storyOf(civ, a) ? (isHistory(civ, a) ? ["history", tr("recorded history")] : ["imagined", tr("an imagined scene")]) : null;
+    let pl = now.querySelector(".pieceline"); if (!pl) { pl = document.createElement("div"); pl.className = "pieceline"; now.append(pl); }
+    const pc = PIECES[`${civ.id}:${a}`];
+    pl.textContent = pc ? `♫ ${pc.title}${pc.native ? ` (${pc.native})` : ""} — ${pc.about || ""}${pc.melody ? ` · ${tr("you are hearing its melody")} (${pc.source || ""})` : pc.source === "lost" ? ` · ${tr("its melody is lost")}` : ""}` : "";
     let kb = now.querySelector(".kind"); if (!kb) { kb = document.createElement("span"); now.querySelector(".title").after(kb); }
     kb.className = "kind " + (kind ? kind[0] : ""); kb.textContent = kind ? kind[1] : "";
     const sb = now.querySelector(".story"); sb.textContent = (storyText(`${civ.id}:${a}`) || (a === "showcase" && tr(civ.intro)) || tr(A.about)) + (civ.note ? `\n♪ ${tr(civ.note)}` : "");
@@ -749,6 +760,7 @@ function renderPlayer() {
           btn.title = `${civ.name} × ${ACTIVITIES[a].en}${f ? " ★ " + f[2] : ""}`;
           if (f) btn.classList.add("featured");
           if (isHistory(civ, a)) { btn.classList.add("history"); btn.title += " · from recorded history"; }
+          const pc = PIECES[civKey(civ, a).slice(2)]; if (pc) { btn.classList.add("piece"); btn.title += ` · ♫ ${pc.title}`; }
           btn.addEventListener("click", () => play(civ, a, btn));
           td.append(btn);
         }
