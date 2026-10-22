@@ -31,6 +31,35 @@ function auditionNote(entry, f, dur = 0.7, at = 0, key = "C") {
   }
   const inst = INSTRUMENTS[entry.kind]; if (inst) inst.play(auditionOut, t, f, dur, inst.adsr, 0.22, { key });
 }
+// A playing technique (entry.techniques[].play), heard on this instrument.
+const TECHNIQUES = ["normal", "knock", "harmonic", "mute", "tremolo", "slide", "pizz", "strum", "flutter", "overblow", "roll", "gliss"];
+function auditionTechnique(entry, play, f, key) {
+  ensureAudio(); if (ctx.state !== "running") ctx.resume();
+  if (!auditionOut) { auditionOut = ctx.createGain(); auditionOut.connect(master); }
+  master.gain.setTargetAtTime(volume(), ctx.currentTime, 0.02);
+  const pmNote = (spec, ev) => {
+    const k = `${entry.id}:${spec.model}`; let n = auditionPm.get(k);
+    if (!n) { n = new AudioWorkletNode(ctx, "pm", { numberOfInputs: 0, outputChannelCount: [1], processorOptions: spec }); n.connect(auditionOut); auditionPm.set(k, n); }
+    n.port.postMessage({ peak: 0.35, idx: 0, dur: 0.7, ...ev, t: ctx.currentTime + 0.03 + (ev.at || 0) });
+  };
+  const name = entry.aliases[0], str = ["pluck", "strings", "hurdygurdy"].includes(entry.kind);
+  const pluckSpec = pmReady && pmFor("pluck", name), bowSpec = pmReady && entry.kind === "strings" && pmFor("strings", name);
+  switch (play) {
+    case "knock": if (pluckSpec && str) return pmNote(pluckSpec, { f, tech: "knock" }); return kitHit(auditionOut, "rim", ctx.currentTime + 0.03, false);
+    case "harmonic": if (pluckSpec && str) return pmNote(pluckSpec, { f, tech: "harmonic", dur: 1.5 }); return auditionNote(entry, f * 2, 0.8, 0, key);
+    case "mute": if (pluckSpec && str) return pmNote(pluckSpec, { f, tech: "mute" }); return auditionNote(entry, f, 0.12, 0, key);
+    case "pizz": if (pluckSpec) return pmNote(pluckSpec, { f, dur: 0.3 }); return auditionNote(entry, f, 0.15, 0, key);
+    case "slide": if (bowSpec) { pmNote(bowSpec, { f, dur: 0.5 }); return pmNote(bowSpec, { f: f * 1.25, dur: 0.6, at: 0.48, legato: true }); }
+      if (pluckSpec && str) return pmNote(pluckSpec, { f, bend: 1.25, dur: 1 }); auditionNote(entry, f, 0.3, 0, key); return auditionNote(entry, f * 1.12, 0.3, 0.25, key);
+    case "gliss": { const hs = homeScale(entry); [...hs.notes, ...hs.notes.map((x) => x * 2)].forEach((x, i) => auditionNote(entry, x, 0.5, i * 0.035, key)); return; }
+    case "tremolo": for (let i = 0; i < 10; i++) auditionNote(entry, f, 0.07, i * 0.07, key); return;
+    case "strum": [1, 1.26, 1.5, 2].forEach((m, i) => auditionNote(entry, f * m, 1.2, i * 0.03, key)); return;
+    case "flutter": for (let i = 0; i < 14; i++) auditionNote(entry, f, 0.035, i * 0.045, key); return;
+    case "overblow": auditionNote(entry, f, 0.35, 0, key); return auditionNote(entry, f * 2, 0.5, 0.33, key);
+    case "roll": for (let i = 0; i < 16; i++) auditionNote(entry, f, 0.05, i * 0.05, key); return;
+    default: return auditionNote(entry, f, 0.8, 0, key);
+  }
+}
 // The 8 notes of the instrument's home scale (its first people's), 1 to 1'.
 function homeScale(entry) {
   const civ = CIVS.find((c) => c.id === entry.peoples[0]) || { scale: "major", key: "C" };
@@ -83,6 +112,17 @@ function renderInstruments() {
     hs.notes.forEach((f, i) => { const k = document.createElement("button"); k.type = "button"; k.textContent = hs.names[i]; k.title = "ASDFGHJK"[i] || ""; k.addEventListener("click", () => { last = e; auditionNote(e, f, 0.7, 0, hs.civ.key); }); keys.append(k); });
     const tune = Object.assign(document.createElement("button"), { type: "button", className: "tune", textContent: `♪ ${tr("its tune")}`, title: civName(hs.civ.id) });
     tune.addEventListener("click", () => { last = e; playTune(e); }); keys.append(tune);
+    let techRow = null;
+    if (e.techniques && e.techniques.length) {
+      const tq = document.createElement("div"); tq.className = "techs";
+      tq.append(Object.assign(document.createElement("span"), { className: "lbl", textContent: tr("techniques") }));
+      for (const t of e.techniques) {
+        const b = document.createElement("button"); b.type = "button"; b.textContent = t.native ? `${t.name} ${t.native}` : t.name; b.title = tr(t.how || "");
+        b.addEventListener("click", () => { last = e; auditionTechnique(e, TECHNIQUES.includes(t.play) ? t.play : "normal", hs.notes[0], hs.civ.key); });
+        tq.append(b);
+      }
+      techRow = tq;
+    }
     const det = document.createElement("dl");
     for (const [k, label] of [["origin", "Origin"], ["history", "History"], ["materials", "Materials"], ["usage", "How it is played"], ["skills", "Advanced techniques"], ["scenes", "Where it is heard"]]) {
       if (!e[k]) continue; det.append(Object.assign(document.createElement("dt"), { textContent: tr(label) }), Object.assign(document.createElement("dd"), { textContent: tr(e[k]) }));
@@ -92,7 +132,7 @@ function renderInstruments() {
       for (const p of e.partners) { const pe = byId.get(p); dd.append(pe ? Object.assign(document.createElement("a"), { href: `#inst-${p}`, className: "chip", textContent: pe.name }) : Object.assign(document.createElement("span"), { className: "chip", textContent: p })); }
       det.append(Object.assign(document.createElement("dt"), { textContent: tr("Plays with") }), dd);
     }
-    art.append(icon, head, ppl, keys, det);
+    art.append(icon, head, ppl, keys, ...(techRow ? [techRow] : []), det);
     art.addEventListener("pointerenter", () => { last = e; });
     return art;
   };

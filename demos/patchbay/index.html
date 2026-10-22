@@ -244,6 +244,9 @@ body.instruments-mode #instruments { display: block; }
 #instruments .keys { display: flex; flex-wrap: wrap; gap: 3px; }
 #instruments .keys button { font: inherit; font-size: 12px; min-width: 26px; padding: 2px 4px; cursor: pointer; }
 #instruments .keys .tune { margin-left: 6px; }
+#instruments .techs { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 3px; align-items: center; font-size: 12px; }
+#instruments .techs .lbl { color: var(--muted); margin-right: 4px; }
+#instruments .techs button { font: inherit; font-size: 12px; padding: 1px 6px; cursor: pointer; }
 #instruments dl { grid-column: 1 / -1; margin: 6px 0 0; font-size: 13px; display: grid; grid-template-columns: max-content 1fr; gap: 3px 10px; }
 #instruments dt { color: var(--muted); }
 #instruments dd { margin: 0; display: block; }

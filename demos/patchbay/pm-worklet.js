@@ -32,8 +32,16 @@ class Pluck {
     this.sr = sr; this.p = p; this.d = new Delay(Math.ceil(sr / 20) + 4); this.lp = new OnePole(0.5);
     this.body = (p.body || [[180, 2], [420, 3]]).map(([f, q]) => new Reso(f, q, sr)); this.on = false;
   }
-  start(f, peak, dur) {
-    const sr = this.sr, p = this.p, n = sr / f;
+  // tech: "knock" (tap the body: only the body rings), "harmonic" (touch the
+  // string's middle: the octave, bell-like), "mute" (damped by the palm), bend
+  // (slide the pitch by a ratio over 150 ms).
+  start(f, peak, dur, tech, bend) {
+    this.knock = 0; this.bendStep = 1; this.bendLeft = 0;
+    if (tech === "knock") { this.on = true; this.amp = peak; this.knock = Math.floor(this.sr * 0.004); this.left = Math.floor(this.sr * 0.6); this.silent = true; return; }
+    this.silent = false;
+    if (tech === "harmonic") f *= 2;
+    if (bend && bend !== 1) { this.bendLeft = Math.floor(this.sr * 0.15); this.bendStep = Math.pow(1 / bend, 1 / this.bendLeft); }
+    const sr = this.sr, p = { ...this.p, ...(tech === "harmonic" ? { pos: 0.5, bright: 0.9, t60: 2 } : tech === "mute" ? { t60: 0.25, bright: 0.2 } : {}) }, n = sr / f;
     this.d.setLen(n - 0.5); this.amp = peak; this.left = Math.floor(sr * Math.max(dur, 0.2) + sr * (p.ring || 1.5)); this.on = true; this.damp = 0;
     // Each sample passes the loop once per period, so the loop gain sets the ring
     // time; it is corrected for the mild lowpass's own loss at the fundamental.
@@ -47,6 +55,13 @@ class Pluck {
   }
   tick() {
     if (!this.on) return 0;
+    if (this.silent) { // a tap on the body: a short noise burst through the body formants only
+      const x = this.knock > 0 ? (Math.random() * 2 - 1) * (this.knock-- / (this.sr * 0.004)) : 0;
+      let o = 0; for (const b of this.body) o += b.tick(x) * 2.5;
+      if (--this.left <= 0) this.on = false;
+      return o * this.amp;
+    }
+    if (this.bendLeft > 0) { this.d.setLen(this.d.len * this.bendStep); this.bendLeft--; }
     let y = this.d.read();
     if (this.p.buzz) { const th = 0.12; if (y > th) y = th + (y - th) * 0.3; else if (y < -th) y = -th + (y + th) * 0.3; }
     let fb = this.lp.tick(y) * this.g;
@@ -109,7 +124,7 @@ class PM extends AudioWorkletProcessor {
       v.start(ev.f, ev.peak, ev.dur, legato || (v.on && ev.legato)); return;
     }
     let v = this.voices.find((x) => x && !x.on); if (!v) { if (this.voices.length < 8) this.voices.push(v = new Pluck(sampleRate, this.p)); else v = this.voices[0]; }
-    v.start(ev.f, ev.peak, ev.dur);
+    v.start(ev.f, ev.peak, ev.dur, ev.tech, ev.bend);
   }
   process(_, outputs) {
     const out = outputs[0][0], n = out.length;
