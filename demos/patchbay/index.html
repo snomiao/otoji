@@ -48,7 +48,7 @@ body {
   padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px));
   padding-block: 20px 40px;
 }
-main { max-width: 1120px; margin: 0 auto; display: grid; gap: 18px; }
+main { display: grid; gap: 18px; } /* full page width */
 h1 { font-size: 26px; font-weight: 700; letter-spacing: 0.01em; margin: 0; text-wrap: balance; }
 h1 small { font-weight: 500; color: var(--muted); font-size: 15px; margin-left: 8px; }
 h2 { font-size: 13px; text-transform: uppercase; letter-spacing: 0.12em; color: var(--muted); margin: 0 0 8px; font-weight: 600; }
@@ -108,11 +108,11 @@ button, select, input { font: inherit; color: inherit; }
 .srow.s-off { opacity: 0.55; }
 .srow.s-load .sym { color: var(--focus); }
 
-.monaco-host { height: 440px; min-width: 0; }
+.monaco-host { height: max(440px, calc(100vh - 330px)); min-width: 0; }
 .patch-body { display: grid; grid-template-columns: 196px minmax(0, 1fr); gap: 12px; align-items: start; }
 .editor-col { min-width: 0; display: grid; gap: 10px; }
 @media (max-width: 860px) { .patch-body { grid-template-columns: minmax(0, 1fr); } }
-.tree { font-size: 14px; border: 1px solid var(--line); border-radius: 7px; background: var(--screen); padding: 8px 6px; max-height: 470px; overflow: auto; }
+.tree { font-size: 14px; border: 1px solid var(--line); border-radius: 7px; background: var(--screen); padding: 8px 6px; max-height: max(470px, calc(100vh - 300px)); overflow: auto; }
 .tree details { margin: 0; }
 .tree details details { margin-left: 12px; }
 .tree summary { cursor: pointer; font-weight: 600; padding: 3px 6px; border-radius: 5px; list-style: none; }
@@ -1459,7 +1459,7 @@ function nodeStatusInner(r, eff) {
   if (k === "reverb" && running && !r.out) return [".", "building"];
   if (!KINDS[k].source) {
     const ins = (eff.get(n.id) || []).filter((x) => kindOfId(x.node) !== "clock").length;
-    const what = k === "delay" ? `${n.args.find((a) => a.startsWith("time=")) || "time=3/16"}` : k === "reverb" ? `size ${r.cfg.size}s · mix ${Math.round(r.cfg.mix * 100)}%` : `${ins} input${ins === 1 ? "" : "s"}`;
+    const what = k === "delay" ? `${n.args.find((a) => a.startsWith("time=")) || "time=3/16"}` : k === "reverb" ? `size ${r.cfg.size}s · wet ${Math.round(r.cfg.mix * 100)}%` : `${ins} input${ins === 1 ? "" : "s"}`;
     return [running && upstreamSounding(n.id, eff, t) ? "~" : "-", what + extra];
   }
   if (!running) return ["-", "stopped" + extra];
