@@ -28,7 +28,8 @@ use std::fmt;
 pub const DEFAULT_PIPELINE: &str = "\
 # otoji pipeline: click a row to turn it on/off · docs/11-pipeline-language.md
 .           mic
-mic>        stt       sensevoice
+mic>        vad       silence=3s
+vad>        stt       sensevoice
 stt>        overlay
 #.          llm       ollama gemma3:4b
 #stt.final> polish

@@ -110,6 +110,9 @@ pub enum AsrEvent {
     /// One recognizer pass finished, taking `ms` of compute. Lets consumers
     /// show how busy the STT stage is (the tray's duty-cycle status).
     Decode { ms: u64 },
+    /// The VAD switched between speech and silence (silence = no voiced
+    /// block for 300 ms). Lets consumers show the VAD stage live.
+    Vad { speech: bool },
 }
 
 #[derive(Debug, Error)]

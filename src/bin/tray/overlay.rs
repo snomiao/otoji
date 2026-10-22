@@ -195,7 +195,15 @@ fn pump_mic(mut stdin: std::process::ChildStdin) {
 
 /// Spawn `otoji listen - --plain`, feed it the tray's own mic capture, and
 /// pipe its stdout events into the overlay. Returns false when the spawn failed.
+/// The environment the running listen child was started with.
+static LISTEN_ENV: Mutex<Vec<(String, String)>> = Mutex::new(Vec::new());
+
+pub fn listen_env() -> Vec<(String, String)> {
+    LISTEN_ENV.lock().unwrap().clone()
+}
+
 pub fn start_listen() -> bool {
+    let listen_env = super::graph::listen_env();
     let mut guard = LISTEN_CHILD.lock().unwrap();
     if let Some(child) = guard.as_mut() {
         if matches!(child.try_wait(), Ok(None)) {
@@ -217,6 +225,8 @@ pub fn start_listen() -> bool {
         .arg(&sock)
         // Speech-to-text only: never let this child play audio.
         .env("OTOJI_STT_ONLY", "1")
+        // VAD settings from the pipeline's `vad` line.
+        .envs(listen_env.iter().cloned())
         .stdin(std::process::Stdio::piped())
         .stdout(std::process::Stdio::piped())
         .stderr(log)
@@ -238,6 +248,7 @@ pub fn start_listen() -> bool {
     *guard = Some(child);
     drop(guard);
     WANT_LISTEN.store(true, Ordering::Release);
+    *LISTEN_ENV.lock().unwrap() = listen_env;
     super::graph::on_listen_started();
     for c in [&MIC_BYTES, &STT_PARTIALS, &STT_FINALS, &STT_CHARS] {
         c.store(0, Ordering::Relaxed);
@@ -336,6 +347,11 @@ fn read_events(out: std::process::ChildStdout) {
             "partial" | "ptt_partial" if !text.is_empty() => {
                 STT_PARTIALS.fetch_add(1, Ordering::Relaxed);
                 set_caption(text, true)
+            }
+            "vad" => {
+                if let Some(sp) = v.get("speech").and_then(|b| b.as_bool()) {
+                    super::graph::on_vad(sp);
+                }
             }
             "decode" => {
                 if let Some(ms) = v.get("ms").and_then(|m| m.as_u64()) {

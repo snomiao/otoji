@@ -190,6 +190,7 @@ enum WorkerEvt {
     Status(String),
     Error(String),
     Decode(u64),
+    Vad(bool),
     Closed,
     PttPartial {
         text: String,
@@ -285,6 +286,7 @@ impl AsrProvider for SenseVoice {
                     },
                     WorkerEvt::Status(message) => AsrEvent::Status { message },
                     WorkerEvt::Decode(ms) => AsrEvent::Decode { ms },
+                    WorkerEvt::Vad(speech) => AsrEvent::Vad { speech },
                     WorkerEvt::Error(message) => AsrEvent::Error { message },
                     WorkerEvt::PttPartial { text } => AsrEvent::PttPartial { text },
                     WorkerEvt::PttFinal { text, audio, lang } => {
@@ -512,6 +514,8 @@ fn worker_main(
 
     let silence_samples_needed = (cfg.vad_silence_ms as usize) * SAMPLE_RATE as usize / 1000;
     let mut silence_run: usize = 0;
+    // Reported speech state (hysteresis: 300 ms of silence ends speech).
+    let mut vad_speaking = false;
 
     fn rms(samples: &[f32]) -> f32 {
         if samples.is_empty() {
@@ -776,6 +780,11 @@ fn worker_main(
                     silence_run = 0;
                 } else {
                     silence_run += block.len();
+                }
+                let speaking = silence_run < SAMPLE_RATE as usize * 3 / 10;
+                if speaking != vad_speaking {
+                    vad_speaking = speaking;
+                    let _ = out_tx.send(WorkerEvt::Vad(speaking));
                 }
 
                 // Trim front if buf exceeds max (keep context, discard old).

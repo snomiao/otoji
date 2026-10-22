@@ -999,6 +999,13 @@ mod tray_macos {
     fn apply_pipeline() {
         let want = graph::wants_listen();
         let running = overlay::is_listening();
+        // VAD settings changed → restart listen so they take effect.
+        if want && running && graph::listen_env() != overlay::listen_env() {
+            eprintln!("otoji-tray: vad settings changed — restarting listen");
+            overlay::stop_listen();
+            overlay::start_listen();
+            return;
+        }
         if want && !running {
             if permissions::mic_status() != permissions::Mic::Authorized {
                 AUTO_LISTEN.store(true, Ordering::Release);

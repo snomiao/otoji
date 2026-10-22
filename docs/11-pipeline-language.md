@@ -15,7 +15,8 @@ duty-cycle meter, graph-JSON conversion); tray runtime in
 ```
 # otoji pipeline: click a row to turn it on/off
 .           mic
-mic>        stt       sensevoice
+mic>        vad       silence=3s
+vad>        stt       sensevoice
 stt>        overlay
 stt.final>  polish    auto
 #stt.final> translate en
@@ -173,7 +174,8 @@ enabled node of each kind is used):
 | kind | role | args |
 |---|---|---|
 | `mic` | microphone capture (the default input device) | `default` |
-| `stt` | SenseVoice (pseudo-streaming partials, final after VAD silence) | `sensevoice` |
+| `vad` | voice activity detection in front of STT; shows speech/silence live | `silence=3s` (end-of-speech pause), `max=15s` (longest chunk), `threshold=0.0005` (energy) |
+| `stt` | SenseVoice (pseudo-streaming partials, final after VAD silence); input `mic` or `vad` | `sensevoice` |
 | `overlay` | caption panel; off = no captions | |
 | `polish` | LLM polish of each final | model (default `auto`) |
 | `translate` | LLM translation of each final | target language (default `en`), then model |
@@ -181,6 +183,10 @@ enabled node of each kind is used):
 | `append` | append `HH:MM:SS<TAB>text` per final to a file under the data dir | path (default `transcripts/$date.stt`) |
 
 - `mic` and `stt` both on = the `otoji listen` child runs; either off stops it.
+- `vad` options become listen's `OTOJI_VAD_*` settings; changing them
+  restarts listen. Without a `vad` line (or with it off) the defaults apply.
+  Listen reports `{"type":"vad","speech":true|false}` on each switch
+  (300 ms of silence ends speech), shown as `~ speech` / `- silence`.
   Fn+/ (or Alt+CapsLock) flips the `mic` line.
 - `polish` and `translate` run in parallel on each final.
 - LLM words (an `llm` line, or one model word on a polish/translate line):

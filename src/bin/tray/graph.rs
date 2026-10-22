@@ -24,7 +24,7 @@ pub fn path() -> std::path::PathBuf {
 }
 
 /// Node kinds runtime v1 can run.
-const KINDS: &[&str] = &["mic", "stt", "overlay", "polish", "translate", "append", "llm"];
+const KINDS: &[&str] = &["mic", "vad", "stt", "overlay", "polish", "translate", "append", "llm"];
 
 struct State {
     pipeline: Pipeline,
@@ -45,6 +45,8 @@ struct State {
     appended: u64,
     append_err: Option<String>,
     levels: VecDeque<u32>,
+    vad_speech: bool,
+    vad_segments: u64,
 }
 
 static STATE: Mutex<Option<State>> = Mutex::new(None);
@@ -71,6 +73,8 @@ fn with<R>(f: impl FnOnce(&mut State) -> R) -> R {
             appended: 0,
             append_err: None,
             levels: VecDeque::new(),
+            vad_speech: false,
+            vad_segments: 0,
         }
     });
     f(s)
@@ -171,7 +175,62 @@ pub fn on_listen_started() {
     with(|s| {
         s.listen_started = Some(Instant::now());
         s.decoded_once = false;
+        s.vad_speech = false;
+        s.vad_segments = 0;
     });
+}
+
+pub fn on_vad(speech: bool) {
+    with(|s| {
+        if speech && !s.vad_speech {
+            s.vad_segments += 1;
+        }
+        s.vad_speech = speech;
+    });
+}
+
+/// `3s`, `1.5s`, `300ms` or a bare number of ms → milliseconds.
+fn parse_ms(v: &str) -> Option<u64> {
+    if let Some(n) = v.strip_suffix("ms") {
+        n.parse().ok()
+    } else if let Some(n) = v.strip_suffix('s') {
+        n.parse::<f64>().ok().map(|f| (f * 1000.0).round() as u64)
+    } else {
+        v.parse().ok()
+    }
+}
+
+/// Environment for the `otoji listen` child from the `vad` line:
+/// `silence=` (end-of-speech pause), `max=` (longest chunk), `threshold=`
+/// (energy level). Err names the first bad argument.
+fn vad_env_of(args: &[String]) -> Result<Vec<(String, String)>, String> {
+    let mut env = Vec::new();
+    for a in args {
+        let Some((k, v)) = a.split_once('=') else {
+            return Err(format!("unexpected word `{a}` (want silence=, max=, threshold=)"));
+        };
+        let bad = || format!("bad value `{a}`");
+        match k {
+            "silence" => env.push(("OTOJI_VAD_SILENCE_MS".into(), parse_ms(v).ok_or_else(bad)?.to_string())),
+            "max" => env.push(("OTOJI_VAD_MAX_MS".into(), parse_ms(v).ok_or_else(bad)?.to_string())),
+            "threshold" => {
+                v.parse::<f32>().map_err(|_| bad())?;
+                env.push(("OTOJI_VAD_THRESHOLD".into(), v.to_string()));
+            }
+            _ => return Err(format!("unknown vad option `{k}`")),
+        }
+    }
+    Ok(env)
+}
+
+/// The listen child's environment for the current pipeline (sorted, so it
+/// can be compared to restart listen when it changes).
+pub fn listen_env() -> Vec<(String, String)> {
+    let mut env = enabled_node(&pipeline(), "vad")
+        .and_then(|(_, args)| vad_env_of(&args).ok())
+        .unwrap_or_default();
+    env.sort();
+    env
 }
 
 pub fn on_decode(ms: u64) {
@@ -608,6 +667,26 @@ pub fn statuses(mic_authorized: bool) -> HashMap<String, NodeStatus> {
                         }
                         state
                     }
+                    "vad" if !n.enabled => NodeState::Off,
+                    "vad" => match vad_env_of(&n.args) {
+                        Err(e) => {
+                            detail.push(e);
+                            NodeState::Error
+                        }
+                        Ok(_) if !listening => {
+                            detail.push("stopped".into());
+                            NodeState::Idle
+                        }
+                        Ok(_) => {
+                            detail.push(format!(
+                                "{} · {} segment{}",
+                                if s.vad_speech { "speech" } else { "silence" },
+                                s.vad_segments,
+                                if s.vad_segments == 1 { "" } else { "s" }
+                            ));
+                            if s.vad_speech { NodeState::Streaming } else { NodeState::Idle }
+                        }
+                    },
                     "llm" => {
                         let words = if n.args.is_empty() { vec!["auto".to_string()] } else { n.args.clone() };
                         let users: Vec<String> = p
@@ -710,7 +789,8 @@ fn wiring_supported(p: &Pipeline, kind: &str, head: &Head) -> bool {
     let kind_of = |id: &str| p.nodes().find(|n| n.id == id).map(|n| n.kind.clone());
     match kind {
         "mic" | "llm" => false,
-        "stt" => inputs.iter().all(|i| kind_of(i).as_deref() == Some("mic")),
+        "vad" => inputs.iter().all(|i| kind_of(i).as_deref() == Some("mic")),
+        "stt" => inputs.iter().all(|i| matches!(kind_of(i).as_deref(), Some("mic") | Some("vad"))),
         // polish/translate may also name their `llm` environment.
         _ => inputs.iter().all(|i| matches!(kind_of(i).as_deref(), Some("stt") | Some("llm"))),
     }
