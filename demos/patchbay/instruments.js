@@ -285,6 +285,16 @@ function renderInstruments() {
     for (const [text, url] of items) { const li = document.createElement("li"); if (url) li.append(Object.assign(document.createElement("a"), { href: url, textContent: text, rel: "noopener", target: "_blank" })); else li.textContent = text; ul.append(li); }
     refs.append(ul);
   }
+  if (window.RECORDINGS && RECORDINGS.length) { // reconstructions of ancient music we listened to and compared
+    refs.append(Object.assign(document.createElement("h3"), { textContent: `${tr("Reconstructions of ancient music")} (${RECORDINGS.length})` }));
+    const byCh = new Map(); for (const r of RECORDINGS) { if (!byCh.has(r.channel)) byCh.set(r.channel, []); byCh.get(r.channel).push(r); }
+    for (const [ch, list] of byCh) {
+      const d = document.createElement("details"); d.append(Object.assign(document.createElement("summary"), { textContent: `${ch} (${list.length})` }));
+      const ul = document.createElement("ul");
+      for (const r of list) { const li = document.createElement("li"); li.append(Object.assign(document.createElement("a"), { href: r.url, textContent: r.title, rel: "noopener", target: "_blank" }), r.seconds ? ` · ${Math.floor(r.seconds / 60)}:${String(r.seconds % 60).padStart(2, "0")}` : ""); ul.append(li); }
+      d.append(ul); refs.append(d);
+    }
+  }
   refs.append(Object.assign(document.createElement("h3"), { textContent: tr("Sources named for the pieces and melodies") }));
   const ul2 = document.createElement("ul");
   for (const [src, titles] of [...named].sort((a, b) => a[0].localeCompare(b[0]))) ul2.append(Object.assign(document.createElement("li"), { textContent: `${src} — ${[...new Set(titles)].join(", ")}` }));
