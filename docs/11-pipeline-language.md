@@ -152,19 +152,23 @@ enabled node of each kind is used):
 | `mic` | microphone capture (the default input device) | `default` |
 | `stt` | SenseVoice (pseudo-streaming partials, final after VAD silence) | `sensevoice` |
 | `overlay` | caption panel; off = no captions | |
-| `polish` | LLM polish of each final | provider: `auto` (default), `gemini`, `openai`, `anthropic`, `ollama` |
-| `translate` | LLM translation of each final | target language (default `en`), then provider |
+| `polish` | LLM polish of each final | model (default `auto`) |
+| `translate` | LLM translation of each final | target language (default `en`), then model |
 | `append` | append `HH:MM:SS<TAB>text` per final to a file under the data dir | path (default `transcripts/$date.stt`) |
 
 - `mic` and `stt` both on = the `otoji listen` child runs; either off stops it.
   Fn+/ (or Alt+CapsLock) flips the `mic` line.
 - `polish` and `translate` run in parallel on each final.
-- Providers: `gemini` / `anthropic` / `openai` use `GEMINI_API_KEY` /
-  `ANTHROPIC_API_KEY` / `OPENAI_API_KEY` (`openai` calls api.openai.com with
-  `OTOJI_OPENAI_MODEL`, default `gpt-4.1-mini`). `auto` tries them in that
-  order. `ollama` (local, `OTOJI_POLISH_BASE_URL`) runs the model on this
-  Mac's GPU and is never chosen by `auto`. Translation is implemented by the
-  Gemini and OpenAI clients; Anthropic only polishes.
+- Model argument (one word): `auto` = the first cloud key found (Gemini →
+  OpenAI → Anthropic). A provider name (`gemini`, `openai`, `anthropic`,
+  `ollama`) uses its default model. A model name is routed by its spelling:
+  `gemini-*` → Gemini, `gpt-*` / `o1*` / `o3*` / `o4*` → OpenAI, `claude-*` →
+  Anthropic, anything else — Ollama's `name:tag`, e.g. `gemma3:4b` — → local
+  Ollama. `provider/model` forces a provider (`openai/my-model`).
+- Ollama runs the model on this Mac's GPU, so it is only used when written
+  explicitly; `auto` never picks it. Its status says `(local GPU)`.
+- Translation is implemented by the Gemini and OpenAI clients; Anthropic only
+  polishes.
 - Keys come from the tray's environment or `<data>/.env` (`KEY=value` lines),
   since a LaunchAgent does not inherit the login shell's environment.
 - Wiring the v1 runtime doesn't execute (e.g. `polish` fed by `mic`) is

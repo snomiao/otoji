@@ -195,13 +195,11 @@ pub fn on_final(text: &str) {
     }
     let text = text.to_string();
     if let Some((_, args)) = polish {
-        let provider = args.first().cloned().unwrap_or_else(|| "auto".into());
-        spawn_llm(Job::Polish, provider, text.clone());
+        spawn_llm(Job::Polish, model_spec("polish", &args), text.clone());
     }
     if let Some((_, args)) = translate {
         let lang = args.first().cloned().unwrap_or_else(|| "en".into());
-        let provider = args.get(1).cloned().unwrap_or_else(|| "auto".into());
-        spawn_llm(Job::Translate(lang), provider, text);
+        spawn_llm(Job::Translate(lang), model_spec("translate", &args), text);
     }
 }
 
@@ -248,54 +246,94 @@ fn runtime() -> &'static tokio::runtime::Runtime {
     })
 }
 
-/// Build a polisher for a provider name. Cloud providers need their key in
-/// the environment or `<data>/.env`; `None` when it is missing.
-/// - `gemini` / `anthropic`: their own clients (GEMINI_API_KEY / ANTHROPIC_API_KEY)
-/// - `openai`: api.openai.com with OPENAI_API_KEY (model: OTOJI_OPENAI_MODEL,
-///   default gpt-4.1-mini)
-/// - `ollama`: the local OpenAI-compatible server (OTOJI_POLISH_BASE_URL,
-///   default localhost:11434). Explicit only — it runs the model on this
-///   Mac's GPU, so `auto` never picks it.
-/// - `auto`: gemini → openai → anthropic.
-fn polisher(provider: &str) -> Option<Arc<dyn otoji::polish::Polisher>> {
+/// Resolve a polish/translate model spec to a polisher and a short label.
+///
+/// - `auto` (default): the first cloud key found — gemini → openai → anthropic
+/// - `gemini` / `openai` / `anthropic` / `ollama`: that provider's default model
+/// - a model name, routed by its spelling: `gemini-*` → Gemini, `gpt-*` /
+///   `o1*` / `o3*` / `o4*` → OpenAI, `claude-*` → Anthropic, anything else
+///   (Ollama's `name:tag`, e.g. `gemma3:4b`) → local Ollama
+/// - `provider/model` forces the provider (`openai/my-model`, `ollama/qwen3`)
+///
+/// Cloud providers need GEMINI_API_KEY / OPENAI_API_KEY / ANTHROPIC_API_KEY
+/// (env or `<data>/.env`). Ollama (OTOJI_POLISH_BASE_URL, default
+/// localhost:11434) runs on this Mac's GPU, so it is never picked by `auto`.
+fn resolve_model(spec: &str) -> Result<(Arc<dyn otoji::polish::Polisher>, String), String> {
     use otoji::polish::{AnthropicPolisher, GeminiPolisher, OpenAiPolisher, Polisher};
     let key = |k: &str| std::env::var(k).ok().filter(|v| !v.trim().is_empty());
-    let gemini = || {
-        key("GEMINI_API_KEY")?;
-        GeminiPolisher::from_env().ok().map(|p| Arc::new(p) as Arc<dyn Polisher>)
-    };
-    let anthropic = || {
-        key("ANTHROPIC_API_KEY")?;
-        AnthropicPolisher::from_env().ok().map(|p| Arc::new(p) as Arc<dyn Polisher>)
-    };
-    let openai = || {
-        let k = key("OPENAI_API_KEY")?;
-        let model = key("OTOJI_OPENAI_MODEL").unwrap_or_else(|| "gpt-4.1-mini".into());
-        Some(Arc::new(OpenAiPolisher::new("https://api.openai.com/v1", k, model)) as Arc<dyn Polisher>)
-    };
-    let ollama = || {
-        let mut p = OpenAiPolisher::from_env().ok()?;
-        if p.model.is_empty() {
-            p.model = key("OTOJI_POLISH_MODEL").unwrap_or_else(|| "gemma3:4b".into());
+    let need = |k: &str| key(k).ok_or_else(|| format!("needs {k}: add it to otoji/.env"));
+    let build = |provider: &str, model: Option<&str>| -> Result<(Arc<dyn Polisher>, String), String> {
+        match provider {
+            "gemini" => {
+                let m = model.unwrap_or("gemini-2.5-flash-lite");
+                Ok((Arc::new(GeminiPolisher::new(need("GEMINI_API_KEY")?, m)), m.to_string()))
+            }
+            "openai" => {
+                let m = model
+                    .map(String::from)
+                    .or_else(|| key("OTOJI_OPENAI_MODEL"))
+                    .unwrap_or_else(|| "gpt-4.1-mini".into());
+                let p = OpenAiPolisher::new("https://api.openai.com/v1", need("OPENAI_API_KEY")?, m.clone());
+                Ok((Arc::new(p), m))
+            }
+            "anthropic" => {
+                let m = model.unwrap_or("claude-haiku-4-5");
+                Ok((Arc::new(AnthropicPolisher::new(need("ANTHROPIC_API_KEY")?, m)), m.to_string()))
+            }
+            "ollama" | "local" => {
+                let base = key("OTOJI_POLISH_BASE_URL").unwrap_or_else(|| "http://localhost:11434/v1".into());
+                let m = model
+                    .map(String::from)
+                    .or_else(|| key("OTOJI_POLISH_MODEL"))
+                    .unwrap_or_else(|| "gemma3:4b".into());
+                let p = OpenAiPolisher::new(base, key("OTOJI_POLISH_API_KEY").unwrap_or_default(), m.clone());
+                Ok((Arc::new(p), format!("{m} (local GPU)")))
+            }
+            other => Err(format!("unknown provider `{other}`")),
         }
-        Some(Arc::new(p) as Arc<dyn Polisher>)
     };
-    match provider {
-        "gemini" => gemini(),
-        "openai" => openai(),
-        "anthropic" => anthropic(),
-        "ollama" | "local" => ollama(),
-        _ => gemini().or_else(openai).or_else(anthropic),
+    let spec = spec.trim_matches('"');
+    if let Some((provider, model)) = spec.split_once('/') {
+        return build(provider, Some(model));
+    }
+    match spec {
+        "" | "auto" => build("gemini", None)
+            .or_else(|_| build("openai", None))
+            .or_else(|_| build("anthropic", None))
+            .map_err(|_| "needs an LLM API key: add GEMINI_API_KEY=… to otoji/.env".to_string()),
+        "gemini" | "openai" | "anthropic" | "ollama" | "local" => build(spec, None),
+        m if m.starts_with("gemini-") => build("gemini", Some(m)),
+        m if m.starts_with("gpt-") || ["o1", "o3", "o4"].iter().any(|p| m.starts_with(p)) => {
+            build("openai", Some(m))
+        }
+        m if m.starts_with("claude-") => build("anthropic", Some(m)),
+        m => build("ollama", Some(m)),
     }
 }
 
-pub fn has_llm_key(provider: &str) -> bool {
-    polisher(provider).is_some()
+type Resolved = Result<(Arc<dyn otoji::polish::Polisher>, String), String>;
+
+/// [`resolve_model`], cached per spec: the menu refreshes 10×/s and building
+/// an HTTP client each time would be wasteful. Keys only change on restart.
+fn resolve_cached(spec: &str) -> Resolved {
+    static CACHE: Mutex<Option<HashMap<String, Resolved>>> = Mutex::new(None);
+    let mut g = CACHE.lock().unwrap();
+    g.get_or_insert_with(HashMap::new)
+        .entry(spec.to_string())
+        .or_insert_with(|| resolve_model(spec))
+        .clone()
 }
 
-fn spawn_llm(job: Job, provider: String, text: String) {
-    let Some(p) = polisher(&provider) else {
-        return; // status shows "? needs an LLM API key"
+/// The model spec of a polish/translate node: `polish <model>`,
+/// `translate <lang> <model>`.
+fn model_spec(kind: &str, args: &[String]) -> String {
+    let i = if kind == "translate" { 1 } else { 0 };
+    args.get(i).map(|a| a.trim_matches('"').to_string()).unwrap_or_else(|| "auto".into())
+}
+
+fn spawn_llm(job: Job, spec: String, text: String) {
+    let Ok((p, _)) = resolve_cached(&spec) else {
+        return; // the status row shows why (`?` missing key, `!` bad spec)
     };
     let is_polish = matches!(job, Job::Polish);
     with(|s| {
@@ -448,24 +486,27 @@ pub fn statuses(mic_authorized: bool) -> HashMap<String, NodeStatus> {
                     }
                     "polish" | "translate" => {
                         let is_polish = n.kind == "polish";
-                        let provider = if is_polish { n.args.first() } else { n.args.get(1) };
-                        let provider = provider.map(|p| p.trim_matches('"')).unwrap_or("auto");
                         let (err, done, last) = if is_polish {
                             (&s.polish_err, s.polish_done, &s.polish_last)
                         } else {
                             (&s.translate_err, s.translate_done, &s.translate_last)
                         };
+                        let resolved = resolve_cached(&model_spec(&n.kind, &n.args));
                         if !n.enabled {
                             NodeState::Off
-                        } else if !has_llm_key(provider) {
-                            detail.push("needs an LLM API key: add GEMINI_API_KEY=… to otoji/.env".into());
-                            NodeState::NeedsUser
+                        } else if let Err(why) = &resolved {
+                            let missing_key = why.starts_with("needs");
+                            detail.push(why.clone());
+                            if missing_key { NodeState::NeedsUser } else { NodeState::Error }
                         } else if let Some(e) = err.clone() {
                             detail.push(short(&e, 40));
                             NodeState::Error
                         } else {
                             let a = if is_polish { &mut s.polish } else { &mut s.translate };
                             let state = duty(a, now, NodeState::Chunk);
+                            if let Ok((_, label)) = &resolved {
+                                detail.push(label.clone());
+                            }
                             detail.push(format!("{done} done"));
                             if !last.is_empty() {
                                 detail.push(format!("“{}”", short(last, 24)));
