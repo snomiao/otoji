@@ -472,6 +472,9 @@ const FEATURED = [
 ];
 const featuredKey = (k) => (k.includes(":") ? `m:${k}` : k);
 const FEATURED_KEYS = new Set(FEATURED.map(([k]) => featuredKey(k)));
+// A piece drawn from recorded history (its story isn't marked "Imagined:").
+const storyOf = (civ, a) => STORIES[`${civ.id}:${a}`];
+const isHistory = (civ, a) => { const st = storyOf(civ, a); return !!st && !/Imagined:/i.test(st); };
 // ── the left nav: region → civilization → one chip per activity ────────
 const REGION_ORDER = ["East Asia", "South & Southeast Asia", "Steppe & Central Asia", "Middle East", "Africa", "Ancient Mediterranean & Near East",
   "Western Europe", "Northern & Central Europe", "Eastern Europe & Byzantium", "Americas"];
@@ -515,6 +518,7 @@ function renderMatrix() {
         const ok = activitiesFor(civ).includes(a);
         b.textContent = ACTIVITIES[a].glyph; b.disabled = !ok;
         b.title = ok ? `${civ.name} × ${ACTIVITIES[a].en}: ${ACTIVITIES[a].about}` : `${civ.name}: no ${ACTIVITIES[a].en.toLowerCase()}`;
+        if (ok && isHistory(civ, a)) { b.classList.add("history"); b.title += " · from recorded history"; }
         if (ok && FEATURED_KEYS.has(civKey(civ, a))) { b.classList.add("featured"); b.title += " ★ " + FEATURED.find(([k]) => featuredKey(k) === civKey(civ, a))[2]; }
         if (ok) { b.dataset.ex = civKey(civ, a); b.setAttribute("aria-current", "false"); b.addEventListener("click", () => loadExample(civKey(civ, a))); }
         chips.append(b);
@@ -533,7 +537,7 @@ renderMatrix();
 function renderPlayer() {
   const root = document.createElement("section"); root.id = "player"; root.setAttribute("aria-label", "Player");
   root.innerHTML = `<header><h1>otoji · music of the world's peoples</h1><a class="to-player" href="?">✎ open the editor</a>
-    <span class="legend">${CIVS.length} peoples × ${ACTIVITY_IDS.length} scenes · each piece starts with one instrument and adds one every bar · <b>violet</b> = featured</span></header>
+    <span class="legend">${CIVS.length} peoples × ${ACTIVITY_IDS.length} scenes · each piece starts with one instrument and adds one every bar · <b>violet</b> = featured · <i>teal</i> = from recorded history (the rest are imagined scenes)</span></header>
     <div class="now" aria-live="polite"><span class="title">Pick a piece below.</span><div class="story"></div></div>
     <div class="grid-wrap"><table><thead></thead><tbody></tbody></table></div>`;
   document.body.append(root);
@@ -549,6 +553,9 @@ function renderPlayer() {
     loadExample(key); await start(); current = btn; btn.setAttribute("aria-pressed", "true");
     const A = ACTIVITIES[a], f = FEATURED.find(([k]) => featuredKey(k) === key);
     now.querySelector(".title").textContent = `${civ.zh} ${civ.name} × ${A.zh} ${A.en}${f ? " ★ " + f[2] : ""}`;
+    const kind = storyOf(civ, a) ? (isHistory(civ, a) ? ["history", "recorded history"] : ["imagined", "an imagined scene"]) : null;
+    let kb = now.querySelector(".kind"); if (!kb) { kb = document.createElement("span"); now.querySelector(".title").after(kb); }
+    kb.className = "kind " + (kind ? kind[0] : ""); kb.textContent = kind ? kind[1] : "";
     const sb = now.querySelector(".story"); sb.textContent = (STORIES[`${civ.id}:${a}`] || A.about) + (civ.note ? `\n♪ ${civ.note}` : "");
     if (!now.querySelector("button")) { const st = Object.assign(document.createElement("button"), { type: "button", textContent: "■ Stop" }); st.addEventListener("click", () => { stop(); if (current) current.setAttribute("aria-pressed", "false"); current = null; }); now.querySelector(".title").after(st); }
   };
@@ -568,6 +575,7 @@ function renderPlayer() {
           const f = FEATURED.find(([k]) => featuredKey(k) === civKey(civ, a));
           btn.title = `${civ.name} × ${ACTIVITIES[a].en}${f ? " ★ " + f[2] : ""}`;
           if (f) btn.classList.add("featured");
+          if (isHistory(civ, a)) { btn.classList.add("history"); btn.title += " · from recorded history"; }
           btn.addEventListener("click", () => play(civ, a, btn));
           td.append(btn);
         }
