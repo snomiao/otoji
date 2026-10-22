@@ -48,7 +48,33 @@ body {
   padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px));
   padding-block: 20px 40px;
 }
-main { display: grid; gap: 18px; } /* full page width */
+/* App shell: examples nav · editor · help, both side panels fold to a rail. */
+.app { display: grid; grid-template-columns: var(--lw, 230px) minmax(0, 1fr) var(--rw, 360px); gap: 16px; align-items: start; }
+.app.left-folded { --lw: 34px; }
+.app.right-folded { --rw: 34px; }
+main { display: grid; gap: 18px; min-width: 0; }
+.side { position: sticky; top: 0; max-height: 100vh; overflow: auto; background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 10px 8px; min-width: 0; }
+.side-head { display: flex; align-items: center; justify-content: space-between; gap: 6px; padding: 0 2px 6px; }
+.side-head h2 { margin: 0; }
+.fold { border: 1px solid var(--line); background: var(--screen); border-radius: 6px; width: 24px; height: 24px; cursor: pointer; color: var(--muted); font-weight: 700; line-height: 1; flex: none; }
+.fold:hover { color: var(--ink); border-color: var(--muted); }
+.left-folded .side-left > :not(.side-head), .right-folded .side-right > :not(.side-head) { display: none; }
+.left-folded .side-left .side-head h2, .right-folded .side-right .side-head h2 { display: none; }
+.left-folded .side-left .fold, .right-folded .side-right .fold { transform: rotate(180deg); }
+.help { display: grid; gap: 10px; }
+.help .card { padding: 8px 10px; }
+.help summary { cursor: pointer; list-style: none; }
+.help summary::-webkit-details-marker { display: none; }
+.help summary h2 { display: inline; margin: 0; }
+.help summary::before { content: "▸ "; color: var(--muted); }
+.help details[open] > summary::before { content: "▾ "; }
+.help details[open] > summary { margin-bottom: 6px; }
+@media (max-width: 1000px) {
+  .app { grid-template-columns: minmax(0, 1fr); }
+  .side { position: static; max-height: none; }
+  .side-left { order: 0; } main { order: 1; } .side-right { order: 2; }
+  .left-folded .side-left, .right-folded .side-right { width: auto; }
+}
 h1 { font-size: 26px; font-weight: 700; letter-spacing: 0.01em; margin: 0; text-wrap: balance; }
 h1 small { font-weight: 500; color: var(--muted); font-size: 15px; margin-left: 8px; }
 h2 { font-size: 13px; text-transform: uppercase; letter-spacing: 0.12em; color: var(--muted); margin: 0 0 8px; font-weight: 600; }
@@ -109,10 +135,10 @@ button, select, input { font: inherit; color: inherit; }
 .srow.s-load .sym { color: var(--focus); }
 
 .monaco-host { height: max(440px, calc(100vh - 330px)); min-width: 0; }
-.patch-body { display: grid; grid-template-columns: 196px minmax(0, 1fr); gap: 12px; align-items: start; }
+.patch-body { display: grid; grid-template-columns: minmax(0, 1fr); gap: 12px; }
 .editor-col { min-width: 0; display: grid; gap: 10px; }
-@media (max-width: 860px) { .patch-body { grid-template-columns: minmax(0, 1fr); } }
-.tree { font-size: 14px; border: 1px solid var(--line); border-radius: 7px; background: var(--screen); padding: 8px 6px; max-height: max(470px, calc(100vh - 300px)); overflow: auto; }
+
+.tree { font-size: 14px; }
 .tree details { margin: 0; }
 .tree details details { margin-left: 12px; }
 .tree summary { cursor: pointer; font-weight: 600; padding: 3px 6px; border-radius: 5px; list-style: none; }
@@ -139,7 +165,7 @@ button, select, input { font: inherit; color: inherit; }
 .keys kbd { font-family: var(--font-code); font-size: 12px; border: 1px solid var(--line); border-radius: 4px; padding: 0 5px; background: var(--screen); color: var(--ink); }
 
 /* reference */
-.ref { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 18px; }
+
 .card { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px; min-width: 0; }
 table { border-collapse: collapse; width: 100%; font-size: 14px; }
 td { padding: 5px 8px 5px 0; vertical-align: top; border-top: 1px solid var(--line); }
@@ -158,6 +184,11 @@ ul.ideas { margin: 0; padding-left: 18px; display: grid; gap: 6px; font-size: 14
 /*MONACO_CSS*/
 </style>
 
+<div class="app" id="app">
+<aside class="side side-left" aria-label="Examples">
+  <div class="side-head"><h2>Examples</h2><button class="fold" id="foldLeft" type="button" aria-expanded="true" title="Fold the examples panel">«</button></div>
+  <nav class="tree" id="tree" aria-label="Examples"></nav>
+</aside>
 <main>
   <header style="display:grid; gap:6px">
     <h1>otoji Patchbay <small>music nodes in the pipeline language</small></h1>
@@ -181,7 +212,6 @@ ul.ideas { margin: 0; padding-left: 18px; display: grid; gap: 6px; font-size: 14
       <span class="count" id="count">—</span>
     </div>
     <div class="patch-body">
-      <nav class="tree" id="tree" aria-label="Examples"></nav>
       <div class="editor-col">
     <div id="monaco" class="monaco-host screen-wrap" aria-label="Patch source"></div>
     <div class="keys" id="keys">
@@ -201,9 +231,12 @@ ul.ideas { margin: 0; padding-left: 18px; display: grid; gap: 6px; font-size: 14
     </div>
   </section>
 
-  <section class="ref">
-    <div class="card">
-      <h2>Status column</h2>
+</main>
+<aside class="side side-right" aria-label="Help">
+  <div class="side-head"><h2>Help</h2><button class="fold" id="foldRight" type="button" aria-expanded="true" title="Fold the help panel">»</button></div>
+  <div class="help">
+    <details class="card" open>
+      <summary><h2>Status column</h2></summary>
       <table>
         <tr><td class="sym-cell stream">~</td><td>sounding or streaming right now; flashes with the music</td></tr>
         <tr><td class="sym-cell">-</td><td>ready, nothing playing</td></tr>
@@ -212,9 +245,9 @@ ul.ideas { margin: 0; padding-left: 18px; display: grid; gap: 6px; font-size: 14
         <tr><td class="sym-cell user">?</td><td>waiting on you (press Start)</td></tr>
         <tr><td class="sym-cell">off</td><td>the line starts with <code>#</code></td></tr>
       </table>
-    </div>
-    <div class="card scroll-x">
-      <h2>Nodes</h2>
+    </details>
+    <details class="card scroll-x" open>
+      <summary><h2>Nodes</h2></summary>
       <table>
         <tr><td><code>clock</code></td><td><code>bpm=92 sig=4</code> · environment: music nodes take the first one automatically</td></tr>
         <tr><td><code>metro</code></td><td>节拍器, accent on beat 1 · <code>tone=1000</code></td></tr>
@@ -234,9 +267,9 @@ ul.ideas { margin: 0; padding-left: 18px; display: grid; gap: 6px; font-size: 14
         <tr><td><code>reverb</code></td><td><code>size=2 wet=0.25</code> (or <code>2s</code>)</td></tr>
         <tr><td><code>speaker</code></td><td><code>volume=0.5</code> · only what reaches a speaker is heard</td></tr>
       </table>
-    </div>
-    <div class="card">
-      <h2>Syntax</h2>
+    </details>
+    <details class="card" open>
+      <summary><h2>Syntax</h2></summary>
       <table>
         <tr><td><code>. drums</code></td><td>a source; the name defaults to the kind</td></tr>
         <tr><td><code>drums,piano&gt; mix</code></td><td>inputs; spaces allowed, <code>|</code> optional</td></tr>
@@ -249,18 +282,19 @@ ul.ideas { margin: 0; padding-left: 18px; display: grid; gap: 6px; font-size: 14
         <tr><td><code>?vad</code> <code>!vad</code></td><td>only while / not while vad hears speech (<code>while=</code> / <code>unless=</code>)</td></tr>
         <tr><td><code>. clock 100 3/4</code></td><td>keys can go when the value is obvious, like CSS</td></tr>
       </table>
-    </div>
-    <div class="card">
-      <h2>Next nodes to try in otoji</h2>
+    </details>
+    <details class="card" open>
+      <summary><h2>Next nodes to try in otoji</h2></summary>
       <ul class="ideas">
         <li><code>mic&gt; pitch&gt; piano</code>: hum a melody, hear it on piano.</li>
         <li><code>stt.final&gt; lyrics</code>: transcript lines land on the bar.</li>
         <li><code>tap&gt; clock</code>: tap tempo drives every node.</li>
       </ul>
       <p class="count" style="margin-top:8px"><code>. drums kick ^vad</code> works here already: pick “Speech drums”.</p>
-    </div>
-  </section>
-</main>
+    </details>
+  </div>
+</aside>
+</div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.52.2/min/vs/loader.js"></script>
 <script>
@@ -1957,6 +1991,14 @@ function renderTree() {
   document.getElementById("tree").replaceChildren(...EXAMPLE_TREE.map(branch));
 }
 renderTree();
+// Side panels fold to a rail; remembered per browser.
+for (const [btn, cls, key] of [["foldLeft", "left-folded", "otoji-fold-left"], ["foldRight", "right-folded", "otoji-fold-right"]]) {
+  const app = document.getElementById("app"), b = document.getElementById(btn);
+  const set = (folded) => { app.classList.toggle(cls, folded); b.setAttribute("aria-expanded", String(!folded)); try { localStorage.setItem(key, folded ? "1" : "0"); } catch (e) { /* storage unavailable */ } };
+  let saved = null; try { saved = localStorage.getItem(key); } catch (e) { /* storage unavailable */ }
+  set(saved === "1");
+  b.addEventListener("click", () => set(!app.classList.contains(cls)));
+}
 
 // Pending (Ctrl+E) toggles land when the first clock starts a new bar.
 function applyPendingAtBar(cid, c) {
