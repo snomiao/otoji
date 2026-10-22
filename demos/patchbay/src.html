@@ -221,6 +221,7 @@ ul.ideas { margin: 0; padding-left: 18px; display: grid; gap: 6px; font-size: 14
         <tr><td><code>. drums</code></td><td>a source; the name defaults to the kind</td></tr>
         <tr><td><code>drums,piano&gt; mix</code></td><td>inputs; spaces allowed, <code>|</code> optional</td></tr>
         <tr><td><code>&gt; speaker</code></td><td>input from the previous line</td></tr>
+        <tr><td><code>*&gt; speaker</code></td><td>every fitting, not-yet-used output in this group (blank line or <code>---</code> starts a group)</td></tr>
         <tr><td><code>. metro2=metro</code></td><td>a second node of a kind (unnamed ones become <code>metro2</code>)</td></tr>
         <tr><td><code>clock2&gt; metro</code></td><td>pick an environment instead of the first <code>clock</code></td></tr>
         <tr><td><code>#. metro</code></td><td>muted; <code># text</code> is a comment</td></tr>
@@ -290,6 +291,7 @@ function splitHead(body) {
   if (close < 0) { if (piped) throw new Error("`|` without a closing `>`"); return null; }
   const inner = rest.slice(0, close).trim();
   if (!inner) return { head: { kind: "prev" }, rest: rest.slice(close + 1) };
+  if (inner === "*") return { head: { kind: "all" }, rest: rest.slice(close + 1) };
   try { return { head: { kind: "refs", refs: inner.split(",").map((r) => parseRef(r.trim())) }, rest: rest.slice(close + 1) }; }
   catch (e) { if (piped) throw e; return null; }
 }
@@ -307,6 +309,7 @@ function parsePatch(src) {
     const t = raw.trim();
     const invalid = (e) => ({ type: "invalid", raw: stripStatus(raw), error: e.message, id: null });
     if (!t) return { type: "blank" };
+    if (/^-{3,}$/.test(t)) return { type: "sep" }; // group separator, like a blank line
     try {
       if (t.startsWith("#")) {
         const h = splitHead(t.slice(1));
@@ -383,17 +386,47 @@ function check(p) {
     p.lines[bad.i] = { type: "invalid", raw: nodeSource(l), error: bad.err, id: l.id };
   }
 }
-function headText(h) { return h.kind === "source" ? "." : h.kind === "prev" ? ">" : h.refs.map(refText).join(",") + ">"; }
+function headText(h) { return h.kind === "source" ? "." : h.kind === "prev" ? ">" : h.kind === "all" ? "*>" : h.refs.map(refText).join(",") + ">"; }
 const token = (n) => (n.id !== n.kind ? `${n.id}=${n.kind}` : n.kind);
 function nodeSource(n) {
   return `${n.enabled ? "" : "#"}${headText(n.head)} ${[token(n), ...n.args].join(" ")}${n.comment ? "  # " + n.comment : ""}`;
 }
+// What each kind outputs and accepts, so `*>` only picks inputs that fit:
+// a speaker takes audio, never a mic signal, a vad's control or a clock.
+const OUT_TYPE = { clock: "env", mic: "mic", vad: "control", learn: null, speaker: null,
+  metro: "audio", drums: "audio", piano: "audio", bass: "audio", mix: "audio", delay: "audio", reverb: "audio" };
+const ACCEPTS = { mix: ["audio"], delay: ["audio"], reverb: ["audio"], speaker: ["audio"], vad: ["mic"], learn: ["mic"] };
+// Groups are paragraphs: separated by blank lines or `---`.
+function groupsOf(p) {
+  const g = new Map(); let k = 0, gap = false;
+  p.lines.forEach((l) => {
+    if (l.type === "blank" || l.type === "sep") { gap = true; return; }
+    if (gap) { k++; gap = false; }
+    if (l.type === "node") g.set(l.id, k);
+  });
+  return g;
+}
 function inputs(p) {
   const out = new Map(); let prev = null;
-  for (const n of nodes(p)) {
-    out.set(n.id, n.head.kind === "source" ? [] : n.head.kind === "prev" ? (prev ? [{ node: prev, port: null, policy: null }] : []) : n.head.refs);
+  const all = nodes(p), kindOf = new Map(all.map((n) => [n.id, n.kind]));
+  for (const n of all) {
+    out.set(n.id, n.head.kind === "source" ? [] : n.head.kind === "prev" ? (prev ? [{ node: prev, port: null, policy: null }] : [])
+      : n.head.kind === "all" ? [] : n.head.refs);
     prev = n.id;
   }
+  // `*>`: every fitting output in its group that nothing consumes yet (or,
+  // at the top of a group, in the group above), in line order.
+  const consumed = new Set([...out.values()].flat().map((r) => r.node));
+  const group = groupsOf(p);
+  all.forEach((n, i) => {
+    if (n.head.kind !== "all") return;
+    const fits = (m) => (ACCEPTS[n.kind] || []).includes(OUT_TYPE[m.kind]) && !consumed.has(m.id) && m.id !== n.id;
+    const above = all.slice(0, i);
+    let pick = above.filter((m) => group.get(m.id) === group.get(n.id) && fits(m));
+    if (!pick.length) pick = above.filter((m) => group.get(m.id) === group.get(n.id) - 1 && fits(m));
+    out.set(n.id, pick.map((m) => ({ node: m.id, port: null, policy: null })));
+    pick.forEach((m) => consumed.add(m.id));
+  });
   return out;
 }
 // Inputs plus implicit environment inputs (first enabled node of the needed kind).
@@ -432,9 +465,10 @@ function formatPatch(p) {
   };
   for (const l of p.lines) {
     if (l.type === "blank") { flush(); out.push(""); continue; }
+    if (l.type === "sep") { flush(); out.push("---"); continue; }
     if (l.type === "comment") { block.push({ text: ("# " + l.text).trimEnd() }); continue; }
     if (l.type === "invalid") { block.push({ text: l.raw }); continue; }
-    let head = l.head.kind === "prev" && !branching ? ">" : l.head.kind === "source" ? "." : ins.get(l.id).map(refText).join(",") + ">";
+    let head = l.head.kind === "prev" && !branching ? ">" : l.head.kind === "source" ? "." : l.head.kind === "all" ? "*>" : ins.get(l.id).map(refText).join(",") + ">";
     if (!l.enabled) head = "#" + head;
     block.push({ cells: { head, node: token(l), args: l.args.join(" "), comment: l.comment } });
   }
@@ -994,6 +1028,12 @@ function micSpark() {
   return mic.history.map((v) => "▁▂▃▅▆▇"[Math.min(5, Math.floor(Math.sqrt(v / 0.15) * 6))]).join("");
 }
 function nodeStatus(r, eff) {
+  const base = nodeStatusInner(r, eff);
+  if (r.node.head.kind !== "all" || base[0] === "!" ) return base;
+  const picked = (eff.get(r.node.id) || []).filter((x) => !x.implicit).map((x) => x.node);
+  return [base[0], (base[1] ? base[1] + " · " : "") + (picked.length ? `← ${picked.join(", ")}` : "nothing to take in this group")];
+}
+function nodeStatusInner(r, eff) {
   const n = r.node, k = n.kind, t = ctx ? ctx.currentTime : 0;
   if (r.error) return ["!", r.error];
   if (!n.enabled) return ["off", learnNote.has(n.id) ? `${learnNote.get(n.id)} · Ctrl+T records again` : ""];
@@ -1117,7 +1157,7 @@ const EXAMPLES = {
 .                       drums   pattern="x.....x...x.....|....x.......x...|x.x.x.x.x.x.x.xX"
 .                       piano   chords="Am F C G" style=arp oct=4
 .                       bass    chords="Am F C G"
-metro,drums,piano,bass> mix
+*>                      mix
 >                       reverb  size=2 mix=0.25
 >                       speaker volume=0.5
 `,
@@ -1158,7 +1198,7 @@ mic>         vad           0.02 300ms
 .            drums         kick 1/16 ^vad
 .            hats=drums    "................|................|x.x.x.x.x.x.x.x." ?vad
 .            piano         "Am F C G" arp !vad
-drums,hats,piano> speaker  0.5
+*>           speaker       0.5
 `,
   dub: `# Block chords through a tempo-synced delay
 .               clock   bpm=76
@@ -1250,7 +1290,8 @@ function monacoUI(monaco) {
       [/^\s*#(?=\s*(\.|\||[\w.,:\- ]*>)).*$/, "disabled"],
       [/^\s*#.*$/, "comment"],
       [/^(\s*)(\.)(\s+)([\w-]+(?:=[\w-]+)?)/, ["", "keyword", "", "function"]],
-      [/^(\s*\|?\s*[\w.,:\- ]*>)(\s*)([\w-]+(?:=[\w-]+)?)/, ["type", "", "function"]],
+      [/^(\s*\|?\s*(?:\*|[\w.,:\- ]*)>)(\s*)([\w-]+(?:=[\w-]+)?)/, ["type", "", "function"]],
+      [/^\s*-{3,}\s*$/, "comment"],
       [/\s#.*$/, "comment"],
       [/(^|\s)[\^?!][\w-]+(\.[\w-]+)?/, "keyword"],
       [/\b(on|while|unless)=[\w-]+/, "keyword"],

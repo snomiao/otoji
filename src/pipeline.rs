@@ -78,6 +78,9 @@ pub enum Head {
     Previous,
     /// `|a,b.port>` — explicit references.
     Refs(Vec<InputRef>),
+    /// `*>` — every output in this group that nothing consumes yet (at the
+    /// top of a group: the group above), in line order.
+    All,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -98,6 +101,8 @@ pub struct NodeLine {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Line {
     Blank,
+    /// `---`: separates groups, like a blank line.
+    Separator,
     /// Full-line comment, without the leading `#`.
     Comment(String),
     Node(NodeLine),
@@ -277,6 +282,9 @@ fn split_head(body: &str, line: usize) -> Option<Result<(Head, &str), ParseError
         return piped.then(|| Err(ParseError { line, message: "`|` without a closing `>`".into() }));
     };
     let inner = rest[..close].trim();
+    if inner == "*" {
+        return Some(Ok((Head::All, &rest[close + 1..])));
+    }
     let head = if inner.is_empty() {
         Head::Previous
     } else {
@@ -403,6 +411,8 @@ impl Pipeline {
             };
             if t.is_empty() {
                 lines.push(Line::Blank);
+            } else if t.len() >= 3 && t.chars().all(|c| c == '-') {
+                lines.push(Line::Separator);
             } else if let Some(after) = t.strip_prefix('#') {
                 // `#` + node = that node, turned off; anything else is a comment.
                 match split_head(after, n) {
@@ -527,7 +537,7 @@ impl Pipeline {
                                         Some(format!("unknown node `{}`", r.node))
                                     }
                                 }),
-                                Head::Source => None,
+                                Head::Source | Head::All => None,
                             }
                         };
                         // Control references (`^x` / `?x` / `!x`) must name a node too.
@@ -568,6 +578,7 @@ impl Pipeline {
         let head = match &n.head {
             Head::Source => ".".to_string(),
             Head::Previous => ">".to_string(),
+            Head::All => "*>".to_string(),
             Head::Refs(r) => format!("{}>", r.iter().map(|r| r.to_string()).collect::<Vec<_>>().join(",")),
         };
         let mut s = format!("{}{head} {}", if n.enabled { "" } else { "#" }, n.token());
@@ -595,7 +606,7 @@ impl Pipeline {
         let mut prev: Option<&str> = None;
         for n in self.nodes() {
             let refs = match &n.head {
-                Head::Source => vec![],
+                Head::Source | Head::All => vec![],
                 Head::Previous => prev
                     .map(|p| vec![InputRef { node: p.to_string(), port: None, policy: None }])
                     .unwrap_or_default(),
@@ -604,7 +615,57 @@ impl Pipeline {
             out.insert(n.id.clone(), refs);
             prev = Some(&n.id);
         }
+        // `*>`: dangling outputs of its group (or the group above), never
+        // environment nodes. Runtimes that know types filter further.
+        let env: std::collections::HashSet<&str> =
+            self.nodes().flat_map(|n| env_needs(&n.kind).iter().copied()).collect();
+        let mut consumed: std::collections::HashSet<String> =
+            out.values().flatten().map(|r| r.node.clone()).collect();
+        let group = self.groups();
+        let all: Vec<&NodeLine> = self.nodes().collect();
+        for (i, n) in all.iter().enumerate() {
+            if n.head != Head::All {
+                continue;
+            }
+            let g = group[&n.id];
+            let fits = |m: &&NodeLine, consumed: &std::collections::HashSet<String>| {
+                !env.contains(m.kind.as_str()) && !consumed.contains(&m.id)
+            };
+            let mut pick: Vec<&NodeLine> =
+                all[..i].iter().copied().filter(|m| group[&m.id] == g && fits(m, &consumed)).collect();
+            if pick.is_empty() && g > 0 {
+                pick = all[..i].iter().copied().filter(|m| group[&m.id] == g - 1 && fits(m, &consumed)).collect();
+            }
+            for m in &pick {
+                consumed.insert(m.id.clone());
+            }
+            out.insert(n.id.clone(), pick.iter().map(|m| InputRef { node: m.id.clone(), port: None, policy: None }).collect());
+        }
         out
+    }
+
+    /// Group index of each node: groups are separated by blank lines or `---`.
+    pub fn groups(&self) -> HashMap<String, usize> {
+        let (mut g, mut k, mut gap) = (HashMap::new(), 0usize, false);
+        for l in &self.lines {
+            match l {
+                Line::Blank | Line::Separator => gap = true,
+                Line::Node(n) => {
+                    if gap {
+                        k += 1;
+                        gap = false;
+                    }
+                    g.insert(n.id.clone(), k);
+                }
+                _ => {
+                    if gap {
+                        k += 1;
+                        gap = false;
+                    }
+                }
+            }
+        }
+        g
     }
 
     /// [`inputs`](Self::inputs) plus implicit environment inputs (see
@@ -641,6 +702,7 @@ impl Pipeline {
         let head = match &n.head {
             Head::Source => ".".to_string(),
             Head::Previous if !branching => ">".to_string(),
+            Head::All => "*>".to_string(),
             Head::Previous | Head::Refs(_) => {
                 let refs: Vec<String> = explicit[&n.id].iter().map(|r| r.to_string()).collect();
                 format!("{}>", refs.join(","))
@@ -719,6 +781,10 @@ impl Pipeline {
                 Line::Blank => {
                     flush(&mut block, &mut comments, &mut out);
                     out.push('\n');
+                }
+                Line::Separator => {
+                    flush(&mut block, &mut comments, &mut out);
+                    out.push_str("---\n");
                 }
                 Line::Comment(c) => {
                     comments.push((format!("# {c}"), None));
@@ -1319,6 +1385,22 @@ stt.final> log=append $date.stt          # -
         let errs: Vec<_> = p.errors().into_iter().map(|e| (e.line, e.message)).collect();
         assert_eq!(errs, [(2, "`?nope`: unknown node `nope`".to_string()), (3, "`!piano`: a node can't control itself".to_string())]);
         assert_eq!(p.nodes().count(), 1);
+    }
+
+    #[test]
+    fn star_takes_dangling_outputs_of_its_group() {
+        let src = ". stt\nstt> polish\nstt> append a.txt\n*> overlay\n---\n. llm openai\n. mic\n\n*> x=append b.txt\n";
+        let p = Pipeline::parse(src).unwrap();
+        let ins = p.inputs();
+        let ids = |id: &str| ins[id].iter().map(|r| r.node.clone()).collect::<Vec<_>>();
+        // polish and append are dangling; stt is consumed already.
+        assert_eq!(ids("overlay"), ["polish", "append"]);
+        // Top of a group → the group above; environment nodes (llm) never picked.
+        assert_eq!(ids("x"), ["mic"]);
+        let f = p.format();
+        let squeeze = f.split_whitespace().collect::<Vec<_>>().join(" ");
+        assert!(squeeze.contains("*> overlay --- . llm openai") && squeeze.contains("*> x=append b.txt"), "{f}");
+        assert_eq!(Pipeline::parse(&f).unwrap().format(), f);
     }
 
     #[test]

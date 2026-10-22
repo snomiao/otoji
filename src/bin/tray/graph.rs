@@ -783,7 +783,7 @@ fn wants_listen_of(p: &Pipeline) -> bool {
 fn wiring_supported(p: &Pipeline, kind: &str, head: &Head) -> bool {
     let inputs: Vec<String> = match head {
         Head::Source => return kind == "mic" || kind == "llm",
-        Head::Previous => return kind != "mic",
+        Head::Previous | Head::All => return kind != "mic",
         Head::Refs(r) => r.iter().map(|r| r.node.clone()).collect(),
     };
     let kind_of = |id: &str| p.nodes().find(|n| n.id == id).map(|n| n.kind.clone());
@@ -803,7 +803,7 @@ pub fn rows(mic_authorized: bool) -> Vec<(String, Option<String>)> {
     let rendered = p.render_with_status(&statuses(mic_authorized));
     let mut ids = p.lines.iter().filter_map(|l| match l {
         Line::Node(n) => Some(Some(n.id.clone())),
-        Line::Comment(_) | Line::Invalid { .. } => Some(None),
+        Line::Comment(_) | Line::Invalid { .. } | Line::Separator => Some(None),
         Line::Blank => None,
     });
     rendered

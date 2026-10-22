@@ -96,6 +96,26 @@ llm2,stt.final> translate en       # names its llm explicitly
   Ollama is running and has it (`? run: ollama pull gemma3:4b`). The check is
   a plain HTTP call every 30 s; it never loads the model onto the GPU.
 
+## `*>`: take everything that fits
+
+`*> speaker` takes every output above it in its **group** that nothing
+consumes yet, in line order. Groups are paragraphs, separated by a blank line
+or `---`. At the top of a group, `*>` takes from the group above.
+
+```
+.  drums  kick ^vad
+.  piano  arp
+piano> reverb 2s
+*> speaker 0.5          # ← drums, reverb   (piano is already consumed)
+```
+
+- Only dangling outputs: whatever is already wired somewhere isn't taken twice.
+- Never environment nodes (`clock`, `llm`). Runtimes that know types filter
+  further: in the Patchbay a speaker accepts audio only, so `mic`, `vad` and
+  `learn` are never picked.
+- The status lists what it resolved to (`← drums, reverb`), so a stray blank
+  line can't silently re-wire anything. The formatter keeps `*>` and `---`.
+
 ## Control: `^x` / `?x` / `!x`
 
 `>` carries data (audio, text). A node that should merely *react* to another
