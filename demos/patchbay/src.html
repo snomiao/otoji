@@ -354,7 +354,7 @@ const ID = /^[A-Za-z0-9_-]+$/;
 const ENV_NEEDS = { metro: ["clock"], drums: ["clock"], piano: ["clock"], bass: ["clock"], delay: ["clock"], learn: ["clock"],
   strings: ["clock"], pluck: ["clock"], flute: ["clock"], organ: ["clock"], choir: ["clock"], bell: ["clock"],
   env: ["clock"], fadein: ["clock"], fadeout: ["clock"], arrange: ["clock"], rain: ["clock"], marimba: ["clock"],
-  brass: ["clock"], timpani: ["clock"], wind: ["clock"], crowd: ["clock"], fire: ["clock"] };
+  brass: ["clock"], timpani: ["clock"], throat: ["clock"], wind: ["clock"], crowd: ["clock"], fire: ["clock"] };
 const STATUS_SYMS = ["~", "-", "/", ".", "!", "?"];
 
 function isStatusComment(c) {
@@ -510,11 +510,11 @@ function nodeSource(n) {
 }
 // What each kind outputs and accepts, so `*>` only picks inputs that fit:
 // a speaker takes audio, never a mic signal, a vad's control or a clock.
-const AUDIO_OUT = ["metro", "drums", "piano", "bass", "strings", "pluck", "flute", "organ", "choir", "bell", "marimba", "brass", "timpani", "rain", "wind", "crowd", "fire",
+const AUDIO_OUT = ["metro", "drums", "piano", "bass", "strings", "pluck", "flute", "organ", "choir", "bell", "marimba", "brass", "timpani", "throat", "rain", "wind", "crowd", "fire",
   "mix", "delay", "reverb", "filter", "drive", "chorus", "phaser", "tremolo", "pan", "eq", "comp", "env", "fadein", "fadeout"];
 const OUT_TYPE = { clock: "env", mic: "mic", vad: "control", arrange: "control", scale: null, learn: null, speaker: null, ...Object.fromEntries(AUDIO_OUT.map((k) => [k, "audio"])) };
 // MIDI: midi-in sends note events; instruments and drums also make notes, which midi-out takes.
-const NOTE_KINDS = ["drums", "piano", "bass", "strings", "pluck", "flute", "organ", "choir", "bell", "marimba", "brass", "timpani"];
+const NOTE_KINDS = ["drums", "piano", "bass", "strings", "pluck", "flute", "organ", "choir", "bell", "marimba", "brass", "timpani", "throat"];
 Object.assign(OUT_TYPE, { "midi-in": "midi", "midi-out": null });
 const ACCEPTS = { speaker: ["audio"], vad: ["mic"], learn: ["mic"], "midi-out": ["notes", "midi"],
   ...Object.fromEntries(NOTE_KINDS.map((k) => [k, ["midi"]])),
@@ -733,7 +733,7 @@ KINDS.crowd = { source: true, build: (o) => buildCrowd(o) };
 KINDS.fire = { source: true, build: (o) => ({ level: num(o, "level", 0.5, 0, 1), crackle: num(o, "crackle", 0.4, 0, 1) }) };
 KINDS.wind = { source: true, build: (o) => ({ level: num(o, "level", 0.5, 0, 1), gust: o.gust ? hz(o.gust, 0.12) : 0.12 }) };
 // Melodic instruments share one set of options (scale, key, phrase, chords…).
-for (const k of ["piano", "bass", "strings", "pluck", "flute", "organ", "choir", "bell", "marimba", "brass", "timpani"]) KINDS[k] = { source: true, build: (o) => buildMelodic(k, o) };
+for (const k of ["piano", "bass", "strings", "pluck", "flute", "organ", "choir", "bell", "marimba", "brass", "timpani", "throat"]) KINDS[k] = { source: true, build: (o) => buildMelodic(k, o) };
 
 // ── autocomplete catalog: what each kind is, takes and accepts ────────
 // args: [key, default, doc, allowed values?]
@@ -785,7 +785,7 @@ const CATALOG = {
     ["device", '"IAC"', "part of the output's name or a wildcard like \"*IAC*\" (first match), or device=2; the first output if left out", [], { re: /^"[^"]*"$/ }],
     ["channel", "1", "1–16 (default 1; drums 10)", Array.from({ length: 16 }, (_, i) => String(i + 1)), { re: /^([1-9]|1[0-6])$/ }]] },
 };
-const SOURCE_KINDS = ["clock", "mic", "midi-in", "arrange", "scale", "metro", "drums", "piano", "bass", "strings", "pluck", "flute", "organ", "choir", "bell", "marimba", "brass", "timpani", "rain", "wind", "crowd", "fire"];
+const SOURCE_KINDS = ["clock", "mic", "midi-in", "arrange", "scale", "metro", "drums", "piano", "bass", "strings", "pluck", "flute", "organ", "choir", "bell", "marimba", "brass", "timpani", "throat", "rain", "wind", "crowd", "fire"];
 const AUDIO_KINDS = AUDIO_OUT;
 // Kinds that make sense after `refs>`, given the kinds of the refs.
 function consumersFor(inKinds) {
@@ -1134,7 +1134,7 @@ function buildMelodic(kind, o) {
     adsr = [ms(parts[0]) / 1000, ms(parts[1]) / 1000, Number(parts[2]), ms(parts[3]) / 1000];
     if (!(adsr[2] >= 0 && adsr[2] <= 1)) throw new Error("adsr sustain is 0–1");
   }
-  const defOct = { bass: 2, strings: 4, pluck: 4, flute: 5, organ: 3, choir: 4, bell: 4, piano: 4, marimba: 4, brass: 3, timpani: 2 }[kind];
+  const defOct = { bass: 2, strings: 4, pluck: 4, flute: 5, organ: 3, choir: 4, bell: 4, piano: 4, marimba: 4, brass: 3, timpani: 2, throat: 5 }[kind];
   const style = o.style || (kind === "bass" ? "root" : kind === "organ" || kind === "choir" ? "block" : "arp");
   if (!["arp", "block", "drone", "root"].includes(style)) throw new Error("style= is arp, block, drone or root");
   return {
@@ -1148,7 +1148,7 @@ function buildMelodic(kind, o) {
 function playMelodic(r, c, step, t) {
   const cfg = r.cfg, out = r.out, stepDur = 60 / c.bpm / 4, bar = Math.floor(step / (4 * c.sig)), barSteps = 4 * c.sig;
   const peak = 0.22 * cfg.vol;
-  const note = (f, dur, p = peak) => { cfg.inst.play(out, t, f, dur, cfg.adsr, p); mark(r, t, Math.min(dur, 1.5)); midiNote(r, 69 + 12 * Math.log2(f / 440), peak > 0 ? 100 * p / peak : 0, t, dur, false); };
+  const note = (f, dur, p = peak) => { cfg.inst.play(out, t, f, dur, cfg.adsr, p, cfg); mark(r, t, Math.min(dur, 1.5)); midiNote(r, 69 + 12 * Math.log2(f / 440), peak > 0 ? 100 * p / peak : 0, t, dur, false); };
   if (cfg.phrase) {
     const per = 16 / cfg.grid;
     if (step % per) return;
@@ -1279,7 +1279,21 @@ INSTRUMENTS.timpani = { adsr: [0.004, 1.4, 0, 0.8], play(out, t, f, dur, adsr, p
   noise(g, t, 0.05, 0.25, 120);
   g.connect(out);
 } };
-MELODIC.push("brass", "timpani");
+// Throat singing (Mongolian khöömii, Tuvan sygyt / kargyraa): one low drone on
+// the key's tonic, and a whistled melody that is a single overtone of it,
+// picked out by a very narrow resonance. Notes snap to the nearest harmonic,
+// as a singer's do, so melodies fall into the natural overtone scale.
+INSTRUMENTS.throat = { adsr: [0.12, 0.3, 0.9, 0.35], play(out, t, f, dur, adsr, peak, cfg) {
+  const fund = cfg ? midiHz(keyMidi(cfg.key, 2)) : 110, k = Math.max(1, Math.round(f / fund));
+  const g = ctx.createGain(), body = ctx.createBiquadFilter(), whistle = ctx.createBiquadFilter(), bg = ctx.createGain(), wg = ctx.createGain(), src = ctx.createGain();
+  const stop = envGain(g, t, dur, peak * 0.6, adsr);
+  for (const det of [0, 4]) { const o = ctx.createOscillator(); o.type = "sawtooth"; o.frequency.value = fund; o.detune.value = det; o.connect(src); o.start(t); o.stop(stop); }
+  body.type = "lowpass"; body.frequency.value = 600; body.Q.value = 2; bg.gain.value = k > 1 ? 0.45 : 1;
+  whistle.type = "bandpass"; whistle.frequency.value = k * fund; whistle.Q.value = 28; wg.gain.value = k > 1 ? 7 : 0;
+  const lfo = ctx.createOscillator(), d = ctx.createGain(); lfo.frequency.value = 5.2; d.gain.value = k * fund * 0.004; lfo.connect(d).connect(whistle.frequency); lfo.start(t); lfo.stop(stop);
+  src.connect(body).connect(bg).connect(g); src.connect(whistle).connect(wg).connect(g); g.connect(out);
+} };
+MELODIC.push("brass", "timpani", "throat");
 // Orchestral percussion: gran cassa (bass drum), side drum, crash cymbals.
 KITS.orch = ["gran", "side", "crash"];
 {
@@ -1501,7 +1515,8 @@ CATALOG.rain = { doc: "Rain: soft noise and droplets, for a quiet ending.", args
 for (const [k, doc] of [["marimba", "Marimba / balafon: wooden bars."], ["piano", "Piano: chords, or a melody by phrase= / notes=."], ["bass", "Bass: chord roots on beats 1 and 3, or a phrase."],
   ["strings", "提琴 strings (violin, cello, 京胡): bowed, with vibrato."], ["pluck", "Plucked strings: koto, guzheng, pipa, oud."],
   ["flute", "Flute: ney, shakuhachi, dizi."], ["organ", "Pipe organ."], ["choir", "Choir 'ah'."], ["bell", "Bell: 编钟, temple or church bell."],
-  ["brass", "Brass: horns, trumpets, 号角, karnay; the filter opens as the note swells."], ["timpani", "Timpani (kettle drums): tuned hits; fast repeated notes make a roll."]]) {
+  ["brass", "Brass: horns, trumpets, 号角, karnay; the filter opens as the note swells."], ["timpani", "Timpani (kettle drums): tuned hits; fast repeated notes make a roll."],
+  ["throat", "Throat singing (khöömii): a drone on the key's tonic with a whistled overtone melody; notes snap to its harmonics. oct=5 sygyt (whistle), oct=3 a deep kargyraa-like drone."]]) {
   CATALOG[k] = { doc, args: MELODIC_ARGS };
 }
 CATALOG.drums.args.push(["kit", "rock", "rock, darbuka, taiko, opera (京剧), aztec, african, tabla, gamelan, celtic, flamenco, orch (orchestra), zhangu (战鼓), sky (thunder), temple (木魚 りん), work (hammer, chisel); battle: clash (steel, metal shields), woodshield, rattan (藤牌), hide", Object.keys(KITS), { re: new RegExp(`^(${Object.keys(KITS).join("|")})$`) }]);

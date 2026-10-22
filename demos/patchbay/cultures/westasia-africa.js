@@ -70,7 +70,7 @@ CIVS.push(
   // ---------------- Steppe & Central Asia ----------------
   { id: "huns", name: "Huns", zh: "匈人", region: "Steppe & Central Asia", games: [2],
     key: "E", scale: "minorpenta", dark: "phrygian", bright: "penta",
-    lead: "strings@igil", second: "pluck@topshur", drone: "choir@khoomei oct=2", flute: "flute@tsuur oct=5", extra: "brass@war-horn oct=3",
+    lead: "strings@igil", second: "pluck@topshur", drone: "throat@kargyraa oct=3", flute: "flute@tsuur oct=5", extra: "brass@war-horn oct=3",
     kit: "celtic", grooves: { calm: "x.......x.......|................|..x.......x.....", march: "X..x..x.X..x..x.|....x.......x...|..x..x....x..x..", drive: "X.xX.xX.xX.xX.x.|..x...x...x...x.|xxxxxxxxxxxxxxxx" },
     motifs: ["1 1 3 1 5 3 1 -", "5 7 5 3 1 3 1 -"], tempo: 1.1, skip: ["flood"],
     note: "igil horse-head fiddle leads, topshur lute answers, khöömei throat-singing drone, tsuur flute, shaman frame drum, war horns" },
@@ -88,7 +88,7 @@ CIVS.push(
     note: "kurai end-blown flute leads, dutar answers, kubyz jaw-harp drone, doira frame drum, karnay horn" },
   { id: "golden-horde", name: "Golden Horde", zh: "金帐汗国", region: "Steppe & Central Asia", games: [4],
     key: "C", scale: "minorpenta", dark: "phrygian", bright: "mixolydian",
-    lead: "brass@karnay oct=3", second: "strings@morin-khuur", drone: "choir@throat oct=2", flute: "flute@limbe oct=5", bell: "bell@gong oct=3", extra: "timpani@naqqara oct=2",
+    lead: "brass@karnay oct=3", second: "strings@morin-khuur", drone: "throat@kharkhiraa oct=3", flute: "flute@limbe oct=5", bell: "bell@gong oct=3", extra: "timpani@naqqara oct=2",
     kit: "taiko", grooves: { calm: "X.......X.......|................|....x.......x...", march: "X...X...X...X...|..x.......x.....|x.x.x.x.x.x.x.x.", drive: "X.X.X.X.X.X.X.X.|..x...x...x...x.|xxxxxxxxxxxxxxxx" },
     motifs: ["1 - 5 - 4 3 1 -", "3 4 5 7 5 4 3 1"], tempo: 0.95, skip: ["flood"],
     note: "karnay long trumpets herald, morin khuur answers, throat-singing drone, limbe flute, naqqara war kettledrums and gongs" },

@@ -102,7 +102,8 @@ CIVS.push(
   // ── Steppe & Manchuria ────────────────────────────────────────────────
   { id: "mongols", name: "Mongols", zh: "蒙古", region: "Steppe & Central Asia", games: [2, 4],
     key: "A", scale: "penta", dark: "minorpenta", bright: "penta",
-    lead: "strings@morin-khuur", second: "pluck@tovshuur", drone: "choir@khoomei oct=2", flute: "flute@limbe oct=5", bell: "bell@khonkh",
+    lead: "throat@khoomii oct=5", second: "strings@morin-khuur", drone: "throat@kharkhiraa oct=3", flute: "flute@limbe oct=5", bell: "bell@khonkh",
+    harp: "pluck@yatga oct=4 vol=0.6", low: "pluck@tovshuur oct=3",
     extra: "brass@bureree oct=3",
     kit: "celtic", grooves: { calm: "X.......x.......|................|....x.......x...", march: "X..x..x.X..x..x.|....x.......x...|x.xx.xx.x.xx.xx.", drive: "X.xX.xX.xX.xX.x.|..x..x..x..x..x.|xxxxxxxxxxxxxxxx" },
     motifs: ["5 - 6 1' - 6 5 3", "2 3 5 3 2 1 6, 1"], tempo: 1.05, skip: ["flood"],

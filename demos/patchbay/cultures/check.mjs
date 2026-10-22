@@ -4,8 +4,8 @@ import { readFileSync, readdirSync } from "fs";
 const dir = new URL(".", import.meta.url).pathname, src = readFileSync(dir + "../src.html", "utf8");
 const lit = (start) => { const i = src.indexOf(start) + start.length - 1; let d = 0, j = i; for (; j < src.length; j++) { if (src[j] === "{") d++; if (src[j] === "}" && !--d) break; } return new Function("return " + src.slice(i, j + 1))(); };
 const SCALES = { ...lit("const SCALES = {"), ...lit("Object.assign(SCALES, {") };
-const KITS = { ...lit("const KITS = {"), ...lit("Object.assign(KITS, {"), orch: ["gran", "side", "crash"] };
-const KINDS = ["piano", "bass", "strings", "pluck", "flute", "organ", "choir", "bell", "marimba", "brass", "timpani"];
+const KITS = { ...lit("const KITS = {"), ...lit("Object.assign(KITS, {"), orch: ["gran", "side", "crash"], zhangu: [], sky: [], temple: [], work: [], clash: [], woodshield: [], rattan: [], hide: [] };
+const KINDS = ["piano", "bass", "strings", "pluck", "flute", "organ", "choir", "bell", "marimba", "brass", "timpani", "throat"];
 const ACTS = ["hunt", "battle", "gather", "ritual", "rain", "flood", "wind", "fire", "thunder", "birth", "death"];
 const REGIONS = ["East Asia", "South & Southeast Asia", "Steppe & Central Asia", "Middle East", "Africa", "Ancient Mediterranean & Near East",
   "Western Europe", "Northern & Central Europe", "Eastern Europe & Byzantium", "Americas"];
@@ -34,7 +34,12 @@ for (const c of CIVS) {
   if (!Array.isArray(c.games) || !c.games.length || c.games.some((g) => ![1, 2, 3, 4].includes(g))) err(c, "games: e.g. [2, 4]");
   if (!/^[A-G][#b]?$/.test(c.key || "")) err(c, "key: like D or Bb");
   for (const k of ["scale", "dark", "bright"]) if (c[k] && !SCALES[c[k]]) err(c, `${k}: unknown scale ${c[k]}`);
-  for (const k of ["lead", "second", "drone", "low", "harp", "bell", "flute", "extra"]) if (c[k] !== undefined) {
+  // The ensemble: every role is one of this people's own instruments.
+  for (const k of ["drone", "low", "harp", "bell", "flute", "horns", "pad", "choir", "timp", "trem"]) if (c[k] === undefined && process.env.STRICT) err(c, `missing ${k}: name this people's own instrument for it`);
+  if (process.env.STRICT && !c.bigDrum) err(c, "missing bigDrum: the kit of its big drums for the climax");
+  if (c.bigDrum && !KITS[c.bigDrum]) err(c, `bigDrum is a kit: ${Object.keys(KITS).join(", ")}`);
+  if (c.cymbals !== undefined && typeof c.cymbals !== "boolean") err(c, "cymbals: true or false");
+  for (const k of ["lead", "second", "drone", "low", "harp", "bell", "flute", "extra", "horns", "pad", "choir", "timp", "trem"]) if (c[k] !== undefined) {
     const m = spec.exec(c[k]); if (!m) err(c, `${k}: "kind@name" plus optional oct=N vol=N adsr=…, got ${c[k]}`); else if (!KINDS.includes(m[1])) err(c, `${k}: kind is one of ${KINDS.join(", ")}`);
   }
   if (!KITS[c.kit]) err(c, `kit is one of ${Object.keys(KITS).join(", ")}`);

@@ -188,7 +188,7 @@ const FUNERAL_OF = {
 // Who leads a procession or a dance, where it isn't the default.
 const FUNERAL_LEAD = { koreans: "brass@taepyeongso oct=4", choson: "brass@taepyeongso oct=4", vietnamese: "brass@ken oct=4", "lac-viet": "brass@ken oct=4",
   hindustanis: "brass@shehnai oct=4", indians: "brass@shehnai oct=4", bengalis: "brass@shehnai oct=4", gurjaras: "brass@shehnai oct=4", dravidians: "brass@nadaswaram oct=4",
-  americans: "brass@trumpet oct=4", mexicans: "brass@trompeta oct=4" };
+  americans: "brass@trumpet oct=4", mexicans: "brass@trompeta oct=4", mongols: "throat@kargyraa oct=3" };
 function funeralOf(civ) {
   if (civ.funeral) return civ.funeral;
   for (const [k, ids] of Object.entries(FUNERAL_OF)) if (ids.split(" ").includes(civ.id)) return k;
@@ -349,19 +349,19 @@ function compose(civ, actId) {
       else if (A.second === "echo") line(second, `grid=${g}`, q([...rest(g), ...render(bars[0], scale), ...rest(g), ...render(bars[2], scale, -P.length)]), a, 10);
       else line(second, "grid=4", q(roots.flatMap((r) => [jp.fmt(jp.up(r, 2)), "-", jp.fmt(jp.up(r, 4)), "-"])), a, 10);
     },
-    pad: (a) => line(pick("pad", null, "strings@violins vol=0.5"), "grid=8", q(perBar(prog.map((t) => chordOf(t, gapped, 7)), 8)), a, 11),
+    pad: (a) => line(pick("pad", civ.pad, "strings@violins vol=0.5"), "grid=8", q(perBar(prog.map((t) => chordOf(t, gapped, 7)), 8)), a, 11),
     harp: (a) => line(role(civ.harp, "pluck@harp oct=4 vol=0.6"), "grid=16",
       q(roots.flatMap((r) => [0, 2, 4, 7, 9, 11, 14, 11, 9, 7, 4, 2, 0, 2, 4, 7].map((k) => jp.fmt(jp.up(r, gapped && k % 7 === 2 ? k + 1 : k))))), a, 11),
-    choir: (a) => line(pick("choir", null, "choir@choir vol=0.55"), "grid=8", q(perBar(prog.map((t) => chordOf(t, gapped)), 8)), a, 11),
+    choir: (a) => line(pick("choir", civ.choir, "choir@choir vol=0.55"), "grid=8", q(perBar(prog.map((t) => chordOf(t, gapped)), 8)), a, 11),
     bell: (a) => line(pick("bell", civ.bell, "bell@bell vol=0.6"), "grid=4", q(["1", "-", "-", "-", "5,", "-", "-", "-"]), a, 11),
     horns: (a) => {
-      const h = pick("horns", null, "brass@horns vol=0.7");
+      const h = pick("horns", civ.horns, "brass@horns vol=0.7");
       if (A.horn === "call") line(h, "grid=8", q(["1", "-", "5", "-", "1'", "-", "-", "-", ...rest(4), "5", "-", "1", "-"]), a, 10);
       else if (A.horn === "fanfare") line(h, "grid=16", q(["1", "0", "1", "1", "5", "-", "-", "-", "1'", "-", "5", "-", "1", "-", "-", "-"]), a, 10);
       else line(h, "grid=8", q(perBar(prog.map((t) => chordOf(t, gapped)), 8)), a, 10);
     },
     timp: (a) => {
-      const t = role(null, "timpani@timp vol=0.9");
+      const t = pick("timp", civ.timp, "timpani@timp vol=0.9");
       if (A.timp === "roll") line(t, "grid=16", q([..."1".repeat(12)].map(() => "1").concat(["5,", "5,", "5,", "1"])), a, 10);
       else if (A.timp === "toll") line(t, "grid=4", q(["1", "-", "-", "-"]), a, 11);
       else line(t, "grid=8", q(["1", "0", "0", "0", "5,", "0", "1", "0"]), a, 10);
@@ -377,6 +377,7 @@ function compose(civ, actId) {
       drum(`${kit}Drive`, kit, grooves.drive, a, 10);
       const wd = actId === "battle" && warDrumOf(civ);
       if (wd) drum(`${wd}Roll`, wd, "X.x.X.x.XxXxXxXx|....x.......x...|x...............", a, 10);
+      else if (civ.bigDrum) drum(civ.bigDrum, civ.bigDrum, "X.......x.......|....x.......x.xx|................", a, 10);
       else drum("orch", "orch", "x.......x.......|....x.......x.xx|................", a, 10);
     },
     // Weapons and shields: blades ring on the off-beats, shields take the blows.
@@ -391,7 +392,7 @@ function compose(civ, actId) {
     woodfish: (a) => drum("mokugyo", "temple", "x...x...x...x...|................|................", a, 11),
     rin: (a) => drum("rin", "temple", "................|x...............|................", a, 12),
     muffled: (a) => drum("muffled", "orch", "x...............|x.......x..x.x..|................", a, 11),
-    trem: (a) => line(role(null, "strings@tremolo vol=0.5"), "grid=16", q(roots.flatMap((r) => Array(16).fill(chordOf(jp.fmt(r), true)))), a, 11),
+    trem: (a) => line(pick("trem", civ.trem, "strings@tremolo vol=0.5"), "grid=16", q(roots.flatMap((r) => Array(16).fill(chordOf(jp.fmt(r), true)))), a, 11),
     swirl: (a) => line(role(civ.flute, "flute@swirl oct=5 vol=0.6"), "grid=16",
       q([0, 1, 2, 3, 4, 5, 6, 7, 6, 5, 4, 3, 2, 1, 0, -1].map((k) => jp.fmt({ acc: "", i: k }))), a, 10),
   };
@@ -400,7 +401,7 @@ function compose(civ, actId) {
   const drive = adds.indexOf("drive");
   adds.forEach((k, i) => (k === "perc" && drive > i ? layers.perc(i + 2, drive + 1) : layers[k](i + 2)));
   if (civ.extra) line(role(civ.extra), "grid=4", q(["1", "-", "-", "-"]), 9, 10);
-  if (!["death", "gather", "birth", "drought", "plague", "winter", "build", "voyage"].includes(actId)) drum("crash", "orch", "................|................|x...............", 9, 9);
+  if (civ.cymbals !== false && !["death", "gather", "birth", "drought", "plague", "winter", "build", "voyage"].includes(actId)) drum("crash", "orch", "................|................|x...............", 9, 9);
   // Voices: the culture's war cry at the climax; people chatting while they gather.
   if (actId === "battle") for (const l of lookup(WAR_CRIES, civ) || ['crowd@cry shout "HAA" "x-------........"']) L.push(`. ${l} ?song.9-10`);
   if (actId === "gather") {
