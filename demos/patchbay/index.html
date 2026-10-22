@@ -49,11 +49,20 @@ body {
   padding-block: 20px 40px;
 }
 /* App shell: examples nav · editor · help, both side panels fold to a rail. */
-.app { display: grid; grid-template-columns: var(--lw, 230px) minmax(0, 1fr) var(--rw, 360px); gap: 16px; align-items: start; }
-.app.left-folded { --lw: 34px; }
-.app.right-folded { --rw: 34px; }
+.app { --lcol: var(--lw, 230px); --rcol: var(--rw, 360px); display: grid; grid-template-columns: var(--lcol) minmax(0, 1fr) var(--rcol); gap: 16px; align-items: start; }
+.app.left-folded { --lcol: 34px; }
+.app.right-folded { --rcol: 34px; }
+/* Drag a side panel's divider to resize it; double-click resets it. */
+.side.edge-hot { cursor: col-resize; }
+.side-left.edge-hot, .side-left.dragging { border-right-color: var(--signal); }
+.side-right.edge-hot, .side-right.dragging { border-left-color: var(--signal); }
+.side-left, .side-right { border-width: 0 2px 0 0; } .side-right { border-width: 0 0 0 2px; }
+.app.resizing, .app.resizing * { user-select: none; cursor: col-resize !important; }
 main { display: grid; gap: 18px; min-width: 0; }
-.side { position: sticky; top: 0; max-height: 100vh; overflow: auto; background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 10px 8px; min-width: 0; }
+.side { position: sticky; top: 0; max-height: 100vh; overflow: auto; padding: 4px 6px 10px; min-width: 0; }
+.side { position: sticky; }
+.side-left { border-right: 1px solid var(--line); }
+.side-right { border-left: 1px solid var(--line); }
 .side-head { display: flex; align-items: center; justify-content: space-between; gap: 6px; padding: 0 2px 6px; }
 .side-head h2 { margin: 0; }
 .fold { border: 1px solid var(--line); background: var(--screen); border-radius: 6px; width: 24px; height: 24px; cursor: pointer; color: var(--muted); font-weight: 700; line-height: 1; flex: none; }
@@ -61,8 +70,15 @@ main { display: grid; gap: 18px; min-width: 0; }
 .left-folded .side-left > :not(.side-head), .right-folded .side-right > :not(.side-head) { display: none; }
 .left-folded .side-left .side-head h2, .right-folded .side-right .side-head h2 { display: none; }
 .left-folded .side-left .fold, .right-folded .side-right .fold { transform: rotate(180deg); }
-.help { display: grid; gap: 10px; }
-.help .card { padding: 8px 10px; }
+.help { display: grid; gap: 4px; }
+.explain { font-size: 14px; display: grid; gap: 4px; }
+.explain .ex-title { font-family: var(--font-code); font-weight: 600; color: var(--ink); overflow-wrap: anywhere; }
+.explain .ex-body { color: var(--ink); }
+.explain code { font-family: var(--font-code); font-size: 12.5px; }
+.help tr.hl td { background: var(--signal-soft); }
+.help tr td { transition: background 0.25s; }
+.help .card { background: none; border: 0; border-radius: 0; padding: 10px 2px 4px; border-top: 1px solid var(--line); }
+.help .card:first-child { border-top: 0; }
 .help summary { cursor: pointer; list-style: none; }
 .help summary::-webkit-details-marker { display: none; }
 .help summary h2 { display: inline; margin: 0; }
@@ -84,7 +100,7 @@ p { margin: 0; max-width: 68ch; }
 /* transport */
 .transport {
   display: flex; flex-wrap: wrap; align-items: center; gap: 12px 18px;
-  background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px;
+  padding: 4px 0 12px; border-bottom: 1px solid var(--line);
 }
 button, select, input { font: inherit; color: inherit; }
 .btn {
@@ -106,7 +122,7 @@ button, select, input { font: inherit; color: inherit; }
 .safety kbd { font-family: var(--font-code); font-size: 12px; border: 1px solid var(--line); border-radius: 4px; padding: 0 5px; background: var(--screen); }
 
 /* patch editor */
-.patch { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 12px; display: grid; gap: 10px; }
+.patch { display: grid; gap: 10px; }
 .patch-bar { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; justify-content: space-between; }
 .patch-bar .left { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
 .count { font-size: 13px; color: var(--muted); }
@@ -243,6 +259,10 @@ ul.ideas { margin: 0; padding-left: 18px; display: grid; gap: 6px; font-size: 14
 <aside class="side side-right" aria-label="Help">
   <div class="side-head"><h2>Help</h2><button class="fold" id="foldRight" type="button" aria-expanded="true" title="Fold the help panel">»</button></div>
   <div class="help">
+    <details class="card" id="explainCard" open>
+      <summary><h2>Under the cursor</h2></summary>
+      <div id="explain" class="explain"><div class="ex-body">Hover a word in the patch or move the cursor onto it: what it does shows up here, and its reference row lights up below.</div></div>
+    </details>
     <details class="card" open>
       <summary><h2>Status column</h2></summary>
       <table>
@@ -257,38 +277,38 @@ ul.ideas { margin: 0; padding-left: 18px; display: grid; gap: 6px; font-size: 14
     <details class="card scroll-x" open>
       <summary><h2>Nodes</h2></summary>
       <table>
-        <tr><td><code>clock</code></td><td><code>bpm=92 sig=4</code> · environment: music nodes take the first one automatically</td></tr>
-        <tr><td><code>metro</code></td><td>节拍器, accent on beat 1 · <code>tone=1000</code></td></tr>
-        <tr><td><code>drums</code></td><td><code>pattern="kick|snare|hat"</code>, 16 steps, <code>x</code> hit, <code>X</code> accent · with <code>^vad</code>: <code>kick|snare|hat</code>, <code>1/16|1/8|1/4|off</code></td></tr>
-        <tr><td><code>mic</code></td><td>asks for the microphone on Start; input only, never played back</td></tr>
-        <tr><td><code>learn</code></td><td><code>mic&gt; learn beat 4beats|2bars|section</code> · records from the next beat or bar, rewrites a drums (beatbox) or piano (hum) line, then turns itself off</td></tr>
-        <tr><td><code>vad</code></td><td><code>threshold=0.02 silence=300ms holdoff=250ms</code> · other nodes react with <code>^vad ?vad !vad</code></td></tr>
-        <tr><td><code>piano</code></td><td><code>chords="Am F C G"</code> one per bar · <code>style=arp|block</code> <code>oct=4</code> · or a melody <code>notes="E4 . . G4"</code></td></tr>
-        <tr><td><code>bass</code></td><td><code>chords="…"</code> roots on beats 1 and 3</td></tr>
-        <tr><td><code>strings</code> <code>pluck</code> <code>flute</code> <code>organ</code> <code>choir</code> <code>bell</code></td><td>instruments: <code>phrase="5 - 6 7 1'"</code> (简谱) with <code>scale=</code> <code>key=</code>, or chords; <code>adsr=</code> per note</td></tr>
-        <tr><td><code>scale</code></td><td>major minor dorian phrygian … hijaz bayati rast (maqam) · in yo hirajoshi ryukyu · gong shang jue zhi yu yanyue</td></tr>
-        <tr><td><code>kit=</code></td><td>drums: rock, darbuka, taiko, opera (京剧)</td></tr>
-        <tr><td><code>mix</code></td><td>mixer bus: adds inputs into one signal</td></tr>
-        <tr><td>effects</td><td><code>filter lp 800</code> <code>drive</code> <code>chorus</code> <code>phaser</code> <code>tremolo 6Hz</code> <code>pan auto=0.2Hz</code> <code>eq low=3</code> <code>comp -20</code> · <code>wet=</code> blends</td></tr>
-        <tr><td><code>env</code> <code>fadein</code> <code>fadeout</code></td><td>包絡: <code>env 50ms 2s ?vad</code>, <code>fadein 4bars</code>, <code>fadeout 2bars after=8bars</code></td></tr>
-        <tr><td><code>delay</code></td><td><code>time=3/16 feedback=0.35 wet=0.3</code>, tempo-synced</td></tr>
-        <tr><td><code>reverb</code></td><td><code>size=2 wet=0.25</code> (or <code>2s</code>)</td></tr>
-        <tr><td><code>speaker</code></td><td><code>volume=0.5</code> · only what reaches a speaker is heard</td></tr>
+        <tr data-help="kind:clock"><td><code>clock</code></td><td><code>bpm=92 sig=4</code> · environment: music nodes take the first one automatically</td></tr>
+        <tr data-help="kind:metro"><td><code>metro</code></td><td>节拍器, accent on beat 1 · <code>tone=1000</code></td></tr>
+        <tr data-help="kind:drums"><td><code>drums</code></td><td><code>pattern="kick|snare|hat"</code>, 16 steps, <code>x</code> hit, <code>X</code> accent · with <code>^vad</code>: <code>kick|snare|hat</code>, <code>1/16|1/8|1/4|off</code></td></tr>
+        <tr data-help="kind:mic"><td><code>mic</code></td><td>asks for the microphone on Start; input only, never played back</td></tr>
+        <tr data-help="kind:learn"><td><code>learn</code></td><td><code>mic&gt; learn beat 4beats|2bars|section</code> · records from the next beat or bar, rewrites a drums (beatbox) or piano (hum) line, then turns itself off</td></tr>
+        <tr data-help="kind:vad"><td><code>vad</code></td><td><code>threshold=0.02 silence=300ms holdoff=250ms</code> · other nodes react with <code>^vad ?vad !vad</code></td></tr>
+        <tr data-help="kind:piano"><td><code>piano</code></td><td><code>chords="Am F C G"</code> one per bar · <code>style=arp|block</code> <code>oct=4</code> · or a melody <code>notes="E4 . . G4"</code></td></tr>
+        <tr data-help="kind:bass"><td><code>bass</code></td><td><code>chords="…"</code> roots on beats 1 and 3</td></tr>
+        <tr data-help="kind:strings kind:pluck kind:flute kind:organ kind:choir kind:bell"><td><code>strings</code> <code>pluck</code> <code>flute</code> <code>organ</code> <code>choir</code> <code>bell</code></td><td>instruments: <code>phrase="5 - 6 7 1'"</code> (简谱) with <code>scale=</code> <code>key=</code>, or chords; <code>adsr=</code> per note</td></tr>
+        <tr data-help="opt:scale"><td><code>scale</code></td><td>major minor dorian phrygian … hijaz bayati rast (maqam) · in yo hirajoshi ryukyu · gong shang jue zhi yu yanyue</td></tr>
+        <tr data-help="opt:kit"><td><code>kit=</code></td><td>drums: rock, darbuka, taiko, opera (京剧)</td></tr>
+        <tr data-help="kind:mix"><td><code>mix</code></td><td>mixer bus: adds inputs into one signal</td></tr>
+        <tr data-help="kind:filter kind:drive kind:chorus kind:phaser kind:tremolo kind:pan kind:eq kind:comp"><td>effects</td><td><code>filter lp 800</code> <code>drive</code> <code>chorus</code> <code>phaser</code> <code>tremolo 6Hz</code> <code>pan auto=0.2Hz</code> <code>eq low=3</code> <code>comp -20</code> · <code>wet=</code> blends</td></tr>
+        <tr data-help="kind:env kind:fadein kind:fadeout"><td><code>env</code> <code>fadein</code> <code>fadeout</code></td><td>包絡: <code>env 50ms 2s ?vad</code>, <code>fadein 4bars</code>, <code>fadeout 2bars after=8bars</code></td></tr>
+        <tr data-help="kind:delay"><td><code>delay</code></td><td><code>time=3/16 feedback=0.35 wet=0.3</code>, tempo-synced</td></tr>
+        <tr data-help="kind:reverb"><td><code>reverb</code></td><td><code>size=2 wet=0.25</code> (or <code>2s</code>)</td></tr>
+        <tr data-help="kind:speaker"><td><code>speaker</code></td><td><code>volume=0.5</code> · only what reaches a speaker is heard</td></tr>
       </table>
     </details>
     <details class="card" open>
       <summary><h2>Syntax</h2></summary>
       <table>
-        <tr><td><code>. drums</code></td><td>a source; the name defaults to the kind</td></tr>
-        <tr><td><code>drums,piano&gt; mix</code></td><td>inputs; spaces allowed, <code>|</code> optional</td></tr>
-        <tr><td><code>&gt; speaker</code></td><td>input from the previous line</td></tr>
-        <tr><td><code>*&gt; speaker</code></td><td>every fitting, not-yet-used output in this group (blank line or <code>---</code> starts a group)</td></tr>
-        <tr><td><code>. metro2=metro</code></td><td>a second node of a kind (unnamed ones become <code>metro2</code>)</td></tr>
-        <tr><td><code>clock2&gt; metro</code></td><td>pick an environment instead of the first <code>clock</code></td></tr>
-        <tr><td><code>#. metro</code></td><td>muted; <code># text</code> is a comment</td></tr>
-        <tr><td><code>^vad</code></td><td>on: fire per onset (<code>on=vad</code>)</td></tr>
-        <tr><td><code>?vad</code> <code>!vad</code></td><td>only while / not while vad hears speech (<code>while=</code> / <code>unless=</code>)</td></tr>
-        <tr><td><code>. clock 100 3/4</code></td><td>keys can go when the value is obvious, like CSS</td></tr>
+        <tr data-help="syntax:source"><td><code>. drums</code></td><td>a source; the name defaults to the kind</td></tr>
+        <tr data-help="syntax:refs"><td><code>drums,piano&gt; mix</code></td><td>inputs; spaces allowed, <code>|</code> optional</td></tr>
+        <tr data-help="syntax:prev"><td><code>&gt; speaker</code></td><td>input from the previous line</td></tr>
+        <tr data-help="syntax:all"><td><code>*&gt; speaker</code></td><td>every fitting, not-yet-used output in this group (blank line or <code>---</code> starts a group)</td></tr>
+        <tr data-help="syntax:name"><td><code>. metro2=metro</code></td><td>a second node of a kind (unnamed ones become <code>metro2</code>)</td></tr>
+        <tr data-help="syntax:env"><td><code>clock2&gt; metro</code></td><td>pick an environment instead of the first <code>clock</code></td></tr>
+        <tr data-help="syntax:off"><td><code>#. metro</code></td><td>muted; <code># text</code> is a comment</td></tr>
+        <tr data-help="syntax:on"><td><code>^vad</code></td><td>on: fire per onset (<code>on=vad</code>)</td></tr>
+        <tr data-help="syntax:while syntax:unless"><td><code>?vad</code> <code>!vad</code></td><td>only while / not while vad hears speech (<code>while=</code> / <code>unless=</code>)</td></tr>
+        <tr data-help="syntax:shorthand"><td><code>. clock 100 3/4</code></td><td>keys can go when the value is obvious, like CSS</td></tr>
       </table>
     </details>
     <details class="card" open>
@@ -1698,6 +1718,182 @@ function applyText(text) {
   try { localStorage.setItem("otoji-patchbay", text); } catch (e) { /* storage unavailable */ }
 }
 
+// ── "Under the cursor": explain the word at the cursor / mouse in the help
+// panel, and highlight + scroll to the matching reference row ─────────────
+const VALUE_DOCS = {
+  "style.arp": "Arpeggio: the chord's notes one after another, an 8th note each, rising (root, 3rd, 5th, octave).",
+  "style.block": "Block chord: all the chord's notes together, held for the whole bar.",
+  "style.drone": "Drone: root and fifth held for the whole bar, the bed under maqam, Gothic chant or a raga.",
+  "style.root": "Root: just the chord's root on beats 1 and 3, a simple bass line.",
+  "quantize.16": "Snap each hit to the next 16th note.", "quantize.8": "Snap each hit to the next 8th note.",
+  "quantize.4": "Snap each hit to the next beat.", "quantize.off": "Play each hit immediately, no snapping.",
+  "type.lp": "Low-pass: lets the lows through, darkens the sound above the cutoff.",
+  "type.hp": "High-pass: removes the lows, thins the sound below the cutoff.",
+  "type.bp": "Band-pass: keeps a band around the cutoff (telephone / radio sound).",
+  "type.notch": "Notch: cuts a narrow band around the cutoff.",
+  "pos.left": "Panned left.", "pos.right": "Panned right.", "pos.center": "In the middle.",
+  "len.section": "A section: 4 bars.",
+  "kit.rock": "Kick, snare, hi-hat.", "kit.darbuka": "Egyptian goblet drum: dum (low, centre), tek (sharp rim), ka (muffled).",
+  "kit.taiko": "Japanese taiko: don (big low drum), ka (rim), shime (high tight drum).",
+  "kit.opera": "京剧 锣鼓: 板 ban (clapper, the beat), 锣 luo (gong), 钹 bo (cymbals).",
+  "hit.kick": "Kick drum.", "hit.snare": "Snare drum.", "hit.hat": "Hi-hat.", "hit.dum": "Darbuka dum: low, centre of the head.",
+  "hit.tek": "Darbuka tek: sharp, at the rim.", "hit.ka": "Darbuka/taiko ka: muffled or rim stroke.", "hit.don": "Taiko don: the big low hit.",
+  "hit.shime": "Shime-daiko: high, tight drum.", "hit.ban": "板: the clapper that keeps the beat in 京剧.", "hit.luo": "锣: gong.", "hit.bo": "钹: cymbals.",
+};
+const SCALE_DOCS = {
+  major: "Ionian / 大调.", minor: "Natural minor (Aeolian) / 小调.", harmonic: "Harmonic minor: raised 7th, a classic 'exotic' leading tone.",
+  dorian: "Minor with a raised 6th: folk, jazz, chant.", phrygian: "Minor with a flat 2nd: dark, Spanish/Gothic.",
+  lydian: "Major with a raised 4th: bright, dreamy.", mixolydian: "Major with a flat 7th: folk, rock.",
+  aeolian: "Natural minor.", locrian: "Diminished 5th: unstable.",
+  hijaz: "Maqam Hijaz: the augmented 2nd between b2 and 3 gives the classic Middle Eastern sound.",
+  bayati: "Maqam Bayati: a quarter-flat 2nd (150 cents), the most common maqam in Arabic music.",
+  rast: "Maqam Rast: neutral 3rd and 7th (350 / 1050 cents), between major and minor.",
+  nahawand: "Maqam Nahawand: like harmonic minor.",
+  in: "Japanese In / 都節 (miyako-bushi): flat 2nd and 6th, used by koto and shamisen.",
+  yo: "Japanese Yo: pentatonic without semitones, folk songs (民謡).",
+  hirajoshi: "Japanese Hirajōshi: koto tuning, minor-ish pentatonic.", ryukyu: "Ryukyu / Okinawan: 1 3 4 5 7.",
+  gong: "宫调: Chinese major pentatonic, 宫商角徵羽 = 1 2 3 5 6.", shang: "商调: pentatonic mode on 商 (re).",
+  jue: "角调: pentatonic mode on 角 (mi).", zhi: "徵调: pentatonic mode on 徵 (sol).", yu: "羽调: pentatonic mode on 羽 (la), minor-sounding.",
+  yanyue: "燕乐: Tang court seven-note scale (with 清角 and 闰), close to Mixolydian.",
+};
+const DEG_NAMES = ["1", "2", "3", "4", "5", "6", "7"];
+// Whitespace tokens of a line, keeping "quoted strings" whole, with columns.
+function lineTokens(line) {
+  const out = []; let i = 0;
+  while (i < line.length) {
+    if (/\s/.test(line[i])) { i++; continue; }
+    if (line[i] === "#" && out.length && /\s/.test(line[i - 1] || " ")) { out.push({ text: line.slice(i), start: i, end: line.length, comment: true }); break; }
+    const start = i; let q = false;
+    while (i < line.length && (q || !/\s/.test(line[i]))) { if (line[i] === '"') q = !q; i++; }
+    out.push({ text: line.slice(start, i), start, end: i });
+  }
+  return out;
+}
+function explainAt(model, lineNo, col) {
+  const line = model.getLineContent(lineNo), c = col - 1;
+  const p = parsePatch(model.getValue()), l = p.lines[lineNo - 1];
+  const esc = (t) => t.replace(/[&<>]/g, (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[ch]));
+  const code = (t) => `<code>${esc(t)}</code>`;
+  if (!l || l.type === "blank") return null;
+  if (l.type === "sep") return { title: "---", body: "Group separator, like a blank line: <code>*&gt;</code> takes inputs from its own group.", help: "syntax:all" };
+  if (l.type === "comment") return { title: "# comment", body: "A comment: ignored. <code>#</code> directly before a node line turns that node off instead.", help: "syntax:off" };
+  if (l.type === "invalid") return { title: "This line has an error", body: esc(l.error) + ". The rest of the patch keeps playing." };
+  // Head: `#`, `.`, `>`, `*>`, `refs>`
+  const trimmed = line.trimStart(), lead = line.length - trimmed.length;
+  const headLen = (() => { const m = /^#?(\.|\|?[^>"]*>)/.exec(trimmed); return m ? m[0].length : 0; })();
+  if (c < lead + headLen) {
+    if (!l.enabled && c === lead) return { title: "#  (off)", body: "This node is turned off. Ctrl+T toggles it now, Ctrl+E at the next bar.", help: "syntax:off" };
+    const h = l.head.kind;
+    if (h === "source") return { title: ".  source", body: `${code(l.id)} makes its own output; it takes no input line.`, help: "syntax:source" };
+    if (h === "prev") return { title: ">  previous line", body: "Takes its input from the nearest valid node line above.", help: "syntax:prev" };
+    if (h === "all") {
+      const got = inputs(p).get(l.id).map((r) => r.node);
+      return { title: "*>  everything that fits", body: `Every fitting, not-yet-used output in this group. Right now: ${got.length ? got.map(code).join(", ") : "nothing"}.`, help: "syntax:all" };
+    }
+    // a ref name inside `a,b>`
+    const before = line.slice(0, c + 1), word = (/[\w-]+$/.exec(before) || [""])[0] + ((/^[\w-]*/.exec(line.slice(c + 1)) || [""])[0]);
+    const ref = nodes(p).find((n) => n.id === word);
+    if (ref) return { title: `${word}>  input`, body: `Takes ${code(word)} (a ${code(ref.kind)}, line ${p.lines.indexOf(ref) + 1}) as input.`, help: `kind:${ref.kind}` };
+    return { title: "inputs", body: "Names of nodes this one takes input from, then <code>&gt;</code>.", help: "syntax:refs" };
+  }
+  const toks = lineTokens(line).filter((t) => t.start >= lead + headLen || t.end > lead + headLen);
+  const tok = toks.find((t) => c >= t.start && c < t.end) || toks.find((t) => c === t.end);
+  if (!tok) return null;
+  const kind = l.kind, spec = CATALOG[kind];
+  if (tok.comment) return { title: "# comment", body: "A note to yourself; ignored." };
+  if (tok === toks[0]) {
+    const named = l.id !== l.kind ? ` Named ${code(l.id)}, so other lines can use it as ${code(l.id + ">")}.` : "";
+    return { title: kind, body: (spec ? esc(spec.doc) : `Unknown kind ${code(kind)}.`) + named + (spec && spec.args.length ? `<br>Options: ${spec.args.map((a) => code(a[0] + "=")).join(" ")}` : ""), help: `kind:${kind}` };
+  }
+  const ctl = parseControl(tok.text);
+  if (ctl) {
+    const what = { on: "fires once each time it starts (an edge): one hit per speech onset", while: "runs only while it is active (a gate)", unless: "is off while it is active (ducking)" }[ctl.kind];
+    return { title: `${tok.text}  (${ctl.kind}=)`, body: `This node ${what}: ${code(ctl.node)}.`, help: `syntax:${ctl.kind}` };
+  }
+  // key=value or a shorthand value
+  let key, value = tok.text;
+  const eq = tok.text.indexOf("=");
+  if (eq > 0 && !tok.text.startsWith('"')) { key = tok.text.slice(0, eq); value = tok.text.slice(eq + 1); }
+  else if (spec) { const opt = spec.args.find((a) => a[4] && a[4].re.test(tok.text)); key = opt && opt[0]; }
+  const opt = spec && spec.args.find((a) => a[0] === key);
+  const bare = value.replace(/^"(.*)"$/, "$1");
+  let body = opt ? `${code(key + "=")} ${esc(opt[2])}.` : key ? `Unknown option ${code(key)} for ${code(kind)}.` : `Not an option of ${code(kind)}.`;
+  if (eq < 0 && opt) body += ` Written as a bare value: its shape fits only ${code(key + "=")}.`;
+  const vd = VALUE_DOCS[`${key}.${bare}`]; if (vd) body += "<br>" + esc(vd);
+  if (key === "scale" && SCALES[bare]) {
+    body += `<br>${esc(SCALE_DOCS[bare] || "")}<br>Degrees (cents): ${SCALES[bare].map((x, i) => `${DEG_NAMES[i]}=${x === null ? "—" : x}`).join(" ")}`;
+  }
+  // Inside a phrase: the note under the cursor.
+  if (key === "phrase") {
+    const inner = c - tok.start - (tok.text.indexOf('"') + 1);
+    const parts = bare.split(/(\s+)/); let pos = 0, piece = null;
+    for (const part of parts) { if (inner >= pos && inner < pos + part.length && part.trim()) piece = part; pos += part.length; }
+    if (piece) {
+      let o; try { o = argMap(kind, l.args); } catch (e) { o = {}; }
+      const sc = SCALES[o.scale || "major"], keyName = o.key || "C", oct = Number(o.oct || { bass: 2, flute: 5, organ: 3 }[kind] || 4);
+      try {
+        const t = parsePhrase(piece)[0];
+        if (t.rest) body += `<br><b>0</b>: a rest.`;
+        else if (t.hold) body += `<br><b>-</b>: holds the previous note one more step.`;
+        else {
+          const cents = degreeCents(sc, t.deg) + t.acc + 1200 * t.oct, midi = keyMidi(keyName, oct) + cents / 100;
+          const name = Number.isInteger(midi) ? midiName(midi) : `${midiName(Math.floor(midi))} +${Math.round((midi % 1) * 100)}¢`;
+          const octWord = t.oct > 0 ? `, ${t.oct} octave(s) up` : t.oct < 0 ? `, ${-t.oct} octave(s) down` : "";
+          body += `<br><b>${esc(piece)}</b>: degree ${t.deg}${octWord} → <b>${esc(name)}</b> in the ${esc(o.scale || "major")} scale on ${esc(keyName)} (${cents} cents)` + (sc[t.deg - 1] === null ? "; not in this scale, so it snaps to the nearest degree" : "") + ".";
+        }
+      } catch (e) { body += `<br>${esc(e.message)}`; }
+    }
+  }
+  // Inside a drum pattern: lane and step.
+  if (key === "pattern" && kind === "drums") {
+    const inner = c - tok.start - (tok.text.indexOf('"') + 1);
+    const lanes = bare.split("|"); let pos = 0;
+    let kit = "rock"; try { kit = argMap(kind, l.args).kit || "rock"; } catch (e) { /* keep rock */ }
+    lanes.forEach((lane, li) => {
+      if (inner >= pos && inner < pos + lane.length) {
+        const ch = lane[inner - pos];
+        body += `<br><b>${esc((KITS[kit] || KITS.rock)[li] || "lane " + (li + 1))}</b> lane, step ${inner - pos + 1}/${lane.length}: ${ch === "X" ? "accented hit" : ch === "x" ? "hit" : "rest"}.`;
+      }
+      pos += lane.length + 1;
+    });
+  }
+  return { title: tok.text.length > 40 ? tok.text.slice(0, 38) + "…" : tok.text, body, help: key === "scale" ? "opt:scale" : key === "kit" ? "opt:kit" : `kind:${kind}` };
+}
+let lastExplain = "", savedScroll = null, cursorInfo = null, hoverEndTimer = 0;
+// info from the cursor sticks; info from hovering is a peek: when the mouse
+// leaves the word, the panel scrolls back to where it was.
+function showExplain(info, { hover = false, scroll = true } = {}) {
+  const box = document.getElementById("explain"), panel = document.querySelector(".side-right");
+  if (!box || !info) return;
+  if (hover && savedScroll === null && panel) savedScroll = panel.scrollTop;
+  if (!hover) cursorInfo = info;
+  const html = `<div class="ex-title">${info.title.replace(/[&<>]/g, (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[ch]))}</div><div class="ex-body">${info.body}</div>`;
+  if (html === lastExplain) return;
+  lastExplain = html; box.innerHTML = html;
+  document.querySelectorAll(".help .hl").forEach((el) => el.classList.remove("hl"));
+  const row = info.help && document.querySelector(`.help [data-help~="${CSS.escape(info.help)}"]`);
+  if (row) {
+    row.classList.add("hl");
+    const det = row.closest("details"); if (det) det.open = true;
+  }
+  // Bring the explanation (and its row) into view in the help panel without
+  // taking keyboard focus from the editor.
+  if (scroll && panel && !document.getElementById("app").classList.contains("right-folded")) {
+    document.getElementById("explainCard").scrollIntoView({ block: "nearest" });
+    if (row) row.scrollIntoView({ block: "nearest", behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth" });
+  }
+}
+function endHover() {
+  clearTimeout(hoverEndTimer);
+  hoverEndTimer = setTimeout(() => {
+    const panel = document.querySelector(".side-right");
+    if (savedScroll !== null && panel) panel.scrollTo({ top: savedScroll, behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth" });
+    savedScroll = null; lastExplain = "";
+    if (cursorInfo) showExplain(cursorInfo, { scroll: false });
+    else { document.querySelectorAll(".help .hl").forEach((el) => el.classList.remove("hl")); }
+  }, 250);
+}
+
 // Fallback UI: textarea + status column (used if Monaco can't load).
 function textareaUI() {
   const code = document.getElementById("code");
@@ -1907,6 +2103,16 @@ function monacoUI(monaco) {
     pendingIds = pendingIds.concat(editor.deltaDecorations([], add)); rowsKey = "";
   });
   editor.addCommand(MOD | monaco.KeyCode.KeyB, () => toggleTransport());
+  // Explain the word under the cursor (sticky) and under the mouse (a peek).
+  editor.onDidChangeCursorPosition((e) => {
+    try { showExplain(explainAt(model, e.position.lineNumber, e.position.column)); } catch (err) { /* keep the last one */ }
+  });
+  editor.onMouseMove((e) => {
+    const pos = e.target && e.target.position;
+    const info = pos && e.target.type === monaco.editor.MouseTargetType.CONTENT_TEXT ? (() => { try { return explainAt(model, pos.lineNumber, pos.column); } catch (err) { return null; } })() : null;
+    if (info) { clearTimeout(hoverEndTimer); showExplain(info, { hover: true }); } else endHover();
+  });
+  editor.onMouseLeave(() => endHover());
   editor.onMouseDown((e) => {
     if (e.target.detail && e.target.detail.injectedText && e.target.position) toggleLines([e.target.position.lineNumber]);
   });
@@ -1999,6 +2205,34 @@ function renderTree() {
   document.getElementById("tree").replaceChildren(...EXAMPLE_TREE.map(branch));
 }
 renderTree();
+// Drag a side panel's divider (its inner edge) to resize it; remembered,
+// double-click resets.
+for (const [sel, side] of [[".side-left", "left"], [".side-right", "right"]]) {
+  const app = document.getElementById("app"), el = document.querySelector(sel);
+  const prop = side === "left" ? "--lw" : "--rw", key = `otoji-width-${side}`, folded = () => app.classList.contains(`${side}-folded`);
+  try { const w = localStorage.getItem(key); if (w) app.style.setProperty(prop, w); } catch (e) { /* storage unavailable */ }
+  const nearEdge = (e) => { const r = el.getBoundingClientRect(); return !folded() && (side === "left" ? r.right - e.clientX : e.clientX - r.left) <= 6; };
+  el.addEventListener("pointermove", (e) => { if (!el.classList.contains("dragging")) el.classList.toggle("edge-hot", nearEdge(e)); });
+  el.addEventListener("pointerleave", () => el.classList.remove("edge-hot"));
+  el.addEventListener("pointerdown", (e) => {
+    if (!nearEdge(e)) return;
+    e.preventDefault(); el.setPointerCapture(e.pointerId); el.classList.add("dragging"); app.classList.add("resizing");
+    const move = (ev) => {
+      const r = app.getBoundingClientRect();
+      const w = Math.round(Math.min(640, Math.max(150, side === "left" ? ev.clientX - r.left : r.right - ev.clientX)));
+      app.style.setProperty(prop, w + "px");
+    };
+    el.addEventListener("pointermove", move);
+    el.addEventListener("pointerup", () => {
+      el.removeEventListener("pointermove", move); el.classList.remove("dragging"); app.classList.remove("resizing");
+      try { localStorage.setItem(key, app.style.getPropertyValue(prop)); } catch (err) { /* storage unavailable */ }
+    }, { once: true });
+  });
+  el.addEventListener("dblclick", (e) => {
+    if (!nearEdge(e)) return;
+    app.style.removeProperty(prop); try { localStorage.removeItem(key); } catch (err) { /* storage unavailable */ }
+  });
+}
 // Side panels fold to a rail; remembered per browser.
 for (const [btn, cls, key] of [["foldLeft", "left-folded", "otoji-fold-left"], ["foldRight", "right-folded", "otoji-fold-right"]]) {
   const app = document.getElementById("app"), b = document.getElementById(btn);
