@@ -202,6 +202,15 @@ td + td code { overflow-wrap: anywhere; }
 .scroll-x { overflow-x: auto; }
 ul.ideas { margin: 0; padding-left: 18px; display: grid; gap: 6px; font-size: 14px; }
 @media (prefers-reduced-motion: reduce) { .lamp.on.down { transform: none; } }
+.explain pre.def { margin: 6px 0; padding: 6px 8px; background: var(--screen); border-radius: 6px; white-space: pre-wrap; font: 13px/1.4 ui-monospace, Menlo, monospace; }
+.explain button.fork { font: inherit; font-size: 13px; padding: 2px 10px; cursor: pointer; }
+.tree .matrix .legend { margin: 4px 0 6px; font-size: 12px; color: var(--muted); }
+.tree ul.civs { list-style: none; margin: 0; padding: 0 0 0 4px; display: grid; gap: 2px; }
+.tree ul.civs li { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 6px; }
+.tree ul.civs .civ { flex: 1 1 120px; min-width: 0; font-size: 13px; }
+.tree ul.civs .chips { display: inline-flex; gap: 1px; }
+.tree ul.civs .chips button { display: inline-block; width: 1.6em; padding: 2px 0; font-size: 12px; text-align: center; }
+.tree ul.civs .chips button:disabled { opacity: 0.25; }
 /* Monaco 0.52.2 editor.main.css (MIT), inlined */
 /*!-----------------------------------------------------------
  * Copyright (c) Microsoft Corporation. All rights reserved.
@@ -329,6 +338,12 @@ ul.ideas { margin: 0; padding-left: 18px; display: grid; gap: 6px; font-size: 14
 </aside>
 </div>
 
+<script>var CIVS = [], CULTURE_SCALES = {};</script>
+<script src="cultures/asia.js"></script>
+<script src="cultures/westasia-africa.js"></script>
+<script src="cultures/ancient-americas.js"></script>
+<script src="cultures/europe-west.js"></script>
+<script src="cultures/europe-northeast.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.52.2/min/vs/loader.js"></script>
 <script>
 "use strict";
@@ -336,7 +351,8 @@ ul.ideas { margin: 0; padding-left: 18px; display: grid; gap: 6px; font-size: 14
 const ID = /^[A-Za-z0-9_-]+$/;
 const ENV_NEEDS = { metro: ["clock"], drums: ["clock"], piano: ["clock"], bass: ["clock"], delay: ["clock"], learn: ["clock"],
   strings: ["clock"], pluck: ["clock"], flute: ["clock"], organ: ["clock"], choir: ["clock"], bell: ["clock"],
-  env: ["clock"], fadein: ["clock"], fadeout: ["clock"], arrange: ["clock"], rain: ["clock"], marimba: ["clock"] };
+  env: ["clock"], fadein: ["clock"], fadeout: ["clock"], arrange: ["clock"], rain: ["clock"], marimba: ["clock"],
+  brass: ["clock"], timpani: ["clock"], wind: ["clock"] };
 const STATUS_SYMS = ["~", "-", "/", ".", "!", "?"];
 
 function isStatusComment(c) {
@@ -484,11 +500,11 @@ function nodeSource(n) {
 }
 // What each kind outputs and accepts, so `*>` only picks inputs that fit:
 // a speaker takes audio, never a mic signal, a vad's control or a clock.
-const AUDIO_OUT = ["metro", "drums", "piano", "bass", "strings", "pluck", "flute", "organ", "choir", "bell", "marimba", "rain",
+const AUDIO_OUT = ["metro", "drums", "piano", "bass", "strings", "pluck", "flute", "organ", "choir", "bell", "marimba", "brass", "timpani", "rain", "wind",
   "mix", "delay", "reverb", "filter", "drive", "chorus", "phaser", "tremolo", "pan", "eq", "comp", "env", "fadein", "fadeout"];
-const OUT_TYPE = { clock: "env", mic: "mic", vad: "control", arrange: "control", learn: null, speaker: null, ...Object.fromEntries(AUDIO_OUT.map((k) => [k, "audio"])) };
+const OUT_TYPE = { clock: "env", mic: "mic", vad: "control", arrange: "control", scale: null, learn: null, speaker: null, ...Object.fromEntries(AUDIO_OUT.map((k) => [k, "audio"])) };
 // MIDI: midi-in sends note events; instruments and drums also make notes, which midi-out takes.
-const NOTE_KINDS = ["drums", "piano", "bass", "strings", "pluck", "flute", "organ", "choir", "bell", "marimba"];
+const NOTE_KINDS = ["drums", "piano", "bass", "strings", "pluck", "flute", "organ", "choir", "bell", "marimba", "brass", "timpani"];
 Object.assign(OUT_TYPE, { "midi-in": "midi", "midi-out": null });
 const ACCEPTS = { speaker: ["audio"], vad: ["mic"], learn: ["mic"], "midi-out": ["notes", "midi"],
   ...Object.fromEntries(NOTE_KINDS.map((k) => [k, ["midi"]])),
@@ -695,14 +711,16 @@ const KINDS = {
   speaker: { build: (o) => ({ volume: num(o, "volume", 0.5, 0, 1) }) },
 };
 KINDS.arrange = { control: true, build: () => ({}) }; // built from its section list in rebuild()
+KINDS.scale = { control: true, build: () => ({}) }; // built from its degree list in rebuild()
 // Web MIDI (asks on Start). midi-in sends note events to instruments / drums;
 // midi-out sends the notes of what feeds it to an external device.
 const midiBuild = (o) => ({ device: o.device || null, channel: num(o, "channel", 0, 1, 16) });
 KINDS["midi-in"] = { source: true, control: true, build: midiBuild };
 KINDS["midi-out"] = { control: true, build: midiBuild };
 KINDS.rain = { source: true, build: (o) => ({ level: num(o, "level", 0.5, 0, 1), drops: num(o, "drops", 0.35, 0, 1) }) };
+KINDS.wind = { source: true, build: (o) => ({ level: num(o, "level", 0.5, 0, 1), gust: o.gust ? hz(o.gust, 0.12) : 0.12 }) };
 // Melodic instruments share one set of options (scale, key, phrase, chords…).
-for (const k of ["piano", "bass", "strings", "pluck", "flute", "organ", "choir", "bell", "marimba"]) KINDS[k] = { source: true, build: (o) => buildMelodic(k, o) };
+for (const k of ["piano", "bass", "strings", "pluck", "flute", "organ", "choir", "bell", "marimba", "brass", "timpani"]) KINDS[k] = { source: true, build: (o) => buildMelodic(k, o) };
 
 // ── autocomplete catalog: what each kind is, takes and accepts ────────
 // args: [key, default, doc, allowed values?]
@@ -754,7 +772,7 @@ const CATALOG = {
     ["device", '"IAC"', "part of the output's name or a wildcard like \"*IAC*\" (first match), or device=2; the first output if left out", [], { re: /^"[^"]*"$/ }],
     ["channel", "1", "1–16 (default 1; drums 10)", Array.from({ length: 16 }, (_, i) => String(i + 1)), { re: /^([1-9]|1[0-6])$/ }]] },
 };
-const SOURCE_KINDS = ["clock", "mic", "midi-in", "arrange", "metro", "drums", "piano", "bass", "strings", "pluck", "flute", "organ", "choir", "bell", "marimba", "rain"];
+const SOURCE_KINDS = ["clock", "mic", "midi-in", "arrange", "scale", "metro", "drums", "piano", "bass", "strings", "pluck", "flute", "organ", "choir", "bell", "marimba", "brass", "timpani", "rain", "wind"];
 const AUDIO_KINDS = AUDIO_OUT;
 // Kinds that make sense after `refs>`, given the kinds of the refs.
 function consumersFor(inKinds) {
@@ -787,8 +805,8 @@ const volume = () => Number(document.getElementById("vol").value) / 100;
 function rebuild() {
   // Fade out and drop the old audio nodes; keep clock positions.
   for (const n of live.values()) if (n.out && ctx) {
-    n.out.gain.setTargetAtTime(0, ctx.currentTime, 0.015); const o = n.out, src = n.src;
-    setTimeout(() => { o.disconnect(); if (src) try { src.stop(); } catch (e) { /* already stopped */ } }, 120);
+    n.out.gain.setTargetAtTime(0, ctx.currentTime, 0.015); const o = n.out, src = n.src, lfos = n.lfos || [];
+    setTimeout(() => { o.disconnect(); for (const x of src ? [src, ...lfos] : lfos) try { x.stop(); } catch (e) { /* already stopped */ } }, 120);
   }
   live = new Map();
   const eff = effectiveInputs(patch);
@@ -796,7 +814,7 @@ function rebuild() {
     const spec = KINDS[n.kind];
     const r = { node: n, busy: [], detail: "", error: null, out: null, inGain: null };
     if (!spec) r.error = `unknown kind \`${n.kind}\` (try clock, metro, drums, piano, bass, mix, delay, reverb, speaker)`;
-    else try { r.cfg = n.kind === "arrange" ? arrangeSections(n.args.filter((a) => !parseControl(a))) : spec.build(argMap(n.kind, n.args)); } catch (e) { r.error = e.message; }
+    else try { r.cfg = n.kind === "arrange" ? arrangeSections(n.args.filter((a) => !parseControl(a))) : n.kind === "scale" ? { cents: parseScaleDef(n.args) } : spec.build(argMap(n.kind, n.args)); } catch (e) { r.error = e.message; }
     const inKinds = r.error ? [] : eff.get(n.id).filter((x) => !x.implicit).map((x) => kindOfId(x.node));
     if (!r.error && inKinds.includes("mic") && n.kind !== "vad" && n.kind !== "learn") r.error = "mic is input only: feed it to a vad or learn (mic> vad)";
     else if (!r.error && n.kind === "learn" && !inKinds.includes("mic")) r.error = "needs a mic: write `mic> learn beat 1bar`";
@@ -835,6 +853,18 @@ function rebuild() {
     if (KINDS[k].control) continue;
     r.out = ctx.createGain(); r.out.gain.value = r.node.enabled ? 1 : 0;
     if (k === "clock") continue;
+    if (k === "wind") { // two bands of looping noise whose pitch and level drift: a low roar and a whistle
+      const len = ctx.sampleRate * 3, buf = ctx.createBuffer(1, len, ctx.sampleRate), d = buf.getChannelData(0);
+      for (let i = 0; i < len; i++) d[i] = Math.random() * 2 - 1;
+      const src = ctx.createBufferSource(); src.buffer = buf; src.loop = true; r.lfos = [];
+      for (const [f, q, lvl, rate] of [[320, 0.7, 0.32, r.cfg.gust], [1100, 5, 0.1, r.cfg.gust * 1.7]]) {
+        const bp = ctx.createBiquadFilter(), g = ctx.createGain(); bp.type = "bandpass"; bp.frequency.value = f; bp.Q.value = q; g.gain.value = lvl * r.cfg.level;
+        r.lfos.push(lfo(rate, f * 0.55, bp.frequency), lfo(rate * 0.77, lvl * r.cfg.level * 0.8, g.gain));
+        src.connect(bp).connect(g).connect(r.out);
+      }
+      src.start(); r.src = src;
+      continue;
+    }
     if (k === "rain") { // continuous filtered noise; droplets come per step
       const len = ctx.sampleRate * 2, buf = ctx.createBuffer(1, len, ctx.sampleRate), d = buf.getChannelData(0);
       for (let i = 0; i < len; i++) d[i] = Math.random() * 2 - 1;
@@ -919,15 +949,48 @@ const SCALES = {
   yu: [0, null, 300, 500, 700, null, 1000], yanyue: [0, 200, 400, 500, 700, 900, 1000],
 };
 const SCALE_NAMES = Object.keys(SCALES);
+// `. scale@name 1 2 b3 5 6:950`: the degrees a scale has, as 简谱 (#/b a
+// semitone, :cents exact). → 7 slots of cents, null where a degree is absent.
+const MAJOR_CENTS = [0, 200, 400, 500, 700, 900, 1100];
+function parseScaleDef(args) {
+  const out = Array(7).fill(null), toks = args.filter((a) => !parseControl(a));
+  if (!toks.length) throw new Error("list the degrees: `. scale@mygong 1 2 3 5 6` (#4 b7 raise/lower, 2:150 exact cents)");
+  for (const t of toks) {
+    const m = /^([#b]?)([1-7])(?::(-?\d+(?:\.\d+)?))?$/.exec(t);
+    if (!m) throw new Error(`\`${t}\`: a degree is 1–7, #4 / b7, or 2:150 (cents)`);
+    const d = Number(m[2]) - 1;
+    if (out[d] !== null) throw new Error(`degree ${d + 1} is listed twice`);
+    out[d] = m[3] !== undefined ? Number(m[3]) : MAJOR_CENTS[d] + (m[1] === "#" ? 100 : m[1] === "b" ? -100 : 0);
+  }
+  if (out[0] === null) throw new Error("a scale starts from degree 1");
+  return out;
+}
+function formatScaleDef(cents) {
+  return cents.map((c, d) => {
+    if (c === null) return null;
+    const diff = c - MAJOR_CENTS[d];
+    return diff === 0 ? `${d + 1}` : diff === 100 ? `#${d + 1}` : diff === -100 ? `b${d + 1}` : `${d + 1}:${c}`;
+  }).filter(Boolean).join(" ");
+}
+// A scale by name: one defined in the patch (`. scale@name …`) wins over a built-in.
+function scaleNamed(name) {
+  const n = typeof patch !== "undefined" && patch && nodes(patch).find((m) => m.kind === "scale" && m.id === name && m.enabled);
+  if (n) { try { return parseScaleDef(n.args); } catch (e) { return null; } }
+  return SCALES[name] || null;
+}
 // Phrase tokens: 1–7 degree (#/b prefix, ' up / , down an octave), 0 rest, - hold.
+// A chord is degrees joined by +: 1+3+5, 6,+3.
 function parsePhrase(s) {
   return s.trim().split(/\s+/).map((t) => {
     if (t === "-") return { hold: true };
     if (t === "0") return { rest: true };
-    const m = /^([#b]?)([1-7])(['’,]*)$/.exec(t);
-    if (!m) throw new Error(`bad phrase token \`${t}\` (1–7, 0 rest, - hold, ' or , for octaves)`);
-    const oct = [...m[3]].reduce((a, c) => a + (c === "," ? -1 : 1), 0);
-    return { deg: Number(m[2]), acc: m[1] === "#" ? 100 : m[1] === "b" ? -100 : 0, oct };
+    const notes = t.split("+").map((x) => {
+      const m = /^([#b]?)([1-7])(['’,]*)$/.exec(x);
+      if (!m) throw new Error(`bad phrase token \`${t}\` (1–7, 0 rest, - hold, ' or , for octaves, 1+3+5 a chord)`);
+      const oct = [...m[3]].reduce((a, c) => a + (c === "," ? -1 : 1), 0);
+      return { deg: Number(m[2]), acc: m[1] === "#" ? 100 : m[1] === "b" ? -100 : 0, oct };
+    });
+    return notes.length > 1 ? { ...notes[0], chord: notes } : notes[0];
   });
 }
 function degreeCents(scale, d) {
@@ -1037,7 +1100,7 @@ const MELODIC = Object.keys(INSTRUMENTS);
 function buildMelodic(kind, o) {
   const inst = INSTRUMENTS[kind];
   const scale = o.scale || "major";
-  if (!SCALES[scale]) throw new Error(`scale= is one of ${SCALE_NAMES.slice(0, 8).join(", ")}…`);
+  if (!scaleNamed(scale)) throw new Error(`scale= is one of ${SCALE_NAMES.slice(0, 8).join(", ")}… or one defined with \`. scale@name 1 2 3 5 6\``);
   const key = o.key || "C";
   if (!/^[A-G][#b]?$/.test(key)) throw new Error("key= is a note name like D or Bb");
   const grid = Number(o.grid || 8);
@@ -1049,11 +1112,11 @@ function buildMelodic(kind, o) {
     adsr = [ms(parts[0]) / 1000, ms(parts[1]) / 1000, Number(parts[2]), ms(parts[3]) / 1000];
     if (!(adsr[2] >= 0 && adsr[2] <= 1)) throw new Error("adsr sustain is 0–1");
   }
-  const defOct = { bass: 2, strings: 4, pluck: 4, flute: 5, organ: 3, choir: 4, bell: 4, piano: 4 }[kind];
+  const defOct = { bass: 2, strings: 4, pluck: 4, flute: 5, organ: 3, choir: 4, bell: 4, piano: 4, marimba: 4, brass: 3, timpani: 2 }[kind];
   const style = o.style || (kind === "bass" ? "root" : kind === "organ" || kind === "choir" ? "block" : "arp");
   if (!["arp", "block", "drone", "root"].includes(style)) throw new Error("style= is arp, block, drone or root");
   return {
-    inst, adsr, scale: SCALES[scale], scaleName: scale, key, grid, style, vol: num(o, "vol", 1, 0, 2),
+    inst, adsr, scale: scaleNamed(scale), scaleName: scale, key, grid, style, vol: num(o, "vol", 1, 0, 2),
     oct: num(o, "oct", defOct, 1, 7),
     phrase: o.phrase ? parsePhrase(o.phrase) : null,
     chords: (o.chords || "Am F C G").split(/\s+/).map(parseChord),
@@ -1070,9 +1133,12 @@ function playMelodic(r, c, step, t) {
     const i = (step / per) % cfg.phrase.length, tok = cfg.phrase[i];
     if (tok.rest || tok.hold) return;
     let hold = 1; while (hold < cfg.phrase.length && cfg.phrase[(i + hold) % cfg.phrase.length].hold) hold++;
-    const cents = degreeCents(cfg.scale, tok.deg) + tok.acc + 1200 * tok.oct;
-    note(midiHz(keyMidi(cfg.key, cfg.oct)) * Math.pow(2, cents / 1200), stepDur * per * hold * 0.95);
-    r.detail = `${tok.deg}${"'".repeat(Math.max(0, tok.oct))}${",".repeat(Math.max(0, -tok.oct))} · ${cfg.scaleName} on ${cfg.key}`;
+    const name = (x) => `${x.deg}${"'".repeat(Math.max(0, x.oct))}${",".repeat(Math.max(0, -x.oct))}`;
+    for (const x of tok.chord || [tok]) {
+      const cents = degreeCents(cfg.scale, x.deg) + x.acc + 1200 * x.oct;
+      note(midiHz(keyMidi(cfg.key, cfg.oct)) * Math.pow(2, cents / 1200), stepDur * per * hold * 0.95, tok.chord ? peak * 0.6 : peak);
+    }
+    r.detail = `${(tok.chord || [tok]).map(name).join("+")} · ${cfg.scaleName} on ${cfg.key}`;
     return;
   }
   if (cfg.notes) {
@@ -1170,6 +1236,42 @@ INSTRUMENTS.marimba = { adsr: [0.002, 0.5, 0, 0.2], play(out, t, f, dur, adsr, p
   g.connect(out);
 } };
 MELODIC.push("marimba");
+// Brass (horns, trumpets, 号角, karnay): saw through a filter that opens as the note swells.
+INSTRUMENTS.brass = { adsr: [0.06, 0.3, 0.8, 0.2], play(out, t, f, dur, adsr, peak) {
+  const o = ctx.createOscillator(), o2 = ctx.createOscillator(), lp = ctx.createBiquadFilter(), g = ctx.createGain();
+  o.type = o2.type = "sawtooth"; o.frequency.value = f; o2.frequency.value = f; o2.detune.value = -5;
+  lp.type = "lowpass"; lp.Q.value = 1.2;
+  lp.frequency.setValueAtTime(f * 1.2, t); lp.frequency.linearRampToValueAtTime(Math.min(8000, f * 5), t + Math.max(adsr[0], 0.05) + 0.08);
+  lp.frequency.setTargetAtTime(Math.min(8000, f * 3.5), t + adsr[0] + 0.1, 0.2);
+  const stop = envGain(g, t, dur, peak * 0.5, adsr);
+  o.connect(lp); o2.connect(lp); lp.connect(g).connect(out);
+  for (const x of [o, o2]) { x.start(t); x.stop(stop); }
+} };
+// Timpani (kettle drums): tuned, a soft thump and a long low ring. Rolls are fast repeated notes.
+INSTRUMENTS.timpani = { adsr: [0.004, 1.4, 0, 0.8], play(out, t, f, dur, adsr, peak) {
+  const g = ctx.createGain(); const stop = envGain(g, t, Math.max(dur, 1.2), peak * 1.3, adsr);
+  for (const [mul, lvl] of [[1, 1], [1.5, 0.35], [1.99, 0.2], [2.44, 0.1]]) {
+    const o = ctx.createOscillator(); o.type = "sine"; o.frequency.setValueAtTime(f * mul * 1.03, t); o.frequency.exponentialRampToValueAtTime(f * mul, t + 0.08);
+    const l = ctx.createGain(); l.gain.value = lvl; o.connect(l).connect(g); o.start(t); o.stop(stop);
+  }
+  noise(g, t, 0.05, 0.25, 120);
+  g.connect(out);
+} };
+MELODIC.push("brass", "timpani");
+// Orchestral percussion: gran cassa (bass drum), side drum, crash cymbals.
+KITS.orch = ["gran", "side", "crash"];
+{
+  const before = kitHit;
+  kitHit = function (out, lane, t, accent) {
+    const a = accent ? 1.3 : 1;
+    if (lane === "gran") { voice(out, t, { freq: 60, endFreq: 40, dur: 1.1, peak: 0.8 * a }); noise(out, t, 0.08, 0.1 * a, 150); }
+    else if (lane === "side") { noise(out, t, 0.12, 0.3 * a, 2200); voice(out, t, { freq: 240, dur: 0.06, peak: 0.12, type: "triangle" }); }
+    else if (lane === "crash") { noise(out, t, 1.8, 0.22 * a, 4500); noise(out, t, 0.9, 0.1 * a, 9000); }
+    else before(out, lane, t, accent);
+  };
+}
+// Scales the culture files add (cultures/*.js → CULTURE_SCALES).
+for (const [k, v] of Object.entries(window.CULTURE_SCALES || {})) SCALES[k] = v.cents;
 
 // ── effects: build(r) wires r.inGain → … → r.out ───────────────────────
 function lfo(rate, depth, target) {
@@ -1275,7 +1377,7 @@ function applyEnvelopes() {
 
 // Shared by every melodic instrument.
 const MELODIC_ARGS = [
-  ["phrase", '"1 2 3 5 6 - 5 3"', "简谱 melody: 1–7, 0 rest, - hold, ' up / , down an octave", null, { re: /^"(([#b]?[0-7]['’,]*|-)\s*)+"$/ }],
+  ["phrase", '"1 2 3 5 6 - 5 3"', "简谱 melody: 1–7, 0 rest, - hold, ' up / , down an octave", null, { re: /^"(([#b]?[0-7]['’,]*(\+[#b]?[1-7]['’,]*)*|-)\s*)+"$/ }],
   ["scale", "major", "colours the degrees", null, null],
   ["key", "C", "tonic", null, { re: /^[A-G][#b]?$/ }],
   ["chords", '"Am F C G"', "chord per bar", null, { re: /^"([A-G][#b]?(maj7|m7|m|7|dim|sus2|sus4)?\s*)+"$/ }],
@@ -1286,15 +1388,18 @@ const MELODIC_ARGS = [
   ["adsr", "10ms,200ms,0.6,400ms", "包絡 per note: attack,decay,sustain,release"],
   ["vol", "1", "level 0–2"],
 ];
-MELODIC_ARGS[1][3] = Object.keys(SCALES); MELODIC_ARGS[1][4] = { re: new RegExp(`^(${Object.keys(SCALES).join("|")})$`) };
+MELODIC_ARGS[1][3] = Object.keys(SCALES); MELODIC_ARGS[1][4] = { re: { test: (v) => !!scaleNamed(v) } };
+CATALOG.scale = { doc: "Defines a scale (调式) by its degrees in 简谱: `. scale@mygong 1 2 3 5 6`. #4 / b7 raise or lower a degree a semitone; 2:150 gives exact cents (quarter tones). Missing degrees snap to the nearest one. Named like a built-in scale, it replaces it in this patch.", args: [] };
 CATALOG.arrange = { doc: "Song form: sections in bars, looping. Lines play in them with ?song.2 or ?song.2-3 (or a section name).", args: [] };
+CATALOG.wind = { doc: "Wind: a howling gale (bands of noise that rise and fall), the background of a storm.", args: [["level", "0.5", "0–1", null, { re: /^(0|1|0?\.\d+)$/ }], ["gust", "0.12Hz", "how fast the gusts come", null, { re: /^\d+(\.\d+)?hz$/i }]] };
 CATALOG.rain = { doc: "Rain: soft noise and droplets, for a quiet ending.", args: [["level", "0.5", "0–1", null, { re: /^(0|1|0?\.\d+)$/ }], ["drops", "0.35", "droplets per step, 0–1"]] };
 for (const [k, doc] of [["marimba", "Marimba / balafon: wooden bars."], ["piano", "Piano: chords, or a melody by phrase= / notes=."], ["bass", "Bass: chord roots on beats 1 and 3, or a phrase."],
   ["strings", "提琴 strings (violin, cello, 京胡): bowed, with vibrato."], ["pluck", "Plucked strings: koto, guzheng, pipa, oud."],
-  ["flute", "Flute: ney, shakuhachi, dizi."], ["organ", "Pipe organ."], ["choir", "Choir 'ah'."], ["bell", "Bell: 编钟, temple or church bell."]]) {
+  ["flute", "Flute: ney, shakuhachi, dizi."], ["organ", "Pipe organ."], ["choir", "Choir 'ah'."], ["bell", "Bell: 编钟, temple or church bell."],
+  ["brass", "Brass: horns, trumpets, 号角, karnay; the filter opens as the note swells."], ["timpani", "Timpani (kettle drums): tuned hits; fast repeated notes make a roll."]]) {
   CATALOG[k] = { doc, args: MELODIC_ARGS };
 }
-CATALOG.drums.args.push(["kit", "rock", "rock, darbuka, taiko, opera (京剧), aztec, african, tabla, gamelan, celtic, flamenco", Object.keys(KITS), { re: new RegExp(`^(${Object.keys(KITS).join("|")})$`) }]);
+CATALOG.drums.args.push(["kit", "rock", "rock, darbuka, taiko, opera (京剧), aztec, african, tabla, gamelan, celtic, flamenco, orch (orchestra)", Object.keys(KITS), { re: new RegExp(`^(${Object.keys(KITS).join("|")})$`) }]);
 CATALOG.drums.args[1][3] = [...new Set(Object.values(KITS).flat())];
 CATALOG.drums.args[1][4] = { re: new RegExp(`^(${[...new Set(Object.values(KITS).flat())].join("|")})$`) };
 
@@ -1315,6 +1420,7 @@ function playStep(r, c, step, t) {
     r.detail = `step ${String(i + 1).padStart(2)}/${len}`;
   }
   if (MELODIC.includes(k)) playMelodic(r, c, step, t);
+  if (k === "wind" && step % 4 === 0) { mark(r, t, stepDur * 4); r.detail = "wind"; }
   if (k === "rain") {
     for (let i = 0; i < 2; i++) if (Math.random() < cfg.drops) voice(out, t + Math.random() * stepDur, { freq: 1800 + Math.random() * 2600, endFreq: 900, dur: 0.03, peak: 0.05 * cfg.level, type: "sine" });
     mark(r, t, stepDur); r.detail = "rain";
@@ -1946,6 +2052,7 @@ function nodeStatusInner(r, eff) {
     const st = r.vad || { speaking: false, onsets: 0 };
     return [st.speaking ? "~" : "-", `${st.speaking ? "speech" : "silence"} · ${st.onsets} onset${st.onsets === 1 ? "" : "s"} · ${thr}`];
   }
+  if (k === "scale") return ["-", `${r.cfg.cents.filter((x) => x !== null).length} notes · ${r.cfg.cents.filter((x) => x !== null).join(" ")} cents`];
   if (k === "arrange") {
     const fc = firstClock();
     const list = r.cfg.sections.map((x, i) => `${i + 1} ${x.name}`).join(" · ");
@@ -2258,8 +2365,16 @@ function explainAt(model, lineNo, col) {
   let body = opt ? `${code(key + "=")} ${esc(opt[2])}.` : key ? `Unknown option ${code(key)} for ${code(kind)}.` : `Not an option of ${code(kind)}.`;
   if (eq < 0 && opt) body += ` Written as a bare value: its shape fits only ${code(key + "=")}.`;
   const vd = VALUE_DOCS[`${key}.${bare}`]; if (vd) body += "<br>" + esc(vd);
-  if (key === "scale" && SCALES[bare]) {
-    body += `<br>${esc(SCALE_DOCS[bare] || "")}<br>Degrees (cents): ${SCALES[bare].map((x, i) => `${DEG_NAMES[i]}=${x === null ? "—" : x}`).join(" ")}`;
+  if (key === "scale" && scaleNamed(bare)) {
+    const own = nodes(p).some((m) => m.kind === "scale" && m.id === bare && m.enabled), def = `. scale@${bare} ${formatScaleDef(scaleNamed(bare))}`;
+    body += `<br>${esc(SCALE_DOCS[bare] || "")}<br>Degrees (cents): ${scaleNamed(bare).map((x, i) => `${DEG_NAMES[i]}=${x === null ? "—" : x}`).join(" ")}`
+      + `<br>${own ? "Defined in this patch:" : "Built in, as otoji code:"}<pre class="def">${esc(def)}</pre>`
+      + (own ? "" : `<button type="button" class="fork" data-fork="${esc(def)}" title="Copy this definition into the patch; edit it there and every line using ${esc(bare)} follows">Fork into the patch</button>`);
+  }
+  if (kind === "scale" && l.type === "node") {
+    let cents = null; try { cents = parseScaleDef(l.args); } catch (e) { body = esc(e.message); }
+    if (cents) body = `Scale ${code(l.id)}: ${cents.map((x, i) => `${DEG_NAMES[i]}=${x === null ? "—" : x}`).join(" ")} cents.` + (SCALES[l.id] ? ` Replaces the built-in ${code(l.id)} in this patch.` : "") + ` Use it as ${code("scale=" + l.id)} or just ${code(l.id)}.`;
+    return { title: `scale@${l.id}`, body, help: "kind:scale" };
   }
   // Inside a phrase: the note under the cursor.
   if (key === "phrase") {
@@ -2268,7 +2383,7 @@ function explainAt(model, lineNo, col) {
     for (const part of parts) { if (inner >= pos && inner < pos + part.length && part.trim()) piece = part; pos += part.length; }
     if (piece) {
       let o; try { o = argMap(kind, l.args); } catch (e) { o = {}; }
-      const sc = SCALES[o.scale || "major"], keyName = o.key || "C", oct = Number(o.oct || { bass: 2, flute: 5, organ: 3 }[kind] || 4);
+      const sc = scaleNamed(o.scale || "major") || SCALES.major, keyName = o.key || "C", oct = Number(o.oct || { bass: 2, flute: 5, organ: 3 }[kind] || 4);
       try {
         const t = parsePhrase(piece)[0];
         if (t.rest) body += `<br><b>0</b>: a rest.`;
@@ -2625,6 +2740,16 @@ function boot(chosen) {
   const text = saved || EXAMPLES.groove;
   ui.setText(text); applyText(text);
 }
+// Fork a built-in scale: its definition goes into the patch, after the
+// clock / arrange / scale lines at the top, where it can be edited.
+document.getElementById("explain").addEventListener("click", (e) => {
+  const b = e.target.closest("button[data-fork]"); if (!b) return;
+  const lines = ui.getText().replace(/\n$/, "").split("\n"), p = parsePatch(lines.join("\n"));
+  let at = 0;
+  p.lines.forEach((l, i) => { if (l.type === "comment" || (l.type === "node" && ["clock", "arrange", "scale"].includes(l.kind))) { if (i === at) at = i + 1; } });
+  lines.splice(at, 0, b.dataset.fork);
+  const t = lines.join("\n") + "\n"; ui.setText(t); applyText(t);
+});
 document.getElementById("fmtBtn").addEventListener("click", () => { const t = formatPatch(parsePatch(ui.getText().replace(/\n$/, ""))); ui.setText(t); applyText(t); });
 // Examples as a tree: category → (subcategory →) example.
 const EXAMPLE_TREE = [
@@ -2768,3 +2893,4 @@ if (window.require && window.require.config) {
   }, () => { if (!booted) { booted = true; clearTimeout(fallback); boot(textareaUI()); } });
 } else { booted = true; clearTimeout(fallback); boot(textareaUI()); }
 </script>
+<script src="matrix.js"></script>
