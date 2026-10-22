@@ -13,6 +13,7 @@ pub mod config;
 pub mod core;
 pub mod kws;
 pub mod notes;
+pub mod pipeline;
 pub mod polish;
 pub mod session;
 pub mod slug;
