@@ -307,7 +307,65 @@ fn parse_node(head: Head, rest: &str, enabled: bool, line: usize) -> Result<Node
     Ok(NodeLine { enabled, head, id, named, kind, args: tokens, comment })
 }
 
+/// How a control reference drives a node. Control references are
+/// arguments, not inputs: `>` stays for data (audio, text) only.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Control {
+    /// `^x` / `on=x`: fire once per event of `x` (e.g. per speech onset).
+    On,
+    /// `?x` / `while=x`: the node runs only while `x` is active.
+    While,
+    /// `!x` / `unless=x`: the node is off while `x` is active.
+    Unless,
+}
+
+impl Control {
+    pub fn sugar(self) -> char {
+        match self {
+            Control::On => '^',
+            Control::While => '?',
+            Control::Unless => '!',
+        }
+    }
+    pub fn key(self) -> &'static str {
+        match self {
+            Control::On => "on",
+            Control::While => "while",
+            Control::Unless => "unless",
+        }
+    }
+    fn from_sugar(c: char) -> Option<Control> {
+        [Control::On, Control::While, Control::Unless].into_iter().find(|k| k.sugar() == c)
+    }
+    fn from_key(k: &str) -> Option<Control> {
+        [Control::On, Control::While, Control::Unless].into_iter().find(|c| c.key() == k)
+    }
+}
+
+/// Parse one argument as a control reference: `^x`, `?x`, `!x` (sugar) or
+/// `on=x`, `while=x`, `unless=x`, with an optional `.port`.
+pub fn parse_control(arg: &str) -> Option<(Control, InputRef)> {
+    let (ctl, target) = match arg.chars().next().and_then(Control::from_sugar) {
+        Some(c) => (c, &arg[1..]),
+        None => {
+            let (k, v) = arg.split_once('=')?;
+            (Control::from_key(k)?, v)
+        }
+    };
+    let (node, port) = match target.split_once('.') {
+        Some((n, p)) => (n, Some(p.to_string())),
+        None => (target, None),
+    };
+    (is_id(node) && port.as_deref().is_none_or(is_id))
+        .then(|| (ctl, InputRef { node: node.to_string(), port, policy: None }))
+}
+
 impl NodeLine {
+    /// Control references among the arguments, in order.
+    pub fn controls(&self) -> Vec<(Control, InputRef)> {
+        self.args.iter().filter_map(|a| parse_control(a)).collect()
+    }
+
     /// The node as written: `kind`, or `name=kind` whenever the id differs
     /// from the kind. That includes auto names (`mic2`): writing them down
     /// keeps them stable, so a node added later gets the next free number
@@ -472,6 +530,21 @@ impl Pipeline {
                                 Head::Source => None,
                             }
                         };
+                        // Control references (`^x` / `?x` / `!x`) must name a node too.
+                        let err = err.or_else(|| {
+                            n.controls().into_iter().find_map(|(c, r)| {
+                                let tok = format!("{}{}", c.sugar(), r.node);
+                                if r.node == n.id {
+                                    Some(format!("`{tok}`: a node can't control itself"))
+                                } else if self.lines.iter().any(|l| matches!(l, Line::Node(m) if m.id == r.node)) {
+                                    None
+                                } else if invalid_ids.contains(&r.node) {
+                                    Some(format!("`{tok}`: `{}` has an error", r.node))
+                                } else {
+                                    Some(format!("`{tok}`: unknown node `{}`", r.node))
+                                }
+                            })
+                        });
                         if let Some(e) = err {
                             bad = Some((i, e));
                             break;
@@ -715,6 +788,9 @@ impl Pipeline {
             let mut device = Value::Null;
             let mut positional = Vec::new();
             for a in &n.args {
+                if parse_control(a).is_some() {
+                    continue; // becomes a control edge below
+                }
                 if let Some(d) = a.strip_prefix('@') {
                     device = json!(d);
                 } else if let Some((k, v)) = a.split_once('=').filter(|(k, _)| is_id(k)) {
@@ -755,6 +831,16 @@ impl Pipeline {
                 }
                 edges.push(e);
             }
+            for (c, r) in n.controls() {
+                edges.push(json!({
+                    "id": format!("{}-{}-{}", r.node, c.key(), n.id),
+                    "source": r.node,
+                    "sourceHandle": r.port.as_deref().unwrap_or("out"),
+                    "target": n.id,
+                    "targetHandle": "control",
+                    "control": c.key(),
+                }));
+            }
         }
         json!({ "version": 0, "nodes": nodes, "edges": edges })
     }
@@ -765,12 +851,20 @@ impl Pipeline {
         let nodes = v["nodes"].as_object().ok_or("graph has no `nodes` object")?;
         let edges = v["edges"].as_array().cloned().unwrap_or_default();
         let mut ins: BTreeMap<&str, Vec<InputRef>> = BTreeMap::new();
+        let mut controls: BTreeMap<String, Vec<String>> = BTreeMap::new();
         for e in &edges {
             let (Some(src), Some(dst)) = (e["source"].as_str(), e["target"].as_str()) else {
                 return Err("edge without source/target".into());
             };
             if e["implicit"].as_bool() == Some(true) {
                 continue; // environment edge: re-derived, never written
+            }
+            if e["targetHandle"].as_str() == Some("control") {
+                let c = e["control"].as_str().and_then(Control::from_key).ok_or("control edge without a kind")?;
+                let port = e["sourceHandle"].as_str().filter(|p| *p != "out");
+                let tok = format!("{}{}{}", c.sugar(), src, port.map(|p| format!(".{p}")).unwrap_or_default());
+                controls.entry(dst.to_string()).or_default().push(tok);
+                continue;
             }
             let port = e["sourceHandle"].as_str().filter(|p| *p != "out").map(String::from);
             let policy = e["policy"].as_str().map(String::from);
@@ -816,6 +910,7 @@ impl Pipeline {
             if let Some(d) = n["device"].as_str() {
                 args.push(format!("@{d}"));
             }
+            args.extend(controls.get(id.as_str()).cloned().unwrap_or_default());
             let head = match ins.get(id.as_str()) {
                 None => Head::Source,
                 Some(r) => Head::Refs(r.clone()),
@@ -1197,6 +1292,33 @@ stt.final> log=append $date.stt          # -
         assert!((c.fraction(t + ms(1000)) - 1.0).abs() < 0.01);
         c.end(t + ms(1000));
         assert!(c.fraction(t + ms(1500)) > 0.49);
+    }
+
+    #[test]
+    fn control_sugar_and_long_forms() {
+        let src = ". mic\nmic> vad\n. drums hit=kick ^vad\n. groove=drums ?vad\n. piano unless=vad\n";
+        let p = Pipeline::parse(src).unwrap();
+        let ctl = |id: &str| {
+            p.nodes().find(|n| n.id == id).unwrap().controls().into_iter().map(|(c, r)| (c, r.node)).collect::<Vec<_>>()
+        };
+        assert_eq!(ctl("drums"), [(Control::On, "vad".to_string())]);
+        assert_eq!(ctl("groove"), [(Control::While, "vad".to_string())]);
+        assert_eq!(ctl("piano"), [(Control::Unless, "vad".to_string())]);
+        // The formatter keeps the spelling you wrote.
+        let f = p.format();
+        assert!(f.contains("hit=kick ^vad") && f.contains("unless=vad"), "{f}");
+        // Graph JSON: dashed control edges, not data inputs or config.
+        let g = p.to_graph_json();
+        let e = g["edges"].as_array().unwrap().iter().find(|e| e["target"] == "drums").unwrap();
+        assert_eq!((e["targetHandle"].as_str(), e["control"].as_str()), (Some("control"), Some("on")));
+        assert!(g["nodes"]["piano"]["config"].get("unless").is_none());
+        let back = Pipeline::from_graph_json(&g).unwrap();
+        assert_eq!(back.to_graph_json(), g);
+        // Unknown or self references break only that line.
+        let p = Pipeline::parse_lenient(". mic\n. drums ?nope\n. piano !piano\n");
+        let errs: Vec<_> = p.errors().into_iter().map(|e| (e.line, e.message)).collect();
+        assert_eq!(errs, [(2, "`?nope`: unknown node `nope`".to_string()), (3, "`!piano`: a node can't control itself".to_string())]);
+        assert_eq!(p.nodes().count(), 1);
     }
 
     #[test]

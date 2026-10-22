@@ -96,6 +96,42 @@ llm2,stt.final> translate en       # names its llm explicitly
   Ollama is running and has it (`? run: ollama pull gemma3:4b`). The check is
   a plain HTTP call every 30 s; it never loads the model onto the GPU.
 
+## Control: `^x` / `?x` / `!x`
+
+`>` carries data (audio, text). A node that should merely *react* to another
+names it in an argument instead:
+
+| Sugar | Long form | Meaning |
+|---|---|---|
+| `^vad` | `on=vad` | edge: fire once per event (one hit per speech onset) |
+| `?vad` | `while=vad` | level: the node runs only while `vad` is active |
+| `!vad` | `unless=vad` | inverse level: off while `vad` is active (ducking) |
+
+```
+speech     ____████████________███______
+^vad (on)      x                  x
+?vad (while)   ████████________███
+!vad (unless)  ____        ████████   ███
+```
+
+- Both spellings parse; the formatter keeps the one written. `.port` is
+  allowed (`?vad.speech`). Several combine: `?vad !fn`.
+- A control ref must name a node; an unknown or broken one, or the node
+  itself, breaks only that line (`! \`?nope\`: unknown node \`nope\``).
+- `Pipeline::controls` / `NodeLine::controls()` return them; in graph JSON
+  they are edges with `"targetHandle": "control"` and
+  `"control": "on" | "while" | "unless"`, not inputs or config.
+- `vad> drums` is reported as an error suggesting `. drums kick ^vad`.
+
+## Shorthand values (CSS-style)
+
+Runtimes may let a bare value stand for an option when its shape fits exactly
+one of the node's options, like CSS `border: 1px solid red`:
+`. clock 100 3/4` = `bpm=100 sig=3`, `. drums kick 1/16 ^vad` =
+`hit=kick quantize=16`, `. piano "Am F C G" arp`. A value that fits no option
+breaks only that line. The language itself keeps arguments as written; the
+mapping belongs to each node kind.
+
 ## Errors keep the rest running
 
 Parsing is lenient (`Pipeline::parse_lenient`). A line with a syntax error,
