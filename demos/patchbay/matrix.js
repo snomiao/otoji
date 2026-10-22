@@ -6,9 +6,10 @@
 "use strict";
 
 const ACTIVITIES = {
-  hunt:   { zh: "狩猎", glyph: "猎", en: "Hunt", about: "vs nature: a horn call, stalking, the chase", bpm: 112, mode: "scale", grid: 8,
-    tune: [["x-x-x---", "leap", 0, 5], ["x0x0x0xx", "repeat", 3, 3], ["xxxxxxx-", "step", 2, 7], ["x-x-x---", "leap", 5, 0]], climb: true, prog: ["1", "1", "6,", "5,"], second: "third", horn: "call", timp: "pulse", perc: "calm", climax: "oct",
-    adds: ["drone", "perc", "second", "low", "horns", "drive", "timp"] },
+  hunt:   { zh: "狩猎", glyph: "猎", en: "Hunt", about: "vs nature: stalking in silence, holding breath, then the sudden chase and the strike", bpm: 124, mode: "dark", grid: 16,
+    tune: [["x---0---x-0-0---", "repeat", 1, 1], ["x-0-x-0-0-x-x---", "neighbor", 1, 2], ["xxxxxxxxxxxx----", "step", 0, 7], ["x---x---x-------", "leap", 6, 0]],
+    climb: true, prog: ["1", "1", "6,", "7,"], second: "third", horn: "call", timp: "pulse", perc: "heart", climax: "oct",
+    adds: ["trem", "ostinato", "perc", "second", "drive", "horns", "timp"] },
   battle: { zh: "战斗", glyph: "战", en: "Battle", about: "vs people: drums of war, fanfares, the clash", bpm: 132, mode: "dark", grid: 16,
     tune: [["x-xxx-x-x-xxx---", "repeat", 0, 0], ["x-x-x-x-xxxxx---", "step", 0, 4], ["x-xxx-xxx-xxx-x-", "leap", 4, 7], ["xxxxxxxxx---x---", "step", 6, 0]], climb: true, prog: ["1", "1", "6,", "7,"], second: "third", horn: "fanfare", timp: "roll", perc: "march", climax: "oct",
     adds: ["perc", "ostinato", "horns", "second", "timp", "drive", "melee"] },
