@@ -246,6 +246,10 @@ body.instruments-mode #instruments { display: block; }
 #instruments .keys .tune { margin-left: 6px; }
 #instruments .techs { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 3px; align-items: center; font-size: 12px; }
 #instruments .techs .lbl { color: var(--muted); margin-right: 4px; }
+#instruments .refs { margin-top: 28px; border-top: 1px solid var(--line); padding-top: 8px; font-size: 13px; }
+#instruments .refs h2 { font-size: 18px; } #instruments .refs h3 { font-size: 14px; margin: 12px 0 4px; }
+#instruments .refs ul { margin: 0; padding-left: 20px; display: grid; gap: 2px; } #instruments .refs a { color: var(--focus); }
+#instruments .refs .caveat { color: var(--muted); margin-top: 12px; }
 #instruments .techs button { font: inherit; font-size: 12px; padding: 1px 6px; cursor: pointer; }
 #instruments dl { grid-column: 1 / -1; margin: 6px 0 0; font-size: 13px; display: grid; grid-template-columns: max-content 1fr; gap: 3px 10px; }
 #instruments dt { color: var(--muted); }
@@ -1129,18 +1133,28 @@ function scaleNamed(name) {
   return SCALES[name] || null;
 }
 // Phrase tokens: 1–7 degree (#/b prefix, ' up / , down an octave), 0 rest, - hold.
-// A chord is degrees joined by +: 1+3+5, 6,+3.
+// A chord is degrees joined by +: 1+3+5, 6,+3; a trailing / strums it (1+3+5/).
+// Techniques: (3)5 grace note · 5~6 slide to 6 · a letter after the note:
+// x body tap, h harmonic, m mute, p pizzicato, s spiccato, c col legno,
+// r tremolo/roll, o overblow, f flutter-tongue.
+const TECH_LETTERS = { x: "knock", h: "harmonic", m: "mute", p: "pizz", s: "spiccato", c: "col-legno", r: "tremolo", o: "overblow", f: "flutter" };
+const PITCH = "([#b]?)([1-7])(['’,]*)";
+const phrasePitch = (m, i) => ({ deg: Number(m[i + 1]), acc: m[i] === "#" ? 100 : m[i] === "b" ? -100 : 0, oct: [...m[i + 2]].reduce((a, c) => a + (c === "," ? -1 : 1), 0) });
 function parsePhrase(s) {
   return s.trim().split(/\s+/).map((t) => {
     if (t === "-") return { hold: true };
     if (t === "0") return { rest: true };
-    const notes = t.split("+").map((x) => {
-      const m = /^([#b]?)([1-7])(['’,]*)$/.exec(x);
-      if (!m) throw new Error(`bad phrase token \`${t}\` (1–7, 0 rest, - hold, ' or , for octaves, 1+3+5 a chord)`);
-      const oct = [...m[3]].reduce((a, c) => a + (c === "," ? -1 : 1), 0);
-      return { deg: Number(m[2]), acc: m[1] === "#" ? 100 : m[1] === "b" ? -100 : 0, oct };
+    const strum = t.endsWith("/") && t.includes("+"), body = strum ? t.slice(0, -1) : t;
+    const notes = body.split("+").map((x) => {
+      const m = new RegExp(`^(?:\\(${PITCH}\\))?${PITCH}(?:~${PITCH})?([xhmpscrof]?)$`).exec(x);
+      if (!m) throw new Error(`bad phrase token \`${t}\` (1–7, 0 rest, - hold, ' or , for octaves, 1+3+5 a chord, 5~6 slide, (3)5 grace, 5x 5h 5m 5p 5s 5c 5r 5o 5f techniques)`);
+      const n = phrasePitch(m, 4);
+      if (m[1] !== undefined) n.grace = phrasePitch(m, 1);
+      if (m[7] !== undefined) n.slide = phrasePitch(m, 7);
+      if (m[10]) n.tech = TECH_LETTERS[m[10]];
+      return n;
     });
-    return notes.length > 1 ? { ...notes[0], chord: notes } : notes[0];
+    return notes.length > 1 ? { ...notes[0], chord: notes, strum } : notes[0];
   });
 }
 function degreeCents(scale, d) {
@@ -1269,6 +1283,7 @@ function buildMelodic(kind, o) {
     inst, adsr, scale: scaleNamed(scale), scaleName: scale, key, grid, style, vol: num(o, "vol", 1, 0, 2),
     oct: num(o, "oct", defOct, 1, 7),
     phrase: o.phrase ? parsePhrase(o.phrase) : null,
+    tech: o.tech ? (Object.values(TECH_LETTERS).includes(o.tech) ? o.tech : (() => { throw new Error(`tech= is one of ${Object.values(TECH_LETTERS).join(", ")}`); })()) : null,
     chords: (o.chords || "Am F C G").split(/\s+/).map(parseChord),
     notes: o.notes ? o.notes.split(/\s+/).map((t) => { if (t !== "." && noteMidi(t) === null) throw new Error(`bad note \`${t}\` (try E4, C#5 or .)`); return t; }) : null,
   };
@@ -1276,12 +1291,31 @@ function buildMelodic(kind, o) {
 function playMelodic(r, c, step, t) {
   const cfg = r.cfg, out = r.out, stepDur = 60 / c.bpm / 4, bar = Math.floor(step / (4 * c.sig)), barSteps = 4 * c.sig;
   const peak = 0.22 * cfg.vol;
-  const note = (f, dur, p = peak, idx = 0) => {
+  // One sound: on the line's physical model when it has one (a bowed line
+  // borrows a plucked string for pizzicato and col legno), else the oscillator voice.
+  const pmNode = (spec, slot) => { r.pms = r.pms || {}; if (!r.pms[slot]) { r.pms[slot] = new AudioWorkletNode(ctx, "pm", { numberOfInputs: 0, outputChannelCount: [1], processorOptions: spec }); r.pms[slot].connect(out); if (slot === "main") r.pm = r.pms[slot]; } return r.pms[slot]; };
+  const emit = (f, dur, p, idx, ev = {}) => {
     const pm = pmReady && (r.pmSpec !== undefined ? r.pmSpec : (r.pmSpec = pmFor(r.node.kind, r.node.id)));
-    if (pm) {
-      if (!r.pm) { r.pm = new AudioWorkletNode(ctx, "pm", { numberOfInputs: 0, outputChannelCount: [1], processorOptions: pm }); r.pm.connect(out); }
-      r.pm.port.postMessage({ t, f, dur, peak: p * 1.6, idx });
-    } else cfg.inst.play(out, t, f, dur, cfg.adsr, p, cfg); mark(r, t, Math.min(dur, 1.5)); midiNote(r, 69 + 12 * Math.log2(f / 440), peak > 0 ? 100 * p / peak : 0, t, dur, false); };
+    const at = t + (ev.at || 0), plucky = ["pizz", "col-legno", "knock"].includes(ev.tech) && pm && pm.model === "bowed";
+    if (pm && !plucky) { pmNode(pm, "main").port.postMessage({ t: at, f, dur, peak: p * 1.6, idx, tech: ev.tech, bend: ev.bend, legato: ev.legato }); return; }
+    if (plucky) { const ps = pmFor("pluck", r.node.id); const n = pmNode(ps, "pluck"); if (ev.tech === "col-legno") { n.port.postMessage({ t: at, f, dur: 0.05, peak: p * 1.6, tech: "knock" }); n.port.postMessage({ t: at, f, dur: 0.05, peak: p * 0.8, tech: "mute" }); } else n.port.postMessage({ t: at, f, dur, peak: p * 1.6, tech: ev.tech === "knock" ? "knock" : undefined }); return; }
+    if (ev.tech === "knock" || ev.tech === "col-legno") { kitHit(out, "rim", at, false); return; }
+    cfg.inst.play(out, at, ev.tech === "harmonic" ? f * 2 : f, ev.tech === "mute" ? dur * 0.25 : dur, cfg.adsr, p, cfg);
+  };
+  // A note with its technique: grace, slide, tremolo, flutter, overblow, short strokes.
+  const note = (f, dur, p = peak, idx = 0, x = {}) => {
+    const tech = x.tech || cfg.tech;
+    if (x.grace) { emit(x.grace, Math.min(0.08, dur * 0.3), p * 0.8, idx); x = { ...x, delay: 0.06 }; }
+    const d0 = x.delay || 0;
+    if (tech === "tremolo" || tech === "flutter") { const gap = tech === "flutter" ? 0.045 : 0.07; for (let k = 0; d0 + k * gap < dur; k++) emit(f, gap * 0.8, p, idx, { at: d0 + k * gap, tech: "spiccato" }); }
+    else if (x.slide) {
+      const pm = pmReady && r.pmSpec;
+      if (pm && pm.model === "pluck") emit(f, dur, p, idx, { at: d0, bend: x.slide / f });
+      else if (pm && pm.model === "bowed") { emit(f, dur * 0.5, p, idx, { at: d0 }); emit(x.slide, dur * 0.5, p, idx, { at: d0 + dur * 0.48, legato: true }); }
+      else { emit(f, dur * 0.5, p, idx, { at: d0 }); emit(x.slide, dur * 0.5, p, idx, { at: d0 + dur * 0.5 }); }
+    } else if (tech === "overblow") emit(f * 2, dur, p, idx, { at: d0 });
+    else if (tech === "spiccato" || tech === "pizz") emit(f, Math.min(dur, tech === "pizz" ? 0.4 : 0.08), p, idx, { at: d0 + (x.at || 0), tech });
+    else emit(f, dur, p, idx, { at: d0 + (x.at || 0), tech }); mark(r, t, Math.min(dur, 1.5)); midiNote(r, 69 + 12 * Math.log2(f / 440), peak > 0 ? 100 * p / peak : 0, t, dur, false); };
   if (cfg.phrase) {
     const per = 16 / cfg.grid;
     if (step % per) return;
@@ -1289,10 +1323,11 @@ function playMelodic(r, c, step, t) {
     if (tok.rest || tok.hold) return;
     let hold = 1; while (hold < cfg.phrase.length && cfg.phrase[(i + hold) % cfg.phrase.length].hold) hold++;
     const name = (x) => `${x.deg}${"'".repeat(Math.max(0, x.oct))}${",".repeat(Math.max(0, -x.oct))}`;
-    for (const x of tok.chord || [tok]) {
-      const cents = degreeCents(cfg.scale, x.deg) + x.acc + 1200 * x.oct;
-      note(midiHz(keyMidi(cfg.key, cfg.oct)) * Math.pow(2, cents / 1200), stepDur * per * hold * 0.95, tok.chord ? peak * 0.6 : peak, (tok.chord || [tok]).indexOf(x));
-    }
+    const hzOf = (x) => midiHz(keyMidi(cfg.key, cfg.oct)) * Math.pow(2, (degreeCents(cfg.scale, x.deg) + x.acc + 1200 * x.oct) / 1200);
+    (tok.chord || [tok]).forEach((x, k) => {
+      note(hzOf(x), stepDur * per * hold * 0.95, tok.chord ? peak * 0.6 : peak, k,
+        { tech: x.tech, grace: x.grace && hzOf(x.grace), slide: x.slide && hzOf(x.slide), at: tok.strum ? k * 0.03 : 0 });
+    });
     r.detail = `${(tok.chord || [tok]).map(name).join("+")} · ${cfg.scaleName} on ${cfg.key}`;
     return;
   }
@@ -1707,7 +1742,7 @@ function applyEnvelopes() {
 
 // Shared by every melodic instrument.
 const MELODIC_ARGS = [
-  ["phrase", '"1 2 3 5 6 - 5 3"', "简谱 melody: 1–7, 0 rest, - hold, ' up / , down an octave, 1+3+5 a chord", null, { re: /^"(([#b]?[0-7]['’,]*(\+[#b]?[1-7]['’,]*)*|-)\s*)+"$/ }],
+  ["phrase", '"1 2 3 5 6 - 5 3"', "简谱 melody: 1–7, 0 rest, - hold, ' up / , down an octave, 1+3+5 a chord (1+3+5/ strummed), 5~6 slide, (3)5 grace, 5x body tap, 5h harmonic, 5m mute, 5p pizzicato, 5s spiccato, 5c col legno, 5r tremolo, 5o overblow, 5f flutter", null, { re: { test: (v) => /^".+"$/.test(v) && (() => { try { parsePhrase(v.slice(1, -1)); return true; } catch (e) { return false; } })() } }],
   ["scale", "major", "colours the degrees", null, null],
   ["key", "C", "tonic", null, { re: /^[A-G][#b]?$/ }],
   ["chords", '"Am F C G"', "chord per bar", null, { re: /^"([A-G][#b]?(maj7|m7|m|7|dim|sus2|sus4)?\s*)+"$/ }],
@@ -1717,6 +1752,7 @@ const MELODIC_ARGS = [
   ["grid", "8", "phrase notes per bar of 4/4: 4, 8 or 16"],
   ["adsr", "10ms,200ms,0.6,400ms", "包絡 per note: attack,decay,sustain,release"],
   ["vol", "1", "level 0–2"],
+  ["tech", "pizz", "a playing technique for every note: knock, harmonic, mute, pizz, spiccato, col-legno, tremolo, overblow, flutter", ["knock", "harmonic", "mute", "pizz", "spiccato", "col-legno", "tremolo", "overblow", "flutter"]],
 ];
 MELODIC_ARGS[1][3] = Object.keys(SCALES); MELODIC_ARGS[1][4] = { re: { test: (v) => !!scaleNamed(v) } };
 CATALOG.scale = { doc: "Defines a scale (调式) by its degrees in 简谱: `. scale@mygong 1 2 3 5 6`. #4 / b7 raise or lower a degree a semitone; 2:150 gives exact cents (quarter tones). Missing degrees snap to the nearest one. Named like a built-in scale, it replaces it in this patch.", args: [] };

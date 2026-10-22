@@ -85,9 +85,11 @@ class Bowed {
     const base = this.sr / f, beta = this.p.beta || 0.127;
     this.neck.setLen(base * (1 - beta)); this.bridge.setLen(base * beta);
   }
-  start(f, peak, dur, legato) {
+  // tech "spiccato": a short stroke that starts at full bow speed (bounced bow).
+  start(f, peak, dur, legato, tech) {
     this.target = f; if (!legato || !this.on) { this.f = f; this.freq(f); this.vib = 0; this.vibOn = 0; }
     this.peak = peak; this.velTarget = this.p.pressure || 0.25; this.on = true; this.release = Math.floor(this.sr * dur); this.t = 0;
+    if (tech === "spiccato") { this.vel = this.velTarget * 1.3; this.vibOn = 0; }
     this.glide = legato ? Math.pow(f / this.f, 1 / (this.sr * (this.p.glide || 0.07))) : 1;
   }
   tick() {
@@ -121,7 +123,7 @@ class PM extends AudioWorkletProcessor {
     if (this.model === "bowed") { // one bow per chord voice: contiguous notes glide (legato)
       const k = Math.min(3, ev.idx || 0); let v = this.voices[k]; if (!v) this.voices[k] = v = new Bowed(sampleRate, this.p);
       const legato = v.on && v.t >= v.release - sampleRate * 0.03 && v.t <= v.release + sampleRate * 0.06;
-      v.start(ev.f, ev.peak, ev.dur, legato || (v.on && ev.legato)); return;
+      v.start(ev.f, ev.peak, ev.dur, ev.tech === "spiccato" ? false : legato || (v.on && ev.legato), ev.tech); return;
     }
     let v = this.voices.find((x) => x && !x.on); if (!v) { if (this.voices.length < 8) this.voices.push(v = new Pluck(sampleRate, this.p)); else v = this.voices[0]; }
     v.start(ev.f, ev.peak, ev.dur, ev.tech, ev.bend);

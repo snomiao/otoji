@@ -32,7 +32,7 @@ function auditionNote(entry, f, dur = 0.7, at = 0, key = "C") {
   const inst = INSTRUMENTS[entry.kind]; if (inst) inst.play(auditionOut, t, f, dur, inst.adsr, 0.22, { key });
 }
 // A playing technique (entry.techniques[].play), heard on this instrument.
-const TECHNIQUES = ["normal", "knock", "harmonic", "mute", "tremolo", "slide", "pizz", "strum", "flutter", "overblow", "roll", "gliss"];
+const TECHNIQUES = ["normal", "knock", "harmonic", "mute", "tremolo", "slide", "pizz", "strum", "flutter", "overblow", "roll", "gliss", "spiccato", "col-legno"];
 function auditionTechnique(entry, play, f, key) {
   ensureAudio(); if (ctx.state !== "running") ctx.resume();
   if (!auditionOut) { auditionOut = ctx.createGain(); auditionOut.connect(master); }
@@ -51,6 +51,12 @@ function auditionTechnique(entry, play, f, key) {
     case "pizz": if (pluckSpec) return pmNote(pluckSpec, { f, dur: 0.3 }); return auditionNote(entry, f, 0.15, 0, key);
     case "slide": if (bowSpec) { pmNote(bowSpec, { f, dur: 0.5 }); return pmNote(bowSpec, { f: f * 1.25, dur: 0.6, at: 0.48, legato: true }); }
       if (pluckSpec && str) return pmNote(pluckSpec, { f, bend: 1.25, dur: 1 }); auditionNote(entry, f, 0.3, 0, key); return auditionNote(entry, f * 1.12, 0.3, 0.25, key);
+    case "spiccato": // short bounced bow strokes
+      if (bowSpec) { for (let i = 0; i < 6; i++) pmNote(bowSpec, { f, dur: 0.06, tech: "spiccato", at: i * 0.13, idx: i % 2 }); return; }
+      for (let i = 0; i < 6; i++) auditionNote(entry, f, 0.06, i * 0.13, key); return;
+    case "col-legno": // the wood of the bow strikes the string: a knock and a damped tick
+      for (let i = 0; i < 4; i++) { if (pluckSpec) { pmNote(pluckSpec, { f, tech: "knock", at: i * 0.18 }); pmNote(pluckSpec, { f, tech: "mute", dur: 0.05, peak: 0.2, at: i * 0.18 }); } else auditionNote(entry, f, 0.05, i * 0.18, key); }
+      return;
     case "gliss": { const hs = homeScale(entry); [...hs.notes, ...hs.notes.map((x) => x * 2)].forEach((x, i) => auditionNote(entry, x, 0.5, i * 0.035, key)); return; }
     case "tremolo": for (let i = 0; i < 10; i++) auditionNote(entry, f, 0.07, i * 0.07, key); return;
     case "strum": [1, 1.26, 1.5, 2].forEach((m, i) => auditionNote(entry, f * m, 1.2, i * 0.03, key)); return;
@@ -183,6 +189,42 @@ function renderInstruments() {
   const sw = root.querySelector(".group");
   sw.value = mode; sw.addEventListener("change", () => { mode = sw.value; try { localStorage.setItem("otoji-inst-group", mode); } catch (err) { /* storage unavailable */ } render(mode); });
   render(mode);
+  // References, at the end: what was consulted, and what the data itself names.
+  const refs = document.createElement("section"); refs.className = "refs"; refs.id = "references";
+  const REFS = [
+    ["Classification", [
+      ["E. M. von Hornbostel & C. Sachs, “Systematik der Musikinstrumente”, Zeitschrift für Ethnologie 46 (1914) — the type groups on this page", null]]],
+    ["Sound synthesis (consulted for the physical models)", [
+      ["K. Karplus & A. Strong, “Digital Synthesis of Plucked-String and Drum Timbres”, Computer Music Journal 7/2 (1983)", null],
+      ["Ben Lynn, “The Karplus-Strong Algorithm”", "https://crypto.stanford.edu/~blynn/sound/karplusstrong.html"],
+      ["Barry Truax, “Waveguide Resonators” (SFU)", "https://www.sfu.ca/~truax/reson.html"],
+      ["Csound manual, pluck opcode", "https://csound.com/manual/opcodes/pluck/"],
+      ["guzheng-sound (Karplus-Strong guzheng on npm)", "https://libraries.io/npm/guzheng-sound"],
+      ["P. Cook & G. Scavone, The Synthesis ToolKit (STK): Bowed, Flute, Clarinet, Brass models", "https://ccrma.stanford.edu/software/stk/"],
+      ["faustwasm (Faust to WebAssembly / AudioWorklet)", "https://github.com/Fr0stbyteR/faustwasm"],
+      ["Versilian Community Sample Library (CC0), considered for samples", "https://versilian-studios.com/vcsl/"]]],
+    ["Voices (crowd node)", [
+      ["KlattSyn — Klatt formant synthesizer", "https://www.source-code.biz/klattSyn"],
+      ["“Walla” (crowd murmur in film sound)", "https://en.wikipedia.org/wiki/Walla"],
+      ["Cycling '74 forum: synthesizing crowd noise", "https://cycling74.com/forums/synthesizing-crowd-noise"]]],
+  ];
+  const named = new Map(); // sources named by the pieces and well-known tunes
+  for (const tbl of [PIECES, FAMOUS]) for (const [k, v] of Object.entries(tbl)) if (v && v.source && v.source !== "lost") {
+    const key = v.source.trim(); if (!named.has(key)) named.set(key, []); named.get(key).push(v.title);
+  }
+  refs.innerHTML = `<h2>${tr("References")}</h2>`;
+  for (const [head, items] of REFS) {
+    refs.append(Object.assign(document.createElement("h3"), { textContent: tr(head) }));
+    const ul = document.createElement("ul");
+    for (const [text, url] of items) { const li = document.createElement("li"); if (url) li.append(Object.assign(document.createElement("a"), { href: url, textContent: text, rel: "noopener", target: "_blank" })); else li.textContent = text; ul.append(li); }
+    refs.append(ul);
+  }
+  refs.append(Object.assign(document.createElement("h3"), { textContent: tr("Sources named for the pieces and melodies") }));
+  const ul2 = document.createElement("ul");
+  for (const [src, titles] of [...named].sort((a, b) => a[0].localeCompare(b[0]))) ul2.append(Object.assign(document.createElement("li"), { textContent: `${src} — ${[...new Set(titles)].join(", ")}` }));
+  refs.append(ul2);
+  refs.append(Object.assign(document.createElement("p"), { className: "caveat", textContent: tr("The instrument descriptions, histories and stories were written by an AI model from general knowledge, not from individually cited sources; native-script spellings marked uncertain are flagged with ⓘ. Treat them as a starting point and check them before relying on them.") }));
+  root.append(refs);
   root.querySelector(".stop").addEventListener("click", stopAudition);
   root.querySelector(".find").addEventListener("input", filter);
   // A S D F G H J K play the scale of the last instrument touched.
