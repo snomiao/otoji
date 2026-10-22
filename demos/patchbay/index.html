@@ -170,6 +170,7 @@ ul.ideas { margin: 0; padding-left: 18px; display: grid; gap: 6px; font-size: 14
           <option value="metro">Metronome 节拍器</option>
           <option value="poly">Two tempos, 3 against 2</option>
           <option value="dub">Dub chords with delay</option>
+          <option value="speech">Speech drums: talk to play the kick</option>
         </select>
         <button class="btn" id="fmtBtn" title="Align columns and tidy inputs">Format</button>
       </div>
@@ -208,7 +209,9 @@ ul.ideas { margin: 0; padding-left: 18px; display: grid; gap: 6px; font-size: 14
       <table>
         <tr><td><code>clock</code></td><td><code>bpm=92 sig=4</code> · environment: music nodes take the first one automatically</td></tr>
         <tr><td><code>metro</code></td><td>节拍器, accent on beat 1 · <code>tone=1000</code></td></tr>
-        <tr><td><code>drums</code></td><td><code>pattern="kick|snare|hat"</code>, 16 steps, <code>x</code> hit, <code>X</code> accent</td></tr>
+        <tr><td><code>drums</code></td><td><code>pattern="kick|snare|hat"</code>, 16 steps, <code>x</code> hit, <code>X</code> accent · fed by a <code>vad</code>: <code>hit=kick quantize=16|8|4|off</code></td></tr>
+        <tr><td><code>mic</code></td><td>asks for the microphone on Start; input only, never played back</td></tr>
+        <tr><td><code>vad</code></td><td><code>threshold=0.02 silence=300ms holdoff=250ms</code> · speech onsets trigger <code>drums</code></td></tr>
         <tr><td><code>piano</code></td><td><code>chords="Am F C G"</code> one per bar · <code>style=arp|block</code> <code>oct=4</code></td></tr>
         <tr><td><code>bass</code></td><td><code>chords="…"</code> roots on beats 1 and 3</td></tr>
         <tr><td><code>mix</code></td><td>sums its inputs</td></tr>
@@ -231,12 +234,11 @@ ul.ideas { margin: 0; padding-left: 18px; display: grid; gap: 6px; font-size: 14
     <div class="card">
       <h2>Next nodes to try in otoji</h2>
       <ul class="ideas">
-        <li><code>vad&gt; drums</code>: speech onsets trigger hits.</li>
         <li><code>mic&gt; pitch&gt; piano</code>: hum a melody, hear it on piano.</li>
         <li><code>stt.final&gt; lyrics</code>: transcript lines land on the bar.</li>
         <li><code>tap&gt; clock</code>: tap tempo drives every node.</li>
       </ul>
-      <p class="count" style="margin-top:8px">The browser demo has no microphone, so these live in the desktop app.</p>
+      <p class="count" style="margin-top:8px"><code>vad&gt; drums</code> works here already: pick “Speech drums”.</p>
     </div>
   </section>
 </main>
@@ -344,11 +346,13 @@ function check(p) {
     const valid = new Set(nodes(p).map((n) => n.id));
     for (let i = 0; i < p.lines.length && !bad; i++) {
       const l = p.lines[i];
-      if (l.type === "invalid") { prevValid = false; continue; }
+      if (l.type === "invalid") continue;
       if (l.type !== "node") continue;
       let err = null;
       if (seen.has(l.id)) err = `duplicate node name \`${l.id}\` (first on line ${seen.get(l.id)})`;
-      else if (l.head.kind === "prev") err = prevValid === null ? "`>` with no previous node" : prevValid === false ? "`>` but the previous line has an error" : null;
+      // A bare `>` takes the nearest valid line above, skipping broken ones,
+      // so a half-typed line doesn't mute everything after it.
+      else if (l.head.kind === "prev") err = prevValid === null ? "`>` with no previous node" : null;
       else if (l.head.kind === "refs") {
         for (const r of l.head.refs) {
           if (r.node === l.id) { err = `node \`${l.id}\` takes input from itself`; break; }
@@ -455,7 +459,21 @@ function fraction(s) { // "3/16" → beats
   return (Number(m[1]) / Number(m[2])) * 4;
 }
 
+function ms(v, def) { // "300ms", "0.3s" or a number of ms
+  if (v === undefined) return def;
+  const m = /^(\d+(?:\.\d+)?)(ms|s)?$/.exec(v);
+  if (!m) throw new Error(`bad duration \`${v}\` (try 300ms or 0.3s)`);
+  return Number(m[1]) * (m[2] === "s" ? 1000 : 1);
+}
+const LANES = ["kick", "snare", "hat"];
 const KINDS = {
+  // Input only: never routed to an output, so your voice is never played back.
+  mic: { source: true, control: true, build: () => ({}) },
+  // Energy VAD: fires an onset when speech starts after a pause.
+  vad: {
+    control: true,
+    build: (o) => ({ threshold: num(o, "threshold", 0.02, 0.001, 0.5), silence: ms(o.silence, 300), holdoff: ms(o.holdoff, 250) }),
+  },
   clock: { source: true, build: (o) => ({ bpm: num(o, "bpm", 92, 30, 260), sig: num(o, "sig", 4, 2, 12) }) },
   metro: { source: true, build: (o) => ({ tone: num(o, "tone", 1000, 200, 4000) }) },
   drums: {
@@ -464,7 +482,11 @@ const KINDS = {
       const lanes = (o.pattern || "x...x...x...x...|....x.......x...|..x...x...x...x.").split("|");
       if (lanes.length > 3) throw new Error("pattern= takes up to 3 lanes: kick|snare|hat");
       for (const l of lanes) if (!/^[xX.]+$/.test(l)) throw new Error("pattern= uses x, X and .");
-      return { lanes };
+      const hit = o.hit || "kick";
+      if (!LANES.includes(hit)) throw new Error("hit= is kick, snare or hat");
+      const q = o.quantize || "16";
+      if (!["4", "8", "16", "off"].includes(q)) throw new Error("quantize= is 4, 8, 16 or off");
+      return { lanes, hit, quantize: q === "off" ? 0 : 16 / Number(q) };
     },
   },
   piano: {
@@ -477,6 +499,37 @@ const KINDS = {
   reverb: { build: (o) => ({ size: num(o, "size", 2, 0.3, 6), mix: num(o, "mix", 0.25, 0, 1) }) },
   speaker: { build: (o) => ({ volume: num(o, "volume", 0.5, 0, 1) }) },
 };
+
+// ── autocomplete catalog: what each kind is, takes and accepts ────────
+// args: [key, default, doc, allowed values?]
+const CATALOG = {
+  clock: { doc: "Tempo source. Music nodes take the first clock automatically.", args: [["bpm", "92", "beats per minute"], ["sig", "4", "beats per bar"]] },
+  mic: { doc: "Microphone (asks on Start). Input only: feed it to a vad.", args: [] },
+  metro: { doc: "节拍器: click on every beat, accent on beat 1.", args: [["tone", "1000", "click pitch in Hz"]] },
+  drums: {
+    doc: "16-step drum machine (kick|snare|hat). Fed by a vad, it plays one hit per speech onset.",
+    args: [["pattern", '"x...x...x...x...|....x.......x...|..x...x...x...x."', "lanes kick|snare|hat; x hit, X accent, . rest"],
+      ["hit", "kick", "with a vad input: which drum", ["kick", "snare", "hat"]], ["quantize", "16", "with a vad input: snap to 1/16, 1/8, 1/4 or off", ["16", "8", "4", "off"]]],
+  },
+  piano: { doc: "Chords, one per bar, as an arpeggio or block chords.", args: [["chords", '"Am F C G"', "chord per bar"], ["style", "arp", "arp or block", ["arp", "block"]], ["oct", "4", "octave"]] },
+  bass: { doc: "Chord roots on beats 1 and 3.", args: [["chords", '"Am F C G"', "chord per bar"]] },
+  vad: { doc: "Speech detector on a mic; each speech onset triggers drums.", args: [["threshold", "0.02", "energy that counts as speech"], ["silence", "300ms", "pause that ends speech"], ["holdoff", "250ms", "minimum gap between onsets"]] },
+  mix: { doc: "Sums its inputs.", args: [] },
+  delay: { doc: "Tempo-synced echo.", args: [["time", "3/16", "note length"], ["feedback", "0.35", "0–0.9"], ["mix", "0.3", "wet level"]] },
+  reverb: { doc: "Room reverb.", args: [["size", "2", "seconds"], ["mix", "0.25", "wet level"]] },
+  speaker: { doc: "Output. Only what reaches a speaker is heard.", args: [["volume", "0.5", "0–1"]] },
+};
+const SOURCE_KINDS = ["clock", "mic", "metro", "drums", "piano", "bass"];
+const AUDIO_KINDS = ["metro", "drums", "piano", "bass", "mix", "delay", "reverb"];
+// Kinds that make sense after `refs>`, given the kinds of the refs.
+function consumersFor(inKinds) {
+  if (!inKinds.length) return Object.keys(CATALOG).filter((k) => !SOURCE_KINDS.includes(k) || k === "drums");
+  if (inKinds.every((k) => k === "mic")) return ["vad"];
+  if (inKinds.every((k) => k === "vad")) return ["drums"];
+  if (inKinds.every((k) => k === "clock")) return ["metro", "drums", "piano", "bass", "delay"];
+  if (inKinds.every((k) => AUDIO_KINDS.includes(k))) return ["mix", "delay", "reverb", "speaker"];
+  return ["mix", "speaker"];
+}
 
 // ── runtime ────────────────────────────────────────────────────────────
 let ctx = null, master = null, running = false;
@@ -504,7 +557,13 @@ function rebuild() {
     const r = { node: n, busy: [], detail: "", error: null, out: null, inGain: null };
     if (!spec) r.error = `unknown kind \`${n.kind}\` (try clock, metro, drums, piano, bass, mix, delay, reverb, speaker)`;
     else try { r.cfg = spec.build(argMap(n.args)); } catch (e) { r.error = e.message; }
-    if (!r.error && spec.source && eff.get(n.id).some((x) => !x.implicit && KINDS[kindOfId(x.node)]?.source && kindOfId(x.node) !== "clock")) r.error = `${n.kind} makes its own sound and takes no audio input`;
+    const inKinds = r.error ? [] : eff.get(n.id).filter((x) => !x.implicit).map((x) => kindOfId(x.node));
+    if (!r.error && inKinds.includes("mic") && n.kind !== "vad") r.error = "mic is input only: feed it to a vad (mic> vad)";
+    else if (!r.error && n.kind === "vad" && !inKinds.length) r.error = "needs a mic: write `mic> vad`";
+    else if (!r.error && n.kind === "vad" && inKinds.some((k) => k !== "mic")) r.error = "vad listens to a mic only";
+    else if (!r.error && inKinds.includes("vad") && n.kind !== "drums") r.error = "vad sends triggers: feed it to drums (vad> drums)";
+    else if (!r.error && spec.source && inKinds.some((k) => KINDS[k]?.source && k !== "clock")) r.error = `${n.kind} makes its own sound and takes no audio input`;
+    if (!r.error && n.kind === "drums") r.trigger = inKinds.includes("vad");
     if (!r.error && ENV_NEEDS[n.kind] && !eff.get(n.id).some((x) => kindOfId(x.node) === "clock")) r.error = "needs a clock: add `. clock bpm=92`";
     live.set(n.id, r);
   }
@@ -513,6 +572,7 @@ function rebuild() {
   for (const r of live.values()) {
     if (r.error) continue;
     const k = r.node.kind;
+    if (KINDS[k].control) continue;
     r.out = ctx.createGain(); r.out.gain.value = r.node.enabled ? 1 : 0;
     if (k === "clock") continue;
     if (!KINDS[k].source) {
@@ -534,9 +594,10 @@ function rebuild() {
     if (!r.inGain) continue;
     for (const x of eff.get(r.node.id)) {
       const src = live.get(x.node);
-      if (src && src.out && kindOfId(x.node) !== "clock") src.out.connect(r.inGain);
+      if (src && src.out && kindOfId(x.node) !== "clock" && !KINDS[kindOfId(x.node)]?.control) src.out.connect(r.inGain);
     }
   }
+  if (running) ensureMic();
   for (const r of live.values()) if (r.node.kind === "clock" && !r.error) {
     const c = clocks.get(r.node.id) || { nextTime: ctx.currentTime + 0.05, step: 0 };
     c.bpm = r.cfg.bpm; c.sig = r.cfg.sig; clocks.set(r.node.id, c);
@@ -567,6 +628,11 @@ function noise(dest, t, dur, peak, hp) {
   g.gain.setValueAtTime(peak, t); g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
   s.connect(f).connect(g).connect(dest); s.start(t); s.stop(t + dur + 0.02);
 }
+function drumHit(out, lane, t, accent) {
+  if (lane === "kick") voice(out, t, { freq: 150, endFreq: 42, dur: 0.32, peak: accent ? 0.95 : 0.75 });
+  if (lane === "snare") { noise(out, t, 0.16, accent ? 0.5 : 0.35, 1400); voice(out, t, { freq: 190, dur: 0.1, peak: 0.18, type: "triangle" }); }
+  if (lane === "hat") noise(out, t, 0.045, accent ? 0.22 : 0.13, 7000);
+}
 const mark = (r, t, dur) => { r.busy.push([t, t + Math.max(dur, 0.1)]); if (r.busy.length > 64) r.busy.shift(); };
 
 function playStep(r, c, step, t) {
@@ -576,12 +642,12 @@ function playStep(r, c, step, t) {
     voice(out, t, { freq: beat === 0 ? cfg.tone * 1.6 : cfg.tone, dur: 0.05, peak: beat === 0 ? 0.5 : 0.3, type: "square", filter: { type: "lowpass", freq: 5000 } });
     mark(r, t, 0.12); r.detail = `beat ${beat + 1}/${c.sig}`;
   }
-  if (k === "drums") {
-    const i = step % 16; const [kick = "", snare = "", hat = ""] = cfg.lanes; let hit = false;
-    const at = (lane) => lane[i % lane.length];
-    if (kick && at(kick) !== ".") { voice(out, t, { freq: 150, endFreq: 42, dur: 0.32, peak: at(kick) === "X" ? 0.95 : 0.75 }); hit = true; }
-    if (snare && at(snare) !== ".") { noise(out, t, 0.16, at(snare) === "X" ? 0.5 : 0.35, 1400); voice(out, t, { freq: 190, dur: 0.1, peak: 0.18, type: "triangle" }); hit = true; }
-    if (hat && at(hat) !== ".") { noise(out, t, 0.045, at(hat) === "X" ? 0.22 : 0.13, 7000); hit = true; }
+  if (k === "drums" && !r.trigger) {
+    const i = step % 16; let hit = false;
+    cfg.lanes.forEach((lane, li) => {
+      const ch = lane[i % lane.length];
+      if (ch !== ".") { drumHit(out, LANES[li], t, ch === "X"); hit = true; }
+    });
     if (hit) mark(r, t, 0.1);
     r.detail = `step ${String(i + 1).padStart(2)}/16`;
   }
@@ -606,9 +672,73 @@ function playStep(r, c, step, t) {
   }
 }
 
+// ── mic + vad ─────────────────────────────────────────────────────────
+let mic = { stream: null, analyser: null, buf: null, pending: false, error: null, level: 0, history: [] };
+async function ensureMic() {
+  const want = nodes(patch).some((n) => n.kind === "mic" && n.enabled);
+  if (!want || mic.stream || mic.pending || !ctx) return;
+  mic.pending = true; mic.error = null;
+  try {
+    // Echo cancellation keeps the drums coming out of the speakers from retriggering.
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: false } });
+    if (!running) { stream.getTracks().forEach((t) => t.stop()); return; }
+    const an = ctx.createAnalyser(); an.fftSize = 1024;
+    // Analysis only. Chrome processes a node only if it leads to the output,
+    // so the analyser feeds a zero-gain node: the graph runs, nothing is heard.
+    const silent = ctx.createGain(); silent.gain.value = 0;
+    ctx.createMediaStreamSource(stream).connect(an); an.connect(silent).connect(ctx.destination);
+    mic = { ...mic, stream, analyser: an, buf: new Float32Array(an.fftSize) };
+  } catch (e) {
+    mic.error = e && e.name === "NotAllowedError" ? "microphone blocked: allow it in the address bar, then Start again" : `microphone unavailable (${e && e.name || e})`;
+  } finally { mic.pending = false; }
+}
+function releaseMic() {
+  if (mic.stream) mic.stream.getTracks().forEach((t) => t.stop());
+  mic = { stream: null, analyser: null, buf: null, pending: false, error: mic.error, level: 0, history: [] };
+}
+// Called every tick: measure the mic, run each vad, fire drums on onsets.
+function runVad(eff) {
+  if (!mic.analyser) return;
+  mic.analyser.getFloatTimeDomainData(mic.buf);
+  let sum = 0; for (const v of mic.buf) sum += v * v;
+  const rms = Math.sqrt(sum / mic.buf.length), now = ctx.currentTime;
+  mic.level = rms;
+  for (const r of live.values()) {
+    if (r.node.kind !== "vad" || r.error || !r.node.enabled) continue;
+    const st = r.vad || (r.vad = { speaking: false, quietSince: now, lastOnset: -1, onsets: 0 });
+    if (rms > r.cfg.threshold) {
+      if (!st.speaking && now - st.lastOnset > r.cfg.holdoff / 1000) {
+        st.onsets++; st.lastOnset = now; mark(r, now, 0.15);
+        for (const d of live.values()) {
+          if (d.node.kind !== "drums" || !d.trigger || d.error || !d.node.enabled || !d.out) continue;
+          if (!eff.get(d.node.id).some((x) => x.node === r.node.id)) continue;
+          const t = gridTime(d, eff);
+          drumHit(d.out, d.cfg.hit, t, true); mark(d, t, 0.12); d.hits = (d.hits || 0) + 1;
+        }
+      }
+      st.speaking = true; st.quietSince = now;
+    } else if (st.speaking && now - st.quietSince > r.cfg.silence / 1000) st.speaking = false;
+  }
+}
+// Next grid point of a drums node's clock (or now, without a clock / quantize=off).
+function gridTime(d, eff) {
+  const soon = ctx.currentTime + 0.005;
+  const cref = eff.get(d.node.id).find((x) => kindOfId(x.node) === "clock");
+  const c = cref && clocks.get(cref.node);
+  if (!c || !d.cfg.quantize) return soon;
+  const stepDur = 60 / c.bpm / 4, g = d.cfg.quantize;
+  // c.nextTime is the next unscheduled step (index c.step); go back to the
+  // grid point at or after "now", then forward to the first one in the future.
+  let step = c.step, t = c.nextTime;
+  while (t - stepDur > soon) { t -= stepDur; step--; }
+  while (step % g !== 0 || t < soon) { t += stepDur; step++; }
+  return t;
+}
+
 function tick() {
   if (!running) return;
   const eff = effectiveInputs(patch);
+  runVad(eff);
   for (const [cid, c] of clocks) {
     const cr = live.get(cid);
     if (!cr || cr.error) continue;
@@ -638,10 +768,31 @@ function upstreamSounding(id, eff, t, seen = new Set()) {
   if (seen.has(id)) return false; seen.add(id);
   return (eff.get(id) || []).some((x) => { const s = live.get(x.node); return s && s.node.enabled && (soundingAt(s, t) || upstreamSounding(x.node, eff, t, seen)); });
 }
+function micSpark() {
+  mic.history.push(mic.level); if (mic.history.length > 10) mic.history.shift();
+  return mic.history.map((v) => "▁▂▃▅▆▇"[Math.min(5, Math.floor(Math.sqrt(v / 0.15) * 6))]).join("");
+}
 function nodeStatus(r, eff) {
   const n = r.node, k = n.kind, t = ctx ? ctx.currentTime : 0;
   if (r.error) return ["!", r.error];
   if (!n.enabled) return ["off", ""];
+  if (k === "mic") {
+    if (!running) return ["?", "press Start (asks for the microphone)"];
+    if (mic.error) return ["!", mic.error];
+    if (!mic.stream) return [".", "asking for the microphone"];
+    return ["~", `${micSpark()} · level ${mic.level.toFixed(3)}`];
+  }
+  if (k === "vad") {
+    const thr = `threshold ${r.cfg.threshold}`;
+    if (!running || !mic.stream) return ["-", `${thr} · waiting for the mic`];
+    const st = r.vad || { speaking: false, onsets: 0 };
+    return [st.speaking ? "~" : "-", `${st.speaking ? "speech" : "silence"} · ${st.onsets} onset${st.onsets === 1 ? "" : "s"} · ${thr}`];
+  }
+  if (k === "drums" && r.trigger) {
+    const routed = reaches(n.id, "speaker", eff);
+    const q = r.cfg.quantize ? `snapped to 1/${16 / r.cfg.quantize}` : "immediate";
+    return [running && soundingAt(r, t) ? "~" : "-", `${r.cfg.hit} on speech · ${q} · ${r.hits || 0} hits` + (routed ? "" : " · not routed to a speaker")];
+  }
   if (k === "speaker") {
     if (!running) return ["?", `press Start · vol ${Math.round(r.cfg.volume * 100)}%`];
     return [upstreamSounding(n.id, eff, t) ? "~" : "-", `vol ${Math.round(r.cfg.volume * 100)}% · out`];
@@ -742,6 +893,15 @@ metro,drums,piano,bass> mix
 .               metro        tone=800
 clock2>         metro2=metro tone=1500
 metro,metro2>   speaker      volume=0.4
+`,
+  speech: `# Talk: every time you start speaking, the kick plays on the next 16th.
+# Your voice is only analysed, never played back.
+.             clock         bpm=100
+.             mic
+mic>          vad           threshold=0.02 silence=300ms
+vad>          drums         hit=kick quantize=16
+.             groove=drums  pattern="................|....x.......x...|x.x.x.x.x.x.x.x."
+drums,groove> speaker       volume=0.5
 `,
   dub: `# Block chords through a tempo-synced delay
 .               clock   bpm=76
@@ -885,6 +1045,69 @@ function monacoUI(monaco) {
   // Pending Ctrl+E toggles are decorations, so they follow edits above them.
   let pendingIds = [];
   const pendingLines = () => pendingIds.map((id) => model.getDecorationRange(id)).filter(Boolean).map((r) => r.startLineNumber);
+  // Autocomplete: kinds after `.` / `input>`, names before `>`, args after a kind.
+  const K = monaco.languages.CompletionItemKind;
+  const kindItem = (kind, range, lead) => {
+    const c = CATALOG[kind];
+    const snippetArgs = c.args.filter((a) => !a[3] || a[0] === "style").slice(0, 2)
+      .map((a, i) => `${a[0]}=\${${i + 1}:${a[1].replace(/[$}\\]/g, "\\$&")}}`).join(" ");
+    return {
+      label: kind, kind: K.Module, detail: c.doc, range,
+      documentation: { value: c.args.length ? c.args.map((a) => `- \`${a[0]}=${a[1]}\` ${a[2]}`).join("\n") : "no options" },
+      insertText: lead + kind + (snippetArgs ? " " + snippetArgs : ""),
+      insertTextRules: monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet,
+    };
+  };
+  monaco.languages.registerCompletionItemProvider("otoji", {
+    triggerCharacters: [".", " ", ">", ",", "="],
+    provideCompletionItems(m, pos) {
+      const before = m.getLineContent(pos.lineNumber).slice(0, pos.column - 1);
+      const word = m.getWordUntilPosition(pos);
+      const range = new monaco.Range(pos.lineNumber, word.startColumn, pos.lineNumber, word.endColumn);
+      const p = parsePatch(m.getValue());
+      const above = nodes(p).filter((n) => p.lines.indexOf(n) < pos.lineNumber - 1);
+      const kindOfName = (id) => (nodes(p).find((n) => n.id === id) || {}).kind;
+      let mm;
+      // `.` just typed → source kinds, with a space in front.
+      if (/^\s*#?\.$/.test(before)) return { suggestions: SOURCE_KINDS.map((k) => kindItem(k, range, " ")) };
+      // `. kin|` or `. name=kin|` → source kinds.
+      if ((mm = /^\s*#?\.\s+(?:[\w-]+=)?([\w-]*)$/.exec(before))) return { suggestions: SOURCE_KINDS.map((k) => kindItem(k, range, "")) };
+      // `refs> kin|` → kinds that accept those inputs.
+      if ((mm = /^\s*#?\|?([^>#"]*)>\s*(?:[\w-]+=)?([\w-]*)$/.exec(before))) {
+        const refs = mm[1].split(",").map((r) => r.trim().split(/[.:]/)[0]).filter(Boolean);
+        const prev = above[above.length - 1];
+        const inKinds = (refs.length ? refs.map(kindOfName) : prev ? [prev.kind] : []).filter(Boolean);
+        const lead = /\s$/.test(before) || mm[2] ? "" : " ";
+        return { suggestions: consumersFor(inKinds).map((k) => kindItem(k, range, lead)) };
+      }
+      // Before `>`: names of nodes defined above.
+      if ((mm = /^\s*#?\|?([\w.,:\s-]*)$/.exec(before)) && !/^\s*#?\./.test(before) && !/^\s*#\s/.test(before)) {
+        return { suggestions: above.map((n) => ({
+          label: n.id, kind: K.Variable, detail: `${n.kind} node · line ${p.lines.indexOf(n) + 1}`, range,
+          insertText: n.id,
+        })) };
+      }
+      // After the node: its options, then values.
+      const head = /^\s*#?(?:\.|\|?[^>#"]*>)\s*(?:([\w-]+)=)?([\w-]+)\s+(.*)$/.exec(before);
+      if (head && CATALOG[head[2]]) {
+        const spec = CATALOG[head[2]], used = new Set([...head[3].matchAll(/([\w-]+)=/g)].map((x) => x[1]));
+        const kv = /([\w-]+)=([^\s"]*)$/.exec(before);
+        if (kv) {
+          const a = spec.args.find((x) => x[0] === kv[1]);
+          const vals = a ? (a[3] || [a[1]]) : [];
+          return { suggestions: vals.map((v) => ({ label: v, kind: K.Value, detail: a[2], range, insertText: v })) };
+        }
+        return { suggestions: spec.args.filter((a) => !used.has(a[0])).map((a) => ({
+          label: `${a[0]}=`, kind: K.Property, detail: a[2], range,
+          insertText: `${a[0]}=\${1:${a[1].replace(/[$}\\]/g, "\\$&")}}`,
+          insertTextRules: monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet,
+          command: a[3] ? { id: "editor.action.triggerSuggest", title: "values" } : undefined,
+        })) };
+      }
+      return { suggestions: [] };
+    },
+  });
+
   editor.addCommand(MOD | monaco.KeyCode.KeyT, () => toggleLines(selLines()));
   editor.addCommand(MOD | monaco.KeyCode.KeyE, () => {
     if (!running) return toggleLines(selLines());
@@ -957,14 +1180,14 @@ const startBtn = document.getElementById("startBtn");
 async function start() {
   ensureAudio(); await ctx.resume();
   master.gain.setTargetAtTime(volume(), ctx.currentTime, 0.02);
-  running = true; rebuild();
+  running = true; mic.error = null; rebuild();
   for (const c of clocks.values()) { c.nextTime = ctx.currentTime + 0.06; c.step = 0; }
   startBtn.setAttribute("aria-pressed", "true"); startBtn.textContent = "● Playing";
 }
 function stop() {
   running = false;
   if (ctx) { master.gain.setTargetAtTime(0, ctx.currentTime, 0.01); setTimeout(() => { if (!running && ctx) ctx.suspend(); }, 80); }
-  clocks.clear();
+  clocks.clear(); releaseMic();
   startBtn.setAttribute("aria-pressed", "false"); startBtn.textContent = "▶ Start audio";
   rowsKey = ""; renderStatus();
 }

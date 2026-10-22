@@ -443,19 +443,18 @@ impl Pipeline {
                 .collect();
             for (i, l) in self.lines.iter().enumerate() {
                 match l {
-                    Line::Invalid { .. } => {
-                        prev_valid = Some(false);
-                        continue;
-                    }
+                    Line::Invalid { .. } => continue,
                     Line::Node(n) => {
                         let err = if let Some(first) = seen.get(&n.id) {
                             Some(format!("duplicate node name `{}` (first on line {first})", n.id))
                         } else {
                             match &n.head {
+                                // A bare `>` takes the nearest valid line above,
+                                // skipping broken ones, so a half-typed line
+                                // doesn't cut off everything after it.
                                 Head::Previous => match prev_valid {
                                     None => Some("`>` with no previous node".to_string()),
-                                    Some(false) => Some("`>` but the previous line has an error".to_string()),
-                                    Some(true) => None,
+                                    Some(_) => None,
                                 },
                                 Head::Refs(refs) => refs.iter().find_map(|r| {
                                     if r.node == n.id {
@@ -1198,6 +1197,14 @@ stt.final> log=append $date.stt          # -
         assert!((c.fraction(t + ms(1000)) - 1.0).abs() < 0.01);
         c.end(t + ms(1000));
         assert!(c.fraction(t + ms(1500)) > 0.49);
+    }
+
+    #[test]
+    fn bare_input_skips_broken_lines() {
+        // The half-typed `>` line is broken; `> speaker` still takes reverb.
+        let p = Pipeline::parse_lenient(". drums\n> reverb\n>\n> speaker\n");
+        assert_eq!(p.errors().iter().map(|e| e.line).collect::<Vec<_>>(), [3]);
+        assert_eq!(p.inputs()["speaker"][0].node, "reverb");
     }
 
     #[test]

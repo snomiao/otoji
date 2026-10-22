@@ -99,13 +99,15 @@ llm2,stt.final> translate en       # names its llm explicitly
 ## Errors keep the rest running
 
 Parsing is lenient (`Pipeline::parse_lenient`). A line with a syntax error,
-an unknown input, a duplicate explicit name, a self-reference, or a bare `>`
-after a broken line becomes an invalid line:
+an unknown input, a duplicate explicit name or a self-reference becomes an
+invalid line:
 
 - it is kept verbatim (the formatter never rewrites it) and left out of the
   graph;
 - its menu row shows the reason: `nope> polish  # ! unknown node \`nope\``;
 - nodes fed by it are invalid too (`! input \`polish\` has an error`);
+- a bare `>` below it takes the nearest *valid* line above, so a half-typed
+  line doesn't cut off the rest of a chain;
 - every other line keeps running.
 
 `Pipeline::parse` is the strict variant (first error fails), used for tests
