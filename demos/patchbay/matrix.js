@@ -463,8 +463,8 @@ function compose(civ, actId) {
   const phrase = (sc2, shiftOf) => bars.flatMap((bar, k) => render(bar, sc2, shiftOf(k)));
   // A named piece in the story whose tune survives: the lead plays it.
   // The story's named piece; if its melody is lost, a well-known piece for the scene (cultures/famous/).
-  const named = PIECES[`${civ.id}:${actId}`], famous = FAMOUS[`${civ.id}:${actId}`];
-  const piece = named && named.melody ? named : famous && famous.melody ? famous : named, tune = piece && piece.melody && SCALES[piece.scale] ? piece.melody.trim().split(/\s+/) : null;
+  const storyPiece = PIECES[`${civ.id}:${actId}`], famous = FAMOUS[`${civ.id}:${actId}`];
+  const piece = storyPiece && storyPiece.melody ? storyPiece : famous && famous.melody ? famous : storyPiece, tune = piece && piece.melody && SCALES[piece.scale] ? piece.melody.trim().split(/\s+/) : null;
   if (tune) {
     const up = tune.map((t) => (/^[#b]?[1-7]/.test(t) ? t.replace(/^([#b]?[1-7])([',]*)$/, (_, d, o) => d + (o.includes(",") ? o.slice(1) : o + "'")) : t));
     line(lead, `grid=${piece.grid || 8}`, q(tune), 1, 6, `${piece.scale} ${piece.key || key}`);
