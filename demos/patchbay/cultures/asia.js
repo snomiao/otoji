@@ -37,7 +37,7 @@ CIVS.push(
     intro: "Han 汉 of the Zhou and Han dynasties: the ritual music 雅乐 of bronze bells and stone chimes, the qin and se zithers of the Book of Songs 诗经, and the Han court's Music Bureau 乐府.",
     note: "Zhou–Han 雅乐 (金石之乐, as in the Marquis Yi of Zeng 曾侯乙 tomb): bianzhong 编钟 bells lead, qin 琴 answers, se 瑟 ripples, bianqing 编磬 stone chimes, sheng 笙 and yu 竽 mouth organs, chi 篪 flute and paixiao 排箫, xun 埙 bass, zhu 筑 struck zither, 登歌 singers, jiangu 建鼓 and the bo 镈 bell; no cymbals yet" },
   { id: "chinese-middle", name: "Han", zh: "汉", endonym: "華夏 Huáxià · 唐人 Tángrén", region: "East Asia", games: [2, 3, 4], like: "chinese", era: "middle · Sui–Tang–Song 隋唐宋",
-    key: "E", scale: "yanyue", dark: "yu", bright: "gong",
+    key: "F#", scale: "yanyue", dark: "yu", bright: "gong",
     lead: "pluck@pipa", second: "reed@bili oct=4", drone: "organ@sheng oct=3 vol=0.5", flute: "flute@hengdi oct=5", bell: "bell@fangxiang oct=5", harp: "pluck@konghou oct=4 vol=0.6",
     low: "pluck@ruanxian oct=2 vol=0.8", extra: "bell@tongbo oct=3",
     horns: "brass@dajiao oct=3 vol=0.55", pad: "organ@yu oct=4 vol=0.4", choir: "choir@ci-singers oct=3 vol=0.5", timp: "timpani@dagu oct=2 vol=0.9", trem: "pluck@pipa-lunzhi oct=4 vol=0.45", bigDrum: "zhangu", cymbals: true,

@@ -291,7 +291,7 @@ function renderInstruments() {
     for (const [ch, list] of byCh) {
       const d = document.createElement("details"); d.append(Object.assign(document.createElement("summary"), { textContent: `${ch} (${list.length})` }));
       const ul = document.createElement("ul");
-      for (const r of list) { const li = document.createElement("li"); li.append(Object.assign(document.createElement("a"), { href: r.url, textContent: r.title, rel: "noopener", target: "_blank" }), r.seconds ? ` · ${Math.floor(r.seconds / 60)}:${String(r.seconds % 60).padStart(2, "0")}` : ""); ul.append(li); }
+      for (const r of list) { const li = document.createElement("li"); li.append(Object.assign(document.createElement("a"), { href: r.url, textContent: r.title, rel: "noopener", target: "_blank" }), r.seconds ? ` · ${Math.floor(r.seconds / 60)}:${String(r.seconds % 60).padStart(2, "0")}` : "", r.pulse ? ` · ~${r.pulse} bpm, centre ${r.centre}` : ""); ul.append(li); }
       d.append(ul); refs.append(d);
     }
   }
