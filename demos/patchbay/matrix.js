@@ -629,6 +629,7 @@ const FEATURED = [
   ["byzantines:death", "mode", "voices only over the ison, in a hard-chromatic Byzantine echos"],
   ["ethiopians:ritual", "mode", "the Tezeta qenet, on masenqo and krar"],
   ["tang", "mode", "the five modes 五调: 宫 商 角 徵 羽 on the same five notes"],
+  ["pozhen", "mode", "秦王破阵乐 at two tempos: as gagaku plays Tang music today, and as fast as the Tang court may have danced it"],
   ["egyptians:flood", "mood", "the Nile's inundation is a festival, not a disaster"],
   ["japanese:wind", "mood", "神風: the typhoon that saved them; terror turns to deliverance"],
   ["vikings:death", "mood", "a warrior's pyre: grief, then the glory of Valhalla"],
