@@ -7,31 +7,38 @@
 
 const ACTIVITIES = {
   hunt:   { zh: "狩猎", glyph: "猎", en: "Hunt", about: "vs nature: a horn call, stalking, the chase", bpm: 112, mode: "scale", grid: 8,
-    base: ["x-x-xx-0", "x-xxx-x-"], climb: true, prog: ["1", "1", "6,", "5,"], second: "third", horn: "call", timp: "pulse", perc: "calm", climax: "oct",
+    tune: [["x-x-x---", "leap", 0, 5], ["x0x0x0xx", "repeat", 3, 3], ["xxxxxxx-", "step", 2, 7], ["x-x-x---", "leap", 5, 0]], climb: true, prog: ["1", "1", "6,", "5,"], second: "third", horn: "call", timp: "pulse", perc: "calm", climax: "oct",
     adds: ["drone", "perc", "second", "low", "horns", "drive", "timp"] },
   battle: { zh: "战斗", glyph: "战", en: "Battle", about: "vs people: drums of war, fanfares, the clash", bpm: 132, mode: "dark", grid: 16,
-    base: ["x-x-xxx-x-x-x---", "xxx-x-x-xx-xx---"], climb: true, prog: ["1", "1", "6,", "7,"], second: "third", horn: "fanfare", timp: "roll", perc: "march", climax: "oct",
-    adds: ["perc", "ostinato", "horns", "second", "timp", "drive", "choir"] },
-  gather: { zh: "采集", glyph: "采", en: "Gather", about: "together in the fields: call and answer, a light step", bpm: 100, mode: "bright", grid: 8,
-    base: ["xxxx-x0-", "xx-xxx--"], climb: false, prog: ["1", "4", "5", "1"], second: "echo", horn: "long", timp: null, perc: "calm", climax: "oct",
-    adds: ["second", "perc", "low", "harp", "pad", "horns", "choir"] },
-  ritual: { zh: "祭祀", glyph: "祭", en: "Ritual", about: "speaking with the gods: drone, chant, bells", bpm: 66, mode: "scale", grid: 4,
-    base: ["x-xx", "x-x-"], climb: false, prog: ["1", "1", "5,", "1"], second: "long", horn: "long", timp: "toll", perc: "heart", climax: "oct",
-    adds: ["drone", "bell", "choir", "perc", "second", "horns", "timp"] },
+    tune: [["x-xxx-x-x-xxx---", "repeat", 0, 0], ["x-x-x-x-xxxxx---", "step", 0, 4], ["x-xxx-xxx-xxx-x-", "leap", 4, 7], ["xxxxxxxxx---x---", "step", 6, 0]], climb: true, prog: ["1", "1", "6,", "7,"], second: "third", horn: "fanfare", timp: "roll", perc: "march", climax: "oct",
+    adds: ["perc", "ostinato", "horns", "second", "timp", "drive", "melee"] },
+  gather: { zh: "采集", glyph: "采", en: "Gather", about: "together in the fields: light and happy, unhurried, call and answer", bpm: 92, mode: "bright", grid: 8,
+    tune: "motif", climb: false, prog: ["1", "4", "5", "1"], second: "echo", horn: "long", timp: null, perc: "calm", climax: "oct",
+    adds: ["second", "perc", "low", "whistle", "harp", "pad", "sing"] },
+  ritual: { zh: "祭祀", glyph: "祭", en: "Ritual", about: "offerings and divination (祭祀/占卜): asking the gods about what is to come; solemn and grand, not sad", bpm: 72, mode: "bright", grid: 8,
+    tune: [["x-x-x---", "leap", 0, 4], ["x-xxx---", "repeat", 4, 4], ["x-x-x-x-", "leap", 3, 7], ["x-x-----", "step", 5, 5]], climb: false, prog: ["1", "4", "5", "1"], second: "long", horn: "long", timp: "roll", perc: "calm", climax: "oct",
+    adds: ["drone", "bell", "perc", "choir", "horns", "second", "timp"] },
   rain:   { zh: "聴雨", glyph: "雨", en: "Waiting", about: "listening to the rain: waiting for the world outside to change, then it does", bpm: 63, mode: "dark", grid: 8,
-    base: ["x--0x-0-", "x-0-x---"], climb: false, prog: ["1", "6,", "4,", "5,"], second: "echo", horn: "long", timp: null, perc: "heart", climax: "bright",
+    tune: [["x--0x---", "step", 4, 3], ["0-x-x---", "step", 3, 2], ["x-0-x-x-", "step", 5, 3], ["x---0---", "step", 1, 0]], climb: false, prog: ["1", "6,", "4,", "5,"], second: "echo", horn: "long", timp: null, perc: "heart", climax: "bright",
     adds: ["harp", "drone", "second", "pad", "low", "perc", "choir"] },
   flood:  { zh: "水灾", glyph: "洪", en: "Flood", about: "the great flood: waves that rise, a struggle, the water recedes", bpm: 84, mode: "dark", grid: 8,
-    base: ["x-xx-xx-", "x-x-xxx-"], climb: true, prog: ["1", "7,", "6,", "5,"], second: "third", horn: "long", timp: "roll", perc: "march", climax: "oct",
+    tune: [["xxxxxxx-", "wave", 0, 3], ["xxxxxxx-", "wave", 1, 4], ["xxxxxxx-", "wave", 2, 6], ["x-x-x---", "step", 4, 0]], climb: true, prog: ["1", "7,", "6,", "5,"], second: "third", horn: "long", timp: "roll", perc: "march", climax: "oct",
     adds: ["harp", "low", "perc", "pad", "timp", "horns", "choir"] },
   wind:   { zh: "风灾", glyph: "风", en: "Storm", about: "a great wind: the gale behind everything, swirling flutes, trembling strings", bpm: 92, mode: "dark", grid: 8,
-    base: ["x---x-x-", "x-x-x---"], climb: true, prog: ["1", "2", "1", "7,"], second: "long", horn: "long", timp: "roll", perc: "calm", climax: "oct", wind: true,
+    tune: [["x---xxx-", "leap", 0, 4], ["xxxx-x--", "wave", 4, 1], ["x-x-xxxx", "leap", 2, 7], ["x-----x-", "step", 3, 0]], climb: true, prog: ["1", "2", "1", "7,"], second: "long", horn: "long", timp: "roll", perc: "calm", climax: "oct", wind: true,
     adds: ["trem", "low", "swirl", "perc", "horns", "timp", "choir"] },
-  death:  { zh: "死亡", glyph: "死", en: "Death", about: "a lament: a tolling bell, a sigh, one cry of grief, silence", bpm: 54, mode: "dark", grid: 4,
-    base: ["x--x", "x---"], climb: false, prog: ["1", "6,", "4,", "5,"], second: "long", horn: "long", timp: "toll", perc: "heart", climax: "oct",
+  death:  { zh: "死亡", glyph: "死", en: "Funeral", about: "funeral music, as this people mourns", bpm: 54, mode: "dark", grid: 4,
+    tune: [["x--x", "sigh", 4, 3], ["x---", "step", 2, 2], ["x-xx", "sigh", 5, 3], ["x---", "step", 1, 0]], climb: false, prog: ["1", "6,", "4,", "5,"], second: "long", horn: "long", timp: "toll", perc: "heart", climax: "oct",
     adds: ["drone", "bell", "low", "second", "choir", "pad", "horns"] },
 };
 const ACTIVITY_IDS = Object.keys(ACTIVITIES);
+// tune: four bars, each [rhythm mask, shape, from, to]. Pitches are ranks in the
+// scale counted as if it had 5 notes an octave (0 tonic, 5 the octave), so a
+// shape reads the same in pentatonic and seven-note scales. Shapes:
+//   step   walks from → to;  leap  jumps there in wide intervals;  repeat  a
+//   reciting tone with a neighbour;  neighbor  tone, upper neighbour, back, to;
+//   wave   rises in ripples;  sigh  falling two-note sighs.
+// "motif" (gather) sings the culture's own folk motifs instead.
 
 // ── 简谱 tokens as scale steps: i = degree-1 + 7·octave ─────────────────
 const jp = {
@@ -43,26 +50,7 @@ const jp = {
   up(n, k) { return { acc: n.acc, i: n.i + k }; },
   notes(motif) { return motif.trim().split(/\s+/).map(jp.parse).filter(Boolean); },
 };
-// Move notes from one scale to another by rank among the degrees each has,
-// so a pentatonic tune keeps its shape in a five-note minor mode: in gong
-// (1 2 3 5 6) → yu (1 b3 4 5 b7), 3 5 6 becomes 4 5 7.
-function remap(notes, from, to) {
-  if (from === to) return notes;
-  const P = (s) => (SCALES[s] || SCALES.major).map((c, i) => (c === null ? null : i)).filter((x) => x !== null);
-  const pf = P(from), pt = P(to);
-  return notes.map((n) => {
-    const o = Math.floor(n.i / 7), d = n.i - 7 * o;
-    let k = pf.findIndex((x) => x >= d); if (k < 0) k = pf.length - 1;
-    const r = k + o * pf.length, ot = Math.floor(r / pt.length);
-    return { acc: n.acc, i: pt[r - ot * pt.length] + 7 * ot };
-  });
-}
 const rest = (n) => Array(n).fill("0"), hold = (n) => Array(n).fill("-");
-// A rhythm mask (x note, - hold, 0 rest) filled with notes in order.
-function fill(mask, notes, from = 0) {
-  let k = from; const out = [...mask].map((c) => (c === "x" ? jp.fmt(notes[k++ % notes.length]) : c));
-  return { toks: out, next: k };
-}
 // A held chord per bar over the progression; open fifths on gapped scales.
 function chordOf(root, gapped, spread = 0) {
   const r = jp.parse(root);
@@ -83,14 +71,120 @@ const DEFAULT_GROOVES = {
   drive: "x.x.x.x.x.x.x.x.|....x..x....x.xx|xxxxxxxxxxxxxxxx",
 };
 
+// What the warriors' shields were made of (a culture can set shield: …).
+const SHIELDS = {
+  rattan: "chinese shu wei wu zhu-xis-legacy jurchens khitans mongols golden-horde huns cumans tatars persians achaemenids burmese khmer malay vietnamese lac-viet",
+  hide: "aztecs mayans incas haudenosaunee lakota mapuche muisca tupi malians hausa ethiopians berbers egyptians bengalis dravidians",
+  wood: "vikings swedes goths celts britons slavs lithuanians franks teutons japanese yamato sengoku-daimyo koreans choson romans carthaginians phoenicians sumerians babylonians",
+};
+function shieldOf(civ) {
+  if (civ.shield) return civ.shield;
+  for (const [m, ids] of Object.entries(SHIELDS)) if (ids.split(" ").includes(civ.id)) return m;
+  return "metal";
+}
+// Funerals sound different in every culture: the death piece takes one of these.
+const FUNERALS = {
+  procession: { about: "a funeral procession: a wailing shawm, the big drum and cymbals walk the coffin", bpm: 60, mode: "dark", grid: 8,
+    tune: [["x-x-x---", "sigh", 4, 3], ["x-xxx---", "leap", 2, 5], ["x-x-x-x-", "sigh", 5, 2], ["x-x-----", "step", 2, 0]],
+    roles: { lead: "brass@suona oct=4" }, second: "third", perc: "procession", climax: "oct",
+    adds: ["perc", "drone", "second", "low", "bell", "horns", "choir"] },
+  sutra: { about: "a Buddhist funeral: monks chant on one tone over the wooden fish and the bowl bell", bpm: 66, mode: "scale", grid: 8,
+    tune: [["xxxxxxxx", "repeat", 0, 0], ["xxxxxx--", "neighbor", 0, 1], ["xxxxxxxx", "repeat", 1, 1], ["xxxx----", "step", 1, 0]],
+    roles: { lead: "choir@monks oct=3", drone: "choir@drone oct=2 vol=0.6", horns: "brass@horns oct=2 vol=0.5" }, second: "long", climax: "same",
+    adds: ["woodfish", "rin", "drone", "second", "low", "horns", "choir"] },
+  requiem: { about: "a requiem: plainchant, the organ, a tolling bell, trombones", bpm: 56, mode: "dark", grid: 8,
+    tune: [["x-x-x-x-", "step", 0, 2], ["x-x-x---", "step", 2, 1], ["x-x-x-x-", "step", 3, 1], ["x-x-----", "step", 1, 0]],
+    roles: { lead: "choir@cantor oct=3", drone: "organ@organ oct=2", second: "organ@manual oct=4 vol=0.6", horns: "brass@trombones oct=3 vol=0.6" }, second: "long", timp: "toll", climax: "oct", noDrums: true,
+    adds: ["bell", "drone", "low", "pad", "second", "horns", "timp"] },
+  orthodox: { about: "an Orthodox funeral: voices only, over the held ison, with bells (Eternal Memory)", bpm: 56, mode: "dark", grid: 8,
+    tune: [["x-xxx-x-", "repeat", 1, 1], ["x-x-xx--", "neighbor", 1, 0], ["x-xxx-x-", "repeat", 2, 2], ["x-x-x---", "step", 2, 0]],
+    roles: { lead: "choir@psaltis oct=3", drone: "choir@ison oct=2", second: "choir@altos oct=4 vol=0.5", low: "choir@basso oct=2 vol=0.6", pad: "choir@sopranos oct=4 vol=0.35", horns: "choir@tenors oct=3 vol=0.45", bell: "bell@bells vol=0.5" }, second: "long", climax: "oct", noDrums: true,
+    adds: ["drone", "bell", "second", "low", "pad", "horns", "choir"] },
+  mourning: { about: "mourning without drums: a lone reed flute's lament over a drone", bpm: 52, mode: "dark", grid: 8,
+    tune: [["x---x-x-", "step", 2, 4], ["x-x-x---", "sigh", 4, 2], ["x---x-xx", "step", 3, 5], ["x-x-x---", "sigh", 3, 0]],
+    roles: { lead: "@flute", choir: "choir@hum vol=0.3", horns: "strings@violas oct=3 vol=0.45" }, second: "long", climax: "oct", noDrums: true,
+    adds: ["drone", "low", "second", "pad", "choir", "trem", "horns"] },
+  keening: { about: "keening: wailing laments of the mourners, a pipe, a drone", bpm: 54, mode: "dark", grid: 8,
+    tune: [["x---x-x-", "leap", 3, 5], ["x-x-x---", "sigh", 5, 2], ["x---x-x-", "leap", 4, 6], ["x-x-x---", "sigh", 3, 0]],
+    roles: { choir: "choir@keeners oct=4 vol=0.45" }, second: "echo", climax: "oct", noDrums: true,
+    adds: ["drone", "second", "choir", "low", "pad", "harp", "trem"] },
+  military: { about: "a soldier's funeral: a muffled drum, a bugle call, a brass chorale", bpm: 58, mode: "scale", grid: 8,
+    tune: [["x--x----", "leap", 0, 2], ["x--x--x-", "leap", 0, 4], ["x-x-x---", "leap", 2, 4], ["x-x-x---", "step", 2, 0]],
+    roles: { lead: "brass@bugle oct=4" }, second: "long", timp: "toll", horn: "long", climax: "oct",
+    adds: ["muffled", "low", "horns", "pad", "timp", "bell", "choir"] },
+  pyre: { about: "a funeral pyre: horns over the fire, a slow drum, a chant for the dead", bpm: 60, mode: "scale", grid: 8,
+    tune: [["x-x-x---", "step", 0, 2], ["x---x---", "leap", 2, 4], ["x-x-x-x-", "step", 4, 2], ["x-------", "step", 1, 0]],
+    second: "long", timp: "toll", horn: "long", perc: "heart", climax: "oct",
+    adds: ["perc", "horns", "drone", "second", "low", "choir", "timp"] },
+  ancestral: { about: "a mourning song for the ancestors: heartbeat drum, rattle, flute", bpm: 60, mode: "dark", grid: 8,
+    tune: [["x-x-x---", "step", 3, 1], ["x-x-x---", "step", 2, 0], ["x-x-x-x-", "step", 4, 2], ["x-x-----", "step", 1, 0]],
+    roles: { lead: "@flute" }, second: "echo", perc: "steady", climax: "oct",
+    adds: ["perc", "drone", "second", "choir", "low", "harp", "bell"] },
+  dance: { about: "a dirge that turns into a dance: grief first, then the celebration of a life", bpm: 76, mode: "dark", grid: 8,
+    tune: [["x---x-x-", "step", 2, 0], ["x-x-x---", "step", 1, 3], ["x---x-x-", "step", 4, 2], ["x-x-x---", "step", 1, 0]],
+    second: "third", horn: "long", perc: "heart", climax: "dance", climb: true,
+    adds: ["horns", "low", "second", "pad", "perc", "drive", "choir"] },
+};
+const FUNERAL_OF = {
+  procession: "chinese shang shu wei wu jurchens khitans koreans choson vietnamese lac-viet hindustanis indians bengalis dravidians gurjaras",
+  sutra: "japanese yamato sengoku-daimyo zhu-xis-legacy mongols burmese khmer",
+  orthodox: "byzantines macedonian-dynasty rus russians bulgarians georgians armenians ethiopians",
+  mourning: "saracens abbasids ayyubids turks ottomans berbers delhi-sultanate tughlaq-dynasty malay hausa golden-horde",
+  keening: "celts egyptians greeks athenians minoans palmyrans persians achaemenids huns cumans tatars phoenicians carthaginians babylonians assyrians sumerians hittites",
+  military: "romans spartans macedonians",
+  pyre: "vikings goths slavs",
+  ancestral: "aztecs mayans incas haudenosaunee lakota mapuche muisca tupi",
+  dance: "americans mexicans malians",
+};
+// Who leads a procession or a dance, where it isn't the default.
+const FUNERAL_LEAD = { koreans: "brass@taepyeongso oct=4", choson: "brass@taepyeongso oct=4", vietnamese: "brass@ken oct=4", "lac-viet": "brass@ken oct=4",
+  hindustanis: "brass@shehnai oct=4", indians: "brass@shehnai oct=4", bengalis: "brass@shehnai oct=4", gurjaras: "brass@shehnai oct=4", dravidians: "brass@nadaswaram oct=4",
+  americans: "brass@trumpet oct=4", mexicans: "brass@trompeta oct=4" };
+function funeralOf(civ) {
+  if (civ.funeral) return civ.funeral;
+  for (const [k, ids] of Object.entries(FUNERAL_OF)) if (ids.split(" ").includes(civ.id)) return k;
+  return /Europe/.test(civ.region) ? "requiem" : "keening";
+}
+// Peoples whose battles are led by a war drum: it marches from bar 2 and rolls (擂鼓) at the climax.
+const WAR_DRUMS = { zhangu: "chinese shang shu wei wu zhu-xis-legacy jurchens khitans" };
+function warDrumOf(civ) {
+  if (civ.warDrum) return civ.warDrum;
+  for (const [k, ids] of Object.entries(WAR_DRUMS)) if (ids.split(" ").includes(civ.id)) return k;
+  return null;
+}
+// Deterministic randomness per civilization × activity.
+function seeded(str) {
+  let h = 2166136261; for (const ch of str) h = Math.imul(h ^ ch.codePointAt(0), 16777619);
+  return () => { h ^= h << 13; h ^= h >>> 17; h ^= h << 5; return ((h >>> 0) % 10000) / 10000; };
+}
+// One bar: a rhythm mask filled with ranks following a shape from → to.
+function shapeBar(mask, shape, from, to, rnd) {
+  const n = [...mask].filter((c) => c === "x").length, out = [];
+  const lerp = (i) => (n === 1 ? to : from + ((to - from) * i) / (n - 1));
+  for (let i = 0; i < n; i++) {
+    const last = i === n - 1, j = rnd();
+    let r;
+    if (shape === "step") r = Math.round(lerp(i)) + (!last && i && j < 0.3 ? (j < 0.15 ? -1 : 1) : 0);
+    else if (shape === "leap") r = Math.round(lerp(i)) + (!last && i ? [0, 2, -1][Math.floor(j * 3)] : 0);
+    else if (shape === "repeat") r = from + (!last && i % 2 && j < 0.45 ? (j < 0.2 ? -1 : 1) : 0) + (last ? to - from : 0);
+    else if (shape === "neighbor") r = last ? to : from + (i % 2);
+    else if (shape === "wave") r = Math.round(lerp(i)) + [0, 1, 2, 1][i % 4] - (j < 0.25 ? 1 : 0);
+    else if (shape === "sigh") r = Math.round(lerp(i - (i % 2))) + (i % 2 ? 0 : 1);
+    else r = Math.round(lerp(i));
+    out.push(r);
+  }
+  let k = 0; return [...mask].map((c) => (c === "x" ? out[k++] : c));
+}
 function compose(civ, actId) {
-  const A = ACTIVITIES[actId];
+  const fun = actId === "death" ? funeralOf(civ) : null;
+  const A = { ...ACTIVITIES[actId], ...(fun ? FUNERALS[fun] : {}) }, R = A.roles || {};
+  // A role: the activity's override ("@flute" = the culture's own flute), else the culture's, else a default.
+  const pick = (k, civSpec, def) => { let x = R[k]; if (x && x.startsWith("@")) x = civ[x.slice(1)]; if (k === "lead" && fun && FUNERAL_LEAD[civ.id]) x = FUNERAL_LEAD[civ.id]; return role(x || civSpec, def); };
   const scaleOf = (mode) => (mode === "dark" ? civ.dark : mode === "bright" ? civ.bright : null) || civ.scale;
   const scale = scaleOf(A.mode), key = civ.key, sc = `${scale} ${key}`;
   const gapped = (SCALES[scale] || []).includes(null);
   const bpm = Math.round(A.bpm * (civ.tempo || 1));
-  const [ma, mb] = [civ.motifs[0], civ.motifs[1] || civ.motifs[0]].map((m) => remap(jp.notes(m), civ.scale, scale));
-  const lead = role(civ.lead, "strings@lead"), second = role(civ.second, "pluck@second"), drone = role(civ.drone, "strings@drone oct=3");
+  const lead = pick("lead", civ.lead, "strings@lead"), second = pick("second", civ.second, "pluck@second"), drone = pick("drone", civ.drone, "strings@drone oct=3");
   const grooves = { ...DEFAULT_GROOVES, ...(civ.grooves || {}) }, kit = civ.kit || "rock";
   const L = [], names = { [scale]: true, [scaleOf("bright")]: true, song: true, clock: true };
   // One line: a node playing a phrase from bar `a` to bar `b` (1-based, inclusive).
@@ -104,38 +198,54 @@ function compose(civ, actId) {
     L.push(`. drums@${id} kit=${kitName} "${pattern}"${vol ? "" : ""} ?song.${a === b ? a : `${a}-${b}`}`);
   };
   const g = A.grid;
-  // Lead: bars 1–6 the theme (motif A, then B), 7–10 it climbs or rises an octave, 11–12 it slows and settles.
-  const bar1 = fill(A.base[0], ma), bar2 = fill(A.base[1], mb);
-  line(lead, `grid=${g}`, q([...bar1.toks, ...bar2.toks]), 1, 6);
-  const hiIn = (target) => [0, 1, 2, 3].flatMap((k) => {
-    const src = remap(k % 2 ? mb : ma, scale, target), shift = A.climb ? k : 7;
-    return fill(A.base[k % 2], src.map((n) => jp.up(n, shift))).toks;
-  });
-  if (A.climax === "bright") {
-    line(lead, `grid=${g}`, q(hiIn(scale)), 7, 8);
-    line(lead, `grid=${g}`, q(hiIn(scaleOf("bright"))), 9, 10, `${scaleOf("bright")} ${key}`);
-  } else line(lead, `grid=${g}`, q(hiIn(scale)), 7, 10);
-  const tail = [...ma.slice(0, 5).map(jp.fmt), "1", "-", "-"];
-  line(lead, "grid=4", q(tail), 11, 12);
-
+  // The lead's 4-bar tune as ranks (null = hold/rest char kept in `chars`).
+  const P = (SCALES[scale] || SCALES.major).map((c, i) => (c === null ? null : i)).filter((x) => x !== null);
+  const rnd = seeded(`${civ.id}:${actId}`);
+  let bars;
+  if (A.tune === "motif") {
+    const P0 = (SCALES[civ.scale] || SCALES.major).map((c, i) => (c === null ? null : i)).filter((x) => x !== null);
+    const toRank = (n) => { const o = Math.floor(n.i / 7), d = n.i - 7 * o; let k = P0.findIndex((x) => x >= d); if (k < 0) k = P0.length - 1; return k + o * P0.length; };
+    const motifBar = (m) => m.trim().split(/\s+/).map((t) => (t === "-" ? "-" : toRank(jp.parse(t))));
+    const [a1, b1] = [civ.motifs[0], civ.motifs[1] || civ.motifs[0]].map(motifBar);
+    const up = (bar, k) => bar.map((x) => (x === "-" ? x : x + k));
+    bars = [a1, b1, up(a1, 2), b1]; // call, answer, the call higher, the answer home
+  } else bars = A.tune.map(([mask, shape, from, to]) => shapeBar(mask, shape, Math.round(from * P.length / 5), Math.round(to * P.length / 5), rnd));
+  const render = (bar, sc2, shift = 0) => {
+    const Q = (SCALES[sc2] || SCALES.major).map((c, i) => (c === null ? null : i)).filter((x) => x !== null);
+    return bar.map((x) => (typeof x === "number" ? jp.fmt((() => { const r = Math.round((x + shift) * Q.length / P.length), o = Math.floor(r / Q.length); return { acc: "", i: Q[r - o * Q.length] + 7 * o }; })()) : x));
+  };
+  const phrase = (sc2, shiftOf) => bars.flatMap((bar, k) => render(bar, sc2, shiftOf(k)));
+  // Bars 1–6: the tune (once, then its first half again as layers pile up).
+  line(lead, `grid=${g}`, q(phrase(scale, () => 0)), 1, 6);
+  // Bars 7–10: once more, an octave up, or climbing a step each bar.
+  const hiShift = (k) => (A.climb ? k + (k > 1 ? 1 : 0) : P.length);
+  if (A.climax === "dance") line(lead, `grid=${g}`, q(phrase(scaleOf("bright"), hiShift)), 7, 10, `${scaleOf("bright")} ${key}`);
+  else if (A.climax === "same") line(lead, `grid=${g}`, q(phrase(scale, () => 0)), 7, 10);
+  else if (A.climax === "bright") {
+    line(lead, `grid=${g}`, q(phrase(scale, hiShift).slice(0, 2 * g * (g === 4 ? 1 : 1))), 7, 8);
+    line(lead, `grid=${g}`, q(phrase(scaleOf("bright"), hiShift).slice(2 * g)), 9, 10, `${scaleOf("bright")} ${key}`);
+  } else line(lead, `grid=${g}`, q(phrase(scale, hiShift)), 7, 10);
+  // Bars 11–12: the opening slowed down, settling on the tonic.
+  const firstNotes = bars.flat().filter((x) => typeof x === "number").slice(0, 5);
+  line(lead, "grid=4", q([...render(firstNotes, scale), "1", "-", "-"]), 11, 12);
   const prog = A.prog, roots = prog.map((t) => jp.parse(t));
   const layers = {
     drone: (a) => line(drone, "grid=8", q(["1+5", ...hold(7)]), a, 12),
-    low: (a) => line(role(civ.low, "strings@cellos oct=2 vol=0.8"), "grid=8", q(perBar(prog, 8)), a, 11),
+    low: (a) => line(pick("low", civ.low, "strings@cellos oct=2 vol=0.8"), "grid=8", q(perBar(prog, 8)), a, 11),
     ostinato: (a) => line(role(civ.low, "strings@cellos oct=2 vol=0.8"), "grid=16",
       q(roots.flatMap((r) => [r, r, r, r, r, r, jp.up(r, -3), r, r, r, r, r, jp.up(r, 2), r, jp.up(r, -3), r].map(jp.fmt))), a, 10),
     second: (a) => {
-      if (A.second === "third") line(second, `grid=${g}`, q([...fill(A.base[0], ma.map((n) => jp.up(n, -2))).toks, ...fill(A.base[1], mb.map((n) => jp.up(n, -2))).toks]), a, 10);
-      else if (A.second === "echo") line(second, `grid=${g}`, q([...rest(g), ...fill(A.base[0], ma).toks]), a, 10);
+      if (A.second === "third") line(second, `grid=${g}`, q(phrase(scale, () => -2)), a, 10);
+      else if (A.second === "echo") line(second, `grid=${g}`, q([...rest(g), ...render(bars[0], scale), ...rest(g), ...render(bars[2], scale, -P.length)]), a, 10);
       else line(second, "grid=4", q(roots.flatMap((r) => [jp.fmt(jp.up(r, 2)), "-", jp.fmt(jp.up(r, 4)), "-"])), a, 10);
     },
-    pad: (a) => line(role(null, "strings@violins vol=0.5"), "grid=8", q(perBar(prog.map((t) => chordOf(t, gapped, 7)), 8)), a, 11),
+    pad: (a) => line(pick("pad", null, "strings@violins vol=0.5"), "grid=8", q(perBar(prog.map((t) => chordOf(t, gapped, 7)), 8)), a, 11),
     harp: (a) => line(role(civ.harp, "pluck@harp oct=4 vol=0.6"), "grid=16",
       q(roots.flatMap((r) => [0, 2, 4, 7, 9, 11, 14, 11, 9, 7, 4, 2, 0, 2, 4, 7].map((k) => jp.fmt(jp.up(r, gapped && k % 7 === 2 ? k + 1 : k))))), a, 11),
-    choir: (a) => line(role(null, "choir@choir vol=0.55"), "grid=8", q(perBar(prog.map((t) => chordOf(t, gapped)), 8)), a, 11),
-    bell: (a) => line(role(civ.bell, "bell@bell vol=0.6"), "grid=4", q(["1", "-", "-", "-", "5,", "-", "-", "-"]), a, 11),
+    choir: (a) => line(pick("choir", null, "choir@choir vol=0.55"), "grid=8", q(perBar(prog.map((t) => chordOf(t, gapped)), 8)), a, 11),
+    bell: (a) => line(pick("bell", civ.bell, "bell@bell vol=0.6"), "grid=4", q(["1", "-", "-", "-", "5,", "-", "-", "-"]), a, 11),
     horns: (a) => {
-      const h = role(null, "brass@horns vol=0.7");
+      const h = pick("horns", null, "brass@horns vol=0.7");
       if (A.horn === "call") line(h, "grid=8", q(["1", "-", "5", "-", "1'", "-", "-", "-", ...rest(4), "5", "-", "1", "-"]), a, 10);
       else if (A.horn === "fanfare") line(h, "grid=16", q(["1", "0", "1", "1", "5", "-", "-", "-", "1'", "-", "5", "-", "1", "-", "-", "-"]), a, 10);
       else line(h, "grid=8", q(perBar(prog.map((t) => chordOf(t, gapped)), 8)), a, 10);
@@ -147,34 +257,55 @@ function compose(civ, actId) {
       else line(t, "grid=8", q(["1", "0", "0", "0", "5,", "0", "1", "0"]), a, 10);
     },
     perc: (a, until) => {
+      if (A.perc === "procession") return drum(warDrumOf(civ) || kit, warDrumOf(civ) || kit, "x.......x.......|................|....x.......x...", a, until || 11);
+      if (A.perc === "steady") return drum(kit, kit, "x...x...x...x...|................|..x...x...x...x.", a, until || 11);
       const pat = A.perc === "heart" ? grooves.calm.split("|").map((l, i) => (i === 0 ? "x..x............" : ".".repeat(16))).join("|") : grooves[A.perc] || grooves.calm;
       drum(kit, kit, pat, a, until || 10);
+      if (actId === "battle" && warDrumOf(civ)) drum(warDrumOf(civ), warDrumOf(civ), "X.......x...x...|..x...x...x...x.|................", a, until || 10);
     },
     drive: (a) => {
       drum(`${kit}Drive`, kit, grooves.drive, a, 10);
-      drum("orch", "orch", "x.......x.......|....x.......x.xx|................", a, 10);
+      const wd = actId === "battle" && warDrumOf(civ);
+      if (wd) drum(`${wd}Roll`, wd, "X.x.X.x.XxXxXxXx|....x.......x...|x...............", a, 10);
+      else drum("orch", "orch", "x.......x.......|....x.......x.xx|................", a, 10);
     },
+    // Weapons and shields: blades ring on the off-beats, shields take the blows.
+    melee: (a) => {
+      const shield = shieldOf(civ), k = { metal: "clash", wood: "woodshield", rattan: "rattan", hide: "hide" }[shield];
+      drum(`melee`, k, "..x...X.....x.x.|x.....x..x....x.|.....x.......x..", a, 10);
+    },
+    // Gathering: a whistle answering the tune, and everyone singing it softly.
+    whistle: (a) => line(pick("flute", civ.flute, "flute@whistle oct=5 vol=0.5"), `grid=${g}`, q([...rest(g), ...render(bars[1], scale, P.length), ...rest(g), ...render(bars[3], scale, P.length)]), a, 10),
+    sing: (a) => line(role(null, "choir@singers vol=0.35"), `grid=${g}`, q(phrase(scale, () => 0)), a, 10),
+    // Funerals: the wooden fish and bowl bell, a muffled drum.
+    woodfish: (a) => drum("mokugyo", "temple", "x...x...x...x...|................|................", a, 11),
+    rin: (a) => drum("rin", "temple", "................|x...............|................", a, 12),
+    muffled: (a) => drum("muffled", "orch", "x...............|x.......x..x.x..|................", a, 11),
     trem: (a) => line(role(null, "strings@tremolo vol=0.5"), "grid=16", q(roots.flatMap((r) => Array(16).fill(chordOf(jp.fmt(r), true)))), a, 11),
     swirl: (a) => line(role(civ.flute, "flute@swirl oct=5 vol=0.6"), "grid=16",
       q([0, 1, 2, 3, 4, 5, 6, 7, 6, 5, 4, 3, 2, 1, 0, -1].map((k) => jp.fmt({ acc: "", i: k }))), a, 10),
   };
   // A culture without drums swaps them for another layer, so the form stays 12 bars.
-  const adds = A.adds.map((k) => (k === "perc" && civ.noDrums ? ["pad", "choir", "harp", "low"].find((x) => !A.adds.includes(x)) : k));
+  const adds = A.adds.map((k) => (k === "perc" && (civ.noDrums || A.noDrums) ? ["pad", "choir", "harp", "low"].find((x) => !A.adds.includes(x)) : k));
   const drive = adds.indexOf("drive");
   adds.forEach((k, i) => (k === "perc" && drive > i ? layers.perc(i + 2, drive + 1) : layers[k](i + 2)));
   if (civ.extra) line(role(civ.extra), "grid=4", q(["1", "-", "-", "-"]), 9, 10);
-  drum("crash", "orch", "................|................|x...............", 9, 9);
-  if (A.wind) L.unshift(". wind 0.55 gust=0.15Hz");
+  if (actId !== "death" && actId !== "gather") drum("crash", "orch", "................|................|x...............", 9, 9);
+  if (A.wind) { // the storm itself: wind throughout, rain that grows, thunder at the height
+    L.unshift(". wind 0.5 gust=0.15Hz");
+    L.push(". wind@gale 0.7 gust=0.3Hz ?song.7-10", ". rain@drizzle 0.3 drops=0.15 ?song.3-6", ". rain@downpour 0.7 drops=0.6 ?song.7-11",
+      `. drums@thunder kit=sky "${"X".padEnd(32, ".")}|${".".repeat(32)}|${".".repeat(32)}" ?song.6-11`, '. drums@strike kit=sky "................|x...............|................" ?song.9');
+  }
   // Section names: what enters in that bar.
-  const label = (k) => ({ second: second.name, perc: kit, drone: drone.name, horns: "horns", timp: "timpani", drive: "drive" })[k] || k;
+  const label = (k) => ({ woodfish: "mokugyo", muffled: "drum", melee: { metal: "steel", wood: "shields", rattan: "rattan", hide: "hide" }[shieldOf(civ)], second: second.name, perc: kit, drone: drone.name, horns: "horns", timp: "timpani", drive: "drive" })[k] || k;
   const secs = [lead.name, ...adds.map(label), "climax", "peak", "ebb", "end"].map((x) => `${x.replace(/[^\p{L}\p{N}_-]/gu, "")}:1bars`);
   const head = [
-    `# ${civ.zh} ${civ.name} × ${A.zh} ${A.en} — ${A.about}`,
+    `# ${civ.zh} ${civ.name} × ${A.zh} ${A.en}${fun ? ` (${fun})` : ""} — ${A.about}`,
     `# ${scale} on ${key} · ${bpm} bpm · bar 1: ${lead.name} alone; each bar adds one layer: ${adds.map(label).join(", ")} · climax · ebb · it loops`,
     civ.note ? `# ${civ.note}` : null,
     `. clock ${bpm} 4/4`,
     `. arrange@song ${secs.join(" ")}`,
-    ...[...new Set([scale, A.climax === "bright" ? scaleOf("bright") : scale])].map((n) => `. scale@${n} ${formatScaleDef(SCALES[n])}`),
+    ...[...new Set([scale, A.climax === "bright" || A.climax === "dance" ? scaleOf("bright") : scale])].map((n) => `. scale@${n} ${formatScaleDef(SCALES[n])}`),
     "",
   ].filter((x) => x !== null);
   const text = [...head, ...L, "", `*> reverb ${A.bpm < 70 ? "3.5s wet=0.38" : "2.5s wet=0.3"}`, "> speaker 0.5", ""].join("\n");
@@ -202,7 +333,7 @@ function renderMatrix() {
     for (const civ of civs) {
       const li = document.createElement("li");
       const nm = document.createElement("span"); nm.className = "civ";
-      nm.append(`${civ.zh} ${civ.name}`, Object.assign(document.createElement("span"), { className: "hint", textContent: `AoE ${civ.games.join("·")}` }));
+      nm.append(`${civ.zh} ${civ.name}`);
       nm.title = civ.note || "";
       const chips = document.createElement("span"); chips.className = "chips";
       for (const a of ACTIVITY_IDS) {
@@ -217,6 +348,8 @@ function renderMatrix() {
     }
     rd.append(ul); d.append(rd);
   }
-  document.getElementById("tree").append(d);
+  // Right after the world-music demos.
+  const tree = document.getElementById("tree"), after = EXAMPLE_TREE.findIndex((n) => n.label === "World music");
+  tree.insertBefore(d, tree.children[after + 1] || null);
 }
 renderMatrix();

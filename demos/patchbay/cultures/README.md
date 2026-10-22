@@ -16,7 +16,7 @@ CIVS.push({
   id: "chinese",                 // lowercase-kebab, unique
   name: "Chinese", zh: "中国",    // English name as in the games; Chinese name
   region: "East Asia",           // one of the regions below
-  games: [2, 3, 4],              // Age of Empires games this civ appears in
+  games: [2, 3, 4],              // coverage tracking only (which strategy-game civ lists include it); never shown
   key: "D",                      // tonic
   scale: "gong",                 // the native scale (hunt, ritual)
   dark: "yu",                    // optional: minor-ish scale (battle, rain, flood, storm, death)

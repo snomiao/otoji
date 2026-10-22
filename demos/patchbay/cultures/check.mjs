@@ -11,7 +11,14 @@ const REGIONS = ["East Asia", "South & Southeast Asia", "Steppe & Central Asia",
   "Western Europe", "Northern & Central Europe", "Eastern Europe & Byzantium", "Americas"];
 globalThis.window = globalThis; globalThis.CIVS = []; globalThis.CULTURE_SCALES = {};
 const files = process.argv.slice(2).length ? process.argv.slice(2) : readdirSync(dir).filter((f) => f.endsWith(".js")).map((f) => dir + f);
-for (const f of files) new Function(readFileSync(f, "utf8"))();
+const scaleFile = {};
+for (const f of files) {
+  const before = new Map(Object.entries(CULTURE_SCALES));
+  // A file that redefines another file's scale would silently replace it.
+  globalThis.CULTURE_SCALES = new Proxy(CULTURE_SCALES, { set(o, k, v) { if (before.has(k) || scaleFile[k]) console.log(`✗ CULTURE_SCALES.${String(k)} defined in ${scaleFile[k] || "an earlier file"} and again in ${f.split("/").pop()}`), process.exitCode = 1; scaleFile[k] = f.split("/").pop(); o[k] = v; return true; } });
+  new Function(readFileSync(f, "utf8"))();
+  globalThis.CULTURE_SCALES = { ...CULTURE_SCALES };
+}
 let bad = 0; const err = (c, m) => { bad++; console.log(`✗ ${c.id || "?"}: ${m}`); };
 for (const [k, v] of Object.entries(CULTURE_SCALES)) {
   if (SCALES[k]) console.log(`✗ CULTURE_SCALES.${k} shadows a built-in scale`), bad++;

@@ -291,7 +291,9 @@ ul.ideas { margin: 0; padding-left: 18px; display: grid; gap: 6px; font-size: 14
         <tr data-help="kind:vad"><td><code>vad</code></td><td><code>threshold=0.02 silence=300ms holdoff=250ms</code> · other nodes react with <code>^vad ?vad !vad</code></td></tr>
         <tr data-help="kind:piano"><td><code>piano</code></td><td><code>chords="Am F C G"</code> one per bar · <code>style=arp|block</code> <code>oct=4</code> · or a melody <code>notes="E4 . . G4"</code></td></tr>
         <tr data-help="kind:bass"><td><code>bass</code></td><td><code>chords="…"</code> roots on beats 1 and 3</td></tr>
-        <tr data-help="kind:strings kind:pluck kind:flute kind:organ kind:choir kind:bell"><td><code>strings</code> <code>pluck</code> <code>flute</code> <code>organ</code> <code>choir</code> <code>bell</code></td><td>instruments: <code>phrase="5 - 6 7 1'"</code> (简谱) with <code>scale=</code> <code>key=</code>, or chords; <code>adsr=</code> per note</td></tr>
+        <tr data-help="kind:strings kind:pluck kind:flute kind:organ kind:choir kind:bell kind:brass kind:timpani"><td><code>strings</code> <code>pluck</code> <code>flute</code> <code>organ</code> <code>choir</code> <code>bell</code> <code>brass</code> <code>timpani</code></td><td>instruments: <code>"5 - 6 7 1'"</code> (简谱) with a scale and key, <code>1+3+5</code> a chord, or chord names; <code>adsr=</code> per note</td></tr>
+        <tr data-help="kind:scale"><td><code>scale@name</code></td><td>define a 调式: <code>. scale@mygong 1 2 3 5 6</code> · <code>#4</code> <code>b7</code> a semitone · <code>2:150</code> exact cents · named like a built-in, it replaces it; on any scale name, <b>Fork</b> copies its code into the patch</td></tr>
+        <tr data-help="kind:wind"><td><code>wind</code></td><td>a howling gale behind the music: <code>. wind 0.5 gust=0.15Hz</code></td></tr>
         <tr data-help="opt:scale"><td><code>scale</code></td><td>major minor dorian phrygian … hijaz bayati rast (maqam) · in yo hirajoshi ryukyu · gong shang jue zhi yu yanyue</td></tr>
         <tr data-help="opt:kit"><td><code>kit=</code></td><td>drums: rock, darbuka, taiko, opera (京剧)</td></tr>
         <tr data-help="kind:mix"><td><code>mix</code></td><td>mixer bus: adds inputs into one signal</td></tr>
@@ -1262,6 +1264,69 @@ KITS.orch = ["gran", "side", "crash"];
     else before(out, lane, t, accent);
   };
 }
+// Battle: weapons and shields (lanes blade/club | shield | spear shaft).
+// The shield lane is the material: metal boss, wooden planks, rattan, hide.
+// Temple: 木魚 mokugyo (wooden fish), りん rin (bowl bell), 拍子木 hyoshigi (clappers).
+KITS.temple = ["mokugyo", "rin", "hyoshigi"];
+{
+  const before = kitHit;
+  kitHit = function (out, lane, t, accent) {
+    const a = accent ? 1.3 : 1;
+    if (lane === "mokugyo") { voice(out, t, { freq: 760, endFreq: 700, dur: 0.09, peak: 0.35 * a, type: "triangle" }); voice(out, t, { freq: 1520, dur: 0.04, peak: 0.08 * a }); }
+    else if (lane === "rin") for (const [f, l, d] of [[1180, 0.18, 6], [3260, 0.06, 3.5], [6020, 0.025, 2]]) voice(out, t, { freq: f, dur: d, peak: l * a, attack: 0.002 });
+    else if (lane === "hyoshigi") { voice(out, t, { freq: 1900, dur: 0.03, peak: 0.3 * a, type: "square" }); noise(out, t, 0.02, 0.2 * a, 3000); }
+    else before(out, lane, t, accent);
+  };
+}
+// Weather: thunder (a long low rumble), a sharp crack, hail.
+KITS.sky = ["thunder", "crack", "hail"];
+{
+  const before = kitHit;
+  kitHit = function (out, lane, t, accent) {
+    const a = accent ? 1.3 : 1;
+    if (lane === "thunder") {
+      const len = 3.5, s = ctx.createBufferSource(), lp = ctx.createBiquadFilter(), g = ctx.createGain();
+      if (!noiseBuf) noise(ctx.createGain(), t, 0.01, 0.0001, 100);
+      s.buffer = noiseBuf; s.loop = true; lp.type = "lowpass"; lp.frequency.setValueAtTime(900, t); lp.frequency.exponentialRampToValueAtTime(90, t + len);
+      g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(0.7 * a, t + 0.08); g.gain.exponentialRampToValueAtTime(0.25 * a, t + 0.6);
+      g.gain.exponentialRampToValueAtTime(0.0001, t + len);
+      s.connect(lp).connect(g).connect(out); s.start(t); s.stop(t + len + 0.05);
+    } else if (lane === "crack") { noise(out, t, 0.25, 0.5 * a, 1200); noise(out, t + 0.03, 0.4, 0.3 * a, 300); }
+    else if (lane === "hail") for (let k = 0; k < 6; k++) noise(out, t + Math.random() * 0.1, 0.015, 0.1 * a, 4000);
+    else before(out, lane, t, accent);
+  };
+}
+// 战鼓: the Chinese war drum (大鼓 boom, 鼓边 rim, 铙 cymbals).
+KITS.zhangu = ["dagu", "gubian", "nao"];
+Object.assign(KITS, { clash: ["blade", "boss", "spear"], woodshield: ["blade", "plank", "spear"], rattan: ["blade", "wicker", "spear"], hide: ["club", "rawhide", "spear"] });
+{
+  const before = kitHit;
+  kitHit = function (out, lane, t, accent) {
+    const a = accent ? 1.3 : 1, jit = 0.94 + Math.random() * 0.12;
+    if (lane === "dagu") { voice(out, t, { freq: 62, endFreq: 44, dur: 1.4, peak: 0.95 * a }); voice(out, t, { freq: 118, endFreq: 90, dur: 0.4, peak: 0.25 * a }); noise(out, t, 0.08, 0.12 * a, 250); }
+    else if (lane === "gubian") { voice(out, t, { freq: 520, dur: 0.05, peak: 0.25 * a, type: "triangle" }); noise(out, t, 0.03, 0.15 * a, 2500); }
+    else if (lane === "nao") { noise(out, t, 0.9, 0.2 * a, 3500); voice(out, t, { freq: 610, dur: 0.6, peak: 0.06 * a }); }
+    else if (lane === "blade") { // steel on steel: bright inharmonic ring
+      for (const [f, l, d] of [[1230, 0.12, 0.5], [2690, 0.08, 0.35], [3910, 0.05, 0.25], [5470, 0.03, 0.18]]) voice(out, t, { freq: f * jit, dur: d, peak: l * a, attack: 0.001 });
+      noise(out, t, 0.05, 0.25 * a, 3000);
+    } else if (lane === "boss") { // a blow on a metal-bossed shield
+      for (const [f, l, d] of [[410, 0.2, 0.45], [960, 0.1, 0.3], [1630, 0.05, 0.2]]) voice(out, t, { freq: f * jit, dur: d, peak: l * a, attack: 0.001 });
+      voice(out, t, { freq: 120, endFreq: 70, dur: 0.15, peak: 0.4 * a });
+    } else if (lane === "plank") { // wooden shield: a hollow knock
+      voice(out, t, { freq: 190 * jit, endFreq: 150, dur: 0.12, peak: 0.5 * a, type: "triangle" });
+      voice(out, t, { freq: 620 * jit, dur: 0.05, peak: 0.15 * a, type: "triangle" }); noise(out, t, 0.04, 0.2 * a, 900);
+    } else if (lane === "wicker") { // rattan / wicker: a dry crackle
+      for (let k = 0; k < 5; k++) noise(out, t + k * 0.007 * jit, 0.02, 0.16 * a, 1800 + k * 300);
+      voice(out, t, { freq: 340 * jit, dur: 0.05, peak: 0.12 * a, type: "triangle" });
+    } else if (lane === "rawhide") { // hide stretched on a frame: a dull slap
+      voice(out, t, { freq: 105 * jit, endFreq: 70, dur: 0.18, peak: 0.55 * a }); noise(out, t, 0.06, 0.18 * a, 500);
+    } else if (lane === "club") { // wooden club or obsidian-edged macuahuitl: knock and crack
+      voice(out, t, { freq: 280 * jit, endFreq: 220, dur: 0.08, peak: 0.35 * a, type: "triangle" }); noise(out, t, 0.03, 0.3 * a, 2500);
+    } else if (lane === "spear") { // shafts knocking together
+      voice(out, t, { freq: 480 * jit, dur: 0.05, peak: 0.2 * a, type: "triangle" }); noise(out, t, 0.025, 0.12 * a, 1500);
+    } else before(out, lane, t, accent);
+  };
+}
 // Scales the culture files add (cultures/*.js → CULTURE_SCALES).
 for (const [k, v] of Object.entries(window.CULTURE_SCALES || {})) SCALES[k] = v.cents;
 
@@ -1369,7 +1434,7 @@ function applyEnvelopes() {
 
 // Shared by every melodic instrument.
 const MELODIC_ARGS = [
-  ["phrase", '"1 2 3 5 6 - 5 3"', "简谱 melody: 1–7, 0 rest, - hold, ' up / , down an octave", null, { re: /^"(([#b]?[0-7]['’,]*(\+[#b]?[1-7]['’,]*)*|-)\s*)+"$/ }],
+  ["phrase", '"1 2 3 5 6 - 5 3"', "简谱 melody: 1–7, 0 rest, - hold, ' up / , down an octave, 1+3+5 a chord", null, { re: /^"(([#b]?[0-7]['’,]*(\+[#b]?[1-7]['’,]*)*|-)\s*)+"$/ }],
   ["scale", "major", "colours the degrees", null, null],
   ["key", "C", "tonic", null, { re: /^[A-G][#b]?$/ }],
   ["chords", '"Am F C G"', "chord per bar", null, { re: /^"([A-G][#b]?(maj7|m7|m|7|dim|sus2|sus4)?\s*)+"$/ }],
@@ -1391,7 +1456,7 @@ for (const [k, doc] of [["marimba", "Marimba / balafon: wooden bars."], ["piano"
   ["brass", "Brass: horns, trumpets, 号角, karnay; the filter opens as the note swells."], ["timpani", "Timpani (kettle drums): tuned hits; fast repeated notes make a roll."]]) {
   CATALOG[k] = { doc, args: MELODIC_ARGS };
 }
-CATALOG.drums.args.push(["kit", "rock", "rock, darbuka, taiko, opera (京剧), aztec, african, tabla, gamelan, celtic, flamenco, orch (orchestra)", Object.keys(KITS), { re: new RegExp(`^(${Object.keys(KITS).join("|")})$`) }]);
+CATALOG.drums.args.push(["kit", "rock", "rock, darbuka, taiko, opera (京剧), aztec, african, tabla, gamelan, celtic, flamenco, orch (orchestra), zhangu (战鼓), sky (thunder), temple (木魚 りん); battle: clash (steel, metal shields), woodshield, rattan (藤牌), hide", Object.keys(KITS), { re: new RegExp(`^(${Object.keys(KITS).join("|")})$`) }]);
 CATALOG.drums.args[1][3] = [...new Set(Object.values(KITS).flat())];
 CATALOG.drums.args[1][4] = { re: new RegExp(`^(${[...new Set(Object.values(KITS).flat())].join("|")})$`) };
 
@@ -2269,6 +2334,14 @@ const VALUE_DOCS = {
   "kit.rock": "Kick, snare, hi-hat.", "kit.darbuka": "Egyptian goblet drum: dum (low, centre), tek (sharp rim), ka (muffled).",
   "kit.taiko": "Japanese taiko: don (big low drum), ka (rim), shime (high tight drum).",
   "kit.opera": "京剧 锣鼓: 板 ban (clapper, the beat), 锣 luo (gong), 钹 bo (cymbals).",
+  "kit.temple": "Temple: 木魚 mokugyo (wooden fish), りん rin (bowl bell), 拍子木 hyoshigi (clappers).",
+  "kit.sky": "Weather: thunder (a long rumble), crack (a near strike), hail.",
+  "kit.zhangu": "战鼓 Chinese war drum: 大鼓 dagu (the big drum), 鼓边 gubian (rim), 铙 nao (cymbals).",
+  "kit.orch": "Orchestra: gran cassa (bass drum), side drum, crash cymbals.",
+  "kit.clash": "Battle, steel: blade clashes | blows on a metal-bossed shield | spear shafts.",
+  "kit.woodshield": "Battle, wooden shields (Vikings, Romans' scutum, Japanese tate): blade | plank knock | spear.",
+  "kit.rattan": "Battle, rattan or wicker shields (藤牌, Persian spara, steppe wicker): blade | dry crackle | spear.",
+  "kit.hide": "Battle, hide shields (Americas, Africa): club or macuahuitl | rawhide slap | spear.",
   "hit.kick": "Kick drum.", "hit.snare": "Snare drum.", "hit.hat": "Hi-hat.", "hit.dum": "Darbuka dum: low, centre of the head.",
   "hit.tek": "Darbuka tek: sharp, at the rim.", "hit.ka": "Darbuka/taiko ka: muffled or rim stroke.", "hit.don": "Taiko don: the big low hit.",
   "hit.shime": "Shime-daiko: high, tight drum.", "hit.ban": "板: the clapper that keeps the beat in 京剧.", "hit.luo": "锣: gong.", "hit.bo": "钹: cymbals.",
