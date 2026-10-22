@@ -266,6 +266,9 @@ function renderInstruments() {
       ["P. Cook & G. Scavone, The Synthesis ToolKit (STK): Bowed, Flute, Clarinet, Brass models", "https://ccrma.stanford.edu/software/stk/"],
       ["faustwasm (Faust to WebAssembly / AudioWorklet)", "https://github.com/Fr0stbyteR/faustwasm"],
       ["Versilian Community Sample Library (CC0), considered for samples", "https://versilian-studios.com/vcsl/"]]],
+    ["Recordings compared", [
+      ["古樂尋蹤 (HGofACH), 【復原唐樂合奏】秦王破陣樂 — Reconstructed Tang-period Ensemble Music (2024), from the 三五要録 and 仁智要録 scores; our 秦王破阵乐 demo follows its tempo and key", "https://www.youtube.com/watch?v=hwnnDVy-cdM"],
+      ["Hsinchu City Youth Chinese Orchestra, 《秦王破陣樂》打擊協奏曲 (林偉華、張大華 曲、王惠然 編), 2021 — a modern orchestral work, for contrast", "https://www.youtube.com/watch?v=3LDdjqmgHp4"]]],
     ["Voices (crowd node)", [
       ["KlattSyn — Klatt formant synthesizer", "https://www.source-code.biz/klattSyn"],
       ["“Walla” (crowd murmur in film sound)", "https://en.wikipedia.org/wiki/Walla"],
