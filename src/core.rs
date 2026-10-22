@@ -107,6 +107,9 @@ pub enum AsrEvent {
     /// based on this tag. Emitted once per PTT segment (or VAD segment),
     /// right before the corresponding `ptt_final` / `final`.
     LanguageDetected { lang: String },
+    /// One recognizer pass finished, taking `ms` of compute. Lets consumers
+    /// show how busy the STT stage is (the tray's duty-cycle status).
+    Decode { ms: u64 },
 }
 
 #[derive(Debug, Error)]

@@ -264,7 +264,8 @@ async fn apply_event(
         | AsrEvent::PttFinal { .. }
         | AsrEvent::PttUpgrade { .. }
         | AsrEvent::PttTranslated { .. }
-        | AsrEvent::LanguageDetected { .. } => {}
+        | AsrEvent::LanguageDetected { .. }
+        | AsrEvent::Decode { .. } => {}
     }
 }
 

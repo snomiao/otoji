@@ -189,6 +189,7 @@ enum WorkerEvt {
     },
     Status(String),
     Error(String),
+    Decode(u64),
     Closed,
     PttPartial {
         text: String,
@@ -283,6 +284,7 @@ impl AsrProvider for SenseVoice {
                         audio: Some(audio),
                     },
                     WorkerEvt::Status(message) => AsrEvent::Status { message },
+                    WorkerEvt::Decode(ms) => AsrEvent::Decode { ms },
                     WorkerEvt::Error(message) => AsrEvent::Error { message },
                     WorkerEvt::PttPartial { text } => AsrEvent::PttPartial { text },
                     WorkerEvt::PttFinal { text, audio, lang } => {
@@ -523,9 +525,11 @@ fn worker_main(
         if audio.len() < min_samples {
             return None;
         }
+        let started = std::time::Instant::now();
         let stream = recognizer.create_stream();
         stream.accept_waveform(SAMPLE_RATE as i32, audio);
         recognizer.decode(&stream);
+        let _ = out_tx.send(WorkerEvt::Decode(started.elapsed().as_millis() as u64));
         let raw = stream.get_result()?.text;
         // Language extraction now happens via DECODED_LANG thread-local so
         // callers can read it without mutable borrow conflicts.
