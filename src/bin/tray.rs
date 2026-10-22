@@ -48,6 +48,9 @@ mod tray_macos {
     mod permissions {
         include!("tray/permissions.rs");
     }
+    mod graph {
+        include!("tray/graph.rs");
+    }
 
     /// pgrep/pkill pattern for real `otoji listen` processes: the program
     /// itself must be `otoji` with `listen` as its first argument, so shells,
@@ -83,7 +86,7 @@ mod tray_macos {
             );
         }
         let mic_ok = state & 1 != 0;
-        if mic_ok && AUTO_LISTEN.load(Ordering::Acquire) && !listen_is_running() {
+        if mic_ok && AUTO_LISTEN.load(Ordering::Acquire) && graph::wants_listen() && !listen_is_running() {
             AUTO_LISTEN.store(false, Ordering::Release);
             overlay::start_listen();
         }
@@ -759,7 +762,11 @@ mod tray_macos {
         _cmd: *mut c_void,
         _sender: *mut c_void,
     ) {
-        overlay::stop_listen();
+        if let Some(n) = graph::pipeline().nodes().find(|n| n.kind == "mic") {
+            graph::set_enabled(&n.id.clone(), false);
+        }
+        apply_pipeline();
+        // Also stop any stray `otoji listen` started elsewhere.
         let _ = std::process::Command::new("pkill")
             .args(["-f", LISTEN_PROC_PATTERN])
             .status();
@@ -767,9 +774,22 @@ mod tray_macos {
         rebuild_menu();
     }
 
-    /// Click on the mic row → turn the mic (and so otoji) on or off.
-    unsafe extern "C" fn action_toggle_mic(_this: *mut c_void, _cmd: *mut c_void, _sender: *mut c_void) {
-        toggle_otoji();
+    /// Click on a pipeline row → turn that node's line on or off.
+    unsafe extern "C" fn action_toggle_node(_this: *mut c_void, _cmd: *mut c_void, sender: *mut c_void) {
+        let tag: extern "C" fn(*mut c_void, *mut c_void) -> i64 = std::mem::transmute(objc_msgSend as *const ());
+        let i = tag(sender, sel(b"tag\0")) as usize;
+        let id = PIPELINE_ITEMS.lock().unwrap().get(i).map(|(_, id)| id.clone());
+        if let Some(id) = id.filter(|id| !id.is_empty()) {
+            graph::toggle(&id);
+            apply_pipeline();
+            rebuild_menu();
+        }
+    }
+
+    /// Click → open pipeline.otoji in the default text editor.
+    unsafe extern "C" fn action_edit_pipeline(_this: *mut c_void, _cmd: *mut c_void, _sender: *mut c_void) {
+        graph::reload();
+        let _ = std::process::Command::new("open").arg("-t").arg(graph::path()).spawn();
     }
 
     /// LaunchAgent label from scripts/install-launch-agent.sh.
@@ -800,12 +820,15 @@ mod tray_macos {
         if listen_is_running() {
             return;
         }
+        if let Some(n) = graph::pipeline().nodes().find(|n| n.kind == "mic") {
+            graph::set_enabled(&n.id.clone(), true);
+        }
         if permissions::mic_status() != permissions::Mic::Authorized {
             AUTO_LISTEN.store(true, Ordering::Release);
             permissions::ensure_mic_interactive();
             return;
         }
-        overlay::start_listen();
+        apply_pipeline();
         rebuild_menu();
     }
 
@@ -874,8 +897,14 @@ mod tray_macos {
             );
             class_addMethod(
                 new_cls,
-                sel(b"toggleMic:\0"),
-                action_toggle_mic as *const c_void,
+                sel(b"toggleNode:\0"),
+                action_toggle_node as *const c_void,
+                b"v@:@\0".as_ptr() as *const _,
+            );
+            class_addMethod(
+                new_cls,
+                sel(b"editPipeline:\0"),
+                action_edit_pipeline as *const c_void,
                 b"v@:@\0".as_ptr() as *const _,
             );
             class_addMethod(
@@ -935,132 +964,76 @@ mod tray_macos {
             })
     }
 
-    /// Menu rows describing the live pipeline: mic → STT → (polish ∥ translate).
-    /// Index: 1, 2, 3 run in sequence; 3a and 3b run in parallel.
-    /// Separator: `~` = streaming (output keeps up with each audio frame, so
-    /// latency stays bounded however long you talk); `-` = chunked (waits
-    /// for a chunk/segment — a timer, VAD end-of-speech — before emitting).
-    /// The slow-to-query parts (device name, model, timings) are cached by
-    /// `refresh_pipeline_info` at menu build; the counters are live.
-    static PIPELINE_INFO: std::sync::Mutex<Option<(String, String)>> = std::sync::Mutex::new(None);
-    /// The pipeline NSMenuItems of the current menu (retained by the menu).
-    static PIPELINE_ITEMS: std::sync::Mutex<Vec<usize>> = std::sync::Mutex::new(Vec::new());
-    /// Recent mic levels for the sparkline, oldest first.
-    static LEVEL_HISTORY: std::sync::Mutex<std::collections::VecDeque<u32>> =
-        std::sync::Mutex::new(std::collections::VecDeque::new());
-
+    /// The pipeline rows of the current menu (retained by the menu) and the
+    /// node id each one toggles ("" = comment row).
+    static PIPELINE_ITEMS: std::sync::Mutex<Vec<(usize, String)>> = std::sync::Mutex::new(Vec::new());
     static TICKS: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
 
-    fn refresh_pipeline_info() {
-        use cpal::traits::{DeviceTrait, HostTrait};
-        let mic = cpal::default_host()
-            .default_input_device()
-            .and_then(|d| d.name().ok())
-            .unwrap_or_else(|| "no input device".into());
-        let variant = active_stt_variant();
-        let dir = otoji::asr::sensevoice::model_dir_for_variant(&variant);
-        let present = parse_asset_kind("stt").is_present(&dir);
-        let short = variant.strip_prefix("sherpa-onnx-").unwrap_or(&variant);
-        // Same timings the listen child gets (it inherits this env + config).
-        let sv = otoji::asr::sensevoice::SenseVoiceConfig::from_env();
-        let stt = format!(
-            "{}{} · partial every {} s, final after {} s silence",
-            truncate(short, 44),
-            if present { "" } else { " (not downloaded)" },
-            sv.partial_ms as f32 / 1000.0,
-            sv.vad_silence_ms as f32 / 1000.0,
-        );
-        *PIPELINE_INFO.lock().unwrap() = Some((truncate(&mic, 40), stt));
-    }
-
-    fn sparkline(levels: &std::collections::VecDeque<u32>) -> String {
-        levels
-            .iter()
-            .map(|&p| match p {
-                0..=150 => '▁',
-                151..=600 => '▂',
-                601..=1500 => '▃',
-                1501..=4000 => '▅',
-                4001..=10000 => '▆',
-                _ => '▇',
-            })
-            .collect()
-    }
-
-    fn pipeline_labels() -> Vec<String> {
-        if PIPELINE_INFO.lock().unwrap().is_none() {
-            refresh_pipeline_info();
-        }
-        let (mic, stt) = PIPELINE_INFO.lock().unwrap().clone().unwrap_or_default();
-        let st = overlay::stats();
-        let running = overlay::is_listening();
-
-        let mic_live = if running {
-            let secs = st.mic_bytes / 32_000; // 16 kHz × 2 bytes
-            format!(
-                "{} · {}:{:02} captured",
-                sparkline(&LEVEL_HISTORY.lock().unwrap()),
-                secs / 60,
-                secs % 60
+    /// Monospaced menu title so the pipeline's columns line up.
+    unsafe fn set_mono_title(item: *mut c_void, text: &str) {
+        let font = {
+            let f: extern "C" fn(*mut c_void, *mut c_void, f64, f64) -> *mut c_void =
+                std::mem::transmute(objc_msgSend as *const ());
+            f(cls(b"NSFont\0"), sel(b"monospacedSystemFontOfSize:weight:\0"), 12.0, 0.0)
+        };
+        let attrs = {
+            let f: extern "C" fn(*mut c_void, *mut c_void, *mut c_void, *mut c_void) -> *mut c_void =
+                std::mem::transmute(objc_msgSend as *const ());
+            f(cls(b"NSDictionary\0"), sel(b"dictionaryWithObject:forKey:\0"), font, nsstring("NSFont"))
+        };
+        let astr = {
+            let f: extern "C" fn(*mut c_void, *mut c_void, *mut c_void, *mut c_void) -> *mut c_void =
+                std::mem::transmute(objc_msgSend as *const ());
+            f(
+                msg0(cls(b"NSAttributedString\0"), sel(b"alloc\0")),
+                sel(b"initWithString:attributes:\0"),
+                nsstring(text),
+                attrs,
             )
-        } else {
-            "stopped".to_string()
         };
-        // Stage 1 = audio sources, captured in parallel. Only the mic exists
-        // today; PC audio (1b) would join here. One source → plain "1".
-        let sources = [format!("🎤 Mic: {mic} · {mic_live}")];
-        let mut rows: Vec<String> = if sources.len() == 1 {
-            vec![format!("1 ~ {}", sources[0])]
-        } else {
-            sources
-                .iter()
-                .zip('a'..)
-                .map(|(src, letter)| format!("1{letter} ~ {src}"))
-                .collect()
-        };
-        let now = if st.text.is_empty() {
-            "      ↳ (nothing yet)".to_string()
-        } else if st.live {
-            format!("      ↳ hearing: “{}”", truncate(&st.text, 50))
-        } else {
-            format!("      ↳ last: “{}”", truncate(&st.text, 50))
-        };
-        rows.extend([
-            format!("2 - 🧠 STT: {stt}"),
-            format!(
-                "      ↳ {} sentences · {} chars · {} partials",
-                st.finals, st.chars, st.partials
-            ),
-            now,
-            // The tray starts `otoji listen` without --ptt-polish /
-            // --ptt-translate-to, so neither stage runs yet.
-            "3a - ✨ Polish: off · needs an LLM API key…".to_string(),
-            "3b - 🌐 Translate: off · needs an LLM API key…".to_string(),
-        ]);
-        rows
+        msg1_ptr(item, sel(b"setAttributedTitle:\0"), astr);
+        msg0(astr, sel(b"release\0"));
     }
 
-    /// Called from the refresh tick: sample the mic level and retitle the
-    /// pipeline rows in place (the timer runs in common modes, so this keeps
-    /// updating while the menu is open).
-    unsafe fn update_pipeline_rows() {
-        {
-            let mut h = LEVEL_HISTORY.lock().unwrap();
-            h.push_back(overlay::stats().mic_level);
-            while h.len() > 12 {
-                h.pop_front();
+    /// Make the listen child match the pipeline (mic + stt lines on/off).
+    fn apply_pipeline() {
+        let want = graph::wants_listen();
+        let running = overlay::is_listening();
+        if want && !running {
+            if permissions::mic_status() != permissions::Mic::Authorized {
+                AUTO_LISTEN.store(true, Ordering::Release);
+                return;
             }
+            overlay::start_listen();
+        } else if !want && running {
+            overlay::stop_listen();
+            let _ = std::process::Command::new("pkill")
+                .args(["-f", LISTEN_PROC_PATTERN])
+                .status();
+            overlay::notify("otoji off");
         }
+    }
+
+    /// Every tick: retitle the pipeline rows in place with live status (the
+    /// timer runs in common modes, so this keeps going while the menu is open).
+    unsafe fn update_pipeline_rows() {
         let items = PIPELINE_ITEMS.lock().unwrap().clone();
         if items.is_empty() {
             return;
         }
-        let on = overlay::is_listening() as i64;
-        for (item, label) in items.iter().zip(pipeline_labels()) {
-            if label.starts_with('1') {
-                overlay::msg_i64(*item as *mut c_void, sel(b"setState:\0"), on);
+        let rows = graph::rows(permissions::mic_status() == permissions::Mic::Authorized);
+        if rows.len() != items.len() {
+            rebuild_menu();
+            return;
+        }
+        static LAST: std::sync::Mutex<Vec<String>> = std::sync::Mutex::new(Vec::new());
+        let mut last = LAST.lock().unwrap();
+        last.resize(rows.len(), String::new());
+        for (i, ((item, _), (text, _))) in items.iter().zip(rows).enumerate() {
+            if last[i] != text {
+                set_mono_title(*item as *mut c_void, &text);
+                last[i] = text;
             }
-            msg1_ptr(*item as *mut c_void, sel(b"setTitle:\0"), nsstring(&label));
         }
     }
 
@@ -1117,32 +1090,51 @@ mod tray_macos {
         }
         msg1_ptr(menu, sel(b"addItem:\0"), toggle_item);
 
-        // Pipeline the tray's `otoji listen` runs, one row per stage; any
-        // row opens Settings to change it. 3a/3b run in parallel on finals.
-        refresh_pipeline_info();
-        let mut pipeline_items = Vec::new();
-        for label in pipeline_labels() {
-            // Stage-1 source rows toggle on click (checkmark = on); the rest
-            // open Settings.
-            let is_source = label.starts_with('1');
-            let action: &[u8] = if is_source { b"toggleMic:\0" } else { b"openSettings:\0" };
+        // The pipeline file, one row per line with a live `# <state> …`
+        // status; clicking a node row turns that line on/off.
+        if let Some(err) = graph::error() {
             let row = init_fn(
                 msg0(menuitem_cls, sel(b"alloc\0")),
                 init_sel,
-                nsstring(&label),
-                sel(action),
+                nsstring(&format!("⚠️  pipeline.otoji: {} (using the last good version)", truncate(&err, 60))),
+                sel(b"editPipeline:\0"),
                 nsstring(""),
             );
-            if is_source {
-                overlay::msg_i64(row, sel(b"setState:\0"), running as i64); // NSControlStateValueOn = 1
-            }
             if !target.is_null() {
                 msg1_ptr(row, sel(b"setTarget:\0"), target);
             }
             msg1_ptr(menu, sel(b"addItem:\0"), row);
-            pipeline_items.push(row as usize);
+        }
+        let mut pipeline_items = Vec::new();
+        for (text, id) in graph::rows(permissions::mic_status() == permissions::Mic::Authorized) {
+            let action = if id.is_some() { sel(b"toggleNode:\0") } else { std::ptr::null_mut() };
+            let row = init_fn(
+                msg0(menuitem_cls, sel(b"alloc\0")),
+                init_sel,
+                nsstring(""),
+                action,
+                nsstring(""),
+            );
+            set_mono_title(row, &text);
+            if !target.is_null() && id.is_some() {
+                msg1_ptr(row, sel(b"setTarget:\0"), target);
+            }
+            overlay::msg_i64(row, sel(b"setTag:\0"), pipeline_items.len() as i64);
+            msg1_ptr(menu, sel(b"addItem:\0"), row);
+            pipeline_items.push((row as usize, id.unwrap_or_default()));
         }
         *PIPELINE_ITEMS.lock().unwrap() = pipeline_items;
+        let edit_item = init_fn(
+            msg0(menuitem_cls, sel(b"alloc\0")),
+            init_sel,
+            nsstring("Edit pipeline…"),
+            sel(b"editPipeline:\0"),
+            nsstring(""),
+        );
+        if !target.is_null() {
+            msg1_ptr(edit_item, sel(b"setTarget:\0"), target);
+        }
+        msg1_ptr(menu, sel(b"addItem:\0"), edit_item);
 
         // Missing permissions: one clickable row each, gone once granted.
         let mut perm_rows: Vec<(&str, &[u8])> = Vec::new();
@@ -1340,9 +1332,13 @@ mod tray_macos {
         }
         overlay::tick();
         overlay::supervise();
-        if TICKS.fetch_add(1, Ordering::Relaxed) % 3 == 0 {
-            unsafe { update_pipeline_rows() };
+        graph::sample_level();
+        // Saved edits to pipeline.otoji apply live (checked twice a second).
+        if TICKS.fetch_add(1, Ordering::Relaxed) % 5 == 0 && graph::poll_file() {
+            apply_pipeline();
+            unsafe { rebuild_menu() };
         }
+        unsafe { update_pipeline_rows() };
         poll_permissions();
 
         let mtime = notes_mtime_secs();
@@ -1563,24 +1559,17 @@ mod tray_macos {
         }
     }
 
-    /// Fn+/ or Alt+CapsLock → turn otoji off if it is listening, else on.
+    /// Fn+/ or Alt+CapsLock → flip the pipeline's mic line (otoji on/off).
     fn toggle_otoji() {
-        if listen_is_running() {
-            overlay::stop_listen();
-            let _ = std::process::Command::new("pkill")
-                .args(["-f", LISTEN_PROC_PATTERN])
-                .status();
-            overlay::notify("otoji off");
-            eprintln!("otoji-tray: toggled off by hotkey");
-        } else {
-            if permissions::mic_status() != permissions::Mic::Authorized {
-                AUTO_LISTEN.store(true, Ordering::Release);
-                unsafe { permissions::ensure_mic_interactive() };
-                return;
-            }
-            overlay::start_listen();
-            eprintln!("otoji-tray: toggled on by hotkey");
+        graph::toggle_mic();
+        let on = graph::wants_listen();
+        if on && permissions::mic_status() != permissions::Mic::Authorized {
+            AUTO_LISTEN.store(true, Ordering::Release);
+            unsafe { permissions::ensure_mic_interactive() };
+            return;
         }
+        apply_pipeline();
+        eprintln!("otoji-tray: toggled {} by hotkey", if on { "on" } else { "off" });
         unsafe { rebuild_menu() };
     }
 
@@ -1734,6 +1723,10 @@ mod tray_macos {
             }
         }
         maybe_migrate_from_clx();
+        // LLM keys for polish/translate: launchd gives the tray no shell env,
+        // so read <data>/.env (KEY=value lines) when present.
+        let _ = dotenvy::from_path(otoji::notes::data_dir().join(".env"));
+        graph::reload();
 
         unsafe {
             // NSApplication + Accessory activation policy (no Dock icon).

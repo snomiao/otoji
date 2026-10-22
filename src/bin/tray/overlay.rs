@@ -46,7 +46,6 @@ static STT_CHARS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::n
 pub struct Stats {
     pub mic_bytes: u64,
     pub mic_level: u32,
-    pub partials: u64,
     pub finals: u64,
     /// Characters across all final sentences.
     pub chars: u64,
@@ -70,7 +69,6 @@ pub fn stats() -> Stats {
     Stats {
         mic_bytes: MIC_BYTES.load(Relaxed),
         mic_level: MIC_LEVEL.load(Relaxed),
-        partials: STT_PARTIALS.load(Relaxed),
         finals: STT_FINALS.load(Relaxed),
         chars: STT_CHARS.load(Relaxed),
         text: c.text.clone(),
@@ -240,6 +238,7 @@ pub fn start_listen() -> bool {
     *guard = Some(child);
     drop(guard);
     WANT_LISTEN.store(true, Ordering::Release);
+    super::graph::on_listen_started();
     for c in [&MIC_BYTES, &STT_PARTIALS, &STT_FINALS, &STT_CHARS] {
         c.store(0, Ordering::Relaxed);
     }
@@ -338,12 +337,21 @@ fn read_events(out: std::process::ChildStdout) {
                 STT_PARTIALS.fetch_add(1, Ordering::Relaxed);
                 set_caption(text, true)
             }
+            "decode" => {
+                if let Some(ms) = v.get("ms").and_then(|m| m.as_u64()) {
+                    super::graph::on_decode(ms);
+                }
+            }
             "final" | "ptt_final" | "ptt_upgrade" | "ptt_translated" if !text.is_empty() => {
                 if matches!(kind, "final" | "ptt_final") {
                     STT_FINALS.fetch_add(1, Ordering::Relaxed);
                     STT_CHARS.fetch_add(text.chars().count() as u64, Ordering::Relaxed);
                 }
-                set_caption(text, false)
+                set_caption(text, false);
+                if kind == "final" {
+                    // Fan out to the pipeline's polish ∥ translate / append.
+                    super::graph::on_final(text);
+                }
             }
             "error" => {
                 if let Some(m) = v.get("message").and_then(|m| m.as_str()) {
@@ -475,7 +483,9 @@ pub fn tick() {
             c.text.clone()
         };
         // Fold `held` into rev so the "● …" placeholder appears/disappears.
-        (c.rev * 2 + held as u64, text, held || (fresh && !c.text.is_empty()))
+        // The pipeline's overlay line turned off → keep the panel hidden.
+        let on = super::graph::overlay_enabled();
+        (c.rev * 2 + held as u64, text, on && (held || (fresh && !c.text.is_empty())))
     };
     let mut shown = SHOWN.lock().unwrap();
     if *shown == (rev, visible) {
