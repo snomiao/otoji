@@ -305,6 +305,49 @@ const MURMUR = [
 const lookup = (table, civ) => (table.find(([ids]) => named(ids, civ)) || [])[1];
 // Does an id list name this culture? An era row (like: "chinese") also matches its parent's id.
 const named = (ids, civ) => { const l = ids.split(" "); return l.includes(civ.id) || (!!civ.like && l.includes(civ.like)); };
+// Why an endonym is uncertain (shown as ⓘ on hover).
+const ENDONYM_NOTES = {
+  shang: "商 / 大邑商 is on the oracle bones, but whether the Shang used it as their own people-name is unclear.",
+  shu: "巴 and 蜀 are known only from Chinese records; they may be names others used.",
+  wu: "句吳 and 於越 are the old kingdom names; later Jiangnan people called themselves 漢.",
+  "chinese-middle": "唐人 rather than 漢人 for this period is a judgement call; both were used.",
+  "zhu-xis-legacy": "士大夫 / 儒 is a self-designation of a class of scholars, not of a people.",
+  yamato: "倭 is attested mainly through Chinese sources.",
+  "koreans-early": "Hangul did not exist yet; 新羅 and 高麗 are written in Hanja and are also kingdom names.",
+  choson: "朝鮮 for this era is known only from Chinese records.",
+  jurchens: "Jušen is attested; the Jurchen script is not in Unicode, so only a romanization is shown.",
+  khitans: "Kitai is attested; Khitan script would not display, so only a romanization is shown.",
+  hindustanis: "Hindustānī is a Persian-derived term from the medieval period onward.",
+  "delhi-sultanate": "Amir Khusrau's description of himself, not a name for a whole people.",
+  dravidians: "தமிழர் covers Tamils only; 'Dravidian' is a modern term.",
+  "lac-viet": "雒 comes from Chinese records; the Lạc people's own name is unknown.",
+  "persians-early": "Ērān is the land; the people's name Ērānīgān might fit better.",
+  cumans: "Qıpčaq is the name scholars attest; the Cumans' own name and script are uncertain.",
+  tatars: "Medieval Volga Tatars often called themselves Bolgar, Qazanlı or Möselman instead.",
+  malians: "N'Ko is a 20th-century script; tone marks are left out.",
+  hausa: "The Ajami (Arabic-script) spelling is a reconstruction.",
+  huns: "Οὖννοι / Hunni is a name others gave them; their own name is not recorded.",
+  babylonians: "The cuneiform spells the city of Babylon, not the people's name.",
+  hittites: "They called their land Ḫatti and their language nešili; no clear name for themselves as a people.",
+  phoenicians: "Their self-name is debated: Canaan and Sidonians are the attested candidates.",
+  carthaginians: "'Chanani' comes from Augustine; the Punic spelling is a reconstruction.",
+  palmyrans: "The Palmyrene letters are written from knowledge of the script; worth checking.",
+  sumerians: "'Black-headed ones' and Kiengir (the land); no ethnic self-name.",
+  minoans: "No self-name is recorded.",
+  mayans: "No shared self-name is recorded; people named themselves by their city.",
+  mapuche: "Reche is the older attested name.",
+  tupi: "Tupinambá is attested in European accounts.",
+  goths: "Gutþiuda is attested only once, in the Gothic calendar fragment.",
+  "holy-roman-empire": "A general medieval German self-name, not one specific to the Rhineland.",
+  "order-of-the-dragon": "Rumâni is attested mostly from the 16th century.",
+  lithuanians: "Lietuviai is attested in Lithuanian only later than the pagan era.",
+  magyars: "Megyer is the early tribal and place-name form.",
+  bulgarians: "Modern spelling; the Old Bulgarian form is Блъгарє.",
+  rus: "Русь names the land and the people together.",
+  franks: "Their own-language name *Frankon is only reconstructed; Franci is the Latin of their records.",
+  celts: "Goídil / Gaeil is Gaelic and does not cover the Iron Age Celts.",
+  "knights-templar": "A practice, not a people: the Latin self-reference of monks.",
+};
 // "汉 Han · late", with the era when a people has several rows.
 const civLabel = (civ) => `${civ.zh} ${LANG === "zh-CN" ? "" : civ.name}${civ.era ? ` · ${tr(civ.era)}` : ""}`.replace(/\s+·/, " ·").trim();
 // Deterministic randomness per civilization × activity.
@@ -685,7 +728,12 @@ function renderPlayer() {
     for (const civ of CIVS.filter((c) => c.region === reg)) {
       const row = document.createElement("tr");
       const nameCell = Object.assign(document.createElement("th"), { textContent: civLabel(civ), scope: "row", title: civ.note || "" });
-      if (civ.endonym) nameCell.append(Object.assign(document.createElement("small"), { className: "endonym", textContent: civ.endonym, title: tr("what they call themselves") }));
+      if (civ.endonym) {
+        const sm = Object.assign(document.createElement("small"), { className: "endonym", textContent: civ.endonym.replace(/\s*\(attested\)/, ""), title: tr("what they call themselves") });
+        const why = ENDONYM_NOTES[civ.id] || (/\(attested\)/.test(civ.endonym) ? "Known from others' records or later sources; their own form is uncertain." : /unknown/.test(civ.endonym) ? "No self-name is recorded." : null);
+        if (why) sm.append(Object.assign(document.createElement("span"), { className: "info", textContent: " ⓘ", title: tr(why), tabIndex: 0, role: "note" }));
+        nameCell.append(sm);
+      }
       row.append(nameCell);
       const intro = document.createElement("td"); intro.className = "sig"; intro.title = civ.note || "";
       if (civ.signature) intro.append(Object.assign(document.createElement("b"), { textContent: civ.signature }));
