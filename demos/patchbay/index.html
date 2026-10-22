@@ -3326,6 +3326,9 @@ function boot(chosen) {
   ui = chosen;
   let saved = null;
   try { saved = localStorage.getItem("otoji-patchbay"); } catch (e) { /* storage unavailable */ }
+  // ?ex=<example> opens that example directly (e.g. ?ex=pipaxing, ?ex=m:chinese:battle)
+  const want = new URLSearchParams(location.search).get("ex");
+  if (want && EXAMPLES[want]) { loadExample(want); return; }
   const text = saved || EXAMPLES.groove;
   ui.setText(text); applyText(text);
 }
