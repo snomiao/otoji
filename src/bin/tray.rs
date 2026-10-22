@@ -297,8 +297,17 @@ mod tray_macos {
                     if let Ok(cfg) =
                         serde_json::from_value::<otoji::config::OtojiConfig>(cfg_val.clone())
                     {
+                        let old_variant = active_stt_variant();
                         otoji::config::save(&cfg);
                         eval_settings_js("window.handleSetConfig()");
+                        // A new STT model only takes effect in a fresh listen.
+                        if active_stt_variant() != old_variant {
+                            eprintln!("otoji-tray: STT model → {}", active_stt_variant());
+                            if overlay::stop_listen() {
+                                overlay::start_listen();
+                            }
+                            rebuild_menu();
+                        }
                     }
                 }
             }
@@ -903,6 +912,47 @@ mod tray_macos {
     }
 
     /// Build (or rebuild) the status item's menu in place.
+    /// SenseVoice variant `otoji listen` will load: env override, else config,
+    /// else the built-in default (same order as SenseVoiceConfig::from_env).
+    fn active_stt_variant() -> String {
+        std::env::var("OTOJI_SENSEVOICE_VARIANT")
+            .ok()
+            .filter(|s| !s.is_empty())
+            .unwrap_or_else(|| {
+                let v = otoji::config::load().sherpa_model_variant;
+                if v.is_empty() { otoji::config::DEFAULT_SHERPA_VARIANT.to_string() } else { v }
+            })
+    }
+
+    /// Menu rows describing the live pipeline: mic → STT → (polish ∥ translate).
+    /// Index: 1, 2, 3 run in sequence; 3a and 3b run in parallel.
+    fn pipeline_labels() -> Vec<String> {
+        use cpal::traits::{DeviceTrait, HostTrait};
+        let mic = cpal::default_host()
+            .default_input_device()
+            .and_then(|d| d.name().ok())
+            .unwrap_or_else(|| "no input device".into());
+
+        let variant = active_stt_variant();
+        let dir = otoji::asr::sensevoice::model_dir_for_variant(&variant);
+        let present = parse_asset_kind("stt").is_present(&dir);
+        let short = variant.strip_prefix("sherpa-onnx-").unwrap_or(&variant);
+
+        // The tray starts `otoji listen` without --ptt-polish / --ptt-translate-to,
+        // so neither stage runs yet; show that rather than the unused config.
+        vec![
+            format!("1. 🎤 Mic: {}", truncate(&mic, 48)),
+            format!(
+                "2. 🧠 STT: {}{} · pseudo-streaming",
+                truncate(short, 44),
+                if present { "" } else { " (not downloaded)" }
+            ),
+            // Numbers = sequential stages, letters = parallel branches.
+            "3a. ✨ Polish: off".to_string(),
+            "3b. 🌐 Translate: off".to_string(),
+        ]
+    }
+
     unsafe fn rebuild_menu() {
         let item = STATUS_ITEM.load(Ordering::Acquire);
         if item.is_null() {
@@ -955,6 +1005,22 @@ mod tray_macos {
             msg1_ptr(toggle_item, sel(b"setTarget:\0"), target);
         }
         msg1_ptr(menu, sel(b"addItem:\0"), toggle_item);
+
+        // Pipeline the tray's `otoji listen` runs, one row per stage; any
+        // row opens Settings to change it. 3a/3b run in parallel on finals.
+        for label in pipeline_labels() {
+            let row = init_fn(
+                msg0(menuitem_cls, sel(b"alloc\0")),
+                init_sel,
+                nsstring(&label),
+                sel(b"openSettings:\0"),
+                nsstring(""),
+            );
+            if !target.is_null() {
+                msg1_ptr(row, sel(b"setTarget:\0"), target);
+            }
+            msg1_ptr(menu, sel(b"addItem:\0"), row);
+        }
 
         // Missing permissions: one clickable row each, gone once granted.
         let mut perm_rows: Vec<(&str, &[u8])> = Vec::new();
