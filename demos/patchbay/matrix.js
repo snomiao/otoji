@@ -452,6 +452,26 @@ function compose(civ, actId) {
   try { return formatPatch(parsePatch(text.replace(/\n$/, ""))) + "\n"; } catch (e) { return text; }
 }
 
+// Featured pieces: a special voice, instrument or mode worth hearing first.
+const FEATURED = [
+  ["mongols:gather", "voice", "khöömii throat singing leads, a whistled overtone melody over its own drone"],
+  ["japanese:gather", "voice", "the crowd's イヤサッサ (i-ya-sa-sa) call at the climax"],
+  ["greeks:battle", "voice", "the ἀλαλά (a-la-la-lai) war cry"],
+  ["berbers:battle", "voice", "zaghārīd: the high trilled ululation"],
+  ["chinese:battle", "instrument", "战鼓 war drums marching, then 擂鼓 rolls; rattan shields; 杀!"],
+  ["ottomans:battle", "instrument", "a mehter band: zurna double reeds, kös kettle drums, zil cymbals"],
+  ["bulgarians:wedding", "instrument", "gaida bagpipe over its drone, in a Balkan mode"],
+  ["japanese:death", "instrument", "a sutra chant over 木魚 and the りん bowl bell"],
+  ["byzantines:death", "mode", "voices only over the ison, in a hard-chromatic Byzantine echos"],
+  ["ethiopians:ritual", "mode", "the Tezeta qenet, on masenqo and krar"],
+  ["tang", "mode", "the five modes 五调: 宫 商 角 徵 羽 on the same five notes"],
+  ["egyptians:flood", "mood", "the Nile's inundation is a festival, not a disaster"],
+  ["japanese:wind", "mood", "神風: the typhoon that saved them; terror turns to deliverance"],
+  ["vikings:death", "mood", "a warrior's pyre: grief, then the glory of Valhalla"],
+  ["americans:death", "mood", "a dirge that turns into a dance (jazz funeral)"],
+];
+const featuredKey = (k) => (k.includes(":") ? `m:${k}` : k);
+const FEATURED_KEYS = new Set(FEATURED.map(([k]) => featuredKey(k)));
 // ── the left nav: region → civilization → one chip per activity ────────
 const REGION_ORDER = ["East Asia", "South & Southeast Asia", "Steppe & Central Asia", "Middle East", "Africa", "Ancient Mediterranean & Near East",
   "Western Europe", "Northern & Central Europe", "Eastern Europe & Byzantium", "Americas"];
@@ -464,6 +484,20 @@ function renderMatrix() {
   const legend = document.createElement("p"); legend.className = "legend";
   legend.textContent = ACTIVITY_IDS.map((a) => `${ACTIVITIES[a].glyph} ${ACTIVITIES[a].en.toLowerCase()}`).join(" · ");
   d.append(legend);
+  // Featured first, highlighted.
+  const fd = document.createElement("details"); fd.open = true; fd.className = "featured-list";
+  fd.append(Object.assign(document.createElement("summary"), { textContent: "★ Featured: special voices, instruments, modes" }));
+  const ful = document.createElement("ul");
+  for (const [k, kind, why] of FEATURED) {
+    const key = featuredKey(k), [id, act] = k.split(":"), civ = act && CIVS.find((c) => c.id === id);
+    const label = civ ? `${civ.zh} ${civ.name} × ${ACTIVITIES[act].zh}` : (EXAMPLE_TREE.flatMap((n) => [...(n.items || []), ...(n.children || []).flatMap((c) => c.items || [])]).find((x) => x[0] === k) || [k, k])[1];
+    const li = document.createElement("li"), btn = document.createElement("button");
+    btn.type = "button"; btn.dataset.ex = key; btn.setAttribute("aria-current", "false");
+    btn.append(label, Object.assign(document.createElement("span"), { className: "why", textContent: `${kind}: ${why}` }));
+    btn.addEventListener("click", () => loadExample(key));
+    li.append(btn); ful.append(li);
+  }
+  fd.append(ful); d.append(fd);
   const regions = [...new Set([...REGION_ORDER, ...CIVS.map((c) => c.region)])].filter((r) => CIVS.some((c) => c.region === r));
   for (const reg of regions) {
     const rd = document.createElement("details"); const rs = document.createElement("summary");
@@ -481,6 +515,7 @@ function renderMatrix() {
         const ok = activitiesFor(civ).includes(a);
         b.textContent = ACTIVITIES[a].glyph; b.disabled = !ok;
         b.title = ok ? `${civ.name} × ${ACTIVITIES[a].en}: ${ACTIVITIES[a].about}` : `${civ.name}: no ${ACTIVITIES[a].en.toLowerCase()}`;
+        if (ok && FEATURED_KEYS.has(civKey(civ, a))) { b.classList.add("featured"); b.title += " ★ " + FEATURED.find(([k]) => featuredKey(k) === civKey(civ, a))[2]; }
         if (ok) { b.dataset.ex = civKey(civ, a); b.setAttribute("aria-current", "false"); b.addEventListener("click", () => loadExample(civKey(civ, a))); }
         chips.append(b);
       }
@@ -493,3 +528,54 @@ function renderMatrix() {
   tree.insertBefore(d, tree.children[after + 1] || null);
 }
 renderMatrix();
+
+// ── player: every piece as a play button, no code ─────────────────────
+function renderPlayer() {
+  const root = document.createElement("section"); root.id = "player"; root.setAttribute("aria-label", "Player");
+  root.innerHTML = `<header><h1>otoji · music of the world's peoples</h1><a class="to-player" href="?">✎ open the editor</a>
+    <span class="legend">${CIVS.length} peoples × ${ACTIVITY_IDS.length} scenes · each piece starts with one instrument and adds one every bar · <b>violet</b> = featured</span></header>
+    <div class="now" aria-live="polite"><span class="title">Pick a piece below.</span><div class="story"></div></div>
+    <div class="grid-wrap"><table><thead></thead><tbody></tbody></table></div>`;
+  document.body.append(root);
+  const head = root.querySelector("thead"), body = root.querySelector("tbody"), now = root.querySelector(".now");
+  const hr = document.createElement("tr"); hr.append(document.createElement("th"));
+  for (const a of ACTIVITY_IDS) hr.append(Object.assign(document.createElement("th"), { textContent: ACTIVITIES[a].glyph, title: `${ACTIVITIES[a].zh} ${ACTIVITIES[a].en}: ${ACTIVITIES[a].about}`, scope: "col" }));
+  head.append(hr);
+  let current = null;
+  const play = async (civ, a, btn) => {
+    const key = civKey(civ, a);
+    if (current === btn && running) { stop(); btn.setAttribute("aria-pressed", "false"); current = null; return; }
+    if (current) current.setAttribute("aria-pressed", "false");
+    loadExample(key); await start(); current = btn; btn.setAttribute("aria-pressed", "true");
+    const A = ACTIVITIES[a], f = FEATURED.find(([k]) => featuredKey(k) === key);
+    now.querySelector(".title").textContent = `${civ.zh} ${civ.name} × ${A.zh} ${A.en}${f ? " ★ " + f[2] : ""}`;
+    const sb = now.querySelector(".story"); sb.textContent = (STORIES[`${civ.id}:${a}`] || A.about) + (civ.note ? `\n♪ ${civ.note}` : "");
+    if (!now.querySelector("button")) { const st = Object.assign(document.createElement("button"), { type: "button", textContent: "■ Stop" }); st.addEventListener("click", () => { stop(); if (current) current.setAttribute("aria-pressed", "false"); current = null; }); now.querySelector(".title").after(st); }
+  };
+  const regions = [...new Set([...REGION_ORDER, ...CIVS.map((c) => c.region)])].filter((r) => CIVS.some((c) => c.region === r));
+  for (const reg of regions) {
+    const rr = document.createElement("tr"); rr.className = "region";
+    rr.append(Object.assign(document.createElement("th"), { textContent: reg, colSpan: ACTIVITY_IDS.length + 1, scope: "colgroup" })); body.append(rr);
+    for (const civ of CIVS.filter((c) => c.region === reg)) {
+      const tr = document.createElement("tr");
+      tr.append(Object.assign(document.createElement("th"), { textContent: `${civ.zh} ${civ.name}`, scope: "row", title: civ.note || "" }));
+      const ok = activitiesFor(civ);
+      for (const a of ACTIVITY_IDS) {
+        const td = document.createElement("td");
+        if (ok.includes(a)) {
+          const btn = document.createElement("button"); btn.type = "button"; btn.textContent = ACTIVITIES[a].glyph; btn.setAttribute("aria-pressed", "false");
+          btn.setAttribute("aria-label", `Play ${civ.name}, ${ACTIVITIES[a].en}`);
+          const f = FEATURED.find(([k]) => featuredKey(k) === civKey(civ, a));
+          btn.title = `${civ.name} × ${ACTIVITIES[a].en}${f ? " ★ " + f[2] : ""}`;
+          if (f) btn.classList.add("featured");
+          btn.addEventListener("click", () => play(civ, a, btn));
+          td.append(btn);
+        }
+        tr.append(td);
+      }
+      body.append(tr);
+    }
+  }
+  if (/[?&]player\b/.test(location.search)) document.body.classList.add("player-mode");
+}
+renderPlayer();
