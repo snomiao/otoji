@@ -926,6 +926,9 @@ mod tray_macos {
 
     /// Menu rows describing the live pipeline: mic → STT → (polish ∥ translate).
     /// Index: 1, 2, 3 run in sequence; 3a and 3b run in parallel.
+    /// Separator: `~` = streaming (output keeps up with each audio frame, so
+    /// latency stays bounded however long you talk); `-` = chunked (waits
+    /// for a chunk/segment — a timer, VAD end-of-speech — before emitting).
     fn pipeline_labels() -> Vec<String> {
         use cpal::traits::{DeviceTrait, HostTrait};
         let mic = cpal::default_host()
@@ -937,6 +940,8 @@ mod tray_macos {
         let dir = otoji::asr::sensevoice::model_dir_for_variant(&variant);
         let present = parse_asset_kind("stt").is_present(&dir);
         let short = variant.strip_prefix("sherpa-onnx-").unwrap_or(&variant);
+        // Same timings the listen child gets (it inherits this env + config).
+        let sv = otoji::asr::sensevoice::SenseVoiceConfig::from_env();
 
         // The tray starts `otoji listen` without --ptt-polish / --ptt-translate-to,
         // so neither stage runs yet; show that rather than the unused config.
@@ -944,23 +949,24 @@ mod tray_macos {
         // today; PC audio (1b) would join here. One source → plain "1.".
         let sources = [format!("🎤 Mic: {}", truncate(&mic, 48))];
         let mut rows: Vec<String> = if sources.len() == 1 {
-            vec![format!("1. {}", sources[0])]
+            vec![format!("1 ~ {}", sources[0])]
         } else {
             sources
                 .iter()
                 .zip('a'..)
-                .map(|(src, letter)| format!("1{letter}. {src}"))
+                .map(|(src, letter)| format!("1{letter} ~ {src}"))
                 .collect()
         };
         rows.extend([
             format!(
-                "2. 🧠 STT: {}{} · pseudo-streaming",
+                "2 - 🧠 STT: {}{} · partial every {} s, final after {} s silence",
                 truncate(short, 44),
-                if present { "" } else { " (not downloaded)" }
+                if present { "" } else { " (not downloaded)" },
+                sv.partial_ms as f32 / 1000.0,
+                sv.vad_silence_ms as f32 / 1000.0,
             ),
-            // Numbers = sequential stages, letters = parallel branches.
-            "3a. ✨ Polish: off".to_string(),
-            "3b. 🌐 Translate: off".to_string(),
+            "3a - ✨ Polish: off".to_string(),
+            "3b - 🌐 Translate: off".to_string(),
         ]);
         rows
     }
