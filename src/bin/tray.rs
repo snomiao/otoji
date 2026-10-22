@@ -756,6 +756,24 @@ mod tray_macos {
             .status();
     }
 
+    /// LaunchAgent label from scripts/install-launch-agent.sh.
+    const LAUNCH_AGENT_LABEL: &str = "com.snomiao.otoji";
+
+    /// Click → Quit. Under the KeepAlive LaunchAgent a plain exit would be
+    /// relaunched, so unload the agent first (it loads again at next login).
+    unsafe extern "C" fn action_quit(_this: *mut c_void, _cmd: *mut c_void, _sender: *mut c_void) {
+        overlay::stop_listen();
+        if std::env::var("XPC_SERVICE_NAME").as_deref() == Ok(LAUNCH_AGENT_LABEL) {
+            eprintln!("otoji-tray: quit — unloading LaunchAgent {LAUNCH_AGENT_LABEL}");
+            // bootout SIGTERMs this process; the exit below is the fallback.
+            let _ = std::process::Command::new("launchctl")
+                .arg("bootout")
+                .arg(format!("gui/{}/{LAUNCH_AGENT_LABEL}", libc::getuid()))
+                .status();
+        }
+        std::process::exit(0);
+    }
+
     /// Click → start a tray-owned `otoji listen --plain` (events feed the
     /// caption overlay) if none is running.
     unsafe extern "C" fn action_start_listen(
@@ -835,6 +853,12 @@ mod tray_macos {
                 new_cls,
                 sel(b"openLatestMd:\0"),
                 action_open_latest_md as *const c_void,
+                b"v@:@\0".as_ptr() as *const _,
+            );
+            class_addMethod(
+                new_cls,
+                sel(b"quitOtoji:\0"),
+                action_quit as *const c_void,
                 b"v@:@\0".as_ptr() as *const _,
             );
             class_addMethod(
@@ -1076,16 +1100,21 @@ mod tray_macos {
         let sep4 = msg0(menuitem_cls, sel(b"separatorItem\0"));
         msg1_ptr(menu, sel(b"addItem:\0"), sep4);
 
-        // Quit: terminate: on NSApp.
+        // Quit: quitOtoji: (also unloads the LaunchAgent), else terminate: on NSApp.
         let app = msg0(cls(b"NSApplication\0"), sel(b"sharedApplication\0"));
+        let (quit_sel, quit_target): (&[u8], _) = if target.is_null() {
+            (b"terminate:\0", app)
+        } else {
+            (b"quitOtoji:\0", target)
+        };
         let quit_item = init_fn(
             msg0(menuitem_cls, sel(b"alloc\0")),
             init_sel,
             nsstring("Quit otoji"),
-            sel(b"terminate:\0"),
+            sel(quit_sel),
             nsstring("q"),
         );
-        msg1_ptr(quit_item, sel(b"setTarget:\0"), app);
+        msg1_ptr(quit_item, sel(b"setTarget:\0"), quit_target);
         msg1_ptr(menu, sel(b"addItem:\0"), quit_item);
 
         msg1_ptr(item, sel(b"setMenu:\0"), menu);

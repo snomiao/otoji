@@ -6,7 +6,8 @@
 #   scripts/install-launch-agent.sh [app-dir]   install + start (default ~/Applications)
 #   scripts/install-launch-agent.sh --uninstall stop + remove
 #
-# With KeepAlive, `pkill -f otoji-tray` only restarts it. Stop with:
+# With KeepAlive, `pkill -f otoji-tray` only restarts it. The tray menu's
+# "Quit otoji" unloads the agent (until next login); or stop it with:
 #   launchctl bootout gui/$(id -u)/com.snomiao.otoji
 set -euo pipefail
 
