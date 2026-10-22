@@ -69,7 +69,7 @@ name, kind, id, port, policy, key := [A-Za-z0-9_-]+
   number instead of renumbering existing ones. (A new unnamed line placed
   *above* the bare `mic` takes the bare name and the old one gets the next
   number; name it explicitly to avoid that.) An explicit name (`append@log`)
-  works anywhere; a redundant `mic=mic` is dropped.
+  works anywhere; a redundant `mic@mic` is dropped, and the older `name=kind` still reads (rewritten as `kind@name`).
 - **Ids are names, not indexes.** Sequence vs parallel is a property of the
   graph shape.
 
