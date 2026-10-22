@@ -277,6 +277,7 @@ ul.ideas { margin: 0; padding-left: 18px; display: grid; gap: 6px; font-size: 14
         <tr data-help="kind:metro"><td><code>metro</code></td><td>节拍器, accent on beat 1 · <code>tone=1000</code></td></tr>
         <tr data-help="kind:drums"><td><code>drums</code></td><td><code>pattern="kick|snare|hat"</code>, 16 steps, <code>x</code> hit, <code>X</code> accent · with <code>^vad</code>: <code>kick|snare|hat</code>, <code>1/16|1/8|1/4|off</code></td></tr>
         <tr data-help="kind:mic"><td><code>mic</code></td><td>asks for the microphone on Start; input only, never played back</td></tr>
+        <tr data-help="kind:midi-in kind:midi-out"><td><code>midi-in</code> <code>midi-out</code></td><td>asks for MIDI on Start · <code>midi-in&gt; piano</code> plays a keyboard live (drums: GM 36/38/42 → lanes) · <code>piano&gt; midi-out</code> sends notes out · <code>device="name"</code> <code>channel=1</code></td></tr>
         <tr data-help="kind:learn"><td><code>learn</code></td><td><code>mic&gt; learn beat 4beats|2bars|section</code> · records from the next beat or bar, rewrites a drums (beatbox) or piano (hum) line, then turns itself off</td></tr>
         <tr data-help="kind:vad"><td><code>vad</code></td><td><code>threshold=0.02 silence=300ms holdoff=250ms</code> · other nodes react with <code>^vad ?vad !vad</code></td></tr>
         <tr data-help="kind:piano"><td><code>piano</code></td><td><code>chords="Am F C G"</code> one per bar · <code>style=arp|block</code> <code>oct=4</code> · or a melody <code>notes="E4 . . G4"</code></td></tr>
@@ -476,7 +477,11 @@ function nodeSource(n) {
 const AUDIO_OUT = ["metro", "drums", "piano", "bass", "strings", "pluck", "flute", "organ", "choir", "bell", "marimba", "rain",
   "mix", "delay", "reverb", "filter", "drive", "chorus", "phaser", "tremolo", "pan", "eq", "comp", "env", "fadein", "fadeout"];
 const OUT_TYPE = { clock: "env", mic: "mic", vad: "control", arrange: "control", learn: null, speaker: null, ...Object.fromEntries(AUDIO_OUT.map((k) => [k, "audio"])) };
-const ACCEPTS = { speaker: ["audio"], vad: ["mic"], learn: ["mic"],
+// MIDI: midi-in sends note events; instruments and drums also make notes, which midi-out takes.
+const NOTE_KINDS = ["drums", "piano", "bass", "strings", "pluck", "flute", "organ", "choir", "bell", "marimba"];
+Object.assign(OUT_TYPE, { "midi-in": "midi", "midi-out": null });
+const ACCEPTS = { speaker: ["audio"], vad: ["mic"], learn: ["mic"], "midi-out": ["notes", "midi"],
+  ...Object.fromEntries(NOTE_KINDS.map((k) => [k, ["midi"]])),
   ...Object.fromEntries(["mix", "delay", "reverb", "filter", "drive", "chorus", "phaser", "tremolo", "pan", "eq", "comp", "env", "fadein", "fadeout"].map((k) => [k, ["audio"]])) };
 // Groups are paragraphs: separated by blank lines or `---`.
 function groupsOf(p) {
@@ -502,7 +507,7 @@ function inputs(p) {
   const group = groupsOf(p);
   all.forEach((n, i) => {
     if (n.head.kind !== "all") return;
-    const fits = (m) => (ACCEPTS[n.kind] || []).includes(OUT_TYPE[m.kind]) && !consumed.has(m.id) && m.id !== n.id;
+    const fits = (m) => (ACCEPTS[n.kind] || []).some((t) => t === OUT_TYPE[m.kind] || (t === "notes" && NOTE_KINDS.includes(m.kind))) && !consumed.has(m.id) && m.id !== n.id;
     const above = all.slice(0, i);
     let pick = above.filter((m) => group.get(m.id) === group.get(n.id) && fits(m));
     if (!pick.length) pick = above.filter((m) => group.get(m.id) === group.get(n.id) - 1 && fits(m));
@@ -680,6 +685,11 @@ const KINDS = {
   speaker: { build: (o) => ({ volume: num(o, "volume", 0.5, 0, 1) }) },
 };
 KINDS.arrange = { control: true, build: () => ({}) }; // built from its section list in rebuild()
+// Web MIDI (asks on Start). midi-in sends note events to instruments / drums;
+// midi-out sends the notes of what feeds it to an external device.
+const midiBuild = (o) => ({ device: o.device || null, channel: num(o, "channel", 0, 1, 16) });
+KINDS["midi-in"] = { source: true, control: true, build: midiBuild };
+KINDS["midi-out"] = { control: true, build: midiBuild };
 KINDS.rain = { source: true, build: (o) => ({ level: num(o, "level", 0.5, 0, 1), drops: num(o, "drops", 0.35, 0, 1) }) };
 // Melodic instruments share one set of options (scale, key, phrase, chords…).
 for (const k of ["piano", "bass", "strings", "pluck", "flute", "organ", "choir", "bell", "marimba"]) KINDS[k] = { source: true, build: (o) => buildMelodic(k, o) };
@@ -726,8 +736,14 @@ const CATALOG = {
   fadein: { doc: "Fade in from Start (alias of env attack=).", args: [["len", "4bars", "how long", null, { re: /^\d+(\.\d+)?(ms|s|beats?|bars?)$/ }]] },
   fadeout: { doc: "Fade out after a while (alias of env after= release=).", args: [["len", "2bars", "how long the fade takes", null, { re: /^\d+(\.\d+)?(ms|s|beats?|bars?)$/ }], ["after", "8bars", "when it starts"]] },
   speaker: { doc: "Output. Only what reaches a speaker is heard.", args: [["volume", "0.5", "0–1", null, { re: /^(0|1|0?\.\d+)$/ }]] },
+  "midi-in": { doc: "MIDI keyboard / controller (asks on Start). Feed it to an instrument or drums to play them live: `midi-in> piano`. Drums map GM notes: 36 kick, 38 snare, 42 hat (lanes 1–3 of the kit).", args: [
+    ["device", '"Keystation"', "part of the input's name (any device if left out)", [], { re: /^"[^"]*"$/ }],
+    ["channel", "1", "1–16 (every channel if left out)", Array.from({ length: 16 }, (_, i) => String(i + 1)), { re: /^([1-9]|1[0-6])$/ }]] },
+  "midi-out": { doc: "Sends the notes of instruments, drums or midi-in to a MIDI device, on time: `piano> midi-out`. Drums go to channel 10 unless channel= is set.", args: [
+    ["device", '"IAC"', "part of the output's name (the first output if left out)", [], { re: /^"[^"]*"$/ }],
+    ["channel", "1", "1–16 (default 1; drums 10)", Array.from({ length: 16 }, (_, i) => String(i + 1)), { re: /^([1-9]|1[0-6])$/ }]] },
 };
-const SOURCE_KINDS = ["clock", "mic", "arrange", "metro", "drums", "piano", "bass", "strings", "pluck", "flute", "organ", "choir", "bell", "marimba", "rain"];
+const SOURCE_KINDS = ["clock", "mic", "midi-in", "arrange", "metro", "drums", "piano", "bass", "strings", "pluck", "flute", "organ", "choir", "bell", "marimba", "rain"];
 const AUDIO_KINDS = AUDIO_OUT;
 // Kinds that make sense after `refs>`, given the kinds of the refs.
 function consumersFor(inKinds) {
@@ -735,7 +751,9 @@ function consumersFor(inKinds) {
   if (inKinds.every((k) => k === "mic")) return ["vad", "learn"];
   if (inKinds.every((k) => k === "vad")) return ["drums"];
   if (inKinds.every((k) => k === "clock")) return ["metro", "drums", ...MELODIC];
-  if (inKinds.every((k) => AUDIO_KINDS.includes(k))) return ["speaker", "mix", "reverb", "delay", "filter", "drive", "chorus", "phaser", "tremolo", "pan", "eq", "comp", "env", "fadein", "fadeout"];
+  if (inKinds.every((k) => k === "midi-in")) return [...MELODIC, "drums", "midi-out"];
+  if (inKinds.every((k) => AUDIO_KINDS.includes(k))) return ["speaker", "mix", "reverb", "delay", "filter", "drive", "chorus", "phaser", "tremolo", "pan", "eq", "comp", "env", "fadein", "fadeout"]
+    .concat(inKinds.every((k) => NOTE_KINDS.includes(k)) ? ["midi-out"] : []);
   return ["mix", "speaker"];
 }
 
@@ -775,7 +793,11 @@ function rebuild() {
     else if (!r.error && n.kind === "vad" && !inKinds.length) r.error = "needs a mic: write `mic> vad`";
     else if (!r.error && n.kind === "vad" && inKinds.some((k) => k !== "mic")) r.error = "vad listens to a mic only";
     else if (!r.error && inKinds.includes("vad")) r.error = `vad controls nodes instead of feeding them: write \`. ${n.kind} ^vad\``;
-    else if (!r.error && spec.source && inKinds.some((k) => KINDS[k]?.source && k !== "clock")) r.error = `${n.kind} makes its own sound and takes no audio input`;
+    else if (!r.error && inKinds.includes("midi-in") && !NOTE_KINDS.includes(n.kind) && n.kind !== "midi-out") r.error = "midi-in sends notes: feed it to an instrument, drums or midi-out (midi-in> piano)";
+    else if (!r.error && n.kind === "midi-out" && !inKinds.length) r.error = "needs notes: write `piano> midi-out`";
+    else if (!r.error && n.kind === "midi-out" && inKinds.some((k) => !NOTE_KINDS.includes(k) && k !== "midi-in")) r.error = `midi-out takes notes from instruments, drums or midi-in, not ${inKinds.find((k) => !NOTE_KINDS.includes(k) && k !== "midi-in")}`;
+    else if (!r.error && spec.source && inKinds.some((k) => KINDS[k]?.source && k !== "clock" && k !== "midi-in")) r.error = `${n.kind} makes its own sound and takes no audio input`;
+    r.midiFed = !r.error && inKinds.includes("midi-in"); // plays what comes in instead of its own pattern
     if (!r.error) {
       const ctl = controlsOf(n);
       r.trigger = n.kind === "drums" && ctl.some((c) => c.kind === "on");
@@ -789,9 +811,11 @@ function rebuild() {
       if (badOn) r.error = `\`${badOn.tok}\`: for now only drums react to a vad's onsets (\`. drums kick ^vad\`)`;
       r.gates = ctl.filter((c) => c.kind !== "on");
     }
-    if (!r.error && ENV_NEEDS[n.kind] && !eff.get(n.id).some((x) => kindOfId(x.node) === "clock")) r.error = "needs a clock: add `. clock bpm=92`";
+    if (!r.error && ENV_NEEDS[n.kind] && !r.midiFed && !eff.get(n.id).some((x) => kindOfId(x.node) === "clock")) r.error = "needs a clock: add `. clock bpm=92`";
     live.set(n.id, r);
   }
+  // Who takes each node's output (for MIDI note routing).
+  for (const r of live.values()) r.consumers = [...live.values()].filter((m) => !m.error && eff.get(m.node.id).some((x) => x.node === r.node.id && !x.implicit));
   if (!ctx) return;
   // Audio nodes: every node gets an output gain; non-sources get an input gain.
   for (const r of live.values()) {
@@ -831,7 +855,7 @@ function rebuild() {
       if (src && src.out && kindOfId(x.node) !== "clock" && !KINDS[kindOfId(x.node)]?.control) src.out.connect(r.inGain);
     }
   }
-  if (running) ensureMic();
+  if (running) { ensureMic(); ensureMidi(); }
   for (const r of live.values()) if (r.node.kind === "clock" && !r.error) {
     const c = clocks.get(r.node.id) || { nextTime: ctx.currentTime + 0.05, step: 0 };
     c.bpm = r.cfg.bpm; c.sig = r.cfg.sig; clocks.set(r.node.id, c);
@@ -1028,7 +1052,7 @@ function buildMelodic(kind, o) {
 function playMelodic(r, c, step, t) {
   const cfg = r.cfg, out = r.out, stepDur = 60 / c.bpm / 4, bar = Math.floor(step / (4 * c.sig)), barSteps = 4 * c.sig;
   const peak = 0.22 * cfg.vol;
-  const note = (f, dur, p = peak) => { cfg.inst.play(out, t, f, dur, cfg.adsr, p); mark(r, t, Math.min(dur, 1.5)); };
+  const note = (f, dur, p = peak) => { cfg.inst.play(out, t, f, dur, cfg.adsr, p); mark(r, t, Math.min(dur, 1.5)); midiNote(r, 69 + 12 * Math.log2(f / 440), peak > 0 ? 100 * p / peak : 0, t, dur, false); };
   if (cfg.phrase) {
     const per = 16 / cfg.grid;
     if (step % per) return;
@@ -1270,7 +1294,7 @@ function playStep(r, c, step, t) {
     const len = Math.max(...cfg.lanes.map((l) => l.length)), i = step % len; let hit = false;
     cfg.lanes.forEach((lane, li) => {
       const ch = lane[step % lane.length];
-      if (ch !== ".") { kitHit(out, KITS[cfg.kit][li], t, ch === "X"); hit = true; }
+      if (ch !== ".") { kitHit(out, KITS[cfg.kit][li], t, ch === "X"); midiNote(r, GM_DRUMS[li], ch === "X" ? 120 : 90, t, 0.1, true); hit = true; }
     });
     if (hit) mark(r, t, 0.1);
     r.detail = `step ${String(i + 1).padStart(2)}/${len}`;
@@ -1302,6 +1326,133 @@ async function ensureMic() {
   } catch (e) {
     mic.error = e && e.name === "NotAllowedError" ? "microphone blocked: allow it in the address bar, then Start again" : `microphone unavailable (${e && e.name || e})`;
   } finally { mic.pending = false; }
+}
+// ── MIDI: midi-in plays instruments live, midi-out sends notes out ──────
+let midi = { access: null, pending: false, error: null };
+const midiLast = new Map(); // midi node id → { note, vel, dev } (survives rebuilds)
+const GM_DRUMS = [36, 38, 42]; // kit lanes 1–3 ↔ GM kick, snare, closed hat
+const GM_LANE = { 35: 0, 36: 0, 41: 0, 43: 0, 45: 0, 47: 0, 48: 0, 50: 0, 37: 1, 38: 1, 39: 1, 40: 1, 42: 2, 44: 2, 46: 2, 49: 2, 51: 2, 52: 2, 53: 2, 55: 2, 57: 2, 59: 2 };
+const HELD_MAX = 20; // a held key rings at most this long (s)
+async function ensureMidi() {
+  const want = nodes(patch).some((n) => (n.kind === "midi-in" || n.kind === "midi-out") && n.enabled);
+  if (!want || midi.access || midi.pending || midi.error || !running) return;
+  if (!navigator.requestMIDIAccess) { midi.error = "MIDI not supported in this browser (try Chrome or Edge)"; return; }
+  midi.pending = true;
+  try {
+    midi.access = await navigator.requestMIDIAccess();
+    const bind = () => { for (const inp of midi.access.inputs.values()) inp.onmidimessage = (e) => onMidiMessage(inp, e); };
+    bind(); midi.access.onstatechange = bind; // devices plugged in later
+  } catch (e) {
+    midi.error = e && (e.name === "SecurityError" || e.name === "NotAllowedError") ? "MIDI blocked: allow it in the address bar, then Start again" : `MIDI unavailable (${e && e.name || e})`;
+  } finally { midi.pending = false; }
+}
+const nameHas = (port, dev) => !dev || (port.name || "").toLowerCase().includes(dev.toLowerCase());
+const midiInputs = (r) => midi.access ? [...midi.access.inputs.values()].filter((p) => nameHas(p, r.cfg.device)) : [];
+const midiOutput = (r) => midi.access ? [...midi.access.outputs.values()].find((p) => nameHas(p, r.cfg.device)) || null : null;
+function onMidiMessage(inp, e) {
+  const d = e.data;
+  if (!running || !ctx || !d || d.length < 2) return;
+  const type = d[0] & 0xf0, ch = (d[0] & 0x0f) + 1, note = d[1], vel = d[2] || 0;
+  const on = type === 0x90 && vel > 0, off = type === 0x80 || (type === 0x90 && vel === 0);
+  if (!on && !off) return;
+  const t = ctx.currentTime + 0.005;
+  for (const r of live.values()) {
+    if (r.node.kind !== "midi-in" || r.error || !r.node.enabled || !nameHas(inp, r.cfg.device) || (r.cfg.channel && r.cfg.channel !== ch)) continue;
+    const held = r.held || (r.held = new Set());
+    if (on) { held.add(note); midiLast.set(r.node.id, { note, vel, dev: inp.name }); } else held.delete(note);
+    for (const x of r.consumers || []) midiPlayLive(x, note, on ? vel : 0, t);
+  }
+}
+// One live note (vel 0 = note-off) into an instrument, drums or midi-out.
+function midiPlayLive(d, note, vel, t) {
+  const k = d.node.kind;
+  if (d.error || !d.node.enabled) return;
+  if (k === "midi-out") return midiOut(d, note, vel, t, false, true);
+  if (!d.out || (vel && !gateOpen(d))) return;
+  if (k === "drums") {
+    const lane = GM_LANE[note];
+    if (!vel || lane === undefined) return;
+    kitHit(d.out, KITS[d.cfg.kit][lane], t, vel >= 100); mark(d, t, 0.12);
+    d.detail = `live ${KITS[d.cfg.kit][lane]} · ${midiName(note)} vel ${vel}`;
+    midiNote(d, GM_DRUMS[lane], vel, t, 0.1, true);
+    return;
+  }
+  if (!MELODIC.includes(k)) return;
+  const held = d.held || (d.held = new Map()), prev = held.get(note);
+  if (prev) { prev.release(t); held.delete(note); midiOut(d, note, 0, t, false); }
+  if (!vel) return;
+  const h = holdNote(d.cfg.inst, d.out, t, midiHz(note), d.cfg.adsr, 0.22 * d.cfg.vol * Math.min(1.3, vel / 100));
+  const iv = [t, t + HELD_MAX]; d.busy.push(iv); if (d.busy.length > 64) d.busy.shift();
+  held.set(note, { release: (t2) => { h.release(t2); iv[1] = t2 + d.cfg.adsr[3]; } });
+  d.detail = `live ${midiName(note)} vel ${vel}`;
+  midiOut(d, note, vel, t, false);
+}
+// Play an instrument note of unknown length: the voice runs into its own gain,
+// and note-off fades that gain and re-schedules the voice's sources to stop.
+function holdNote(inst, out, t, f, adsr, peak) {
+  const g = ctx.createGain(), srcs = [], osc = ctx.createOscillator, buf = ctx.createBufferSource;
+  ctx.createOscillator = function () { const o = osc.call(ctx); srcs.push(o); return o; };
+  ctx.createBufferSource = function () { const s = buf.call(ctx); srcs.push(s); return s; };
+  try { inst.play(g, t, f, HELD_MAX, adsr, peak); } finally { delete ctx.createOscillator; delete ctx.createBufferSource; }
+  g.connect(out);
+  return { release(t2) {
+    const rel = adsr[3], at = Math.max(t2, ctx.currentTime);
+    g.gain.setValueAtTime(1, at); g.gain.setTargetAtTime(0.0001, at, rel / 4 + 0.005);
+    for (const s of srcs) try { s.stop(at + rel + 0.1); } catch (e) { /* already stopped */ }
+  } };
+}
+// AudioContext time → the performance.now() clock that MIDIOutput.send() uses.
+function midiTimestamp(t) {
+  const ot = ctx.getOutputTimestamp ? ctx.getOutputTimestamp() : null;
+  const at = ot && ot.performanceTime ? ot.performanceTime + (t - ot.contextTime) * 1000 : performance.now() + (t - ctx.currentTime) * 1000;
+  return Math.max(performance.now(), at);
+}
+// Note-on (vel > 0) or note-off (vel 0) to every midi-out that `src` feeds
+// (or to `src` itself when it is a midi-out), at audio time t.
+function midiOut(src, note, vel, t, drum, self = false) {
+  for (const m of self ? [src] : src.consumers || []) {
+    if (m.node.kind !== "midi-out" || m.error || !m.node.enabled) continue;
+    const port = midiOutput(m); if (!port) continue;
+    const ch = (m.cfg.channel || (drum ? 10 : 1)) - 1, n = Math.max(0, Math.min(127, Math.round(note)));
+    const v = Math.max(1, Math.min(127, Math.round(vel)));
+    try { port.send(vel > 0 ? [0x90 | ch, n, v] : [0x80 | ch, n, 0], midiTimestamp(t)); } catch (e) { m.sendError = e.message; continue; }
+    if (vel > 0) { m.sent = (m.sent || 0) + 1; mark(m, t, 0.1); midiLast.set(m.node.id, { note: n, vel: v, dev: port.name }); }
+  }
+}
+// A whole scheduled note (on at t, off at t + dur) to the midi-outs `src` feeds.
+function midiNote(src, note, vel, t, dur, drum) {
+  if (!(vel > 0) || !(src.consumers || []).some((m) => m.node.kind === "midi-out")) return;
+  midiOut(src, note, vel, t, drum); midiOut(src, note, 0, t + dur, drum);
+}
+// On Stop: release held keys and send All Notes Off.
+function midiPanic() {
+  for (const r of live.values()) {
+    if (r.held instanceof Map) for (const h of r.held.values()) h.release(ctx ? ctx.currentTime : 0);
+    if (r.held) r.held.clear();
+    if (r.node.kind !== "midi-out" || r.error) continue;
+    const port = midiOutput(r);
+    if (port) for (const ch of r.cfg.channel ? [r.cfg.channel] : [1, 10]) try { port.send([0xb0 | (ch - 1), 123, 0]); } catch (e) { /* port gone */ }
+  }
+}
+function midiStatus(r) {
+  const k = r.node.kind, t = ctx ? ctx.currentTime : 0;
+  if (!running) return ["?", "press Start (asks for MIDI)"];
+  if (midi.error) return ["!", midi.error];
+  if (!midi.access) return [".", "asking for MIDI"];
+  const ch = r.cfg.channel ? ` · ch ${r.cfg.channel}` : "", last = midiLast.get(r.node.id);
+  const lastText = last ? ` · last ${midiName(last.note)} vel ${last.vel}` : "";
+  if (k === "midi-in") {
+    if (!midi.access.inputs.size) return [".", "no MIDI devices"];
+    const ins = midiInputs(r);
+    if (!ins.length) return [".", `no MIDI input matching "${r.cfg.device}"`];
+    const feeds = (r.consumers || []).length ? "" : " · feed it to an instrument: midi-in> piano";
+    return [r.held && r.held.size ? "~" : "-", (last ? last.dev : ins.map((p) => p.name).join(", ")) + ch + (lastText || " · play a key") + feeds];
+  }
+  if (!midi.access.outputs.size) return [".", "no MIDI devices"];
+  const port = midiOutput(r);
+  if (!port) return [".", `no MIDI output matching "${r.cfg.device}"`];
+  if (r.sendError) return ["!", `MIDI send failed: ${r.sendError}`];
+  return [soundingAt(r, t) ? "~" : "-", `→ ${port.name}${ch || " · ch 1 (drums 10)"} · ${r.sent || 0} notes${lastText}`];
 }
 // ── learn: record → analyse → rewrite a line ────────────────────────────
 const learnState = new Map(); // learn node id → { phase, start, end, stepDur, steps }
@@ -1545,6 +1696,7 @@ function runVad(eff) {
           if (!gateOpen(d)) continue;
           const t = gridTime(d, eff);
           kitHit(d.out, d.cfg.hit, t, true); mark(d, t, 0.12); d.hits = (d.hits || 0) + 1;
+          midiNote(d, GM_DRUMS[Math.max(0, KITS[d.cfg.kit].indexOf(d.cfg.hit))], 120, t, 0.1, true);
         }
       }
       st.speaking = true; st.quietSince = now;
@@ -1648,7 +1800,7 @@ function tick() {
     while (c.nextTime < ctx.currentTime + STEP_AHEAD) {
       applyPendingAtBar(cid, c);
       for (const r of live.values()) {
-        if (r.error || !r.node.enabled || !KINDS[r.node.kind]?.source || r.node.kind === "clock") continue;
+        if (r.error || !r.node.enabled || !KINDS[r.node.kind]?.source || r.node.kind === "clock" || r.midiFed) continue;
         if (!eff.get(r.node.id).some((x) => x.node === cid)) continue;
         if (!gateOpen(r, c.nextTime)) continue;
         playStep(r, c, c.step - phaseOf(r, c.step, c), c.nextTime);
@@ -1701,6 +1853,7 @@ function nodeStatusInner(r, eff) {
     if (st.phase === "rec") return ["~", `recording ${Math.min(st.steps / 4, Math.floor((now - st.start) / beat) + 1)}/${st.steps / 4} beats` + (st.live ? ` · ${st.live}` : "")];
     return ["/", "analysing"];
   }
+  if (k === "midi-in" || k === "midi-out") return midiStatus(r);
   if (k === "mic") {
     if (!running) return ["?", "press Start (asks for the microphone)"];
     if (mic.error) return ["!", mic.error];
@@ -1750,6 +1903,7 @@ function nodeStatusInner(r, eff) {
     return [running && upstreamSounding(n.id, eff, t) ? "~" : "-", what + extra];
   }
   if (!running) return ["-", "stopped" + extra];
+  if (r.midiFed) return [soundingAt(r, t) ? "~" : "-", (r.detail || "plays the notes from midi-in") + extra];
   return [soundingAt(r, t) ? "~" : "-", (r.detail || "waiting for the bar") + extra];
 }
 const SYM_CLASS = { "~": "stream", "!": "err", "?": "user", off: "off", ".": "load" };
@@ -1889,6 +2043,17 @@ mic>         vad           0.02 300ms
 .            hats=drums    "................|................|x.x.x.x.x.x.x.x." ?vad
 .            piano         "Am F C G" arp !vad
 *>           speaker       0.5
+`,
+  midi: `# MIDI: play a keyboard through the piano; drums and bass also go out to a MIDI synth.
+# Start asks for MIDI. midi-in takes every device and channel; device="Keystation" or 2 (a channel) narrows it.
+.               clock      100 4/4
+.               midi-in
+midi-in>        keys=piano
+.               drums      "x...x...x...x...|....x.......x...|..x...x...x...x."
+.               bass       "Am F C G"
+keys,drums,bass> reverb    1.5s wet=0.2
+>               speaker    0.5
+drums,bass>     midi-out
 `,
   dub: `# Block chords through a tempo-synced delay
 .               clock   bpm=76
@@ -2360,6 +2525,7 @@ const EXAMPLE_TREE = [
     { label: "Americas", items: [["aztec", "Aztec / Maya", "ritual · frenzy · jungle rain"], ["andes", "Andean", "huayno · fiesta · rain"]] },
   ] },
   { label: "Effects", items: [["fx", "效果器 + 包絡", "effects and fades"]] },
+  { label: "MIDI", items: [["midi", "MIDI in and out", "keyboard → piano, drums → synth"]] },
 ];
 let currentExample = null;
 function loadExample(key) {
@@ -2444,14 +2610,14 @@ const startBtn = document.getElementById("startBtn");
 async function start() {
   ensureAudio(); await ctx.resume();
   master.gain.setTargetAtTime(volume(), ctx.currentTime, 0.02);
-  running = true; mic.error = null; startedAt = ctx.currentTime + 0.06; rebuild();
+  running = true; mic.error = null; midi.error = null; startedAt = ctx.currentTime + 0.06; rebuild();
   for (const c of clocks.values()) { c.nextTime = ctx.currentTime + 0.06; c.step = 0; }
   startBtn.setAttribute("aria-pressed", "true"); startBtn.textContent = "● Playing";
 }
 function stop() {
   running = false;
   if (ctx) { master.gain.setTargetAtTime(0, ctx.currentTime, 0.01); setTimeout(() => { if (!running && ctx) ctx.suspend(); }, 80); }
-  clocks.clear(); releaseMic();
+  clocks.clear(); releaseMic(); midiPanic();
   startBtn.setAttribute("aria-pressed", "false"); startBtn.textContent = "▶ Start audio";
   rowsKey = ""; renderStatus();
 }
