@@ -767,6 +767,11 @@ mod tray_macos {
         rebuild_menu();
     }
 
+    /// Click on the mic row → turn the mic (and so otoji) on or off.
+    unsafe extern "C" fn action_toggle_mic(_this: *mut c_void, _cmd: *mut c_void, _sender: *mut c_void) {
+        toggle_otoji();
+    }
+
     /// LaunchAgent label from scripts/install-launch-agent.sh.
     const LAUNCH_AGENT_LABEL: &str = "com.snomiao.otoji";
 
@@ -865,6 +870,12 @@ mod tray_macos {
                 new_cls,
                 sel(b"openLatestMd:\0"),
                 action_open_latest_md as *const c_void,
+                b"v@:@\0".as_ptr() as *const _,
+            );
+            class_addMethod(
+                new_cls,
+                sel(b"toggleMic:\0"),
+                action_toggle_mic as *const c_void,
                 b"v@:@\0".as_ptr() as *const _,
             );
             class_addMethod(
@@ -1023,8 +1034,8 @@ mod tray_macos {
             now,
             // The tray starts `otoji listen` without --ptt-polish /
             // --ptt-translate-to, so neither stage runs yet.
-            "3a - ✨ Polish: off".to_string(),
-            "3b - 🌐 Translate: off".to_string(),
+            "3a - ✨ Polish: off · needs an LLM API key…".to_string(),
+            "3b - 🌐 Translate: off · needs an LLM API key…".to_string(),
         ]);
         rows
     }
@@ -1044,7 +1055,11 @@ mod tray_macos {
         if items.is_empty() {
             return;
         }
+        let on = overlay::is_listening() as i64;
         for (item, label) in items.iter().zip(pipeline_labels()) {
+            if label.starts_with('1') {
+                overlay::msg_i64(*item as *mut c_void, sel(b"setState:\0"), on);
+            }
             msg1_ptr(*item as *mut c_void, sel(b"setTitle:\0"), nsstring(&label));
         }
     }
@@ -1107,13 +1122,20 @@ mod tray_macos {
         refresh_pipeline_info();
         let mut pipeline_items = Vec::new();
         for label in pipeline_labels() {
+            // Stage-1 source rows toggle on click (checkmark = on); the rest
+            // open Settings.
+            let is_source = label.starts_with('1');
+            let action: &[u8] = if is_source { b"toggleMic:\0" } else { b"openSettings:\0" };
             let row = init_fn(
                 msg0(menuitem_cls, sel(b"alloc\0")),
                 init_sel,
                 nsstring(&label),
-                sel(b"openSettings:\0"),
+                sel(action),
                 nsstring(""),
             );
+            if is_source {
+                overlay::msg_i64(row, sel(b"setState:\0"), running as i64); // NSControlStateValueOn = 1
+            }
             if !target.is_null() {
                 msg1_ptr(row, sel(b"setTarget:\0"), target);
             }

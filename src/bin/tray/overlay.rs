@@ -360,7 +360,7 @@ unsafe fn msg_bool(obj: *mut c_void, s: *mut c_void, v: bool) {
     let f: extern "C" fn(*mut c_void, *mut c_void, bool) = std::mem::transmute(objc_msgSend as *const ());
     f(obj, s, v)
 }
-unsafe fn msg_i64(obj: *mut c_void, s: *mut c_void, v: i64) {
+pub unsafe fn msg_i64(obj: *mut c_void, s: *mut c_void, v: i64) {
     let f: extern "C" fn(*mut c_void, *mut c_void, i64) = std::mem::transmute(objc_msgSend as *const ());
     f(obj, s, v)
 }
