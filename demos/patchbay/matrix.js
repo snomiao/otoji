@@ -207,6 +207,18 @@ const MOODS = {
   rarerain: { ids: "berbers saracens palmyrans", act: "rain", about: "rain in the desert: a rare blessing, long waited for; then it comes" },
   swidden: { ids: "tupi", act: "fire", about: "fire as work: clearing the forest for a new garden (slash and burn), planting in the ashes", mode: "scale", perc: "calm" },
 };
+// How a hunt feels differs: a pageant with falcons and hounds, or easy where game is plenty
+// (the default is tense: stalking dangerous game).
+Object.assign(MOODS, {
+  pageant: { ids: "persians achaemenids franks english house-of-lancaster french burgundians mongols japanese saracens abbasids khitans jurchens", act: "hunt",
+    about: "the hunt as a pageant: falcons, hounds and horns, riders sure of the game; the quarry breaks, the chase, the kill, the feast", mode: "bright", bpm: 112, grid: 8,
+    tune: [["x-x-x---", "leap", 0, 5], ["x-xxx-x-", "step", 3, 5], ["xxxxxxx-", "step", 2, 7], ["x-x-x---", "leap", 5, 0]],
+    perc: "calm", horn: "call", timp: "pulse", climax: "oct", adds: ["drone", "perc", "second", "horns", "low", "drive", "timp"] },
+  plenty: { ids: "egyptians tupi malay khmer burmese vietnamese lac-viet", act: "hunt",
+    about: "hunting where game is plenty: fowling in the marshes, fishing with a bow; easy and light, half sport", mode: "bright", bpm: 104, grid: 8,
+    tune: [["xx-x-x--", "step", 2, 4], ["x-xx-x--", "step", 4, 2], ["xx-x-xx-", "leap", 3, 6], ["x-x-----", "step", 3, 0]],
+    perc: "calm", horn: "call", timp: null, climb: false, climax: "oct", adds: ["second", "perc", "low", "harp", "whistle", "pad", "horns"] },
+});
 const moodOf = (civ, act) => Object.values(MOODS).find((m) => m.act === act && m.ids.split(" ").includes(civ.id));
 // What "gathering" is for a people that doesn't farm or forage the usual way, and its rhythm.
 const GATHER_AS = [
