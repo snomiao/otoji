@@ -301,6 +301,8 @@ ul.ideas { margin: 0; padding-left: 18px; display: grid; gap: 6px; font-size: 14
         <tr data-help="kind:bass"><td><code>bass</code></td><td><code>chords="…"</code> roots on beats 1 and 3</td></tr>
         <tr data-help="kind:strings kind:pluck kind:flute kind:organ kind:choir kind:bell kind:brass kind:timpani"><td><code>strings</code> <code>pluck</code> <code>flute</code> <code>organ</code> <code>choir</code> <code>bell</code> <code>brass</code> <code>timpani</code></td><td>instruments: <code>"5 - 6 7 1'"</code> (简谱) with a scale and key, <code>1+3+5</code> a chord, or chord names; <code>adsr=</code> per note</td></tr>
         <tr data-help="kind:scale"><td><code>scale@name</code></td><td>define a 调式: <code>. scale@mygong 1 2 3 5 6</code> · <code>#4</code> <code>b7</code> a semitone · <code>2:150</code> exact cents · named like a built-in, it replaces it; on any scale name, <b>Fork</b> copies its code into the patch</td></tr>
+        <tr data-help="kind:crowd"><td><code>crowd</code></td><td>voices: <code>. crowd shout "i-YA-SA-SA"</code> · <code>chant "HU" "x...x...x.x.x..."</code> · <code>ululate</code> · <code>murmur</code> (chatter) · <code>voices=24</code> <code>voice=women</code></td></tr>
+        <tr data-help="kind:fire"><td><code>fire</code></td><td>a blaze: <code>. fire 0.6 crackle=0.5</code></td></tr>
         <tr data-help="kind:wind"><td><code>wind</code></td><td>a howling gale behind the music: <code>. wind 0.5 gust=0.15Hz</code></td></tr>
         <tr data-help="opt:scale"><td><code>scale</code></td><td>major minor dorian phrygian … hijaz bayati rast (maqam) · in yo hirajoshi ryukyu · gong shang jue zhi yu yanyue</td></tr>
         <tr data-help="opt:kit"><td><code>kit=</code></td><td>drums: rock, darbuka, taiko, opera (京剧)</td></tr>
@@ -354,7 +356,7 @@ const ID = /^[A-Za-z0-9_-]+$/;
 const ENV_NEEDS = { metro: ["clock"], drums: ["clock"], piano: ["clock"], bass: ["clock"], delay: ["clock"], learn: ["clock"],
   strings: ["clock"], pluck: ["clock"], flute: ["clock"], organ: ["clock"], choir: ["clock"], bell: ["clock"],
   env: ["clock"], fadein: ["clock"], fadeout: ["clock"], arrange: ["clock"], rain: ["clock"], marimba: ["clock"],
-  brass: ["clock"], timpani: ["clock"], wind: ["clock"] };
+  brass: ["clock"], timpani: ["clock"], wind: ["clock"], crowd: ["clock"], fire: ["clock"] };
 const STATUS_SYMS = ["~", "-", "/", ".", "!", "?"];
 
 function isStatusComment(c) {
@@ -502,7 +504,7 @@ function nodeSource(n) {
 }
 // What each kind outputs and accepts, so `*>` only picks inputs that fit:
 // a speaker takes audio, never a mic signal, a vad's control or a clock.
-const AUDIO_OUT = ["metro", "drums", "piano", "bass", "strings", "pluck", "flute", "organ", "choir", "bell", "marimba", "brass", "timpani", "rain", "wind",
+const AUDIO_OUT = ["metro", "drums", "piano", "bass", "strings", "pluck", "flute", "organ", "choir", "bell", "marimba", "brass", "timpani", "rain", "wind", "crowd", "fire",
   "mix", "delay", "reverb", "filter", "drive", "chorus", "phaser", "tremolo", "pan", "eq", "comp", "env", "fadein", "fadeout"];
 const OUT_TYPE = { clock: "env", mic: "mic", vad: "control", arrange: "control", scale: null, learn: null, speaker: null, ...Object.fromEntries(AUDIO_OUT.map((k) => [k, "audio"])) };
 // MIDI: midi-in sends note events; instruments and drums also make notes, which midi-out takes.
@@ -720,6 +722,8 @@ const midiBuild = (o) => ({ device: o.device || null, channel: num(o, "channel",
 KINDS["midi-in"] = { source: true, control: true, build: midiBuild };
 KINDS["midi-out"] = { control: true, build: midiBuild };
 KINDS.rain = { source: true, build: (o) => ({ level: num(o, "level", 0.5, 0, 1), drops: num(o, "drops", 0.35, 0, 1) }) };
+KINDS.crowd = { source: true, build: (o) => buildCrowd(o) };
+KINDS.fire = { source: true, build: (o) => ({ level: num(o, "level", 0.5, 0, 1), crackle: num(o, "crackle", 0.4, 0, 1) }) };
 KINDS.wind = { source: true, build: (o) => ({ level: num(o, "level", 0.5, 0, 1), gust: o.gust ? hz(o.gust, 0.12) : 0.12 }) };
 // Melodic instruments share one set of options (scale, key, phrase, chords…).
 for (const k of ["piano", "bass", "strings", "pluck", "flute", "organ", "choir", "bell", "marimba", "brass", "timpani"]) KINDS[k] = { source: true, build: (o) => buildMelodic(k, o) };
@@ -774,7 +778,7 @@ const CATALOG = {
     ["device", '"IAC"', "part of the output's name or a wildcard like \"*IAC*\" (first match), or device=2; the first output if left out", [], { re: /^"[^"]*"$/ }],
     ["channel", "1", "1–16 (default 1; drums 10)", Array.from({ length: 16 }, (_, i) => String(i + 1)), { re: /^([1-9]|1[0-6])$/ }]] },
 };
-const SOURCE_KINDS = ["clock", "mic", "midi-in", "arrange", "scale", "metro", "drums", "piano", "bass", "strings", "pluck", "flute", "organ", "choir", "bell", "marimba", "brass", "timpani", "rain", "wind"];
+const SOURCE_KINDS = ["clock", "mic", "midi-in", "arrange", "scale", "metro", "drums", "piano", "bass", "strings", "pluck", "flute", "organ", "choir", "bell", "marimba", "brass", "timpani", "rain", "wind", "crowd", "fire"];
 const AUDIO_KINDS = AUDIO_OUT;
 // Kinds that make sense after `refs>`, given the kinds of the refs.
 function consumersFor(inKinds) {
@@ -855,6 +859,15 @@ function rebuild() {
     if (KINDS[k].control) continue;
     r.out = ctx.createGain(); r.out.gain.value = r.node.enabled ? 1 : 0;
     if (k === "clock") continue;
+    if (k === "fire") { // a low roar that breathes; crackles come per step
+      const len = ctx.sampleRate * 3, buf = ctx.createBuffer(1, len, ctx.sampleRate), d = buf.getChannelData(0);
+      for (let i = 0; i < len; i++) d[i] = Math.random() * 2 - 1;
+      const src = ctx.createBufferSource(), lp = ctx.createBiquadFilter(), g = ctx.createGain();
+      src.buffer = buf; src.loop = true; lp.type = "lowpass"; lp.frequency.value = 380; lp.Q.value = 0.9; g.gain.value = 0.4 * r.cfg.level;
+      r.lfos = [lfo(0.23, 0.18 * r.cfg.level, g.gain), lfo(0.37, 140, lp.frequency)];
+      src.connect(lp).connect(g).connect(r.out); src.start(); r.src = src;
+      continue;
+    }
     if (k === "wind") { // two bands of looping noise whose pitch and level drift: a low roar and a whistle
       const len = ctx.sampleRate * 3, buf = ctx.createBuffer(1, len, ctx.sampleRate), d = buf.getChannelData(0);
       for (let i = 0; i < len; i++) d[i] = Math.random() * 2 - 1;
@@ -1456,6 +1469,14 @@ const MELODIC_ARGS = [
 MELODIC_ARGS[1][3] = Object.keys(SCALES); MELODIC_ARGS[1][4] = { re: { test: (v) => !!scaleNamed(v) } };
 CATALOG.scale = { doc: "Defines a scale (调式) by its degrees in 简谱: `. scale@mygong 1 2 3 5 6`. #4 / b7 raise or lower a degree a semitone; 2:150 gives exact cents (quarter tones). Missing degrees snap to the nearest one. Named like a built-in scale, it replaces it in this patch.", args: [] };
 CATALOG.arrange = { doc: "Song form: sections in bars, looping. Lines play in them with ?song.2 or ?song.2-3 (or a section name).", args: [] };
+CATALOG.crowd = { doc: "Crowd of synthesized voices (no recordings): shout a war cry, chant on the beat, ululate, or murmur (chatter). Words are romanized syllables, UPPER = accented: `. crowd shout \"i-YA-SA-SA\"`.", args: [
+  ["mode", "shout", "shout · chant · ululate · murmur", ["shout", "chant", "ululate", "murmur"], { re: /^(shout|chant|ululate|murmur)$/ }],
+  ["text", '"a-la-la-LAI"', "syllables like i-ya-sa-sa, ei, u-RAA, sha; UPPER = accented", null, { re: /^(?!"[x.-]+"$)"[A-Za-zāēīōūəĀĒĪŌŪ\s-]*[A-Za-zāēīōūəĀĒĪŌŪ][A-Za-zāēīōūəĀĒĪŌŪ\s-]*"$/ }],
+  ["pattern", '"x-x-x---........"', "rhythm per 16th: x next syllable, - hold, . silence", null, { re: /^"[x.-]+"$/ }],
+  ["voices", "24", "how many people, 1–48", null, { re: /^\d+$/ }],
+  ["voice", "men", "men · women · mixed", ["men", "women", "mixed"], { re: /^(men|women|mixed)$/ }],
+  ["pitch", "1", "0.5–2 × their natural pitch"], ["vol", "1", "level 0–2"]] };
+CATALOG.fire = { doc: "Fire: the roar of a blaze and its crackles and pops.", args: [["level", "0.5", "0–1", null, { re: /^(0|1|0?\.\d+)$/ }], ["crackle", "0.4", "how much it crackles, 0–1"]] };
 CATALOG.wind = { doc: "Wind: a howling gale (bands of noise that rise and fall), the background of a storm.", args: [["level", "0.5", "0–1", null, { re: /^(0|1|0?\.\d+)$/ }], ["gust", "0.12Hz", "how fast the gusts come", null, { re: /^\d+(\.\d+)?hz$/i }]] };
 CATALOG.rain = { doc: "Rain: soft noise and droplets, for a quiet ending.", args: [["level", "0.5", "0–1", null, { re: /^(0|1|0?\.\d+)$/ }], ["drops", "0.35", "droplets per step, 0–1"]] };
 for (const [k, doc] of [["marimba", "Marimba / balafon: wooden bars."], ["piano", "Piano: chords, or a melody by phrase= / notes=."], ["bass", "Bass: chord roots on beats 1 and 3, or a phrase."],
@@ -1467,6 +1488,152 @@ for (const [k, doc] of [["marimba", "Marimba / balafon: wooden bars."], ["piano"
 CATALOG.drums.args.push(["kit", "rock", "rock, darbuka, taiko, opera (京剧), aztec, african, tabla, gamelan, celtic, flamenco, orch (orchestra), zhangu (战鼓), sky (thunder), temple (木魚 りん); battle: clash (steel, metal shields), woodshield, rattan (藤牌), hide", Object.keys(KITS), { re: new RegExp(`^(${Object.keys(KITS).join("|")})$`) }]);
 CATALOG.drums.args[1][3] = [...new Set(Object.values(KITS).flat())];
 CATALOG.drums.args[1][4] = { re: new RegExp(`^(${[...new Set(Object.values(KITS).flat())].join("|")})$`) };
+
+// ── crowd: synthesized human voices (formant synthesis, no recordings) ──
+// A buzzing glottal source through three vowel formants, plus noise for the
+// consonants. Many voices with their own pitch, timing and vibrato make a
+// crowd: shouts and war cries, rhythmic chants, ululation, murmur (walla).
+// Text is romanized syllables: "i-YA-SA-SA" (UPPER = accented), "a-la-la-LAI".
+const VOWELS = { // F1 F2 F3 (Hz, adult male); women scale up ~1.17
+  a: [730, 1090, 2440], i: [280, 2250, 3000], u: [330, 1200, 2300], e: [500, 1850, 2500], o: [520, 860, 2400],
+  "ə": [500, 1400, 2400],
+};
+// Syllable → onset consonant, vowel sequence (diphthongs glide), coda nasal.
+function parseSyllable(s) {
+  const t = s.toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "");
+  const m = /^(sh|ch|ts|zh|[bcdfghjklmnprstvwyz]?)([aeiouə]+)(ng|n|m|h|l|r|s|k|t)?$/.exec(t);
+  if (!m) throw new Error(`\`${s}\`: a syllable is like ka, sa, ya, sha, lai, ō, un`);
+  return { onset: m[1], vowels: [...m[2]], coda: m[3] || "", accent: s !== s.toLowerCase() };
+}
+function parseCrowdText(text) {
+  const sylls = text.trim().split(/[\s-]+/).filter(Boolean).map(parseSyllable);
+  if (!sylls.length) throw new Error("give the words: \"i-YA-SA-SA\"");
+  return sylls;
+}
+const CROWD_MODES = ["shout", "chant", "ululate", "murmur"];
+function buildCrowd(o) {
+  const mode = o.mode || "shout";
+  if (!CROWD_MODES.includes(mode)) throw new Error(`mode is ${CROWD_MODES.join(", ")}`);
+  const text = o.text || { shout: "HA", chant: "HU", ululate: "li", murmur: "ka ta na sa ma ha ra ya wa ko to no so mo" }[mode];
+  const sylls = parseCrowdText(text);
+  let pattern = o.pattern || null;
+  if (pattern && !/^[x.-]+$/.test(pattern)) throw new Error("pattern uses x (next syllable), - (hold it), . (silence)");
+  if (!pattern && mode !== "murmur") pattern = sylls.map(() => (mode === "chant" ? "x---" : "x-")).join("").padEnd(16, ".").slice(0, Math.max(16, sylls.length * 2));
+  const voice = o.voice || (mode === "ululate" ? "women" : mode === "murmur" ? "mixed" : "men");
+  if (!["men", "women", "mixed"].includes(voice)) throw new Error("voice is men, women or mixed");
+  const voices = num(o, "voices", { shout: 24, chant: 16, ululate: 6, murmur: 12 }[mode], 1, 48);
+  // Each voice keeps its own pitch, vocal tract size and vibrato.
+  const people = Array.from({ length: voices }, (_, i) => {
+    const woman = voice === "women" || (voice === "mixed" && i % 2 === 1);
+    return { f0: (woman ? 210 : 115) * Math.pow(2, (Math.random() - 0.5) * 0.5), tract: (woman ? 1.17 : 1) * (0.92 + Math.random() * 0.16),
+      vib: 4.5 + Math.random() * 2, lag: Math.random(), pan: Math.random() * 2 - 1, busyUntil: 0 };
+  });
+  return { mode, text, sylls, pattern, voice, people, vol: num(o, "vol", 1, 0, 2), pitch: num(o, "pitch", 1, 0.5, 2) };
+}
+// One person says one syllable starting at t, lasting dur seconds.
+function saySyllable(out, t, dur, syl, p, opts) {
+  const { level = 0.12, rise = 0, trill = false, pitch = 1 } = opts;
+  const v0 = VOWELS[syl.vowels[0]], v1 = VOWELS[syl.vowels[syl.vowels.length - 1]];
+  const F = (v) => v.map((f) => f * p.tract);
+  const osc = ctx.createOscillator(), vg = ctx.createGain(), sum = ctx.createGain(), og = ctx.createGain(), pan = ctx.createStereoPanner();
+  osc.type = "sawtooth"; pan.pan.value = p.pan * 0.7;
+  const f0 = p.f0 * pitch * (syl.accent ? 1.25 : 1);
+  osc.frequency.setValueAtTime(f0 * (1 - 0.06 * rise), t);
+  osc.frequency.linearRampToValueAtTime(f0 * (1 + 0.12 * rise), t + dur * 0.35);
+  osc.frequency.linearRampToValueAtTime(f0 * (1 - 0.1 * rise), t + dur);
+  const vib = ctx.createOscillator(), vd = ctx.createGain(); vib.frequency.value = p.vib; vd.gain.value = f0 * 0.018; vib.connect(vd).connect(osc.frequency);
+  // the vowel: three resonators whose centres glide for diphthongs and glides
+  const res = [0, 1, 2].map((k) => {
+    const bp = ctx.createBiquadFilter(), g = ctx.createGain(); bp.type = "bandpass"; bp.Q.value = [6, 9, 11][k]; g.gain.value = [1, 0.55, 0.25][k];
+    sum.connect(bp).connect(g).connect(og); return bp;
+  });
+  // consonant noise: its own filtered path, and a breath path through the vowel resonators (h)
+  if (!noiseBuf) noise(ctx.createGain(), t, 0.01, 0.0001, 100);
+  const ns = ctx.createBufferSource(), nf = ctx.createBiquadFilter(), ng = ctx.createGain(), ag = ctx.createGain();
+  ns.buffer = noiseBuf; ns.loop = true; ns.playbackRate.value = 0.9 + p.lag * 0.2;
+  ns.connect(nf).connect(ng).connect(og); ns.connect(ag).connect(sum);
+  ng.gain.setValueAtTime(0, t); ag.gain.setValueAtTime(0, t); vg.gain.setValueAtTime(0, t);
+  osc.connect(vg).connect(sum);
+  const peak = level * (syl.accent ? 1.4 : 1);
+  let on = t; // when the vowel starts
+  const setF = (fs, at, glide) => res.forEach((bp, k) => (glide ? bp.frequency.linearRampToValueAtTime(fs[k], at) : bp.frequency.setValueAtTime(fs[k], at)));
+  setF(F(v0), t);
+  const c = syl.onset;
+  if (["s", "sh", "ts", "ch", "z", "zh", "j", "f", "v"].includes(c)) { // fricatives
+    const len = Math.min(0.09, dur * 0.35);
+    nf.type = c === "f" || c === "v" ? "highpass" : "bandpass"; nf.frequency.value = c === "s" || c === "ts" || c === "z" ? 5500 : c === "f" || c === "v" ? 3000 : 3000; nf.Q.value = 1.5;
+    if (c === "ts" || c === "ch") { ng.gain.setValueAtTime(level * 1.2, t + 0.02); } else ng.gain.linearRampToValueAtTime(level * 0.9, t + len * 0.4);
+    ng.gain.setValueAtTime(level * 0.8, t + len); ng.gain.linearRampToValueAtTime(0, t + len + 0.02);
+    if (c === "z" || c === "zh" || c === "j" || c === "v") vg.gain.linearRampToValueAtTime(peak * 0.3, t + len * 0.5);
+    on = t + len;
+  } else if (c === "h") {
+    const len = Math.min(0.07, dur * 0.3);
+    ag.gain.linearRampToValueAtTime(level * 0.7, t + len * 0.5); ag.gain.linearRampToValueAtTime(0, t + len + 0.03); on = t + len;
+  } else if ("kgtdpb".includes(c) && c) { // stops: a closure then a burst
+    const clo = Math.min(0.04, dur * 0.2);
+    nf.type = "bandpass"; nf.Q.value = 2; nf.frequency.value = { k: 1800, g: 1500, t: 4200, d: 3500, p: 900, b: 800 }[c];
+    ng.gain.setValueAtTime(level * ("kpt".includes(c) ? 1.3 : 0.7), t + clo); ng.gain.linearRampToValueAtTime(0, t + clo + 0.025);
+    if ("gdb".includes(c)) vg.gain.linearRampToValueAtTime(peak * 0.2, t + clo);
+    on = t + clo + 0.015;
+  } else if (c === "y" || c === "w") { // glides from i / u into the vowel
+    setF(F(VOWELS[c === "y" ? "i" : "u"]), t); on = t;
+    setF(F(v0), t + Math.min(0.08, dur * 0.4), true);
+  } else if (c === "r" || c === "l") { // a tap: formants dip, voicing ducks briefly
+    setF(F([380, 1300, c === "r" ? 1700 : 2600]), t); setF(F(v0), t + 0.035, true);
+    vg.gain.linearRampToValueAtTime(peak * 0.5, t + 0.01); on = t + 0.03;
+  } else if (c === "m" || c === "n") { // nasal murmur
+    setF(F([260, c === "m" ? 1000 : 1700, 2500]), t); setF(F(v0), t + 0.06, true);
+    vg.gain.linearRampToValueAtTime(peak * 0.45, t + 0.015); on = t + 0.05;
+  }
+  // the vowel itself
+  const end = t + dur;
+  vg.gain.linearRampToValueAtTime(peak, on + 0.03);
+  if (syl.vowels.length > 1) { setF(F(v0), on + 0.02); setF(F(v1), on + (end - on) * 0.7, true); }
+  if (trill) { // ululation: the tongue flicks l-l-l about 7 times a second
+    for (let k = on + 0.07; k < end - 0.05; k += 0.14) {
+      vg.gain.setValueAtTime(peak, k); vg.gain.linearRampToValueAtTime(peak * 0.35, k + 0.03); vg.gain.linearRampToValueAtTime(peak, k + 0.07);
+      res[1].frequency.setValueAtTime(F(v0)[1], k); res[1].frequency.linearRampToValueAtTime(F([0, 1300])[1], k + 0.03); res[1].frequency.linearRampToValueAtTime(F(v0)[1], k + 0.07);
+    }
+  }
+  if (syl.coda === "s") { nf.type = "bandpass"; nf.frequency.setValueAtTime(5500, end - 0.07); ng.gain.setValueAtTime(0, end - 0.08); ng.gain.linearRampToValueAtTime(level * 0.7, end - 0.04); ng.gain.linearRampToValueAtTime(0, end); }
+  else if (syl.coda === "l" || syl.coda === "r") setF(F([380, 1300, syl.coda === "r" ? 1700 : 2600]), end - 0.05, true);
+  else if (syl.coda === "k" || syl.coda === "t") { vg.gain.setValueAtTime(peak, end - 0.07); vg.gain.linearRampToValueAtTime(0, end - 0.05); }
+  else if (syl.coda) { setF(F([260, 1500, 2500]), end - 0.06, true); }
+  vg.gain.setValueAtTime(peak, Math.max(on + 0.04, end - 0.06));
+  vg.gain.linearRampToValueAtTime(0, end);
+  og.gain.value = 1; og.connect(pan).connect(out);
+  for (const x of [osc, vib, ns]) { x.start(t); x.stop(end + 0.05); }
+}
+function playCrowd(r, c, step, t) {
+  const cfg = r.cfg, stepDur = 60 / c.bpm / 4;
+  if (cfg.mode === "murmur") { // walla: people talk in bursts of 3–8 syllables, then pause
+    for (const p of cfg.people) {
+      if (t < p.busyUntil || Math.random() > 0.12) continue;
+      const n = 3 + Math.floor(Math.random() * 6), sd = 0.18 + Math.random() * 0.08; let at = t + Math.random() * stepDur;
+      for (let k = 0; k < n; k++) {
+        const syl = cfg.sylls[Math.floor(Math.random() * cfg.sylls.length)];
+        saySyllable(r.out, at, sd * 0.9, syl, p, { level: 0.035 * cfg.vol, rise: (Math.random() - 0.5) * 0.6, pitch: cfg.pitch }); at += sd;
+      }
+      p.busyUntil = at + 0.4 + Math.random() * 1.8;
+    }
+    mark(r, t, stepDur); r.detail = `murmur · ${cfg.people.length} people`;
+    return;
+  }
+  const pat = cfg.pattern, i = step % pat.length;
+  if (pat[i] !== "x") return;
+  // which syllable: count the x's before this one in the pattern
+  const nth = [...pat.slice(0, i)].filter((ch) => ch === "x").length + Math.floor(step / pat.length) * [...pat].filter((ch) => ch === "x").length;
+  const syl = cfg.sylls[nth % cfg.sylls.length];
+  let hold = 1; while (pat[(i + hold) % pat.length] === "-" && hold < pat.length) hold++;
+  const dur = stepDur * hold * 0.92 + (cfg.mode === "chant" ? 0 : 0.05);
+  const level = (cfg.mode === "ululate" ? 0.09 : 0.1) * cfg.vol / Math.sqrt(cfg.people.length);
+  for (const p of cfg.people) {
+    const lag = cfg.mode === "chant" ? p.lag * 0.025 : p.lag * 0.07; // a crowd is never exactly together
+    saySyllable(r.out, t + lag, dur * (0.9 + Math.random() * 0.2), syl, p, { level, rise: cfg.mode === "shout" ? 1 : 0.3, trill: cfg.mode === "ululate", pitch: cfg.pitch });
+  }
+  mark(r, t, dur);
+  r.detail = `${cfg.mode} · "${syl.onset}${syl.vowels.join("")}${syl.coda}" · ${cfg.people.length} ${cfg.voice === "mixed" ? "people" : cfg.voice}`;
+}
 
 function playStep(r, c, step, t) {
   const k = r.node.kind, cfg = r.cfg, out = r.out;
@@ -1485,6 +1652,14 @@ function playStep(r, c, step, t) {
     r.detail = `step ${String(i + 1).padStart(2)}/${len}`;
   }
   if (MELODIC.includes(k)) playMelodic(r, c, step, t);
+  if (k === "crowd") playCrowd(r, c, step, t);
+  if (k === "fire") {
+    for (let i = 0; i < 3; i++) if (Math.random() < cfg.crackle) {
+      const at = t + Math.random() * stepDur, big = Math.random() < 0.15;
+      noise(out, at, big ? 0.03 : 0.008, (big ? 0.4 : 0.15) * cfg.level, big ? 900 : 2500);
+    }
+    mark(r, t, stepDur); r.detail = "fire";
+  }
   if (k === "wind" && step % 4 === 0) { mark(r, t, stepDur * 4); r.detail = "wind"; }
   if (k === "rain") {
     for (let i = 0; i < 2; i++) if (Math.random() < cfg.drops) voice(out, t + Math.random() * stepDur, { freq: 1800 + Math.random() * 2600, endFreq: 900, dur: 0.03, peak: 0.05 * cfg.level, type: "sine" });
@@ -2342,6 +2517,8 @@ const VALUE_DOCS = {
   "kit.rock": "Kick, snare, hi-hat.", "kit.darbuka": "Egyptian goblet drum: dum (low, centre), tek (sharp rim), ka (muffled).",
   "kit.taiko": "Japanese taiko: don (big low drum), ka (rim), shime (high tight drum).",
   "kit.opera": "京剧 锣鼓: 板 ban (clapper, the beat), 锣 luo (gong), 钹 bo (cymbals).",
+  "mode.shout": "Everyone shouts the words once per pattern, rising then falling: a war cry.", "mode.chant": "Short syllables together on the rhythm: hu! ha!",
+  "mode.ululate": "A high trilled cry (the tongue flicks l-l-l), like zaghārīd.", "mode.murmur": "Chatter: people talk in bursts of random syllables (walla).",
   "kit.temple": "Temple: 木魚 mokugyo (wooden fish), りん rin (bowl bell), 拍子木 hyoshigi (clappers).",
   "kit.sky": "Weather: thunder (a long rumble), crack (a near strike), hail.",
   "kit.zhangu": "战鼓 Chinese war drum: 大鼓 dagu (the big drum), 鼓边 gubian (rim), 铙 nao (cymbals).",

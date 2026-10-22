@@ -27,6 +27,15 @@ const ACTIVITIES = {
   wind:   { zh: "风灾", glyph: "风", en: "Storm", about: "a great wind: the gale behind everything, swirling flutes, trembling strings", bpm: 92, mode: "dark", grid: 8,
     tune: [["x---xxx-", "leap", 0, 4], ["xxxx-x--", "wave", 4, 1], ["x-x-xxxx", "leap", 2, 7], ["x-----x-", "step", 3, 0]], climb: true, prog: ["1", "2", "1", "7,"], second: "long", horn: "long", timp: "roll", perc: "calm", climax: "oct", wind: true,
     adds: ["trem", "low", "swirl", "perc", "horns", "timp", "choir"] },
+  fire:   { zh: "火", glyph: "火", en: "Fire", about: "fire: a spark, the blaze spreads, everyone fights it, embers at dawn", bpm: 104, mode: "dark", grid: 8,
+    tune: [["x-xxx-x-", "wave", 0, 2], ["xxxx-x--", "wave", 2, 4], ["xxxxxxx-", "wave", 3, 7], ["x-x-x---", "step", 4, 0]], climb: true, prog: ["1", "6,", "7,", "1"], second: "third", horn: "long", timp: "roll", perc: "march", climax: "oct", fire: true,
+    adds: ["trem", "low", "perc", "swirl", "horns", "drive", "timp"] },
+  thunder: { zh: "雷", glyph: "雷", en: "Thunder", about: "thunder: the sky darkens, lightning, the gods speak, the storm passes", bpm: 80, mode: "dark", grid: 8,
+    tune: [["x---x---", "leap", 0, 3], ["x-x-x---", "step", 3, 1], ["x---x-x-", "leap", 2, 6], ["x-x-x---", "step", 4, 0]], climb: false, prog: ["1", "1", "6,", "5,"], second: "long", horn: "long", timp: "roll", perc: "calm", climax: "oct", thunder: true,
+    adds: ["low", "timp", "trem", "horns", "perc", "choir", "pad"] },
+  birth:  { zh: "诞生", glyph: "生", en: "Birth", about: "a birth: a risky night, then hope. No one knows what history this child will make, what fortune it brings; some hope it will save us, some are afraid", bpm: 66, mode: "dark", grid: 8,
+    tune: [["x---x-x-", "step", 2, 3], ["x-x-x---", "sigh", 4, 2], ["x-xxx-x-", "step", 2, 5], ["x-x-x---", "leap", 4, 5]], climb: false, prog: ["1", "4,", "6,", "5,"], second: "long", horn: "long", timp: null, perc: "heart", climax: "bright", open: true,
+    adds: ["drone", "perc", "trem", "second", "bell", "pad", "choir"] },
   death:  { zh: "死亡", glyph: "死", en: "Funeral", about: "funeral music, as this people mourns", bpm: 54, mode: "dark", grid: 4,
     tune: [["x--x", "sigh", 4, 3], ["x---", "step", 2, 2], ["x-xx", "sigh", 5, 3], ["x---", "step", 1, 0]], climb: false, prog: ["1", "6,", "4,", "5,"], second: "long", horn: "long", timp: "toll", perc: "heart", climax: "oct",
     adds: ["drone", "bell", "low", "second", "choir", "pad", "horns"] },
@@ -152,6 +161,26 @@ function warDrumOf(civ) {
   for (const [k, ids] of Object.entries(WAR_DRUMS)) if (ids.split(" ").includes(civ.id)) return k;
   return null;
 }
+// Battle cries at the climax (synthesized voices, crowd node): [ids, lines].
+const WAR_CRIES = [
+  ["greeks athenians spartans macedonians minoans", ['crowd@alala shout "a-la-la-LAI" "x-x-x-x---......"']], // ἀλαλά
+  ["rus russians slavs bulgarians", ['crowd@ura shout "u-RAA" "x-x-------......"']],
+  ["japanese yamato sengoku-daimyo", ['crowd@taishou shout "EI EI" "x--.x--........." voices=1 pitch=1.1', 'crowd@kachidoki shout "Ō" "........x-------"']], // 鬨の声: ei, ei — ō!
+  ["chinese shang shu wei wu zhu-xis-legacy jurchens khitans", ['crowd@sha shout "SHA SHA SHA" "x-..x-..x---...."']], // 杀
+  ["koreans choson vietnamese lac-viet", ['crowd@cry shout "WAA" "x-------........"']],
+  ["goths teutons vikings swedes germans holy-roman-empire order-of-the-dragon franks", ['crowd@barritus chant "HU" "x---x---x---x-x-" pitch=0.8']], // Tacitus' barritus
+  ["mongols golden-horde huns cumans tatars", ['crowd@hurai shout "hu-RAI" "x-x-----........"']],
+  ["saracens abbasids ayyubids berbers hausa malians ethiopians egyptians palmyrans", ['crowd@zaghrouta ululate "li" "x-------x-------"']],
+  ["lakota haudenosaunee", ['crowd@whoop ululate "ya" "x-------........" voice=men pitch=1.3']],
+];
+// What chatter sounds like while people gather (unintelligible syllables in the language's sound).
+const MURMUR = [
+  ["japanese yamato sengoku-daimyo", "ka ki ku ke ko sa shi su so ta to na no ni ha wa ya yo ma mo"],
+  ["chinese shang shu wei wu zhu-xis-legacy jurchens khitans", "ma ni hao shi de le wo ta ba ge zhe na ye jiu"],
+  ["saracens abbasids ayyubids berbers egyptians palmyrans phoenicians carthaginians", "al ha ma ya wa la bi ka fi na ru sa"],
+  ["romans italians sicilians spanish portuguese mexicans", "la ma te ri no si ca bo de lo pa ra"],
+];
+const lookup = (table, civ) => (table.find(([ids]) => ids.split(" ").includes(civ.id)) || [])[1];
 // Deterministic randomness per civilization × activity.
 function seeded(str) {
   let h = 2166136261; for (const ch of str) h = Math.imul(h ^ ch.codePointAt(0), 16777619);
@@ -227,7 +256,8 @@ function compose(civ, actId) {
   } else line(lead, `grid=${g}`, q(phrase(scale, hiShift)), 7, 10);
   // Bars 11–12: the opening slowed down, settling on the tonic.
   const firstNotes = bars.flat().filter((x) => typeof x === "number").slice(0, 5);
-  line(lead, "grid=4", q([...render(firstNotes, scale), "1", "-", "-"]), 11, 12);
+  // (a birth ends unresolved, on the 5th: its story is not written yet)
+  line(lead, "grid=4", q([...render(firstNotes, A.open ? scaleOf("bright") : scale), A.open ? "5" : "1", "-", "-"]), 11, 12, A.open ? `${scaleOf("bright")} ${key}` : sc);
   const prog = A.prog, roots = prog.map((t) => jp.parse(t));
   const layers = {
     drone: (a) => line(drone, "grid=8", q(["1+5", ...hold(7)]), a, 12),
@@ -290,7 +320,17 @@ function compose(civ, actId) {
   const drive = adds.indexOf("drive");
   adds.forEach((k, i) => (k === "perc" && drive > i ? layers.perc(i + 2, drive + 1) : layers[k](i + 2)));
   if (civ.extra) line(role(civ.extra), "grid=4", q(["1", "-", "-", "-"]), 9, 10);
-  if (actId !== "death" && actId !== "gather") drum("crash", "orch", "................|................|x...............", 9, 9);
+  if (!["death", "gather", "birth"].includes(actId)) drum("crash", "orch", "................|................|x...............", 9, 9);
+  // Voices: the culture's war cry at the climax; people chatting while they gather.
+  if (actId === "battle") for (const l of lookup(WAR_CRIES, civ) || ['crowd@cry shout "HAA" "x-------........"']) L.push(`. ${l} ?song.9-10`);
+  if (actId === "gather") {
+    const pool = lookup(MURMUR, civ);
+    L.push(`. crowd@talk murmur${pool ? ` "${pool}"` : ""} voices=10 vol=0.7 ?song.3-8`);
+    if (["japanese", "yamato", "sengoku-daimyo"].includes(civ.id)) L.push('. crowd@hayashi chant "i-YA SA-SA" "x-x-x-x-........" voices=10 voice=mixed ?song.9-10'); // イヤサッサ
+  }
+  if (A.fire) L.push(". fire@spark 0.25 crackle=0.2 ?song.1-6", ". fire@blaze 0.8 crackle=0.7 ?song.7-10", ". fire@embers 0.2 crackle=0.08 ?song.11-12");
+  if (A.thunder) L.push(`. drums@thunder kit=sky "${"X".padEnd(32, ".")}|${".".repeat(32)}|${".".repeat(32)}" ?song.3-10`,
+    '. drums@lightning kit=sky "................|x.......x.......|................" ?song.7-10', ". rain@storm 0.5 drops=0.4 ?song.5-11");
   if (A.wind) { // the storm itself: wind throughout, rain that grows, thunder at the height
     L.unshift(". wind 0.5 gust=0.15Hz");
     L.push(". wind@gale 0.7 gust=0.3Hz ?song.7-10", ". rain@drizzle 0.3 drops=0.15 ?song.3-6", ". rain@downpour 0.7 drops=0.6 ?song.7-11",
@@ -305,7 +345,7 @@ function compose(civ, actId) {
     civ.note ? `# ${civ.note}` : null,
     `. clock ${bpm} 4/4`,
     `. arrange@song ${secs.join(" ")}`,
-    ...[...new Set([scale, A.climax === "bright" || A.climax === "dance" ? scaleOf("bright") : scale])].map((n) => `. scale@${n} ${formatScaleDef(SCALES[n])}`),
+    ...[...new Set([scale, A.climax === "bright" || A.climax === "dance" || A.open ? scaleOf("bright") : scale])].map((n) => `. scale@${n} ${formatScaleDef(SCALES[n])}`),
     "",
   ].filter((x) => x !== null);
   const text = [...head, ...L, "", `*> reverb ${A.bpm < 70 ? "3.5s wet=0.38" : "2.5s wet=0.3"}`, "> speaker 0.5", ""].join("\n");

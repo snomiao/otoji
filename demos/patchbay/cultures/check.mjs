@@ -6,7 +6,7 @@ const lit = (start) => { const i = src.indexOf(start) + start.length - 1; let d 
 const SCALES = { ...lit("const SCALES = {"), ...lit("Object.assign(SCALES, {") };
 const KITS = { ...lit("const KITS = {"), ...lit("Object.assign(KITS, {"), orch: ["gran", "side", "crash"] };
 const KINDS = ["piano", "bass", "strings", "pluck", "flute", "organ", "choir", "bell", "marimba", "brass", "timpani"];
-const ACTS = ["hunt", "battle", "gather", "ritual", "rain", "flood", "wind", "death"];
+const ACTS = ["hunt", "battle", "gather", "ritual", "rain", "flood", "wind", "fire", "thunder", "birth", "death"];
 const REGIONS = ["East Asia", "South & Southeast Asia", "Steppe & Central Asia", "Middle East", "Africa", "Ancient Mediterranean & Near East",
   "Western Europe", "Northern & Central Europe", "Eastern Europe & Byzantium", "Americas"];
 globalThis.window = globalThis; globalThis.CIVS = []; globalThis.CULTURE_SCALES = {};
