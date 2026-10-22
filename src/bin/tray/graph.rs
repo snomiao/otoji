@@ -803,7 +803,7 @@ pub fn rows(mic_authorized: bool) -> Vec<(String, Option<String>)> {
     let rendered = p.render_with_status(&statuses(mic_authorized));
     let mut ids = p.lines.iter().filter_map(|l| match l {
         Line::Node(n) => Some(Some(n.id.clone())),
-        Line::Comment(_) | Line::Invalid { .. } | Line::Separator => Some(None),
+        Line::Comment(_) | Line::Story(_) | Line::Invalid { .. } | Line::Separator => Some(None),
         Line::Blank => None,
     });
     rendered

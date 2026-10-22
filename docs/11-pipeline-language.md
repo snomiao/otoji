@@ -57,6 +57,9 @@ name, kind, id, port, policy, key := [A-Za-z0-9_-]+
 - **`#` before a node** turns it off; the line stays in the file (and keeps
   its alignment) so turning it back on is just removing the `#`.
   `#stt.final> polish …` is the polish node, off.
+- **Story blocks:** lines between two `"""` fences are free text, kept
+  verbatim and ignored by the graph, e.g. what a patch is about:
+  `"""` / `In 1421 the St Elizabeth's flood broke the dikes…` / `"""`.
 - **Arguments:** positional words, `key=value`, `"quoted strings"` (may
   contain `#`, `|`, `>`, spaces; `\"` escapes), and `@device` for placement.
 - **Variables** in arguments: `$date`, `${date}` (`YYYY-MM-DD`), `$time`

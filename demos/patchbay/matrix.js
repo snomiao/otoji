@@ -204,6 +204,18 @@ function shapeBar(mask, shape, from, to, rnd) {
   }
   let k = 0; return [...mask].map((c) => (c === "x" ? out[k++] : c));
 }
+// A story (cultures/stories/*.js) as a """ block, wrapped at ~76 columns.
+function storyBlock(text) {
+  if (!text) return [];
+  const out = [];
+  for (const para of text.trim().split(/\n\s*\n/)) {
+    if (out.length) out.push("");
+    let line = "";
+    for (const w of para.split(/\s+/)) { if (line && (line + " " + w).length > 76) { out.push(line); line = w; } else line = line ? line + " " + w : w; }
+    if (line) out.push(line);
+  }
+  return ['"""', ...out, '"""'];
+}
 function compose(civ, actId) {
   const fun = actId === "death" ? funeralOf(civ) : null;
   const A = { ...ACTIVITIES[actId], ...(fun ? FUNERALS[fun] : {}) }, R = A.roles || {};
@@ -343,6 +355,7 @@ function compose(civ, actId) {
     `# ${civ.zh} ${civ.name} × ${A.zh} ${A.en}${fun ? ` (${fun})` : ""} — ${A.about}`,
     `# ${scale} on ${key} · ${bpm} bpm · bar 1: ${lead.name} alone; each bar adds one layer: ${adds.map(label).join(", ")} · climax · ebb · it loops`,
     civ.note ? `# ${civ.note}` : null,
+    ...storyBlock(STORIES[`${civ.id}:${actId}`]),
     `. clock ${bpm} 4/4`,
     `. arrange@song ${secs.join(" ")}`,
     ...[...new Set([scale, A.climax === "bright" || A.climax === "dance" || A.open ? scaleOf("bright") : scale])].map((n) => `. scale@${n} ${formatScaleDef(SCALES[n])}`),

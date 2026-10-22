@@ -105,6 +105,9 @@ pub enum Line {
     Separator,
     /// Full-line comment, without the leading `#`.
     Comment(String),
+    /// A line of a story block: free text between lines of `"""`, kept
+    /// verbatim (the fences included) and ignored by the graph.
+    Story(String),
     Node(NodeLine),
     /// A line with an error. It is kept verbatim (the formatter never
     /// rewrites it) and left out of the graph; everything that doesn't
@@ -405,9 +408,19 @@ impl Pipeline {
     /// does any node fed by one), the rest forms a working partial graph.
     pub fn parse_lenient(src: &str) -> Pipeline {
         let mut lines = Vec::new();
+        let mut in_story = false;
         for (i, raw) in src.lines().enumerate() {
             let n = i + 1;
             let t = raw.trim();
+            if in_story || t.starts_with("\"\"\"") {
+                if t.starts_with("\"\"\"") {
+                    in_story = !(in_story || (t.len() > 3 && t.ends_with("\"\"\"")));
+                } else if t.ends_with("\"\"\"") {
+                    in_story = false;
+                }
+                lines.push(Line::Story(raw.trim_end().to_string()));
+                continue;
+            }
             let invalid = |e: ParseError| Line::Invalid {
                 raw: strip_status(raw.trim_end()).to_string(),
                 error: e.message,
@@ -792,6 +805,10 @@ impl Pipeline {
                 }
                 Line::Comment(c) => {
                     comments.push((format!("# {c}"), None));
+                    block.push(None);
+                }
+                Line::Story(t) => {
+                    comments.push((t.clone(), None));
                     block.push(None);
                 }
                 Line::Invalid { raw, error, .. } => {
@@ -1443,5 +1460,14 @@ stt.final> append@log $date.stt          # -
         assert_eq!(expand_vars("$date.stt", &vars), "2026-10-23.stt");
         assert_eq!(expand_vars("log-${date}x", &vars), "log-2026-10-23x");
         assert_eq!(expand_vars("$nope/$5", &vars), "$nope/$5");
+    }
+
+    #[test]
+    fn story_blocks_are_kept_and_ignored() {
+        let src = "\"\"\"\nThe flood came in the spring.\n. not a node\n\"\"\"\n. mic\n> stt\n";
+        let p = Pipeline::parse_lenient(src);
+        assert_eq!(p.nodes().count(), 2);
+        assert!(matches!(&p.lines[2], Line::Story(t) if t == ". not a node"));
+        assert!(p.format().contains("The flood came in the spring.\n. not a node\n\"\"\"\n"));
     }
 }

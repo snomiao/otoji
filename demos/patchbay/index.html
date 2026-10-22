@@ -342,12 +342,17 @@ ul.ideas { margin: 0; padding-left: 18px; display: grid; gap: 6px; font-size: 14
 </aside>
 </div>
 
-<script>var CIVS = [], CULTURE_SCALES = {};</script>
+<script>var CIVS = [], CULTURE_SCALES = {}, STORIES = {};</script>
 <script src="cultures/asia.js"></script>
 <script src="cultures/westasia-africa.js"></script>
 <script src="cultures/ancient-americas.js"></script>
 <script src="cultures/europe-west.js"></script>
 <script src="cultures/europe-northeast.js"></script>
+<script src="cultures/stories/asia.js"></script>
+<script src="cultures/stories/westasia-africa.js"></script>
+<script src="cultures/stories/ancient-americas.js"></script>
+<script src="cultures/stories/europe-west.js"></script>
+<script src="cultures/stories/europe-northeast.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.52.2/min/vs/loader.js"></script>
 <script>
 "use strict";
@@ -415,9 +420,17 @@ function parseNode(head, rest, enabled) {
   if (!ID.test(id) || !ID.test(kind)) throw new Error(`bad node \`${tok}\` (want kind or kind@name)`);
   return { type: "node", enabled, head, id, kind, named, args: tokens, comment: comment && !isStatusComment(comment) ? comment : null };
 }
+// A story block: prose between lines of """, ignored like a comment.
 function parsePatch(src) {
+  let inStory = false;
   const lines = src.split("\n").map((raw) => {
     const t = raw.trim();
+    if (t.startsWith('"""') || inStory) {
+      const fence = t.startsWith('"""') || t.endsWith('"""');
+      if (t.startsWith('"""')) inStory = !(inStory || (t.length > 3 && t.endsWith('"""')));
+      else if (t.endsWith('"""')) inStory = false;
+      return { type: "story", text: raw.trimEnd(), fence };
+    }
     const invalid = (e) => ({ type: "invalid", raw: stripStatus(raw), error: e.message, id: null });
     if (!t) return { type: "blank" };
     if (/^-{3,}$/.test(t)) return { type: "sep" }; // group separator, like a blank line
@@ -584,6 +597,7 @@ function formatPatch(p) {
     if (l.type === "blank") { flush(); out.push(""); continue; }
     if (l.type === "sep") { flush(); out.push("---"); continue; }
     if (l.type === "comment") { block.push({ text: ("# " + l.text).trimEnd() }); continue; }
+    if (l.type === "story") { block.push({ text: l.text }); continue; }
     if (l.type === "invalid") { block.push({ text: l.raw }); continue; }
     let head = l.head.kind === "prev" && !branching ? ">" : l.head.kind === "source" ? "." : l.head.kind === "all" ? "*>" : ins.get(l.id).map(refText).join(",") + ">";
     if (!l.enabled) head = "#" + head;
@@ -2571,6 +2585,7 @@ function explainAt(model, lineNo, col) {
   const code = (t) => `<code>${esc(t)}</code>`;
   if (!l || l.type === "blank") return null;
   if (l.type === "sep") return { title: "---", body: "Group separator, like a blank line: <code>*&gt;</code> takes inputs from its own group.", help: "syntax:all" };
+  if (l.type === "story") return { title: '"""  story', body: "A story block: free text between lines of <code>\"\"\"</code>, ignored by the patch. Here it tells what this music is about.", help: "syntax:story" };
   if (l.type === "comment") return { title: "# comment", body: "A comment: ignored. <code>#</code> directly before a node line turns that node off instead.", help: "syntax:off" };
   if (l.type === "invalid") return { title: "This line has an error", body: esc(l.error) + ". The rest of the patch keeps playing." };
   // Head: `#`, `.`, `>`, `*>`, `refs>`
@@ -2764,7 +2779,9 @@ function monacoUI(monaco) {
   const isDark = () => matchMedia("(prefers-color-scheme: dark)").matches && document.documentElement.dataset.theme !== "light" || document.documentElement.dataset.theme === "dark";
   monaco.languages.register({ id: "otoji" });
   monaco.languages.setMonarchTokensProvider("otoji", {
-    tokenizer: { root: [
+    tokenizer: { story: [[/^.*"""\s*$/, "comment.doc", "@pop"], [/.*$/, "comment.doc"]], root: [
+      [/^\s*""".*"""\s*$/, "comment.doc"],
+      [/^\s*""".*$/, "comment.doc", "@story"],
       [/^\s*#(?=\s*(\.|\||[\w.,:\- ]*>)).*$/, "disabled"],
       [/^\s*#.*$/, "comment"],
       [/^(\s*)(\.)(\s+)([\w-]+(?:[=@][\w-]+)?)/, ["", "keyword", "", "function"]],
@@ -2996,7 +3013,7 @@ document.getElementById("explain").addEventListener("click", (e) => {
   const b = e.target.closest("button[data-fork]"); if (!b) return;
   const lines = ui.getText().replace(/\n$/, "").split("\n"), p = parsePatch(lines.join("\n"));
   let at = 0;
-  p.lines.forEach((l, i) => { if (l.type === "comment" || (l.type === "node" && ["clock", "arrange", "scale"].includes(l.kind))) { if (i === at) at = i + 1; } });
+  p.lines.forEach((l, i) => { if (l.type === "comment" || l.type === "story" || (l.type === "node" && ["clock", "arrange", "scale"].includes(l.kind))) { if (i === at) at = i + 1; } });
   lines.splice(at, 0, b.dataset.fork);
   const t = lines.join("\n") + "\n"; ui.setText(t); applyText(t);
 });
