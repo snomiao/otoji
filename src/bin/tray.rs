@@ -940,8 +940,19 @@ mod tray_macos {
 
         // The tray starts `otoji listen` without --ptt-polish / --ptt-translate-to,
         // so neither stage runs yet; show that rather than the unused config.
-        vec![
-            format!("1. 🎤 Mic: {}", truncate(&mic, 48)),
+        // Stage 1 = audio sources, captured in parallel. Only the mic exists
+        // today; PC audio (1b) would join here. One source → plain "1.".
+        let sources = [format!("🎤 Mic: {}", truncate(&mic, 48))];
+        let mut rows: Vec<String> = if sources.len() == 1 {
+            vec![format!("1. {}", sources[0])]
+        } else {
+            sources
+                .iter()
+                .zip('a'..)
+                .map(|(src, letter)| format!("1{letter}. {src}"))
+                .collect()
+        };
+        rows.extend([
             format!(
                 "2. 🧠 STT: {}{} · pseudo-streaming",
                 truncate(short, 44),
@@ -950,7 +961,8 @@ mod tray_macos {
             // Numbers = sequential stages, letters = parallel branches.
             "3a. ✨ Polish: off".to_string(),
             "3b. 🌐 Translate: off".to_string(),
-        ]
+        ]);
+        rows
     }
 
     unsafe fn rebuild_menu() {
