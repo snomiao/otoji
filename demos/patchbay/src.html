@@ -625,7 +625,7 @@ function hz(v, def) { // "800", "800Hz", "2k", "0.5Hz"
 }
 const KINDS = {
   // Input only: never routed to an output, so your voice is never played back.
-  mic: { source: true, control: true, build: () => ({}) },
+  mic: { source: true, control: true, build: (o) => ({ device: o.device || "default" }) },
   // Energy VAD: fires an onset when speech starts after a pause.
   vad: {
     control: true,
@@ -702,7 +702,8 @@ const CATALOG = {
   clock: { doc: "Tempo source. Music nodes take the first clock automatically.", args: [
     ["bpm", "92", "beats per minute", null, { re: NUM }],
     ["sig", "4", "beats per bar (shorthand 3/4)", null, { re: /^\d+\/4$/, to: (v) => v.split("/")[0] }]] },
-  mic: { doc: "Microphone (asks on Start). Input only: feed it to a vad.", args: [] },
+  mic: { doc: "Microphone (asks on Start). Input only: feed it to a vad or learn. Pick a device by number, name, wildcard or alias.", args: [
+    ["device", "default", "default · system (loopback audio) · tab (another tab's audio) · 2 (the 2nd input) · \"USB\" or \"*USB*\" (first match)", ["default", "system", "tab"], { re: /^(default|system|tab|\d+|".*")$/ }]] },
   metro: { doc: "节拍器: click on every beat, accent on beat 1.", args: [["tone", "1000", "click pitch in Hz", null, { re: NUM }]] },
   drums: {
     doc: "16-step drum machine (kick|snare|hat). With ^vad it plays one hit per speech onset.",
@@ -737,10 +738,10 @@ const CATALOG = {
   fadeout: { doc: "Fade out after a while (alias of env after= release=).", args: [["len", "2bars", "how long the fade takes", null, { re: /^\d+(\.\d+)?(ms|s|beats?|bars?)$/ }], ["after", "8bars", "when it starts"]] },
   speaker: { doc: "Output. Only what reaches a speaker is heard.", args: [["volume", "0.5", "0–1", null, { re: /^(0|1|0?\.\d+)$/ }]] },
   "midi-in": { doc: "MIDI keyboard / controller (asks on Start). Feed it to an instrument or drums to play them live: `midi-in> piano`. Drums map GM notes: 36 kick, 38 snare, 42 hat (lanes 1–3 of the kit).", args: [
-    ["device", '"Keystation"', "part of the input's name (any device if left out)", [], { re: /^"[^"]*"$/ }],
+    ["device", '"Keystation"', "part of the input's name or a wildcard like \"*Key*\" (first match), or device=2 for the 2nd input; every input if left out", [], { re: /^"[^"]*"$/ }],
     ["channel", "1", "1–16 (every channel if left out)", Array.from({ length: 16 }, (_, i) => String(i + 1)), { re: /^([1-9]|1[0-6])$/ }]] },
   "midi-out": { doc: "Sends the notes of instruments, drums or midi-in to a MIDI device, on time: `piano> midi-out`. Drums go to channel 10 unless channel= is set.", args: [
-    ["device", '"IAC"', "part of the output's name (the first output if left out)", [], { re: /^"[^"]*"$/ }],
+    ["device", '"IAC"', "part of the output's name or a wildcard like \"*IAC*\" (first match), or device=2; the first output if left out", [], { re: /^"[^"]*"$/ }],
     ["channel", "1", "1–16 (default 1; drums 10)", Array.from({ length: 16 }, (_, i) => String(i + 1)), { re: /^([1-9]|1[0-6])$/ }]] },
 };
 const SOURCE_KINDS = ["clock", "mic", "midi-in", "arrange", "metro", "drums", "piano", "bass", "strings", "pluck", "flute", "organ", "choir", "bell", "marimba", "rain"];
@@ -1308,13 +1309,65 @@ function playStep(r, c, step, t) {
 
 // ── mic + vad ─────────────────────────────────────────────────────────
 let mic = { stream: null, analyser: null, buf: null, pending: false, error: null, level: 0, history: [] };
+// Which input the mic node uses: default · system (a loopback device) · tab
+// (another tab's audio) · N (the Nth input, 1-based) · a name: part of the
+// device's label, or a wildcard like "*USB*" — the first match wins.
+// Device names: part of the name, or a wildcard ("*USB*", "Key?tation*"),
+// case-insensitive. Every device-picking node takes the first match.
+function nameMatches(spec, name) {
+  if (!spec) return true;
+  name = name || "";
+  if (/[*?]/.test(spec)) return new RegExp("^" + spec.replace(/[.+^${}()|[\]\\]/g, "\\$&").replace(/\*/g, ".*").replace(/\?/g, ".") + "$", "i").test(name);
+  return name.toLowerCase().includes(spec.toLowerCase());
+}
+const LOOPBACK = /blackhole|loopback|soundflower|vb-?cable|vb cable|stereo mix|monitor of/i;
+function micMatch(spec, list) {
+  if (!spec || spec === "default") return { id: undefined };
+  if (/^\d+$/.test(spec)) {
+    const d = list[Number(spec) - 1];
+    return d ? { id: d.deviceId, label: d.label } : { error: `there is no input ${spec} (${list.length} input${list.length === 1 ? "" : "s"})` };
+  }
+  if (spec === "system") {
+    const d = list.find((x) => LOOPBACK.test(x.label));
+    return d ? { id: d.deviceId, label: d.label, raw: true } : { error: "no loopback device: install BlackHole (macOS) or enable Stereo Mix (Windows), or use `mic tab`" };
+  }
+  const d = list.find((x) => nameMatches(spec, x.label));
+  return d ? { id: d.deviceId, label: d.label } : { error: `no input matching "${spec}" (have: ${list.map((x) => x.label || "unnamed").join(", ") || "none"})` };
+}
+async function audioInputs() {
+  try { return (await navigator.mediaDevices.enumerateDevices()).filter((d) => d.kind === "audioinput" && d.deviceId !== "default" && d.deviceId !== "communications"); }
+  catch (e) { return []; }
+}
 async function ensureMic() {
-  const want = nodes(patch).some((n) => n.kind === "mic" && n.enabled);
-  if (!want || mic.stream || mic.pending || !ctx) return;
+  const node = nodes(patch).find((n) => n.kind === "mic" && n.enabled);
+  const want = node ? (live.get(node.id)?.cfg?.device || "default") : null;
+  // A different device asked for → reopen.
+  if (mic.stream && want && mic.want !== want) releaseMic();
+  if (mic.error && want && mic.want !== want) mic.error = null; // retry with the new choice
+  if (!want || mic.stream || mic.pending || !ctx || mic.error) return;
   mic.pending = true; mic.error = null;
   try {
-    // Echo cancellation keeps the drums coming out of the speakers from retriggering.
-    const stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: false } });
+    let stream;
+    if (want === "tab") {
+      // Another tab's (or, where the OS allows, the system's) audio, picked in Chrome's share dialog.
+      stream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: { echoCancellation: false, noiseSuppression: false } });
+      stream.getVideoTracks().forEach((t) => t.stop());
+      if (!stream.getAudioTracks().length) throw Object.assign(new Error("the shared tab has no audio: tick “Share tab audio”"), { name: "NoTabAudio" });
+    } else {
+      let list = await audioInputs();
+      // Device names are hidden until the mic is allowed once: ask, then look again.
+      if (want !== "default" && !list.some((d) => d.label)) {
+        (await navigator.mediaDevices.getUserMedia({ audio: true })).getTracks().forEach((t) => t.stop());
+        list = await audioInputs();
+      }
+      const pick = micMatch(want, list);
+      if (pick.error) throw Object.assign(new Error(pick.error), { name: "NoDevice" });
+      // Echo cancellation keeps the drums coming out of the speakers from
+      // retriggering; loopback audio stays raw.
+      stream = await navigator.mediaDevices.getUserMedia({ audio: {
+        ...(pick.id ? { deviceId: { exact: pick.id } } : {}),
+        echoCancellation: !pick.raw, noiseSuppression: !pick.raw, autoGainControl: false } });
+    }
     if (!running) { stream.getTracks().forEach((t) => t.stop()); return; }
     const an = ctx.createAnalyser(); an.fftSize = 1024;
     // Analysis only. Chrome processes a node only if it leads to the output,
@@ -1322,9 +1375,12 @@ async function ensureMic() {
     const silent = ctx.createGain(); silent.gain.value = 0;
     const source = ctx.createMediaStreamSource(stream);
     source.connect(an); an.connect(silent).connect(ctx.destination);
-    mic = { ...mic, stream, source, analyser: an, buf: new Float32Array(an.fftSize) };
+    const label = (stream.getAudioTracks()[0] || {}).label || "";
+    mic = { ...mic, stream, source, analyser: an, buf: new Float32Array(an.fftSize), want, label };
   } catch (e) {
-    mic.error = e && e.name === "NotAllowedError" ? "microphone blocked: allow it in the address bar, then Start again" : `microphone unavailable (${e && e.name || e})`;
+    mic.error = e && e.name === "NotAllowedError" ? "microphone blocked: allow it in the address bar, then Start again"
+      : e && (e.name === "NoDevice" || e.name === "NoTabAudio") ? e.message : `microphone unavailable (${e && e.name || e})`;
+    mic.want = want;
   } finally { mic.pending = false; }
 }
 // ── MIDI: midi-in plays instruments live, midi-out sends notes out ──────
@@ -1346,9 +1402,18 @@ async function ensureMidi() {
     midi.error = e && (e.name === "SecurityError" || e.name === "NotAllowedError") ? "MIDI blocked: allow it in the address bar, then Start again" : `MIDI unavailable (${e && e.name || e})`;
   } finally { midi.pending = false; }
 }
-const nameHas = (port, dev) => !dev || (port.name || "").toLowerCase().includes(dev.toLowerCase());
-const midiInputs = (r) => midi.access ? [...midi.access.inputs.values()].filter((p) => nameHas(p, r.cfg.device)) : [];
-const midiOutput = (r) => midi.access ? [...midi.access.outputs.values()].find((p) => nameHas(p, r.cfg.device)) || null : null;
+// device: a name / wildcard (first match), N (the Nth port, 1-based), or
+// nothing (midi-in: every input; midi-out: the first output).
+function midiPick(ports, dev) {
+  const list = [...ports.values()];
+  if (!dev) return list;
+  if (/^\d+$/.test(dev)) return list[Number(dev) - 1] ? [list[Number(dev) - 1]] : [];
+  const m = list.find((p) => nameMatches(dev, p.name));
+  return m ? [m] : [];
+}
+const midiInputs = (r) => midi.access ? midiPick(midi.access.inputs, r.cfg.device) : [];
+const midiOutput = (r) => midi.access ? midiPick(midi.access.outputs, r.cfg.device)[0] || null : null;
+const nameHas = (port, dev) => !dev || midiPick(midi.access ? midi.access.inputs : new Map(), dev).includes(port);
 function onMidiMessage(inp, e) {
   const d = e.data;
   if (!running || !ctx || !d || d.length < 2) return;
@@ -1824,6 +1889,7 @@ function upstreamSounding(id, eff, t, seen = new Set()) {
   if (seen.has(id)) return false; seen.add(id);
   return (eff.get(id) || []).some((x) => { const s = live.get(x.node); return s && s.node.enabled && (soundingAt(s, t) || upstreamSounding(x.node, eff, t, seen)); });
 }
+const truncLabel = (t) => (t.length > 28 ? t.slice(0, 27) + "…" : t);
 function micSpark() {
   mic.history.push(mic.level); if (mic.history.length > 10) mic.history.shift();
   return mic.history.map((v) => "▁▂▃▅▆▇"[Math.min(5, Math.floor(Math.sqrt(v / 0.15) * 6))]).join("");
@@ -1858,7 +1924,7 @@ function nodeStatusInner(r, eff) {
     if (!running) return ["?", "press Start (asks for the microphone)"];
     if (mic.error) return ["!", mic.error];
     if (!mic.stream) return [".", "asking for the microphone"];
-    return ["~", `${micSpark()} · level ${mic.level.toFixed(3)}`];
+    return ["~", `${micSpark()} · ${mic.label ? truncLabel(mic.label) + " · " : ""}level ${mic.level.toFixed(3)}`];
   }
   if (k === "vad") {
     const thr = `threshold ${r.cfg.threshold}`;
@@ -2389,6 +2455,11 @@ function monacoUI(monaco) {
   monaco.languages.registerCompletionItemProvider("otoji", {
     triggerCharacters: [".", " ", ">", ",", "="],
     provideCompletionItems(m, pos) {
+      try { return completeAt(m, pos); } catch (err) { console.error("otoji completion:", err); return { suggestions: [] }; }
+    },
+  });
+  function completeAt(m, pos) {
+    {
       const before = m.getLineContent(pos.lineNumber).slice(0, pos.column - 1);
       const word = m.getWordUntilPosition(pos);
       const range = new monaco.Range(pos.lineNumber, word.startColumn, pos.lineNumber, word.endColumn);
@@ -2418,30 +2489,52 @@ function monacoUI(monaco) {
       // After the node: its options, then values.
       const head = /^\s*#?(?:\.|\|?[^>#"]*>)\s*(?:([\w-]+)=)?([\w-]+)\s+(.*)$/.exec(before);
       if (head && CATALOG[head[2]]) {
-        const spec = CATALOG[head[2]], used = new Set([...head[3].matchAll(/([\w-]+)=/g)].map((x) => x[1]));
+        const self = (/^\s*#?(?:\.|\|?[^>#"]*>)\s*([\w-]+)=/.exec(before) || [])[1] || head[2];
+        const entry = CATALOG[head[2]], spec = entry.args, used = new Set([...head[3].matchAll(/([\w-]+)=/g)].map((x) => x[1]));
         const kv = /([\w-]+)=([^\s"]*)$/.exec(before);
         if (kv) {
-          const a = spec.args.find((x) => x[0] === kv[1]);
+          const a = spec.find((x) => x[0] === kv[1]);
           const vals = a ? (a[3] || [a[1]]) : [];
           return { suggestions: vals.map((v) => ({ label: v, kind: K.Value, detail: a[2], range, insertText: v })) };
         }
         const ctlItems = /[\^?!]$/.test(before) ? [] : [["^", "on: one hit per onset"], ["?", "while: only while it's active"], ["!", "unless: off while it's active"]]
-          .flatMap(([sym, what]) => nodes(p).filter((m) => m.kind === "vad" || sym !== "^").map((m) => ({
-            label: `${sym}${m.id}`, kind: K.Event, detail: `${what} (${m.kind})`, range, insertText: `${sym}${m.id}`,
-          })));
+          .flatMap(([sym, what]) => nodes(p)
+            // Only nodes that can control: a vad (any), an arrange's sections (? / !), sounding nodes (? / !).
+            .filter((m) => m.id !== self && m.kind !== "clock" && (sym === "^" ? m.kind === "vad" : true))
+            .flatMap((m) => {
+              if (m.kind === "arrange") {
+                let secs = []; try { secs = arrangeSections(m.args).sections; } catch (e) { /* none */ }
+                return secs.map((x, i) => ({ label: `${sym}${m.id}.${i + 1}`, kind: K.Event, detail: `${sym === "?" ? "plays in" : "rests in"} §${i + 1} ${x.name}`, range, insertText: `${sym}${m.id}.${i + 1}`, sortText: `8${sym}${m.id}${String(i).padStart(2, "0")}` }));
+              }
+              return [{ label: `${sym}${m.id}`, kind: K.Event, detail: `${what} (${m.kind})`, range, insertText: `${sym}${m.id}`, sortText: `9${sym}${m.id}` }];
+            }));
         const shortItems = spec.filter((a) => a[3] && !used.has(a[0])).flatMap((a) => a[3].filter((v) => a[4] && a[4].re.test(v)).map((v) => ({
-          label: v, kind: K.Value, detail: `${a[0]}=${v} (shorthand)`, range, insertText: v,
+          label: v, kind: K.Value, detail: `${a[0]}=${v} (shorthand)`, range, insertText: v, sortText: `2${v}`,
         })));
-        return { suggestions: shortItems.concat(ctlItems, spec.filter((a) => !used.has(a[0])).map((a) => ({
+        // Real devices: inputs for mic (names appear once the mic was allowed), MIDI ports.
+        const devItems = async () => {
+          if (used.has("device")) return [];
+          let names = [];
+          if (head[2] === "mic") names = (await audioInputs()).map((d, i) => d.label || `Microphone ${i + 1}`);
+          else if (head[2] === "midi-in" && midi.access) names = [...midi.access.inputs.values()].map((d) => d.name);
+          else if (head[2] === "midi-out" && midi.access) names = [...midi.access.outputs.values()].map((d) => d.name);
+          else return [];
+          return names.flatMap((n, i) => [
+            { label: `"${n}"`, kind: K.Reference, detail: `device ${i + 1}`, range, insertText: `"${n}"`, sortText: `0${i}` },
+            ...(head[2] === "mic" ? [{ label: String(i + 1), kind: K.Reference, detail: n, range, insertText: String(i + 1), sortText: `1${i}` }] : []),
+          ]);
+        };
+        const rest = shortItems.concat(ctlItems, spec.filter((a) => !used.has(a[0])).map((a) => ({
           label: `${a[0]}=`, kind: K.Property, detail: a[2], range,
           insertText: `${a[0]}=\${1:${a[1].replace(/[$}\\]/g, "\\$&")}}`,
           insertTextRules: monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet,
           command: a[3] ? { id: "editor.action.triggerSuggest", title: "values" } : undefined,
-        }))) };
+        })));
+        return devItems().then((d) => ({ suggestions: d.concat(rest) }), () => ({ suggestions: rest }));
       }
       return { suggestions: [] };
-    },
-  });
+    }
+  }
 
   editor.addCommand(monaco.KeyMod.Alt | monaco.KeyCode.KeyT, () => toggleLines(selLines()));
   editor.addCommand(monaco.KeyMod.Alt | monaco.KeyCode.KeyE, () => {
