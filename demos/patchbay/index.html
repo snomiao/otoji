@@ -171,6 +171,8 @@ ul.ideas { margin: 0; padding-left: 18px; display: grid; gap: 6px; font-size: 14
           <option value="poly">Two tempos, 3 against 2</option>
           <option value="dub">Dub chords with delay</option>
           <option value="speech">Speech drums: talk to play the kick</option>
+          <option value="learn">Learn a beat: beatbox into drums</option>
+          <option value="hum">Learn a tune: hum into piano</option>
         </select>
         <button class="btn" id="fmtBtn" title="Align columns and tidy inputs">Format</button>
       </div>
@@ -211,8 +213,9 @@ ul.ideas { margin: 0; padding-left: 18px; display: grid; gap: 6px; font-size: 14
         <tr><td><code>metro</code></td><td>节拍器, accent on beat 1 · <code>tone=1000</code></td></tr>
         <tr><td><code>drums</code></td><td><code>pattern="kick|snare|hat"</code>, 16 steps, <code>x</code> hit, <code>X</code> accent · with <code>^vad</code>: <code>kick|snare|hat</code>, <code>1/16|1/8|1/4|off</code></td></tr>
         <tr><td><code>mic</code></td><td>asks for the microphone on Start; input only, never played back</td></tr>
+        <tr><td><code>learn</code></td><td><code>mic&gt; learn beat 4beats|2bars|section</code> · records from the next beat or bar, rewrites a drums (beatbox) or piano (hum) line, then turns itself off</td></tr>
         <tr><td><code>vad</code></td><td><code>threshold=0.02 silence=300ms holdoff=250ms</code> · other nodes react with <code>^vad ?vad !vad</code></td></tr>
-        <tr><td><code>piano</code></td><td><code>chords="Am F C G"</code> one per bar · <code>style=arp|block</code> <code>oct=4</code></td></tr>
+        <tr><td><code>piano</code></td><td><code>chords="Am F C G"</code> one per bar · <code>style=arp|block</code> <code>oct=4</code> · or a melody <code>notes="E4 . . G4"</code></td></tr>
         <tr><td><code>bass</code></td><td><code>chords="…"</code> roots on beats 1 and 3</td></tr>
         <tr><td><code>mix</code></td><td>sums its inputs</td></tr>
         <tr><td><code>delay</code></td><td><code>time=3/16 feedback=0.35 mix=0.3</code>, tempo-synced</td></tr>
@@ -251,7 +254,7 @@ ul.ideas { margin: 0; padding-left: 18px; display: grid; gap: 6px; font-size: 14
 "use strict";
 // <parser> — the otoji pipeline language (mirrors src/pipeline.rs)
 const ID = /^[A-Za-z0-9_-]+$/;
-const ENV_NEEDS = { metro: ["clock"], drums: ["clock"], piano: ["clock"], bass: ["clock"], delay: ["clock"] };
+const ENV_NEEDS = { metro: ["clock"], drums: ["clock"], piano: ["clock"], bass: ["clock"], delay: ["clock"], learn: ["clock"] };
 const STATUS_SYMS = ["~", "-", "/", ".", "!", "?"];
 
 function isStatusComment(c) {
@@ -457,6 +460,11 @@ function parseChord(s) {
   const root = (NOTE[m[1]] + (m[2] === "#" ? 1 : m[2] === "b" ? -1 : 0) + 12) % 12;
   return { name: s, root, ivs: QUAL[m[3] || ""] };
 }
+function noteMidi(t) {
+  const m = /^([A-G])([#b]?)(\d)$/.exec(t);
+  return m ? 12 * (Number(m[3]) + 1) + NOTE[m[1]] + (m[2] === "#" ? 1 : m[2] === "b" ? -1 : 0) : null;
+}
+const midiName = (n) => NAMES[((n % 12) + 12) % 12] + (Math.floor(n / 12) - 1);
 const midiHz = (n) => 440 * Math.pow(2, (n - 69) / 12);
 const NAMES = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
 const unquote = (v) => v.replace(/^"(.*)"$/, "$1");
@@ -521,7 +529,26 @@ const KINDS = {
   },
   piano: {
     source: true,
-    build: (o) => ({ chords: (o.chords || "Am F C G").split(/\s+/).map(parseChord), style: o.style === "block" ? "block" : "arp", oct: num(o, "oct", 4, 2, 6) }),
+    build: (o) => ({
+      chords: (o.chords || "Am F C G").split(/\s+/).map(parseChord), style: o.style === "block" ? "block" : "arp", oct: num(o, "oct", 4, 2, 6),
+      // notes= is a melody, one token per 16th: a note (E4, C#5) or "." to hold/rest.
+      notes: o.notes ? o.notes.split(/\s+/).map((t) => { if (t !== "." && noteMidi(t) === null) throw new Error(`bad note \`${t}\` (try E4, C#5 or .)`); return t; }) : null,
+    }),
+  },
+  // Records N bars of the mic from the next bar, then rewrites a drums
+  // (rhythm + timbre) or piano (pitch + rhythm) line, and turns itself off.
+  learn: {
+    control: true,
+    build: (o) => {
+      if (!o.to) throw new Error("name the node to rewrite: `mic> learn beat 1bar`");
+      // len: 4beats, 1bar, 2bars, or section (= 4 bars).
+      const len = o.len || (o.bars ? `${o.bars}bars` : "1bar");
+      const m = /^(\d+)(beats?|bars?)$/.exec(len);
+      if (len !== "section" && !m) throw new Error("len= is like 4beats, 2bars or section");
+      const count = len === "section" ? 4 : Number(m[1]), unit = len === "section" || m[2].startsWith("bar") ? "bar" : "beat";
+      if (count < 1 || count > (unit === "bar" ? 8 : 32)) throw new Error("len= is 1–32 beats or 1–8 bars");
+      return { to: o.to, count, unit, label: len === "section" ? "a section (4 bars)" : `${count} ${unit}${count > 1 ? "s" : ""}` };
+    },
   },
   bass: { source: true, build: (o) => ({ chords: (o.chords || "Am F C G").split(/\s+/).map(parseChord) }) },
   mix: { build: () => ({}) },
@@ -546,8 +573,9 @@ const CATALOG = {
       ["hit", "kick", "with ^vad: which drum", ["kick", "snare", "hat"], { re: /^(kick|snare|hat)$/ }],
       ["quantize", "16", "with ^vad: snap to 1/16, 1/8, 1/4 or off", ["16", "8", "4", "off"], { re: /^(off|1\/(4|8|16))$/, to: (v) => v === "off" ? v : v.split("/")[1] }]],
   },
-  piano: { doc: "Chords, one per bar, as an arpeggio or block chords.", args: [
-    ["chords", '"Am F C G"', "chord per bar", null, { re: /^".*"$/ }],
+  piano: { doc: "Chords per bar (arpeggio or block), or a melody with notes=.", args: [
+    ["chords", '"Am F C G"', "chord per bar", null, { re: /^"([A-G][#b]?(maj7|m7|m|7|dim|sus2|sus4)?\s*)+"$/ }],
+    ["notes", '"E4 . . G4 A4 . . ."', "melody: a note or . per 16th (learn writes this)", null, { re: /^"(([A-G][#b]?\d|\.)\s*)+"$/ }],
     ["style", "arp", "arp or block", ["arp", "block"], { re: /^(arp|block)$/ }],
     ["oct", "4", "octave", null, { re: /^[2-6]$/ }]] },
   bass: { doc: "Chord roots on beats 1 and 3.", args: [["chords", '"Am F C G"', "chord per bar", null, { re: /^".*"$/ }]] },
@@ -555,6 +583,9 @@ const CATALOG = {
     ["threshold", "0.02", "energy that counts as speech", null, { re: /^0?\.\d+$/ }],
     ["silence", "300ms", "pause that ends speech", null, { re: /^\d+(\.\d+)?(ms|s)$/ }],
     ["holdoff", "250ms", "minimum gap between onsets"]] },
+  learn: { doc: "Records your voice for N bars from the next bar, then rewrites a drums line (beatbox: boom=kick, ka=snare, ts=hat) or a piano line (hum a tune), and turns itself off.", args: [
+    ["len", "1bar", "how long to record: 4beats, 1bar, 2bars or section (4 bars)", ["4beats", "1bar", "2bars", "section"], { re: /^(\d+(beats?|bars?)|section)$/ }],
+    ["to", "beat", "the drums or piano node to rewrite", null, { re: /^[A-Za-z_][\w-]*$/ }]] },
   mix: { doc: "Sums its inputs.", args: [] },
   delay: { doc: "Tempo-synced echo.", args: [["time", "3/16", "note length", null, { re: /^\d+\/\d+$/ }], ["feedback", "0.35", "0–0.9"], ["mix", "0.3", "wet level"]] },
   reverb: { doc: "Room reverb.", args: [["size", "2", "seconds (shorthand 2s)", null, { re: /^\d+(\.\d+)?s$/, to: (v) => v.slice(0, -1) }], ["mix", "0.25", "wet level"]] },
@@ -565,7 +596,7 @@ const AUDIO_KINDS = ["metro", "drums", "piano", "bass", "mix", "delay", "reverb"
 // Kinds that make sense after `refs>`, given the kinds of the refs.
 function consumersFor(inKinds) {
   if (!inKinds.length) return Object.keys(CATALOG).filter((k) => !SOURCE_KINDS.includes(k) || k === "drums");
-  if (inKinds.every((k) => k === "mic")) return ["vad"];
+  if (inKinds.every((k) => k === "mic")) return ["vad", "learn"];
   if (inKinds.every((k) => k === "vad")) return ["drums"];
   if (inKinds.every((k) => k === "clock")) return ["metro", "drums", "piano", "bass", "delay"];
   if (inKinds.every((k) => AUDIO_KINDS.includes(k))) return ["mix", "delay", "reverb", "speaker"];
@@ -599,7 +630,9 @@ function rebuild() {
     if (!spec) r.error = `unknown kind \`${n.kind}\` (try clock, metro, drums, piano, bass, mix, delay, reverb, speaker)`;
     else try { r.cfg = spec.build(argMap(n.kind, n.args)); } catch (e) { r.error = e.message; }
     const inKinds = r.error ? [] : eff.get(n.id).filter((x) => !x.implicit).map((x) => kindOfId(x.node));
-    if (!r.error && inKinds.includes("mic") && n.kind !== "vad") r.error = "mic is input only: feed it to a vad (mic> vad)";
+    if (!r.error && inKinds.includes("mic") && n.kind !== "vad" && n.kind !== "learn") r.error = "mic is input only: feed it to a vad or learn (mic> vad)";
+    else if (!r.error && n.kind === "learn" && !inKinds.includes("mic")) r.error = "needs a mic: write `mic> learn beat 1bar`";
+    else if (!r.error && n.kind === "learn" && !["drums", "piano"].includes(kindOfId(r.cfg.to))) r.error = kindOfId(r.cfg.to) ? `can rewrite drums or piano, not ${kindOfId(r.cfg.to)}` : `unknown node \`${r.cfg.to}\` to rewrite`;
     else if (!r.error && n.kind === "vad" && !inKinds.length) r.error = "needs a mic: write `mic> vad`";
     else if (!r.error && n.kind === "vad" && inKinds.some((k) => k !== "mic")) r.error = "vad listens to a mic only";
     else if (!r.error && inKinds.includes("vad")) r.error = `vad controls nodes instead of feeding them: write \`. ${n.kind} ^vad\``;
@@ -690,17 +723,24 @@ function playStep(r, c, step, t) {
     mark(r, t, 0.12); r.detail = `beat ${beat + 1}/${c.sig}`;
   }
   if (k === "drums" && !r.trigger) {
-    const i = step % 16; let hit = false;
+    const len = Math.max(...cfg.lanes.map((l) => l.length)), i = step % len; let hit = false;
     cfg.lanes.forEach((lane, li) => {
-      const ch = lane[i % lane.length];
+      const ch = lane[step % lane.length];
       if (ch !== ".") { drumHit(out, LANES[li], t, ch === "X"); hit = true; }
     });
     if (hit) mark(r, t, 0.1);
-    r.detail = `step ${String(i + 1).padStart(2)}/16`;
+    r.detail = `step ${String(i + 1).padStart(2)}/${len}`;
   }
   if (k === "piano" || k === "bass") {
     const ch = cfg.chords[bar % cfg.chords.length];
-    if (k === "piano") {
+    if (k === "piano" && cfg.notes) {
+      const i = step % cfg.notes.length, tok = cfg.notes[i];
+      if (tok !== ".") {
+        let hold = 1; while (hold < 8 && cfg.notes[(i + hold) % cfg.notes.length] === ".") hold++;
+        voice(out, t, { type: "triangle", freq: midiHz(noteMidi(tok)), dur: stepDur * hold * 0.95, peak: 0.18, attack: 0.008 });
+        mark(r, t, stepDur * hold); r.detail = `note ${tok}`;
+      }
+    } else if (k === "piano") {
       const base = 12 * (cfg.oct + 1) + ch.root;
       if (cfg.style === "block" && step % (4 * c.sig) === 0) {
         for (const iv of ch.ivs) voice(out, t, { type: "triangle", freq: midiHz(base + iv), dur: stepDur * 4 * c.sig * 0.95, peak: 0.12, attack: 0.01 });
@@ -733,14 +773,134 @@ async function ensureMic() {
     // Analysis only. Chrome processes a node only if it leads to the output,
     // so the analyser feeds a zero-gain node: the graph runs, nothing is heard.
     const silent = ctx.createGain(); silent.gain.value = 0;
-    ctx.createMediaStreamSource(stream).connect(an); an.connect(silent).connect(ctx.destination);
-    mic = { ...mic, stream, analyser: an, buf: new Float32Array(an.fftSize) };
+    const source = ctx.createMediaStreamSource(stream);
+    source.connect(an); an.connect(silent).connect(ctx.destination);
+    mic = { ...mic, stream, source, analyser: an, buf: new Float32Array(an.fftSize) };
   } catch (e) {
     mic.error = e && e.name === "NotAllowedError" ? "microphone blocked: allow it in the address bar, then Start again" : `microphone unavailable (${e && e.name || e})`;
   } finally { mic.pending = false; }
 }
+// ── learn: record → analyse → rewrite a line ────────────────────────────
+const learnState = new Map(); // learn node id → { phase, start, end, stepDur, steps }
+const learnNote = new Map();  // learn node id → what it last wrote (survives rebuilds)
+let capture = { proc: null, chunks: [], active: false };
+function ensureCapture() {
+  if (capture.proc || !mic.source) return;
+  // Raw samples while recording; feeds a zero-gain node so it runs silently.
+  const p = ctx.createScriptProcessor(2048, 1, 1), g = ctx.createGain(); g.gain.value = 0;
+  mic.source.connect(p); p.connect(g).connect(ctx.destination);
+  p.onaudioprocess = (e) => {
+    if (!capture.active) return;
+    // playbackTime is when this block plays out; the input was captured ~2 blocks earlier.
+    capture.chunks.push({ t: e.playbackTime - (2 * 2048) / ctx.sampleRate, d: new Float32Array(e.inputBuffer.getChannelData(0)) });
+  };
+  capture.proc = p;
+}
+function runLearn(eff) {
+  const now = ctx.currentTime;
+  for (const r of live.values()) {
+    if (r.node.kind !== "learn" || r.error || !r.node.enabled || !mic.source) continue;
+    const cref = eff.get(r.node.id).find((x) => kindOfId(x.node) === "clock"), c = cref && clocks.get(cref.node);
+    if (!c) continue;
+    let st = learnState.get(r.node.id);
+    const stepDur = 60 / c.bpm / 4, barSteps = 4 * c.sig;
+    if (!st) {
+      ensureCapture();
+      // Beat lengths start on the next beat; bars and sections on the next bar.
+      const unitSteps = r.cfg.unit === "bar" ? barSteps : 4;
+      let k = (unitSteps - (c.step % unitSteps)) % unitSteps, start = c.nextTime + k * stepDur;
+      while (start - now < 0.4) start += unitSteps * stepDur; // leave time to get ready
+      const steps = r.cfg.count * unitSteps;
+      st = { phase: "armed", start, end: start + steps * stepDur, stepDur, steps, sig: c.sig };
+      learnState.set(r.node.id, st); capture.chunks = []; capture.active = true;
+    }
+    if (st.phase === "armed" && now >= st.start) st.phase = "rec";
+    if (st.phase === "rec" && now >= st.end + 0.35) { st.phase = "analyse"; finishLearn(r, st); }
+  }
+}
+function finishLearn(r, st) {
+  capture.active = false;
+  const sr = ctx.sampleRate, from = st.start - 0.05, to = st.end + 0.05;
+  const parts = capture.chunks.filter((ch) => ch.t + ch.d.length / sr > from && ch.t < to);
+  if (!parts.length) { learnState.delete(r.node.id); return; }
+  const t0 = parts[0].t, total = parts.reduce((a, p) => a + p.d.length, 0), x = new Float32Array(total);
+  let o = 0; for (const p of parts) { x.set(p.d, o); o += p.d.length; }
+  const hits = analyseVoice(x, sr, t0, st);
+  const target = nodes(patch).find((n) => n.id === r.cfg.to);
+  const ownLine = patch.lines.indexOf(r.node) + 1, targetLine = target ? patch.lines.indexOf(target) + 1 : 0;
+  if (!hits.length || !target) {
+    learnNote.set(r.node.id, "heard nothing, listening again");
+    learnState.delete(r.node.id); // re-arms at the next bar
+    return;
+  }
+  const kind = target.kind;
+  let token, msg;
+  if (kind === "drums") {
+    const lanes = LANES.map(() => new Array(st.steps).fill("."));
+    const loud = hits.map((h) => h.level).sort((a, b) => a - b)[Math.floor(hits.length / 2)];
+    for (const h of hits) lanes[LANES.indexOf(h.drum)][h.step] = h.level > loud * 1.8 ? "X" : "x";
+    token = `"${lanes.map((l) => l.join("")).join("|")}"`;
+    const n = (d) => hits.filter((h) => h.drum === d).length;
+    msg = `wrote ${hits.length} hits into ${target.id} (${n("kick")} kick, ${n("snare")} snare, ${n("hat")} hat)`;
+  } else {
+    const steps = new Array(st.steps).fill(".");
+    for (const h of hits) if (h.midi !== null) steps[h.step] = midiName(Math.max(36, Math.min(84, h.midi)));
+    const notes = steps.filter((t) => t !== ".");
+    if (!notes.length) { learnNote.set(r.node.id, "heard no clear pitch, listening again"); learnState.delete(r.node.id); return; }
+    token = `"${steps.join(" ")}"`;
+    msg = `wrote ${notes.length} notes into ${target.id} (${notes.slice(0, 4).join(" ")}${notes.length > 4 ? " …" : ""})`;
+  }
+  // Rewrite the target's pattern=/notes= (keeping the key style used), else append it.
+  const key = kind === "drums" ? "pattern" : "notes";
+  const shape = kind === "drums" ? /^"?[xX.|]+"?$/ : /^"(([A-G][#b]?\d|\.)\s*)+"$/;
+  const old = target.args.find((a) => a.startsWith(key + "=")) || target.args.find((a) => shape.test(a));
+  const lineText = ui.getText().split("\n")[targetLine - 1];
+  const fresh = old ? lineText.replace(old, old.startsWith(key + "=") ? `${key}=${token}` : token) : `${lineText.trimEnd()} ${kind === "drums" ? token : key + "=" + token}`;
+  learnNote.set(r.node.id, msg);
+  learnState.delete(r.node.id);
+  ui.setLine(targetLine, fresh);
+  ui.toggleLines([ownLine]); // done: the learn line turns itself off (Ctrl+T records again)
+}
+// Onsets on the step grid; per onset a drum class (by zero-crossing rate:
+// boom → kick, ka → snare, ts → hat) and a pitch (autocorrelation).
+function analyseVoice(x, sr, t0, st) {
+  const hop = Math.round(sr * 0.01), env = [];
+  for (let i = 0; i + hop * 2 <= x.length; i += hop) { let s2 = 0; for (let j = i; j < i + hop * 2; j++) s2 += x[j] * x[j]; env.push(Math.sqrt(s2 / (hop * 2))); }
+  const sorted = [...env].sort((a, b) => a - b), floor = sorted[Math.floor(sorted.length * 0.2)] || 0;
+  const thr = Math.max(floor * 4, 0.012);
+  const hits = []; let last = -1e9;
+  for (let i = 2; i < env.length; i++) {
+    const rising = env[i] > thr && env[i] > 1.8 * Math.min(env[i - 1], env[i - 2]) + 1e-4 || (env[i] > thr && env[i - 1] <= thr);
+    if (!rising || i - last < 12) continue; // ≥120 ms apart
+    last = i;
+    const t = t0 + (i * hop) / sr, step = Math.round((t - st.start) / st.stepDur);
+    if (step < 0 || step >= st.steps) continue;
+    const a = i * hop, seg = x.subarray(a, Math.min(x.length, a + Math.round(sr * 0.12)));
+    let zc = 0; for (let j = 1; j < seg.length; j++) if ((seg[j - 1] < 0) !== (seg[j] < 0)) zc++;
+    const zcr = zc / seg.length, level = Math.max(...env.slice(i, i + 6));
+    const drum = zcr < 0.02 ? "kick" : zcr > 0.15 ? "hat" : "snare";
+    if (hits.length && hits[hits.length - 1].step === step) continue;
+    hits.push({ step, drum, level, midi: pitchOf(x.subarray(a + Math.round(sr * 0.03), Math.min(x.length, a + Math.round(sr * 0.15))), sr) });
+  }
+  return hits;
+}
+function pitchOf(seg, sr) {
+  if (seg.length < sr * 0.04) return null;
+  const minLag = Math.floor(sr / 1000), maxLag = Math.floor(sr / 70);
+  let e0 = 0; for (const v of seg) e0 += v * v;
+  if (e0 < 1e-4) return null;
+  let best = 0, lag = 0;
+  for (let L = minLag; L <= maxLag && L < seg.length / 2; L++) {
+    let s2 = 0; for (let j = 0; j + L < seg.length; j++) s2 += seg[j] * seg[j + L];
+    const norm = s2 / e0; if (norm > best) { best = norm; lag = L; }
+  }
+  if (best < 0.5 || !lag) return null;
+  return Math.round(69 + 12 * Math.log2(sr / lag / 440));
+}
 function releaseMic() {
   if (mic.stream) mic.stream.getTracks().forEach((t) => t.stop());
+  if (capture.proc) { capture.proc.disconnect(); capture = { proc: null, chunks: [], active: false }; }
+  learnState.clear();
   mic = { stream: null, analyser: null, buf: null, pending: false, error: mic.error, level: 0, history: [] };
 }
 // Called every tick: measure the mic, run each vad, fire drums on onsets.
@@ -805,6 +965,7 @@ function tick() {
   if (!running) return;
   const eff = effectiveInputs(patch);
   runVad(eff);
+  runLearn(eff);
   applyGates();
   for (const [cid, c] of clocks) {
     const cr = live.get(cid);
@@ -843,7 +1004,20 @@ function micSpark() {
 function nodeStatus(r, eff) {
   const n = r.node, k = n.kind, t = ctx ? ctx.currentTime : 0;
   if (r.error) return ["!", r.error];
-  if (!n.enabled) return ["off", ""];
+  if (!n.enabled) return ["off", learnNote.has(n.id) ? `${learnNote.get(n.id)} · Ctrl+T records again` : ""];
+  if (k === "learn") {
+    const what = `${r.cfg.label} into ${r.cfg.to}`;
+    if (!running) return ["?", `press Start, then sing/beatbox ${what}`];
+    if (mic.error) return ["!", mic.error];
+    if (!mic.stream) return [".", "asking for the microphone"];
+    const st = learnState.get(n.id), now = ctx.currentTime;
+    const note = learnNote.has(n.id) ? ` · ${learnNote.get(n.id)}` : "";
+    if (!st) return ["-", `waiting for the next bar${note}`];
+    const beat = st.stepDur * 4;
+    if (st.phase === "armed") return [".", `get ready: recording ${what} in ${Math.max(1, Math.ceil((st.start - now) / beat))} beat(s)`];
+    if (st.phase === "rec") return ["~", `recording ${Math.min(st.steps / 4, Math.floor((now - st.start) / beat) + 1)}/${st.steps / 4} beats`];
+    return ["/", "analysing"];
+  }
   if (k === "mic") {
     if (!running) return ["?", "press Start (asks for the microphone)"];
     if (mic.error) return ["!", mic.error];
@@ -967,6 +1141,23 @@ metro,drums,piano,bass> mix
 clock2>         metro2=metro tone=1500
 metro,metro2>   speaker      volume=0.4
 `,
+  learn: `# Beatbox 1 bar after the count-in: "boom" = kick, "ka" = snare, "ts" = hat.
+# learn rewrites \`beat\` and then turns itself off; Ctrl+T on it records again, Ctrl+Z undoes.
+.          clock   90 4/4
+.          metro
+.          mic
+mic>       learn   beat 1bar
+.          beat=drums "................|................|................"
+metro,beat> speaker 0.5
+`,
+  hum: `# Hum a tune for 2 bars after the count-in; learn writes the notes into \`tune\`.
+.          clock   90 4/4
+.          metro
+.          mic
+mic>       learn   tune 2bars
+.          tune=piano notes="C4 . . . E4 . . . G4 . . . . . . ."
+metro,tune> speaker 0.5
+`,
   speech: `# Talk to play. ^vad: a kick per speech onset · ?vad: only while you talk · !vad: ducks while you talk.
 # Values like kick, arp or 100 need no key when it's obvious (CSS-style). Your voice is analysed, never played back.
 .            clock         100 4/4
@@ -1025,6 +1216,7 @@ function textareaUI() {
   return {
     getText: () => code.value,
     setText: (t) => { code.value = t; changed(); },
+    setLine: (ln, text) => { const l = code.value.split("\n"); l[ln - 1] = text; code.value = l.join("\n"); version++; fit(); applyText(code.value); },
     textVersion: () => version,
     toggleLines,
     pendingLines: () => [...pending],
@@ -1209,6 +1401,12 @@ function monacoUI(monaco) {
   return {
     getText: () => model.getValue(),
     setText: (t) => { editor.pushUndoStop(); editor.executeEdits("load", [{ range: model.getFullModelRange(), text: t }]); editor.pushUndoStop(); },
+    // Undoable (Ctrl+Z) — used by learn to rewrite a line.
+    setLine: (ln, text) => {
+      editor.pushUndoStop();
+      editor.executeEdits("learn", [{ range: new monaco.Range(ln, 1, ln, model.getLineMaxColumn(ln)), text }]);
+      editor.pushUndoStop(); clearTimeout(timer); applyText(model.getValue());
+    },
     textVersion: () => version,
     toggleLines,
     pendingLines,
