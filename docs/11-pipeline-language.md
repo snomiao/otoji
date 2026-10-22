@@ -14,52 +14,78 @@ duty-cycle meter, graph-JSON conversion); tray runtime in
 
 ```
 # otoji pipeline: click a row to turn it on/off
-.            mic  mic default
-|mic>        stt  stt sensevoice
-|stt>        cap  overlay
-|stt.final>  pol  polish auto
-#|stt.final> tr   translate en
-|stt.final>  log  append transcripts/$date.stt
+.           mic
+mic>        stt       sensevoice
+stt>        overlay
+stt.final>  polish    auto
+#stt.final> translate en
+stt.final>  log=append transcripts/$date.stt
 ```
 
 As shown in the menu (the part after `#` is generated live, never stored):
 
 ```
-.            mic  mic default                   # ~ ▁▂▅▇▅▂▁ · 3:42
-|mic>        stt  stt sensevoice                # / 12% busy · 5 sentences · 120 chars · hearing “我在家…”
-|stt>        cap  overlay                       # - captions on screen
-|stt.final>  pol  polish auto                   # - 5 done · “I'm at home.”
-#|stt.final> tr   translate en                  # off
-|stt.final>  log  append transcripts/$date.stt  # - 5 lines
+.           mic                                 # ~ ▁▂▅▇▅▂▁ · 3:42
+mic>        stt       sensevoice                # / 5 sentences · 120 chars · hearing “我在家…”
+stt>        overlay                             # - captions on screen
+stt.final>  polish    auto                      # - 5 done · “I'm at home.”
+#stt.final> translate en                        # off
+stt.final>  log=append transcripts/$date.stt    # - 5 lines
 ```
 
 ## Syntax
 
 ```
 line   := blank | comment | node
-comment:= "#" " " text                      # full-line comment
-node   := "#"? head ws id ws kind (ws arg)* (ws "#" text)?
+comment:= "#" text                          # anything that isn't "#" + node
+node   := "#"? head ws (name "=")? kind (ws arg)* (ws "#" text)?
 head   := "."                               # source node: no input
-        | "|" ws? refs? ws? ">"             # input; "|>" = previous node line
+        | "|"? ws? refs? ws? ">"            # input; bare ">" = previous node line
 refs   := ref (ws? "," ws? ref)*            # several refs fan in
 ref    := id ("." port)? (":" policy)?      # e.g. stt.final:latest
 arg    := word | key "=" value | "\"" quoted "\"" | "@" device
-id, port, policy, key := [A-Za-z0-9_-]+
+name, kind, id, port, policy, key := [A-Za-z0-9_-]+
 ```
 
-- **`.` source / `|…>` input.** Spaces are allowed inside the input clause:
-  `| stt.final , mic >` is the same as `|stt.final,mic>`. A ref itself has no
-  spaces (`stt . final` is an error).
-- **`#` before the head** turns the node off; the line stays in the graph
-  (and keeps its alignment) so turning it back on is just removing the `#`.
-  `#|stt.final> pol …` is the polish node, off. `# text` (hash, space, text)
-  is an ordinary comment.
+- **`.` source / `refs>` input.** A leading `|` is allowed (`|mic> stt`) but
+  not needed; the formatter drops it. Spaces are allowed inside the input
+  clause: `stt.final , mic >` is the same as `stt.final,mic>`. A ref itself
+  has no spaces (`stt . final` is an error). A line counts as a node only if
+  the text before its first `>` is a valid input list, so a comment like
+  `# see a > b` stays a comment.
+- **`#` before a node** turns it off; the line stays in the file (and keeps
+  its alignment) so turning it back on is just removing the `#`.
+  `#stt.final> polish …` is the polish node, off.
 - **Arguments:** positional words, `key=value`, `"quoted strings"` (may
   contain `#`, `|`, `>`, spaces; `\"` escapes), and `@device` for placement.
 - **Variables** in arguments: `$date`, `${date}` (`YYYY-MM-DD`), `$time`
   (`HHMMSS`). Unknown names are left as written.
+- **Names are optional.** A node's id defaults to its kind, so `. mic` is a
+  complete line and `mic>` refers to it.
+- **Same kind more than once:** later unnamed nodes are numbered in order —
+  `mic`, `mic2`, `mic3` — skipping names already taken. The formatter writes
+  those numbers down (`mic2=mic`), so a node added later gets the next free
+  number instead of renumbering existing ones. (A new unnamed line placed
+  *above* the bare `mic` takes the bare name and the old one gets the next
+  number; name it explicitly to avoid that.) An explicit name (`log=append`)
+  works anywhere; a redundant `mic=mic` is dropped.
 - **Ids are names, not indexes.** Sequence vs parallel is a property of the
-  graph shape, so inserting a node never renumbers others.
+  graph shape.
+
+## Errors keep the rest running
+
+Parsing is lenient (`Pipeline::parse_lenient`). A line with a syntax error,
+an unknown input, a duplicate explicit name, a self-reference, or a bare `>`
+after a broken line becomes an invalid line:
+
+- it is kept verbatim (the formatter never rewrites it) and left out of the
+  graph;
+- its menu row shows the reason: `nope> polish  # ! unknown node \`nope\``;
+- nodes fed by it are invalid too (`! input \`polish\` has an error`);
+- every other line keeps running.
+
+`Pipeline::parse` is the strict variant (first error fails), used for tests
+and conversions.
 
 ## Status (rendered only)
 
@@ -79,8 +105,7 @@ the symbols below.
 | `off` | the line is turned off (`#`) |
 
 Whether a node is streaming or chunked is derived from the node, not written
-in the source. A stray `~` / `-` / `/` token after the id (copied from an old
-menu format) is accepted and dropped.
+in the source.
 
 ### Duty-cycle rendering (占空比)
 
@@ -88,7 +113,8 @@ A chunked stage can flip busy/idle many times per second, too fast to read.
 Each node keeps an activity meter (`pipeline::Activity`) of its busy intervals
 over the last second, and the menu renders that share as a steady rhythm:
 within each one-second display period the busy symbol shows for the busy
-fraction and `-` for the rest, plus the number (`12% busy`). A stage busy 800
+fraction and `-` for the rest; the flashing itself shows the load, so no
+number is printed. A stage busy 800
 ms out of every second shows `/` for 800 ms and `-` for 200 ms, regardless of
 how the work was split up. The STT stage measures real compute: `otoji listen`
 emits `{"type":"decode","ms":N}` after every recognizer pass.
@@ -97,11 +123,12 @@ emits `{"type":"decode","ms":N}` after every recognizer pass.
 
 `Pipeline::format` is canonical and idempotent:
 
-- input clauses without inner spaces: `|a,b.final>`;
-- `|>` kept in a linear chain, made explicit (`|id>`) once any node feeds more
-  than one consumer;
-- columns aligned per block (blank-line separated): head, id, then two spaces
-  before the kind; a trailing comment two spaces after the widest body;
+- input clauses without inner spaces: `a,b.final>`;
+- `>` (previous line) kept in a linear chain, made explicit (`id>`) once any
+  node feeds more than one consumer; no leading `|`;
+- columns aligned per block (blank-line separated): head, node (`kind` or
+  `name=kind`), arguments; a trailing comment two spaces after the widest
+  arguments;
 - blank lines, comments and line order preserved; status comments dropped.
 
 The tray writes the canonical form when a row is clicked.

@@ -4,6 +4,9 @@
 // clicking a row turns that node on/off (rewriting the file), and saving the
 // file in an editor applies it.
 //
+// Parsing is lenient: a line with a syntax error or an unknown input shows
+// `! <reason>` in its row and is left out; the rest of the graph keeps running.
+//
 // Runtime v1 runs a fixed topology — mic → stt → {overlay, polish ∥
 // translate, append} — and maps each line onto it by node kind. Wiring other
 // than that is accepted by the parser but not executed (reported as `!`).
@@ -14,15 +17,7 @@ use std::collections::{HashMap, VecDeque};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant, SystemTime};
 
-const DEFAULT_PIPELINE: &str = "\
-# otoji pipeline: click a row to turn it on/off · docs/11-pipeline-language.md
-.            mic  mic default
-|mic>        stt  stt sensevoice
-|stt>        cap  overlay
-#|stt.final> pol  polish auto
-#|stt.final> tr   translate en
-#|stt.final> log  append transcripts/$date.stt
-";
+use otoji::pipeline::DEFAULT_PIPELINE;
 
 pub fn path() -> std::path::PathBuf {
     otoji::notes::data_dir().join("pipeline.otoji")
@@ -111,13 +106,9 @@ pub fn reload() -> bool {
     let text = std::fs::read_to_string(&p).unwrap_or_default();
     with(|s| {
         s.mtime = mtime;
-        match Pipeline::parse(&text) {
-            Ok(pl) => {
-                s.pipeline = pl;
-                s.error = None;
-            }
-            Err(e) => s.error = Some(e.to_string()),
-        }
+        // Lenient: a broken line shows as `!` in the menu; the rest runs.
+        s.pipeline = Pipeline::parse_lenient(&text);
+        s.error = None;
     });
     eprintln!("otoji-tray: pipeline loaded from {}", p.display());
     true
@@ -397,10 +388,9 @@ pub fn sample_level() {
     });
 }
 
-fn duty(a: &mut Activity, now: Instant, busy: NodeState) -> (NodeState, String) {
-    let (st, frac) = a.state_at(now, busy);
-    let pct = (frac * 100.0).round() as u32;
-    (st, if pct > 0 { format!("{pct}% busy") } else { String::new() })
+/// Busy share shown only by the flashing symbol (duty cycle), no number.
+fn duty(a: &mut Activity, now: Instant, busy: NodeState) -> NodeState {
+    a.state_at(now, busy).0
 }
 
 /// Live status of every node, keyed by id.
@@ -439,10 +429,7 @@ pub fn statuses(mic_authorized: bool) -> HashMap<String, NodeStatus> {
                         NodeState::Loading
                     }
                     "stt" => {
-                        let (state, busy) = duty(&mut s.stt, now, NodeState::Chunk);
-                        if !busy.is_empty() {
-                            detail.push(busy);
-                        }
+                        let state = duty(&mut s.stt, now, NodeState::Chunk);
                         detail.push(format!(
                             "{} sentence{} · {} chars",
                             st.finals,
@@ -478,10 +465,7 @@ pub fn statuses(mic_authorized: bool) -> HashMap<String, NodeStatus> {
                             NodeState::Error
                         } else {
                             let a = if is_polish { &mut s.polish } else { &mut s.translate };
-                            let (state, busy) = duty(a, now, NodeState::Chunk);
-                            if !busy.is_empty() {
-                                detail.push(busy);
-                            }
+                            let state = duty(a, now, NodeState::Chunk);
                             detail.push(format!("{done} done"));
                             if !last.is_empty() {
                                 detail.push(format!("“{}”", short(last, 24)));
@@ -537,7 +521,7 @@ pub fn rows(mic_authorized: bool) -> Vec<(String, Option<String>)> {
     let rendered = p.render_with_status(&statuses(mic_authorized));
     let mut ids = p.lines.iter().filter_map(|l| match l {
         Line::Node(n) => Some(Some(n.id.clone())),
-        Line::Comment(_) => Some(None),
+        Line::Comment(_) | Line::Invalid { .. } => Some(None),
         Line::Blank => None,
     });
     rendered

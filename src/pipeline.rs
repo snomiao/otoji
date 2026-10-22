@@ -24,6 +24,17 @@ use serde_json::{json, Map, Value};
 use std::collections::{BTreeMap, HashMap};
 use std::fmt;
 
+/// The pipeline the tray writes on first run.
+pub const DEFAULT_PIPELINE: &str = "\
+# otoji pipeline: click a row to turn it on/off · docs/11-pipeline-language.md
+.           mic
+mic>        stt       sensevoice
+stt>        overlay
+#stt.final> polish    auto
+#stt.final> translate en
+#stt.final> append    transcripts/$date.stt
+";
+
 /// One `ref` inside `| … >`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct InputRef {
@@ -60,7 +71,10 @@ pub enum Head {
 pub struct NodeLine {
     pub enabled: bool,
     pub head: Head,
+    /// Node id: the explicit name (`log=append …`) or, if none, the kind.
     pub id: String,
+    /// Whether the id was written explicitly (`name=kind`).
+    pub named: bool,
     pub kind: String,
     /// Arguments as written (quotes kept so formatting round-trips).
     pub args: Vec<String>,
@@ -74,6 +88,15 @@ pub enum Line {
     /// Full-line comment, without the leading `#`.
     Comment(String),
     Node(NodeLine),
+    /// A line with an error. It is kept verbatim (the formatter never
+    /// rewrites it) and left out of the graph; everything that doesn't
+    /// depend on it keeps working.
+    Invalid {
+        raw: String,
+        error: String,
+        /// The node id, if the line parsed far enough to have one.
+        id: Option<String>,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -152,6 +175,18 @@ fn is_status_comment(c: &str) -> bool {
             .any(|s| c == *s || c.starts_with(&format!("{s} ")))
 }
 
+/// Drop a trailing rendered status (`  # ! …`) from a raw line.
+fn strip_status(raw: &str) -> &str {
+    let mut cut = raw.len();
+    for (i, _) in raw.match_indices(" #") {
+        if is_status_comment(&raw[i + 2..]) {
+            cut = i;
+            break;
+        }
+    }
+    raw[..cut].trim_end()
+}
+
 /// Split `s` into whitespace-separated tokens, keeping `"quoted strings"`
 /// (with `\"` escapes) intact. Stops at an unquoted `#` that starts a token
 /// and returns the rest as the comment.
@@ -213,78 +248,253 @@ fn parse_ref(s: &str, line: usize) -> Result<InputRef, ParseError> {
 }
 
 /// Parse a node line body (after an optional leading `#` for "off").
-fn parse_node(body: &str, enabled: bool, line: usize) -> Result<NodeLine, ParseError> {
+/// Split off a node head: `.` (source), or an input clause `refs>` / `>`
+/// (previous line), optionally written with a leading `|`. `None` when the
+/// text isn't a node line at all (e.g. a comment like `see a > b`).
+fn split_head(body: &str, line: usize) -> Option<Result<(Head, &str), ParseError>> {
     let body = body.trim_start();
-    let (head, rest) = if let Some(rest) = body.strip_prefix('.') {
-        (Head::Source, rest)
-    } else if let Some(rest) = body.strip_prefix('|') {
-        let close = rest.find('>').ok_or(ParseError {
-            line,
-            message: "`|` without a closing `>`".into(),
-        })?;
-        let inner = rest[..close].trim();
-        let head = if inner.is_empty() {
-            Head::Previous
-        } else {
-            Head::Refs(
-                inner
-                    .split(',')
-                    .map(|r| parse_ref(r.trim(), line))
-                    .collect::<Result<_, _>>()?,
-            )
-        };
-        (head, &rest[close + 1..])
-    } else {
-        unreachable!("caller checks the head");
+    if let Some(rest) = body.strip_prefix('.') {
+        return Some(Ok((Head::Source, rest)));
+    }
+    let (piped, rest) = match body.strip_prefix('|') {
+        Some(r) => (true, r),
+        None => (false, body),
     };
+    let Some(close) = rest.find('>') else {
+        return piped.then(|| Err(ParseError { line, message: "`|` without a closing `>`".into() }));
+    };
+    let inner = rest[..close].trim();
+    let head = if inner.is_empty() {
+        Head::Previous
+    } else {
+        match inner.split(',').map(|r| parse_ref(r.trim(), line)).collect::<Result<Vec<_>, _>>() {
+            Ok(refs) => Head::Refs(refs),
+            // Without `|`, text that isn't a ref list just isn't a node line.
+            Err(e) => return piped.then_some(Err(e)),
+        }
+    };
+    Some(Ok((head, &rest[close + 1..])))
+}
+
+fn parse_node(head: Head, rest: &str, enabled: bool, line: usize) -> Result<NodeLine, ParseError> {
     let (mut tokens, comment) = tokenize(rest, line)?;
     let comment = comment.filter(|c| !is_status_comment(c));
     if tokens.is_empty() {
-        return Err(ParseError { line, message: "missing node id".into() });
+        return Err(ParseError { line, message: "missing node kind".into() });
     }
-    let id = tokens.remove(0);
-    if !is_id(&id) {
-        return Err(ParseError { line, message: format!("bad node id `{id}`") });
+    // `kind` or `name=kind`; without a name the id is the kind.
+    let tok = tokens.remove(0);
+    let (id, kind, named) = match tok.split_once('=') {
+        Some((id, kind)) => (id.to_string(), kind.to_string(), true),
+        None => (tok.clone(), tok.clone(), false),
+    };
+    if !is_id(&id) || !is_id(&kind) {
+        return Err(ParseError { line, message: format!("bad node `{tok}` (want `kind` or `name=kind`)") });
     }
-    // A mode/status marker copied from the menu (`mic ~ mic`) is dropped:
-    // the mode is derived from the node, never stored.
-    if tokens.first().is_some_and(|t| ["~", "-", "/"].contains(&t.as_str())) {
-        tokens.remove(0);
+    Ok(NodeLine { enabled, head, id, named, kind, args: tokens, comment })
+}
+
+impl NodeLine {
+    /// The node as written: `kind`, or `name=kind` whenever the id differs
+    /// from the kind. That includes auto names (`mic2`): writing them down
+    /// keeps them stable, so a node added later gets the next free number
+    /// instead of renumbering existing ones.
+    pub fn token(&self) -> String {
+        if self.id != self.kind {
+            format!("{}={}", self.id, self.kind)
+        } else {
+            self.kind.clone()
+        }
     }
-    if tokens.is_empty() {
-        return Err(ParseError { line, message: format!("node `{id}` has no kind") });
-    }
-    let kind = tokens.remove(0);
-    Ok(NodeLine { enabled, head, id, kind, args: tokens, comment })
 }
 
 impl Pipeline {
+    /// Strict parse: any error fails the whole file.
     pub fn parse(src: &str) -> Result<Pipeline, ParseError> {
+        let p = Pipeline::parse_lenient(src);
+        match p.errors().into_iter().next() {
+            Some(e) => Err(e),
+            None => Ok(p),
+        }
+    }
+
+    /// Parse what can be parsed: a bad line becomes [`Line::Invalid`] (and so
+    /// does any node fed by one), the rest forms a working partial graph.
+    pub fn parse_lenient(src: &str) -> Pipeline {
         let mut lines = Vec::new();
         for (i, raw) in src.lines().enumerate() {
             let n = i + 1;
             let t = raw.trim();
+            let invalid = |e: ParseError| Line::Invalid {
+                raw: strip_status(raw.trim_end()).to_string(),
+                error: e.message,
+                id: None,
+            };
             if t.is_empty() {
                 lines.push(Line::Blank);
             } else if let Some(after) = t.strip_prefix('#') {
-                let a = after.trim_start();
-                if a.starts_with('.') || a.starts_with('|') {
-                    lines.push(Line::Node(parse_node(a, false, n)?));
-                } else {
-                    lines.push(Line::Comment(after.trim().to_string()));
+                // `#` + node = that node, turned off; anything else is a comment.
+                match split_head(after, n) {
+                    Some(Ok((head, rest))) => lines.push(
+                        parse_node(head, rest, false, n).map(Line::Node).unwrap_or_else(invalid),
+                    ),
+                    Some(Err(e)) => lines.push(invalid(e)),
+                    None => lines.push(Line::Comment(after.trim().to_string())),
                 }
-            } else if t.starts_with('.') || t.starts_with('|') {
-                lines.push(Line::Node(parse_node(t, true, n)?));
             } else {
-                return Err(ParseError {
-                    line: n,
-                    message: "a node line starts with `.` or `|…>`".into(),
-                });
+                match split_head(t, n) {
+                    Some(Ok((head, rest))) => lines.push(
+                        parse_node(head, rest, true, n).map(Line::Node).unwrap_or_else(invalid),
+                    ),
+                    Some(Err(e)) => lines.push(invalid(e)),
+                    None => lines.push(invalid(ParseError {
+                        line: n,
+                        message: "a node line starts with `.` (source) or `input>`".into(),
+                    })),
+                }
             }
         }
-        let p = Pipeline { lines };
-        p.validate()?;
-        Ok(p)
+        let mut p = Pipeline { lines };
+        p.settle();
+        p
+    }
+
+    /// Number ids and drop broken lines until stable: a line that turns out
+    /// invalid gives up its auto name (`append` stays free for the next one).
+    fn settle(&mut self) {
+        for _ in 0..self.lines.len() + 1 {
+            self.assign_ids();
+            let before = self.errors().len();
+            self.check();
+            if self.errors().len() == before {
+                break;
+            }
+        }
+    }
+
+    /// Errors of all invalid lines, in line order.
+    pub fn errors(&self) -> Vec<ParseError> {
+        self.lines
+            .iter()
+            .enumerate()
+            .filter_map(|(i, l)| match l {
+                Line::Invalid { error, .. } => Some(ParseError { line: i + 1, message: error.clone() }),
+                _ => None,
+            })
+            .collect()
+    }
+
+    /// Unnamed nodes take their kind as id; later unnamed nodes of the same
+    /// kind get `kind2`, `kind3`, … in line order, skipping explicit names.
+    fn assign_ids(&mut self) {
+        let explicit: std::collections::HashSet<String> = self
+            .lines
+            .iter()
+            .filter_map(|l| match l {
+                Line::Node(n) if n.named => Some(n.id.clone()),
+                _ => None,
+            })
+            .collect();
+        let mut taken = explicit.clone();
+        for l in &mut self.lines {
+            let Line::Node(n) = l else { continue };
+            if n.named {
+                continue;
+            }
+            let mut k = 1;
+            let mut id = n.kind.clone();
+            while taken.contains(&id) {
+                k += 1;
+                id = format!("{}{k}", n.kind);
+            }
+            taken.insert(id.clone());
+            n.id = id;
+        }
+    }
+
+    /// Mark lines invalid until the rest is a consistent graph: duplicate
+    /// names, `|>` without a valid previous node, and refs to unknown or
+    /// invalid nodes (cascading to their consumers).
+    fn check(&mut self) {
+        loop {
+            let mut bad: Option<(usize, String)> = None;
+            let mut seen: HashMap<String, usize> = HashMap::new();
+            let mut prev_valid: Option<bool> = None; // None = no node line yet
+            let invalid_ids: std::collections::HashSet<String> = self
+                .lines
+                .iter()
+                .filter_map(|l| match l {
+                    Line::Invalid { id: Some(id), .. } => Some(id.clone()),
+                    _ => None,
+                })
+                .collect();
+            for (i, l) in self.lines.iter().enumerate() {
+                match l {
+                    Line::Invalid { .. } => {
+                        prev_valid = Some(false);
+                        continue;
+                    }
+                    Line::Node(n) => {
+                        let err = if let Some(first) = seen.get(&n.id) {
+                            Some(format!("duplicate node name `{}` (first on line {first})", n.id))
+                        } else {
+                            match &n.head {
+                                Head::Previous => match prev_valid {
+                                    None => Some("`>` with no previous node".to_string()),
+                                    Some(false) => Some("`>` but the previous line has an error".to_string()),
+                                    Some(true) => None,
+                                },
+                                Head::Refs(refs) => refs.iter().find_map(|r| {
+                                    if r.node == n.id {
+                                        Some(format!("node `{}` takes input from itself", n.id))
+                                    } else if self.lines.iter().any(
+                                        |l| matches!(l, Line::Node(m) if m.id == r.node),
+                                    ) {
+                                        None
+                                    } else if invalid_ids.contains(&r.node) {
+                                        Some(format!("input `{}` has an error", r.node))
+                                    } else {
+                                        Some(format!("unknown node `{}`", r.node))
+                                    }
+                                }),
+                                Head::Source => None,
+                            }
+                        };
+                        if let Some(e) = err {
+                            bad = Some((i, e));
+                            break;
+                        }
+                        seen.insert(n.id.clone(), i + 1);
+                        prev_valid = Some(true);
+                    }
+                    _ => {}
+                }
+            }
+            let Some((i, error)) = bad else { break };
+            let Line::Node(n) = &self.lines[i] else { unreachable!() };
+            let raw = self.node_source(n);
+            let id = Some(n.id.clone());
+            self.lines[i] = Line::Invalid { raw, error, id };
+        }
+    }
+
+    /// A node line as written (pre-format), for keeping an invalid line.
+    fn node_source(&self, n: &NodeLine) -> String {
+        let head = match &n.head {
+            Head::Source => ".".to_string(),
+            Head::Previous => ">".to_string(),
+            Head::Refs(r) => format!("{}>", r.iter().map(|r| r.to_string()).collect::<Vec<_>>().join(",")),
+        };
+        let mut s = format!("{}{head} {}", if n.enabled { "" } else { "#" }, n.token());
+        for a in &n.args {
+            s.push(' ');
+            s.push_str(a);
+        }
+        if let Some(c) = &n.comment {
+            s.push_str("  # ");
+            s.push_str(c);
+        }
+        s
     }
 
     pub fn nodes(&self) -> impl Iterator<Item = &NodeLine> {
@@ -312,44 +522,6 @@ impl Pipeline {
         out
     }
 
-    fn validate(&self) -> Result<(), ParseError> {
-        let mut seen: HashMap<&str, usize> = HashMap::new();
-        let mut first_node = true;
-        for (i, l) in self.lines.iter().enumerate() {
-            let Line::Node(n) = l else { continue };
-            if let Some(prev) = seen.insert(&n.id, i + 1) {
-                return Err(ParseError {
-                    line: i + 1,
-                    message: format!("duplicate node id `{}` (first on line {prev})", n.id),
-                });
-            }
-            if first_node && n.head == Head::Previous {
-                return Err(ParseError { line: i + 1, message: "`|>` with no previous node".into() });
-            }
-            first_node = false;
-        }
-        for (i, l) in self.lines.iter().enumerate() {
-            let Line::Node(n) = l else { continue };
-            if let Head::Refs(refs) = &n.head {
-                for r in refs {
-                    if !seen.contains_key(r.node.as_str()) {
-                        return Err(ParseError {
-                            line: i + 1,
-                            message: format!("unknown node `{}`", r.node),
-                        });
-                    }
-                    if r.node == n.id {
-                        return Err(ParseError {
-                            line: i + 1,
-                            message: format!("node `{}` takes input from itself", n.id),
-                        });
-                    }
-                }
-            }
-        }
-        Ok(())
-    }
-
     /// Canonical text: `|>` made explicit once the graph branches, columns
     /// aligned per block (blank-line separated), status comments dropped.
     /// Idempotent.
@@ -360,10 +532,10 @@ impl Pipeline {
     fn head_text(&self, n: &NodeLine, explicit: &BTreeMap<String, Vec<InputRef>>, branching: bool) -> String {
         let head = match &n.head {
             Head::Source => ".".to_string(),
-            Head::Previous if !branching => "|>".to_string(),
+            Head::Previous if !branching => ">".to_string(),
             Head::Previous | Head::Refs(_) => {
                 let refs: Vec<String> = explicit[&n.id].iter().map(|r| r.to_string()).collect();
-                format!("|{}>", refs.join(","))
+                format!("{}>", refs.join(","))
             }
         };
         if n.enabled { head } else { format!("#{head}") }
@@ -388,9 +560,11 @@ impl Pipeline {
             tail: Option<String>,
         }
         let mut out = String::new();
-        let mut block: Vec<Option<Cells>> = Vec::new(); // None = full-line comment
-        let mut comments: Vec<String> = Vec::new();
-        let flush = |block: &mut Vec<Option<Cells>>, comments: &mut Vec<String>, out: &mut String| {
+        let mut block: Vec<Option<Cells>> = Vec::new(); // None = verbatim row
+        // Verbatim rows (comments, invalid lines), in order, with an optional
+        // status that aligns with the block's status column.
+        let mut comments: Vec<(String, Option<String>)> = Vec::new();
+        let flush = |block: &mut Vec<Option<Cells>>, comments: &mut Vec<(String, Option<String>)>, out: &mut String| {
             let wh = block.iter().flatten().map(|c| c.head.chars().count()).max().unwrap_or(0);
             let wi = block.iter().flatten().map(|c| c.id.chars().count()).max().unwrap_or(0);
             let wb = block
@@ -404,13 +578,26 @@ impl Pipeline {
             for c in block.drain(..) {
                 match c {
                     None => {
-                        out.push_str(&format!("# {}", comments[ci]).trim_end().to_string());
+                        let (text, tail) = &comments[ci];
+                        let text = text.trim_end();
+                        match tail {
+                            Some(t) => {
+                                let col = wh + 1 + wi + if wb > 0 { 1 + wb } else { 0 };
+                                let w = col.max(text.chars().count());
+                                out.push_str(&format!("{text:w$}  # {t}"));
+                            }
+                            None => out.push_str(text),
+                        }
                         ci += 1;
                     }
                     Some(c) => {
-                        let mut line = format!("{:wh$} {:wi$}  {}", c.head, c.id, c.body);
+                        let mut line = format!("{:wh$} {:wi$} {}", c.head, c.id, c.body);
                         if let Some(t) = c.tail {
-                            line = format!("{:w$}  # {t}", line, w = wh + wi + wb + 3);
+                            let line_w = line.trim_end().chars().count();
+                            // Status column: after the widest args in the block (or
+                            // after the node column when no row has args).
+                            let col = wh + 1 + wi + if wb > 0 { 1 + wb } else { 0 };
+                            line = format!("{:w$}  # {t}", line.trim_end(), w = col.max(line_w));
                         }
                         out.push_str(line.trim_end());
                     }
@@ -426,15 +613,15 @@ impl Pipeline {
                     out.push('\n');
                 }
                 Line::Comment(c) => {
-                    comments.push(c.clone());
+                    comments.push((format!("# {c}"), None));
+                    block.push(None);
+                }
+                Line::Invalid { raw, error, .. } => {
+                    comments.push((raw.clone(), status.map(|_| format!("! {error}"))));
                     block.push(None);
                 }
                 Line::Node(n) => {
-                    let mut body = n.kind.clone();
-                    for a in &n.args {
-                        body.push(' ');
-                        body.push_str(a);
-                    }
+                    let body = n.args.join(" ");
                     let st = status.map(|m| {
                         if !n.enabled {
                             "off".to_string()
@@ -450,7 +637,7 @@ impl Pipeline {
                     let tail = st.or_else(|| n.comment.clone().filter(|c| !c.is_empty()));
                     block.push(Some(Cells {
                         head: self.head_text(n, &inputs, branching),
-                        id: n.id.clone(),
+                        id: n.token(),
                         body,
                         tail,
                     }));
@@ -592,18 +779,24 @@ impl Pipeline {
                 None => Head::Source,
                 Some(r) => Head::Refs(r.clone()),
             };
+            let kind = n["type"].as_str().unwrap_or("unknown").to_string();
             lines.push(Line::Node(NodeLine {
                 enabled: cfg.get("enabled").and_then(|e| e.as_bool()).unwrap_or(true),
                 head,
+                named: *id != kind,
                 id: id.clone(),
-                kind: n["type"].as_str().unwrap_or("unknown").to_string(),
+                kind,
                 args,
                 comment: None,
             }));
         }
-        let p = Pipeline { lines };
-        p.validate().map_err(|e| e.to_string())?;
-        Ok(p)
+        let mut p = Pipeline { lines };
+        p.assign_ids();
+        p.check();
+        match p.errors().into_iter().next() {
+            Some(e) => Err(e.to_string()),
+            None => Ok(p),
+        }
     }
 }
 
@@ -716,11 +909,11 @@ mod tests {
 
     const SAMPLE: &str = "\
 # otoji pipeline
-.           mic  mic default
-|mic>       stt  stt sensevoice vad=3s
-|stt.final> pol  polish gemini
-|stt.final> log  append $date.stt  # daily log
-#|stt>      dbg  append debug.txt
+.          mic
+mic>       stt        sensevoice vad=3s
+stt.final> polish     gemini
+stt.final> log=append $date.stt  # daily log
+#stt>      dbg=append debug.txt
 ";
 
     #[test]
@@ -730,50 +923,120 @@ mod tests {
     }
 
     #[test]
-    fn spaces_inside_input_clause_are_accepted() {
-        let loose = ". mic mic\n| mic >  stt stt\n|  stt . final : latest > out overlay\n";
-        let p = Pipeline::parse(loose);
-        // `stt . final` has spaces inside the ref itself: not allowed.
-        assert!(p.is_err());
-        let loose = ". mic mic\n| mic >  stt stt\n| stt.final:latest , mic > out overlay\n";
-        let p = Pipeline::parse(loose).unwrap();
-        assert_eq!(
-            p.format(),
-            ".                      mic  mic\n\
-             |mic>                  stt  stt\n\
-             |stt.final:latest,mic> out  overlay\n"
-        );
+    fn default_pipeline_is_canonical() {
+        let p = Pipeline::parse(DEFAULT_PIPELINE).unwrap();
+        assert_eq!(p.format(), DEFAULT_PIPELINE);
     }
 
     #[test]
-    fn previous_line_shorthand() {
-        let p = Pipeline::parse(". a mic\n|> b stt\n| > c overlay\n").unwrap();
-        let ins = p.inputs();
-        assert_eq!(ins["b"][0].node, "a");
-        assert_eq!(ins["c"][0].node, "b");
-        // Linear chain: `|>` stays short.
-        assert_eq!(p.format(), ".  a  mic\n|> b  stt\n|> c  overlay\n");
+    fn leading_pipe_is_optional() {
+        let p = Pipeline::parse(". mic\n|mic> stt\n| stt > overlay\n|> append x\n").unwrap();
+        assert_eq!(p.format(), ".    mic\nmic> stt\nstt> overlay\n>    append  x\n");
+        // Without `|`, text before `>` that isn't a ref list is not a node.
+        assert!(Pipeline::parse(". mic\nsee a > b\n").is_err());
+        let p = Pipeline::parse(". mic\n# see a > b\n").unwrap();
+        assert_eq!(p.nodes().count(), 1);
+        // `#` + a node is that node turned off.
+        let p = Pipeline::parse(". mic\n#mic> stt\n").unwrap();
+        assert!(!p.nodes().nth(1).unwrap().enabled);
+    }
+
+    #[test]
+    fn bare_kind_is_a_complete_line() {
+        let p = Pipeline::parse(". mic\n> stt\n").unwrap();
+        let n: Vec<_> = p.nodes().map(|n| (n.id.as_str(), n.kind.as_str(), n.named)).collect();
+        assert_eq!(n, vec![("mic", "mic", false), ("stt", "stt", false)]);
+        assert_eq!(p.inputs()["stt"][0].node, "mic");
+        assert_eq!(p.format(), ". mic\n> stt\n");
+    }
+
+    #[test]
+    fn redundant_name_is_dropped_by_formatter() {
+        let p = Pipeline::parse(". mic=mic default\n").unwrap();
+        assert_eq!(p.format(), ". mic default\n");
+    }
+
+    #[test]
+    fn same_kind_nodes_are_numbered_and_pinned() {
+        let p = Pipeline::parse(". mic\n. mic\n. mic\n").unwrap();
+        let ids: Vec<_> = p.nodes().map(|n| n.id.as_str()).collect();
+        assert_eq!(ids, ["mic", "mic2", "mic3"]);
+        // The formatter writes the auto names down…
+        let f = p.format();
+        assert_eq!(f, ". mic\n. mic2=mic\n. mic3=mic\n");
+        // …so a node added later gets the next free number, not a reshuffle.
+        let p = Pipeline::parse(&format!("{f}. mic\n")).unwrap();
+        let ids: Vec<_> = p.nodes().map(|n| n.id.as_str()).collect();
+        assert_eq!(ids, ["mic", "mic2", "mic3", "mic4"]);
+        // (Known limit: a new unnamed line *above* the bare `mic` takes the
+        // bare name, and the old one becomes the next number.)
+        let p = Pipeline::parse(&format!(". mic\n{f}")).unwrap();
+        let ids: Vec<_> = p.nodes().map(|n| n.id.as_str()).collect();
+        assert_eq!(ids, ["mic", "mic4", "mic2", "mic3"]);
+        // Explicit names are never taken by auto numbering.
+        let p = Pipeline::parse(". mic2=stt\n. mic\n. mic\n").unwrap();
+        let ids: Vec<_> = p.nodes().map(|n| n.id.as_str()).collect();
+        assert_eq!(ids, ["mic2", "mic", "mic3"]);
+    }
+
+    #[test]
+    fn broken_lines_leave_a_working_partial_graph() {
+        let src = ". mic\nmic> stt\nnope> polish\npolish> append a.txt\nstt> overlay\nhello\n";
+        let p = Pipeline::parse_lenient(src);
+        let ok: Vec<_> = p.nodes().map(|n| n.id.as_str()).collect();
+        assert_eq!(ok, ["mic", "stt", "overlay"]);
+        let errs: Vec<_> = p.errors().into_iter().map(|e| (e.line, e.message)).collect();
+        assert_eq!(
+            errs,
+            [
+                (3, "unknown node `nope`".to_string()),
+                (4, "input `polish` has an error".to_string()),
+                (6, "a node line starts with `.` (source) or `input>`".to_string()),
+            ]
+        );
+        // A broken line gives up its name: the next `append` is not `append2`.
+        let p2 = Pipeline::parse_lenient("nope> append x\n. mic\nmic> append y\n");
+        assert_eq!(p2.nodes().map(|n| n.id.as_str()).collect::<Vec<_>>(), ["mic", "append"]);
+        // Broken lines are kept verbatim; status shows the error.
+        let f = p.format();
+        assert!(f.contains("\nnope> polish\n") && f.contains("\nhello\n"), "{f}");
+        let shown = p.render_with_status(&HashMap::new());
+        assert!(shown.contains("# ! unknown node `nope`"), "{shown}");
+        // …and copying the rendered view back drops the status again.
+        assert_eq!(Pipeline::parse_lenient(&shown).format(), f);
+        // Strict parse reports the first error.
+        assert_eq!(Pipeline::parse(src).unwrap_err().line, 3);
+    }
+
+    #[test]
+    fn spaces_inside_input_clause_are_accepted() {
+        assert!(Pipeline::parse(". mic\n|  stt . final > overlay\n").is_err());
+        let p = Pipeline::parse(". mic\n| mic >  stt\n| stt.final:latest , mic > overlay\n").unwrap();
+        assert_eq!(
+            p.format(),
+            ".                     mic\n\
+             mic>                  stt\n\
+             stt.final:latest,mic> overlay\n"
+        );
     }
 
     #[test]
     fn previous_shorthand_made_explicit_once_branching() {
-        let p = Pipeline::parse(". a mic\n|> b stt\n|b> c polish\n|b> d translate en\n").unwrap();
+        let p = Pipeline::parse(". mic\n> stt\nstt> polish\nstt> translate en\n").unwrap();
         assert_eq!(
             p.format(),
-            ".   a  mic\n|a> b  stt\n|b> c  polish\n|b> d  translate en\n"
+            ".    mic\nmic> stt\nstt> polish\nstt> translate en\n"
         );
     }
 
     #[test]
-    fn status_markers_and_status_comments_are_stripped() {
-        // A row copied out of the menu.
-        let p = Pipeline::parse(". mic ~ mic default  # ~ ▁▃▇ · 3:42 captured\n").unwrap();
-        assert_eq!(p.format(), ". mic  mic default\n");
-        let p = Pipeline::parse(". mic mic  # off\n").unwrap();
-        assert_eq!(p.format(), ". mic  mic\n");
-        // A real comment survives.
-        let p = Pipeline::parse(". mic mic  # laptop mic\n").unwrap();
-        assert_eq!(p.format(), ". mic  mic  # laptop mic\n");
+    fn status_comments_are_stripped() {
+        let p = Pipeline::parse(". mic default  # ~ ▁▃▇ · 3:42\n").unwrap();
+        assert_eq!(p.format(), ". mic default\n");
+        let p = Pipeline::parse(". mic  # off\n").unwrap();
+        assert_eq!(p.format(), ". mic\n");
+        let p = Pipeline::parse(". mic  # laptop mic\n").unwrap();
+        assert_eq!(p.format(), ". mic  # laptop mic\n");
     }
 
     #[test]
@@ -781,16 +1044,21 @@ mod tests {
         let p = Pipeline::parse(SAMPLE).unwrap();
         let mut st = HashMap::new();
         st.insert("mic".into(), NodeStatus { state: NodeState::Streaming, detail: "▁▃▇ · 3:42".into() });
-        st.insert("stt".into(), NodeStatus { state: NodeState::Chunk, detail: "decoding 2.1 s".into() });
-        st.insert("pol".into(), NodeStatus { state: NodeState::NeedsUser, detail: "needs API key".into() });
+        st.insert("stt".into(), NodeStatus { state: NodeState::Chunk, detail: "12% busy".into() });
+        st.insert("polish".into(), NodeStatus { state: NodeState::NeedsUser, detail: "needs API key".into() });
         let shown = p.render_with_status(&st);
-        assert!(shown.contains("# ~ ▁▃▇ · 3:42\n"), "{shown}");
-        assert!(shown.contains("# / decoding 2.1 s"));
-        assert!(shown.contains("# ? needs API key"));
-        assert!(shown.contains("# -\n")); // log: no status reported → idle
-        assert!(shown.contains("debug.txt       # off\n"), "{shown}");
+        assert_eq!(
+            shown,
+            "\
+# otoji pipeline
+.          mic                           # ~ ▁▃▇ · 3:42
+mic>       stt        sensevoice vad=3s  # / 12% busy
+stt.final> polish     gemini             # ? needs API key
+stt.final> log=append $date.stt          # -
+#stt>      dbg=append debug.txt          # off
+"
+        );
         let back = Pipeline::parse(&shown).unwrap();
-        // Statuses replace user comments in the view, so compare structure.
         let strip = |p: &Pipeline| {
             p.nodes().map(|n| (n.id.clone(), n.kind.clone(), n.args.clone(), n.enabled)).collect::<Vec<_>>()
         };
@@ -800,48 +1068,55 @@ mod tests {
     #[test]
     fn toggle_writes_hash_prefix() {
         let mut p = Pipeline::parse(SAMPLE).unwrap();
-        assert!(p.set_enabled("pol", false));
-        assert!(p.format().contains("#|stt.final> pol  polish gemini\n"));
+        assert!(p.set_enabled("polish", false));
+        assert!(p.format().contains("\n#stt.final> polish     gemini\n"), "{}", p.format());
         assert!(p.set_enabled("dbg", true));
-        assert!(p.format().contains("\n|stt>        dbg  append debug.txt\n"));
+        assert!(p.format().contains("\nstt>        dbg=append debug.txt\n"), "{}", p.format());
         assert!(!p.set_enabled("nope", true));
     }
 
     #[test]
     fn errors_name_the_line() {
-        let e = Pipeline::parse(". a mic\n|x> b stt\n").unwrap_err();
+        let e = Pipeline::parse(". mic\nx> stt\n").unwrap_err();
         assert_eq!((e.line, e.message.as_str()), (2, "unknown node `x`"));
-        let e = Pipeline::parse(". a mic\n. a mic\n").unwrap_err();
+        let e = Pipeline::parse(". a=mic\n. a=mic\n").unwrap_err();
         assert_eq!(e.line, 2);
-        let e = Pipeline::parse("|> a stt\n").unwrap_err();
+        assert!(e.message.contains("duplicate node name `a`"));
+        let e = Pipeline::parse("> stt\n").unwrap_err();
         assert_eq!(e.line, 1);
-        let e = Pipeline::parse(". a mic\nhello\n").unwrap_err();
+        let e = Pipeline::parse(". mic\nhello\n").unwrap_err();
         assert_eq!(e.line, 2);
-        let e = Pipeline::parse(". a append \"open\n").unwrap_err();
+        let e = Pipeline::parse(".\n").unwrap_err();
+        assert_eq!(e.message, "missing node kind");
+        let e = Pipeline::parse(". append \"open\n").unwrap_err();
         assert!(e.message.contains("unterminated quote"));
     }
 
     #[test]
     fn quoted_args_keep_special_characters() {
-        let p = Pipeline::parse(". a append \"x | y > #z.stt\"  # note\n").unwrap();
+        let p = Pipeline::parse(". append \"x | y > #z.stt\"  # note\n").unwrap();
         let n = p.nodes().next().unwrap();
         assert_eq!(n.args, vec!["\"x | y > #z.stt\""]);
         assert_eq!(n.comment.as_deref(), Some("note"));
-        assert_eq!(p.format(), ". a  append \"x | y > #z.stt\"  # note\n");
+        assert_eq!(p.format(), ". append \"x | y > #z.stt\"  # note\n");
     }
 
     #[test]
     fn graph_json_round_trip() {
-        let src = ". mic mic default @iphone\n|mic> stt stt sensevoice vad=3s\n|stt.final:latest> pol polish gemini\n#|stt> dbg append debug.txt\n";
+        let src = ". mic default @iphone\nmic> stt sensevoice vad=3s\nstt.final:latest> pol=polish gemini\n#stt> dbg=append debug.txt\n";
         let p = Pipeline::parse(src).unwrap();
         let g = p.to_graph_json();
         assert_eq!(g["nodes"]["mic"]["device"], "iphone");
         assert_eq!(g["nodes"]["stt"]["config"]["vad"], "3s");
         assert_eq!(g["nodes"]["dbg"]["config"]["enabled"], false);
+        assert_eq!(g["nodes"]["pol"]["type"], "polish");
         let pe = g["edges"].as_array().unwrap().iter().find(|e| e["target"] == "pol").unwrap();
         assert_eq!((pe["sourceHandle"].as_str(), pe["policy"].as_str()), (Some("final"), Some("latest")));
         let back = Pipeline::from_graph_json(&g).unwrap();
         assert_eq!(back.to_graph_json(), g);
+        assert!(back.format().contains("pol=polish gemini"));
+        let mic = back.nodes().find(|n| n.id == "mic").unwrap();
+        assert_eq!((mic.token(), mic.args.clone()), ("mic".into(), vec!["default".into(), "@iphone".into()]));
     }
 
     #[test]
@@ -857,7 +1132,7 @@ mod tests {
 
     #[test]
     fn duty_cycle_renders_busy_share_steadily() {
-        use std::time::{Duration, Instant};
+        use std::time::Duration;
         let ms = Duration::from_millis;
         let mut a = Activity::new(ms(1000));
         let t0 = a.epoch;
@@ -866,15 +1141,13 @@ mod tests {
             let s = t0 + ms(i * 100);
             a.record(s, s + ms(80));
         }
-        let now = t0 + ms(1000);
-        assert!((a.fraction(now) - 0.8).abs() < 0.01);
+        assert!((a.fraction(t0 + ms(1000)) - 0.8).abs() < 0.01);
         let mut b = Activity::new(ms(1000));
         let t = b.epoch;
         b.record(t, t + ms(800));
-        let at = |b: &mut Activity, off: u64| b.state_at(t + ms(1000) + ms(off), NodeState::Chunk).0;
-        // At t+1000 the window [0,1000] holds 800 ms busy; phase 0 → busy.
-        assert_eq!(at(&mut b, 0), NodeState::Chunk);
-        // Idle work ages out of the window entirely → idle.
+        // At t+1000 the window holds 800 ms busy and the phase is 0 → busy.
+        assert_eq!(b.state_at(t + ms(1000), NodeState::Chunk).0, NodeState::Chunk);
+        // Once the work ages out of the window → idle.
         assert_eq!(b.state_at(t + ms(5000), NodeState::Chunk), (NodeState::Idle, 0.0));
         // An open interval counts until now.
         let mut c = Activity::new(ms(1000));
