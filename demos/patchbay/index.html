@@ -85,11 +85,17 @@ main { display: grid; gap: 18px; min-width: 0; }
 .help summary::before { content: "▸ "; color: var(--muted); }
 .help details[open] > summary::before { content: "▾ "; }
 .help details[open] > summary { margin-bottom: 6px; }
+/* Narrow screens: the side panels stay at their sides as rails; opened, each
+   slides over the editor as a drawer instead of squeezing it. */
 @media (max-width: 1000px) {
-  .app { grid-template-columns: minmax(0, 1fr); }
-  .side { position: static; max-height: none; }
-  .side-left { order: 0; } main { order: 1; } .side-right { order: 2; }
-  .left-folded .side-left, .right-folded .side-right { width: auto; }
+  .app { --lcol: 34px; --rcol: 34px; gap: 8px; }
+  .side-left { grid-area: 1 / 1; } main { grid-area: 1 / 2; } .side-right { grid-area: 1 / 3; }
+  .app:not(.left-folded) .side-left, .app:not(.right-folded) .side-right {
+    position: fixed; top: 0; bottom: 0; z-index: 20; max-height: none; overflow-y: auto; overscroll-behavior: contain;
+    width: min(360px, 85vw); padding: 10px 12px 24px; background: var(--bg); box-shadow: 0 0 24px rgba(0, 0, 0, 0.35);
+  }
+  .app:not(.left-folded) .side-left { left: 0; padding-left: max(12px, env(safe-area-inset-left, 0px)); }
+  .app:not(.right-folded) .side-right { right: 0; width: min(420px, 85vw); padding-right: max(12px, env(safe-area-inset-right, 0px)); }
 }
 h1 { font-size: 26px; font-weight: 700; letter-spacing: 0.01em; margin: 0; text-wrap: balance; }
 h1 small { font-weight: 500; color: var(--muted); font-size: 15px; margin-left: 8px; }
@@ -140,7 +146,6 @@ button, select, input { font: inherit; color: inherit; }
 .code:focus-visible { box-shadow: inset 0 0 0 2px var(--focus); }
 .status { color: var(--muted); overflow: hidden; }
 .srow { display: block; height: var(--code-lh); overflow: hidden; text-overflow: ellipsis; cursor: default; border-radius: 4px; padding-inline: 4px; margin-inline: -4px; }
-.srow.node { cursor: pointer; }
 .srow.node:hover { background: var(--bg); }
 .srow .sym { display: inline-block; width: 2.6ch; font-weight: 600; }
 .srow.s-stream .sym { color: var(--signal); }
@@ -216,7 +221,7 @@ ul.ideas { margin: 0; padding-left: 18px; display: grid; gap: 6px; font-size: 14
 <main>
   <header style="display:grid; gap:6px">
     <h1>otoji Patchbay <small>music nodes in the pipeline language</small></h1>
-    <p class="intro">Each line is a node. Edit the patch and it applies as you type; the column on the right is generated live and is never part of the source. Click a status to mute or unmute that line.</p>
+    <p class="intro">Each line is a node. Edit the patch and it applies as you type; the column on the right is generated live and is never part of the source. <kbd>Alt</kbd>+<kbd>T</kbd> mutes or unmutes the line under the cursor.</p>
   </header>
 
   <section class="transport" aria-label="Transport">
@@ -239,11 +244,10 @@ ul.ideas { margin: 0; padding-left: 18px; display: grid; gap: 6px; font-size: 14
       <div class="editor-col">
     <div id="monaco" class="monaco-host screen-wrap" aria-label="Patch source"></div>
     <div class="keys" id="keys">
-      <span><kbd>Ctrl</kbd>+<kbd>T</kbd> mute/unmute line now</span>
-      <span><kbd>Ctrl</kbd>+<kbd>E</kbd> mute/unmute at the next bar</span>
-      <span><kbd>Ctrl</kbd>+<kbd>B</kbd> play/stop</span>
+      <span><kbd>Alt</kbd>+<kbd>T</kbd> mute/unmute line now</span>
+      <span><kbd>Alt</kbd>+<kbd>E</kbd> mute/unmute at the next bar</span>
+      <span><kbd>Alt</kbd>+<kbd>B</kbd> play/stop</span>
       <span><kbd>Esc</kbd> stop</span>
-      <span>Click a <code># status</code> to mute/unmute</span>
     </div>
       </div>
     </div>
@@ -1398,7 +1402,7 @@ function finishLearn(r, st) {
   learntInto.set(target.id, Date.now() + 30000); // the target's status says so for 30 s
   learnState.delete(r.node.id);
   ui.setLine(targetLine, fresh);
-  ui.toggleLines([ownLine]); // done: the learn line turns itself off (Ctrl+T records again)
+  ui.toggleLines([ownLine]); // done: the learn line turns itself off (Alt+T records again)
 }
 // ── melody learning: pitch track → notes (no gaps needed) → scale snap ──
 // Pitch every 10 ms on a 12 kHz copy (normalized autocorrelation, preferring
@@ -1691,7 +1695,7 @@ function nodeStatus(r, eff) {
 function nodeStatusInner(r, eff) {
   const n = r.node, k = n.kind, t = ctx ? ctx.currentTime : 0;
   if (r.error) return ["!", r.error];
-  if (!n.enabled) return ["off", learnNote.has(n.id) ? `${learnNote.get(n.id)} · Ctrl+T records again` : ""];
+  if (!n.enabled) return ["off", learnNote.has(n.id) ? `${learnNote.get(n.id)} · Alt+T records again` : ""];
   if (k === "learn") {
     const what = `${r.cfg.label} into ${r.cfg.to}`;
     if (!running) return ["?", `press Start, then sing/beatbox ${what}`];
@@ -1772,7 +1776,7 @@ function statusRows() {
 let rowsKey = "";
 function renderStatus() {
   const rows = statusRows();
-  // Pending Ctrl+E toggles show on their line until the next bar.
+  // Pending Alt+E toggles show on their line until the next bar.
   for (const ln of ui.pendingLines()) if (rows[ln - 1]) rows[ln - 1].detail += ` · toggles at bar ${nextBarNumber()}`;
   const key = rows.map((r) => r.sym + r.detail).join("\n") + "|" + ui.textVersion();
   if (key === rowsKey) return;
@@ -1814,7 +1818,7 @@ function toggledLine(t) {
 
 // ── editor (Monaco, with a plain textarea fallback) ────────────────────
 const EXAMPLES = {
-  groove: `# Edit any line; it applies as you type. Ctrl+T mutes a line, Ctrl+E at the next bar.
+  groove: `# Edit any line; it applies as you type. Alt+T mutes a line, Alt+E at the next bar.
 .                       clock   bpm=92 sig=4
 #.                      metro
 .                       drums   pattern="x.....x...x.....|....x.......x...|x.x.x.x.x.x.x.xX"
@@ -1867,7 +1871,7 @@ drums>  drive         0.3
   celtic: "# Celtic (Irish) in D Dorian, jig time · §1 the mode on fiddle · §2 a jig on tin whistle over guitar\n# §3 + fiddle harmony and bodhrán · §4 a reel: fast fiddle and driving bodhrán · §5 rain on the moor, a slow air · then it loops\n.            clock   112 3/4\n.            song=arrange scale:4bars jig:8bars jig2:8bars reel:8bars rain:8bars\n\n.            ladder=strings dorian D oct=4 phrase=\"1 2 3 4 5 6 7 1' 1' 7 6 5 4 3 2 1 - - - - - - - -\" ?song.1\n.            guitar=pluck  \"Dm C Dm Am\" arp ?song.2-4\n.            whistle=flute dorian D oct=5 phrase=\"1 2 3 5 3 2 1 3 5 1' 6 5 4 6 5 4 3 2 1 - - 2 - - 5 4 3 4 5 6 7 1' 7 6 5 4 3 5 3 2 1 7, 1 - - - - -\" ?song.2-3\n.            fiddle=strings dorian D oct=4 phrase=\"1 2 3 5 3 2 1 3 5 1' 6 5 4 6 5 4 3 2 1 - - 2 - - 5 4 3 4 5 6 7 1' 7 6 5 4 3 5 3 2 1 7, 1 - - - - -\" ?song.3\n.            bodhran=drums kit=celtic \"x..x..x..x..|.....x.....x|x.xx.xx.xx.x\" ?song.3\n.            reel=strings  dorian D oct=5 grid=16 phrase=\"1 2 3 1 2 3 5 3 2 1 2 3 4 5 6 5 4 3 2 3 4 3 2 1\" ?song.4\n.            drive=drums   kit=celtic \"x..x.xx..x.x|..x..x..x..x|xxxxxxxxxxxx\" ?song.4\n.            air=flute     dorian D oct=5 grid=4 phrase=\"5 - - 3 - 2 1 - - - - -\" ?song.5\n.            rain         0.6 ?song.5\n\n*>           reverb  2.5s wet=0.3\n>            speaker 0.5\n",
   flamenco: "# Flamenco in E Phrygian dominant, 12-step compás · §1 the scale on guitar · §2 the Andalusian cadence (Am G F E) with palmas\n# §3 + cante (a sung line) and cajón · §4 bulerías: picado runs and dense percussion · §5 rain, a slow guitar · then it loops\n.            clock   120 3/4\n.            song=arrange scale:4bars cadence:8bars cante:8bars bulerias:8bars rain:8bars\n\n.            ladder=pluck  hijaz E phrase=\"1 2 3 4 5 6 7 1' 1' 7 6 5 4 3 2 1 - - - - - - - -\" ?song.1\n.            guitar=pluck  \"Am G F E\" block oct=3 ?song.2-4\n.            palmas=drums  kit=flamenco \"............|............|x..x..x.x.x.\" ?song.2-4\n.            cante=strings hijaz E oct=4 phrase=\"5 - 6 5 4 3 2 - - 1 - - 3 4 5 4 3 2 1 - - - - -\" ?song.3\n.            cajon=drums   kit=flamenco \"x.....x.....|..x..x..x...|............\" ?song.3-4\n.            picado=pluck  hijaz E oct=4 grid=16 phrase=\"5 4 3 2 1 2 3 4 5 6 5 4 3 2 1 7, 1 2 3 2 1 2 1 -\" ?song.4\n.            slow=pluck    hijaz E phrase=\"1 - 3 - 5 - 4 - 3 - 2 - 1 - - - - - - - - - - -\" ?song.5\n.            rain         0.6 ?song.5\n\n*>           reverb  2.5s wet=0.3\n>            speaker 0.5\n",
   learn: `# Beatbox 1 bar after the count-in: "boom" = kick, "ka" = snare, "ts" = hat.
-# learn rewrites \`beat\` and then turns itself off; Ctrl+T on it records again, Ctrl+Z undoes.
+# learn rewrites \`beat\` and then turns itself off; Alt+T on it records again, Ctrl+Z undoes.
 .          clock   90 4/4
 .          metro
 .          mic
@@ -1974,7 +1978,7 @@ function explainAt(model, lineNo, col) {
   const trimmed = line.trimStart(), lead = line.length - trimmed.length;
   const headLen = (() => { const m = /^#?(\.|\|?[^>"]*>)/.exec(trimmed); return m ? m[0].length : 0; })();
   if (c < lead + headLen) {
-    if (!l.enabled && c === lead) return { title: "#  (off)", body: "This node is turned off. Ctrl+T toggles it now, Ctrl+E at the next bar.", help: "syntax:off" };
+    if (!l.enabled && c === lead) return { title: "#  (off)", body: "This node is turned off. Alt+T toggles it now, Alt+E at the next bar.", help: "syntax:off" };
     const h = l.head.kind;
     if (h === "source") return { title: ".  source", body: `${code(l.id)} makes its own output; it takes no input line.`, help: "syntax:source" };
     if (h === "prev") return { title: ">  previous line", body: "Takes its input from the nearest valid node line above.", help: "syntax:prev" };
@@ -2107,13 +2111,10 @@ function textareaUI() {
   };
   let pending = new Set();
   code.addEventListener("keydown", (e) => {
-    if (!e.ctrlKey || e.metaKey) return;
-    const k = e.key.toLowerCase();
-    if (k === "t") { e.preventDefault(); toggleLines(cursorLines()); }
-    if (k === "e") { e.preventDefault(); if (!running) toggleLines(cursorLines()); else { cursorLines().forEach((l) => pending.add(l)); rowsKey = ""; } }
-  });
-  document.getElementById("status").addEventListener("click", (e) => {
-    const row = e.target.closest(".srow.node"); if (row) toggleLines([Number(row.dataset.line) + 1]);
+    // e.code, not e.key: on a Mac Alt+T types "†".
+    if (!e.altKey || e.ctrlKey || e.metaKey) return;
+    if (e.code === "KeyT") { e.preventDefault(); toggleLines(cursorLines()); }
+    if (e.code === "KeyE") { e.preventDefault(); if (!running) toggleLines(cursorLines()); else { cursorLines().forEach((l) => pending.add(l)); rowsKey = ""; } }
   });
   return {
     getText: () => code.value,
@@ -2197,7 +2198,6 @@ function monacoUI(monaco) {
   let timer = 0;
   model.onDidChangeContent(() => { clearTimeout(timer); timer = setTimeout(() => applyText(model.getValue()), 120); });
 
-  const MOD = /Mac|iPhone|iPad/.test(navigator.platform) ? monaco.KeyMod.WinCtrl : monaco.KeyMod.CtrlCmd;
   const selLines = () => {
     const set = new Set();
     for (const s of editor.getSelections()) for (let l = s.startLineNumber; l <= s.endLineNumber; l++) set.add(l);
@@ -2213,7 +2213,7 @@ function monacoUI(monaco) {
     editor.pushUndoStop(); editor.executeEdits("toggle", edits); editor.pushUndoStop();
     clearTimeout(timer); applyText(model.getValue());
   };
-  // Pending Ctrl+E toggles are decorations, so they follow edits above them.
+  // Pending Alt+E toggles are decorations, so they follow edits above them.
   let pendingIds = [];
   const pendingLines = () => pendingIds.map((id) => model.getDecorationRange(id)).filter(Boolean).map((r) => r.startLineNumber);
   // Autocomplete: kinds after `.` / `input>`, names before `>`, args after a kind.
@@ -2286,15 +2286,15 @@ function monacoUI(monaco) {
     },
   });
 
-  editor.addCommand(MOD | monaco.KeyCode.KeyT, () => toggleLines(selLines()));
-  editor.addCommand(MOD | monaco.KeyCode.KeyE, () => {
+  editor.addCommand(monaco.KeyMod.Alt | monaco.KeyCode.KeyT, () => toggleLines(selLines()));
+  editor.addCommand(monaco.KeyMod.Alt | monaco.KeyCode.KeyE, () => {
     if (!running) return toggleLines(selLines());
     const add = selLines().filter((l) => !pendingLines().includes(l)).map((l) => ({
       range: new monaco.Range(l, 1, l, 1), options: { isWholeLine: true, className: "pending-line", stickiness: 1 },
     }));
     pendingIds = pendingIds.concat(editor.deltaDecorations([], add)); rowsKey = "";
   });
-  editor.addCommand(MOD | monaco.KeyCode.KeyB, () => toggleTransport());
+  editor.addCommand(monaco.KeyMod.Alt | monaco.KeyCode.KeyB, () => toggleTransport());
   // Explain the word under the cursor (sticky) and under the mouse (a peek).
   editor.onDidChangeCursorPosition((e) => {
     try { showExplain(explainAt(model, e.position.lineNumber, e.position.column)); } catch (err) { /* keep the last one */ }
@@ -2305,9 +2305,6 @@ function monacoUI(monaco) {
     if (info) { clearTimeout(hoverEndTimer); showExplain(info, { hover: true }); } else endHover();
   });
   editor.onMouseLeave(() => endHover());
-  editor.onMouseDown((e) => {
-    if (e.target.detail && e.target.detail.injectedText && e.target.position) toggleLines([e.target.position.lineNumber]);
-  });
 
   let statusIds = [], version = 0;
   model.onDidChangeContent(() => version++);
@@ -2399,12 +2396,13 @@ function renderTree() {
 }
 renderTree();
 // Drag a side panel's divider (its inner edge) to resize it; remembered,
-// double-click resets.
+// double-click resets. Wide screens only: narrow ones use drawers.
+const narrowScreen = matchMedia("(max-width: 1000px)");
 for (const [sel, side] of [[".side-left", "left"], [".side-right", "right"]]) {
   const app = document.getElementById("app"), el = document.querySelector(sel);
   const prop = side === "left" ? "--lw" : "--rw", key = `otoji-width-${side}`, folded = () => app.classList.contains(`${side}-folded`);
   try { const w = localStorage.getItem(key); if (w) app.style.setProperty(prop, w); } catch (e) { /* storage unavailable */ }
-  const nearEdge = (e) => { const r = el.getBoundingClientRect(); return !folded() && (side === "left" ? r.right - e.clientX : e.clientX - r.left) <= 6; };
+  const nearEdge = (e) => { const r = el.getBoundingClientRect(); return !folded() && !narrowScreen.matches && (side === "left" ? r.right - e.clientX : e.clientX - r.left) <= 6; };
   el.addEventListener("pointermove", (e) => { if (!el.classList.contains("dragging")) el.classList.toggle("edge-hot", nearEdge(e)); });
   el.addEventListener("pointerleave", () => el.classList.remove("edge-hot"));
   el.addEventListener("pointerdown", (e) => {
@@ -2426,16 +2424,22 @@ for (const [sel, side] of [[".side-left", "left"], [".side-right", "right"]]) {
     app.style.removeProperty(prop); try { localStorage.removeItem(key); } catch (err) { /* storage unavailable */ }
   });
 }
-// Side panels fold to a rail; remembered per browser.
+// Side panels fold to a rail; remembered per browser. On narrow screens they
+// start folded and open as drawers over the editor (not remembered there).
 for (const [btn, cls, key] of [["foldLeft", "left-folded", "otoji-fold-left"], ["foldRight", "right-folded", "otoji-fold-right"]]) {
   const app = document.getElementById("app"), b = document.getElementById(btn);
-  const set = (folded) => { app.classList.toggle(cls, folded); b.setAttribute("aria-expanded", String(!folded)); try { localStorage.setItem(key, folded ? "1" : "0"); } catch (e) { /* storage unavailable */ } };
-  let saved = null; try { saved = localStorage.getItem(key); } catch (e) { /* storage unavailable */ }
-  set(saved === "1");
+  const show = (folded) => { app.classList.toggle(cls, folded); b.setAttribute("aria-expanded", String(!folded)); };
+  const set = (folded) => { show(folded); if (!narrowScreen.matches) try { localStorage.setItem(key, folded ? "1" : "0"); } catch (e) { /* storage unavailable */ } };
+  const restore = () => { let saved = null; try { saved = localStorage.getItem(key); } catch (e) { /* storage unavailable */ } show(narrowScreen.matches || saved === "1"); };
+  restore(); narrowScreen.addEventListener("change", restore);
   b.addEventListener("click", () => set(!app.classList.contains(cls)));
 }
+// A tap on the editor closes an open drawer.
+document.querySelector("main").addEventListener("pointerdown", () => {
+  if (narrowScreen.matches) for (const b of ["foldLeft", "foldRight"]) { const el = document.getElementById(b); if (el.getAttribute("aria-expanded") === "true") el.click(); }
+});
 
-// Pending (Ctrl+E) toggles land when the first clock starts a new bar.
+// Pending (Alt+E) toggles land when the first clock starts a new bar.
 function applyPendingAtBar(cid, c) {
   const fc = firstClock();
   if (!fc || fc.r.node.id !== cid || c.step % (4 * c.sig) !== 0) return;
@@ -2464,8 +2468,8 @@ startBtn.addEventListener("click", toggleTransport);
 document.getElementById("stopBtn").addEventListener("click", stop);
 document.addEventListener("keydown", (e) => {
   if (e.key === "Escape") stop();
-  // Ctrl+B outside the editor too (inside, Monaco handles it).
-  if (e.ctrlKey && !e.metaKey && e.key.toLowerCase() === "b" && !e.target.closest(".monaco-editor")) { e.preventDefault(); toggleTransport(); }
+  // Alt+B outside the editor too (inside, Monaco handles it). e.code: on a Mac Alt+B types "∫".
+  if (e.altKey && !e.ctrlKey && !e.metaKey && e.code === "KeyB" && !e.target.closest(".monaco-editor")) { e.preventDefault(); toggleTransport(); }
 });
 document.addEventListener("visibilitychange", () => { if (document.hidden) stop(); });
 document.getElementById("vol").addEventListener("input", () => {
