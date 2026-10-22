@@ -109,6 +109,24 @@ button, select, input { font: inherit; color: inherit; }
 .srow.s-load .sym { color: var(--focus); }
 
 .monaco-host { height: 440px; min-width: 0; }
+.patch-body { display: grid; grid-template-columns: 196px minmax(0, 1fr); gap: 12px; align-items: start; }
+.editor-col { min-width: 0; display: grid; gap: 10px; }
+@media (max-width: 860px) { .patch-body { grid-template-columns: minmax(0, 1fr); } }
+.tree { font-size: 14px; border: 1px solid var(--line); border-radius: 7px; background: var(--screen); padding: 8px 6px; max-height: 470px; overflow: auto; }
+.tree details { margin: 0; }
+.tree details details { margin-left: 12px; }
+.tree summary { cursor: pointer; font-weight: 600; padding: 3px 6px; border-radius: 5px; list-style: none; }
+.tree summary::-webkit-details-marker { display: none; }
+.tree summary::before { content: "▸"; display: inline-block; width: 1.1em; color: var(--muted); transition: transform 0.12s; }
+.tree details[open] > summary::before { transform: rotate(90deg); }
+.tree summary:hover { background: var(--bg); }
+.tree ul { list-style: none; margin: 0 0 4px; padding: 0 0 0 18px; }
+.tree li button { all: unset; box-sizing: border-box; display: block; width: 100%; cursor: pointer; padding: 3px 8px; border-radius: 5px; color: var(--ink); line-height: 1.35; }
+.tree li button:hover { background: var(--bg); }
+.tree li button:focus-visible { outline: 2px solid var(--focus); outline-offset: -2px; }
+.tree li button[aria-current="true"] { background: var(--signal-soft); font-weight: 600; }
+.tree .hint { display: block; font-size: 12px; color: var(--muted); font-weight: 400; }
+@media (prefers-reduced-motion: reduce) { .tree summary::before { transition: none; } }
 .monaco-host[hidden] { display: none; }
 /* status: pure text injected after each line (Monaco `after` decorations) */
 .st { color: var(--muted) !important; font-style: normal; }
@@ -127,7 +145,9 @@ table { border-collapse: collapse; width: 100%; font-size: 14px; }
 td { padding: 5px 8px 5px 0; vertical-align: top; border-top: 1px solid var(--line); }
 tr:first-child td { border-top: 0; }
 td code, p code, li code { font-family: var(--font-code); font-size: 12.5px; }
-td:first-child { white-space: nowrap; }
+td:first-child { width: 34%; }
+td:first-child code { white-space: nowrap; }
+td + td code { overflow-wrap: anywhere; }
 .sym-cell { font-family: var(--font-code); font-weight: 600; width: 3ch; }
 .sym-cell.stream { color: var(--signal); }
 .sym-cell.err { color: var(--bad); }
@@ -156,28 +176,13 @@ ul.ideas { margin: 0; padding-left: 18px; display: grid; gap: 6px; font-size: 14
   <section class="patch" aria-label="Patch editor">
     <div class="patch-bar">
       <div class="left">
-        <label for="example" class="count">Example</label>
-        <select id="example" class="btn">
-          <option value="groove">Groove: drums, arpeggio, bass</option>
-          <option value="metro">Metronome 节拍器</option>
-          <option value="poly">Two tempos, 3 against 2</option>
-          <option value="dub">Dub chords with delay</option>
-          <option value="speech">Speech drums: talk to play the kick</option>
-          <option value="strings">提琴: violin and cello</option>
-          <option value="egypt">Egyptian maqam Hijaz</option>
-          <option value="gothic">哥特 Gothic: organ, choir, bell</option>
-          <option value="japan">日式: koto, shakuhachi, taiko</option>
-          <option value="tang">唐: pipa, guqin, 编钟</option>
-          <option value="qing">清 · 京剧: 京胡 and 锣鼓</option>
-          <option value="cpop">现代华语: 中国风 pop</option>
-          <option value="fx">效果器 + 包絡: effects and fades</option>
-          <option value="learn">Learn a beat: beatbox into drums</option>
-          <option value="hum">Learn a tune: hum into piano</option>
-        </select>
         <button class="btn" id="fmtBtn" title="Align columns and tidy inputs">Format</button>
       </div>
       <span class="count" id="count">—</span>
     </div>
+    <div class="patch-body">
+      <nav class="tree" id="tree" aria-label="Examples"></nav>
+      <div class="editor-col">
     <div id="monaco" class="monaco-host screen-wrap" aria-label="Patch source"></div>
     <div class="keys" id="keys">
       <span><kbd>Ctrl</kbd>+<kbd>T</kbd> mute/unmute line now</span>
@@ -185,6 +190,8 @@ ul.ideas { margin: 0; padding-left: 18px; display: grid; gap: 6px; font-size: 14
       <span><kbd>Ctrl</kbd>+<kbd>B</kbd> play/stop</span>
       <span><kbd>Esc</kbd> stop</span>
       <span>Click a <code># status</code> to mute/unmute</span>
+    </div>
+      </div>
     </div>
     <div class="screen-wrap" id="fallback" hidden>
       <div class="screen">
@@ -217,12 +224,12 @@ ul.ideas { margin: 0; padding-left: 18px; display: grid; gap: 6px; font-size: 14
         <tr><td><code>vad</code></td><td><code>threshold=0.02 silence=300ms holdoff=250ms</code> · other nodes react with <code>^vad ?vad !vad</code></td></tr>
         <tr><td><code>piano</code></td><td><code>chords="Am F C G"</code> one per bar · <code>style=arp|block</code> <code>oct=4</code> · or a melody <code>notes="E4 . . G4"</code></td></tr>
         <tr><td><code>bass</code></td><td><code>chords="…"</code> roots on beats 1 and 3</td></tr>
-        <tr><td><code>strings pluck flute organ choir bell</code></td><td>instruments: <code>phrase="5 - 6 7 1'"</code> (简谱) with <code>scale=</code> <code>key=</code>, or chords; <code>adsr=</code> per note</td></tr>
+        <tr><td><code>strings</code> <code>pluck</code> <code>flute</code> <code>organ</code> <code>choir</code> <code>bell</code></td><td>instruments: <code>phrase="5 - 6 7 1'"</code> (简谱) with <code>scale=</code> <code>key=</code>, or chords; <code>adsr=</code> per note</td></tr>
         <tr><td><code>scale</code></td><td>major minor dorian phrygian … hijaz bayati rast (maqam) · in yo hirajoshi ryukyu · gong shang jue zhi yu yanyue</td></tr>
         <tr><td><code>kit=</code></td><td>drums: rock, darbuka, taiko, opera (京剧)</td></tr>
         <tr><td><code>mix</code></td><td>mixer bus: adds inputs into one signal</td></tr>
         <tr><td>effects</td><td><code>filter lp 800</code> <code>drive</code> <code>chorus</code> <code>phaser</code> <code>tremolo 6Hz</code> <code>pan auto=0.2Hz</code> <code>eq low=3</code> <code>comp -20</code> · <code>wet=</code> blends</td></tr>
-        <tr><td><code>env fadein fadeout</code></td><td>包絡: <code>env 50ms 2s ?vad</code>, <code>fadein 4bars</code>, <code>fadeout 2bars after=8bars</code></td></tr>
+        <tr><td><code>env</code> <code>fadein</code> <code>fadeout</code></td><td>包絡: <code>env 50ms 2s ?vad</code>, <code>fadein 4bars</code>, <code>fadeout 2bars after=8bars</code></td></tr>
         <tr><td><code>delay</code></td><td><code>time=3/16 feedback=0.35 wet=0.3</code>, tempo-synced</td></tr>
         <tr><td><code>reverb</code></td><td><code>size=2 wet=0.25</code> (or <code>2s</code>)</td></tr>
         <tr><td><code>speaker</code></td><td><code>volume=0.5</code> · only what reaches a speaker is heard</td></tr>
@@ -1912,7 +1919,44 @@ function boot(chosen) {
   ui.setText(text); applyText(text);
 }
 document.getElementById("fmtBtn").addEventListener("click", () => { const t = formatPatch(parsePatch(ui.getText().replace(/\n$/, ""))); ui.setText(t); applyText(t); });
-document.getElementById("example").addEventListener("change", (e) => { ui.setText(EXAMPLES[e.target.value]); applyText(EXAMPLES[e.target.value]); });
+// Examples as a tree: category → (subcategory →) example.
+const EXAMPLE_TREE = [
+  { label: "Basics", items: [["groove", "Groove", "drums, arpeggio, bass"], ["metro", "Metronome 节拍器", "3/4 click"], ["poly", "Two tempos", "3 against 2"], ["dub", "Dub chords", "tempo-synced delay"]] },
+  { label: "Voice", items: [["speech", "Speech drums", "^vad ?vad !vad"], ["learn", "Learn a beat", "beatbox into drums"], ["hum", "Learn a tune", "hum into piano"]] },
+  { label: "Instruments", items: [["strings", "提琴", "violin and cello"]] },
+  { label: "World music", children: [
+    { label: "Middle East", items: [["egypt", "Egyptian maqam Hijaz", "darbuka, oud, ney"]] },
+    { label: "Europe", items: [["gothic", "哥特 Gothic", "organ, choir, bell"]] },
+    { label: "East Asia", items: [["japan", "日式", "koto, shakuhachi, taiko"], ["tang", "唐", "pipa, guqin, 编钟"], ["qing", "清 · 京剧", "京胡 and 锣鼓"], ["cpop", "现代华语", "中国风 pop"]] },
+  ] },
+  { label: "Effects", items: [["fx", "效果器 + 包絡", "effects and fades"]] },
+];
+let currentExample = null;
+function loadExample(key) {
+  currentExample = key; ui.setText(EXAMPLES[key]); applyText(EXAMPLES[key]);
+  document.querySelectorAll("#tree button[data-ex]").forEach((b) => b.setAttribute("aria-current", String(b.dataset.ex === key)));
+}
+function renderTree() {
+  const branch = (node) => {
+    const d = document.createElement("details"); d.open = true;
+    const sum = document.createElement("summary"); sum.textContent = node.label; d.append(sum);
+    if (node.items) {
+      const ul = document.createElement("ul");
+      for (const [key, label, hint] of node.items) {
+        const li = document.createElement("li"), b = document.createElement("button");
+        b.type = "button"; b.dataset.ex = key; b.setAttribute("aria-current", "false");
+        b.append(label, Object.assign(document.createElement("span"), { className: "hint", textContent: hint }));
+        b.addEventListener("click", () => loadExample(key));
+        li.append(b); ul.append(li);
+      }
+      d.append(ul);
+    }
+    for (const c of node.children || []) d.append(branch(c));
+    return d;
+  };
+  document.getElementById("tree").replaceChildren(...EXAMPLE_TREE.map(branch));
+}
+renderTree();
 
 // Pending (Ctrl+E) toggles land when the first clock starts a new bar.
 function applyPendingAtBar(cid, c) {
