@@ -211,11 +211,11 @@ const MOODS = {
 // (the default is tense: stalking dangerous game).
 Object.assign(MOODS, {
   pageant: { ids: "persians achaemenids franks english house-of-lancaster french burgundians mongols japanese saracens abbasids khitans jurchens", act: "hunt",
-    about: "the hunt as a pageant: falcons, hounds and horns, riders sure of the game; the quarry breaks, the chase, the kill, the feast", mode: "bright", bpm: 112, grid: 8,
+    about: "the hunt as a pageant: falcons, hounds and horns, riders sure of the game, until a boar or a lion turns on them; then the kill and the feast", mode: "bright", bpm: 112, grid: 8, danger: true,
     tune: [["x-x-x---", "leap", 0, 5], ["x-xxx-x-", "step", 3, 5], ["xxxxxxx-", "step", 2, 7], ["x-x-x---", "leap", 5, 0]],
     perc: "calm", horn: "call", timp: "pulse", climax: "oct", adds: ["drone", "perc", "second", "horns", "low", "drive", "timp"] },
   plenty: { ids: "egyptians tupi malay khmer burmese vietnamese lac-viet", act: "hunt",
-    about: "hunting where game is plenty: fowling in the marshes, fishing with a bow; easy and light, half sport", mode: "bright", bpm: 104, grid: 8,
+    about: "hunting where game is plenty: fowling in the marshes, fishing with a bow, half sport; but crocodiles and tigers wait in the reeds", mode: "bright", bpm: 104, grid: 8, danger: true,
     tune: [["xx-x-x--", "step", 2, 4], ["x-xx-x--", "step", 4, 2], ["xx-x-xx-", "leap", 3, 6], ["x-x-----", "step", 3, 0]],
     perc: "calm", horn: "call", timp: null, climb: false, climax: "oct", adds: ["second", "perc", "low", "harp", "whistle", "pad", "horns"] },
 });
@@ -308,7 +308,7 @@ function compose(civ, actId) {
   const bpm = Math.round(A.bpm * (civ.tempo || 1));
   const lead = pick("lead", civ.lead, "strings@lead"), second = pick("second", civ.second, "pluck@second"), drone = pick("drone", civ.drone, "strings@drone oct=3");
   const grooves = { ...DEFAULT_GROOVES, ...(civ.grooves || {}) }, kit = civ.kit || "rock";
-  const L = [], names = { [scale]: true, [scaleOf("bright")]: true, song: true, clock: true };
+  const L = [], names = { [scale]: true, [scaleOf("bright")]: true, [scaleOf("dark")]: true, song: true, clock: true };
   // A fixed line ("kind@name …") gets a free name if a culture's instrument took it.
   const own = (l) => l.replace(/^([a-z-]+)@([\w-]+)/, (_, k, n) => { let id = n; for (let j = 2; names[id]; j++) id = `${n}${j}`; names[id] = true; return `${k}@${id}`; });
   // One line: a node playing a phrase from bar `a` to bar `b` (1-based, inclusive).
@@ -343,7 +343,14 @@ function compose(civ, actId) {
   line(lead, `grid=${g}`, q(phrase(scale, () => 0)), 1, 6);
   // Bars 7–10: once more, an octave up, or climbing a step each bar.
   const hiShift = (k) => (A.climb ? k + (k > 1 ? 1 : 0) : P.length);
-  if (A.climax === "dance") line(lead, `grid=${g}`, q(phrase(scaleOf("bright"), hiShift)), 7, 10, `${scaleOf("bright")} ${key}`);
+  const prog = A.prog, roots = prog.map((t) => jp.parse(t));
+  if (A.danger) { // bars 7–8: a predator; the music turns dark and holds its breath, then 9–10 relief
+    const dk = scaleOf("dark"), stalk = [["x---0---x-0-0---", "repeat", 1, 1], ["x-0-x-0-0-x-x---", "neighbor", 1, 2]].map(([m, sh, f, t]) => shapeBar(m, sh, Math.round(f * P.length / 5), Math.round(t * P.length / 5), rnd));
+    line(lead, "grid=16", q(stalk.flatMap((b) => render(b, dk))), 7, 8, `${dk} ${key}`);
+    line(pick("trem", civ.trem, "strings@tremolo vol=0.5"), "grid=16", q(roots.slice(0, 2).flatMap((r) => Array(16).fill(chordOf(jp.fmt(r), true)))), 7, 8, `${dk} ${key}`);
+    drum("danger", kit, "x..x............|................|................", 7, 8);
+    line(lead, `grid=${g}`, q(phrase(scale, hiShift).slice(2 * g)), 9, 10);
+  } else if (A.climax === "dance") line(lead, `grid=${g}`, q(phrase(scaleOf("bright"), hiShift)), 7, 10, `${scaleOf("bright")} ${key}`);
   else if (A.climax === "same") line(lead, `grid=${g}`, q(phrase(scale, () => 0)), 7, 10);
   else if (A.climax === "bright") {
     line(lead, `grid=${g}`, q(phrase(scale, hiShift).slice(0, 2 * g * (g === 4 ? 1 : 1))), 7, 8);
@@ -353,7 +360,6 @@ function compose(civ, actId) {
   const firstNotes = bars.flat().filter((x) => typeof x === "number").slice(0, 5);
   // (a birth ends unresolved, on the 5th: its story is not written yet)
   line(lead, "grid=4", q([...render(firstNotes, A.open ? scaleOf("bright") : scale), A.open ? "5" : "1", "-", "-"]), 11, 12, A.open ? `${scaleOf("bright")} ${key}` : sc);
-  const prog = A.prog, roots = prog.map((t) => jp.parse(t));
   const layers = {
     drone: (a) => line(drone, "grid=8", q(["1+5", ...hold(7)]), a, 12),
     low: (a) => line(pick("low", civ.low, "strings@cellos oct=2 vol=0.8"), "grid=8", q(perBar(prog, 8)), a, 11),
@@ -458,7 +464,7 @@ function compose(civ, actId) {
     ...storyBlock(STORIES[`${civ.id}:${actId}`]),
     `. clock ${bpm} 4/4`,
     `. arrange@song ${secs.join(" ")}`,
-    ...[...new Set([scale, A.climax === "bright" || A.climax === "dance" || A.open ? scaleOf("bright") : scale])].map((n) => `. scale@${n} ${formatScaleDef(SCALES[n])}`),
+    ...[...new Set([scale, A.climax === "bright" || A.climax === "dance" || A.open ? scaleOf("bright") : scale, A.danger ? scaleOf("dark") : scale])].map((n) => `. scale@${n} ${formatScaleDef(SCALES[n])}`),
     "",
   ].filter((x) => x !== null);
   const text = [...head, ...L, "", `*> reverb ${A.bpm < 70 ? "3.5s wet=0.38" : "2.5s wet=0.3"}`, "> speaker 0.5", ""].join("\n");
