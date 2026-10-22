@@ -98,7 +98,7 @@ CIVS.push(
     harp: "pluck@cimbal oct=4 vol=0.5", low: "strings@cellos oct=2", extra: "brass@cornett oct=5",
     kit: "orch", grooves: { calm: "x.......x.......|................|................",
       march: "X...X...X...X...|x.xx.xxxx.xx.xxx|X...............", drive: "X.X.X.X.X.X.X.X.|xxxxxxxxxxxxxxxx|X.......X......." },
-    motifs: ["1 1 1 2 3 - 2 1", "3 4 5 4 3 2 1 -"], skip: ["flood"],
+    motifs: ["1 1 1 2 3 - 2 1", "3 4 5 4 3 2 1 -"],
     note: "a Hussite war chorale (Ktož jsú boží bojovníci) leads, Bohemian dudy bagpipe answers, cimbál, church bells, war-wagon drums" },
 
   // ——— Eastern Europe & Byzantium ———

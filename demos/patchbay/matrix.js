@@ -36,11 +36,51 @@ const ACTIVITIES = {
   birth:  { zh: "诞生", glyph: "生", en: "Birth", about: "a birth: a risky night, then hope. No one knows what history this child will make, what fortune it brings; some hope it will save us, some are afraid", bpm: 66, mode: "dark", grid: 8,
     tune: [["x---x-x-", "step", 2, 3], ["x-x-x---", "sigh", 4, 2], ["x-xxx-x-", "step", 2, 5], ["x-x-x---", "leap", 4, 5]], climb: false, prog: ["1", "4,", "6,", "5,"], second: "long", horn: "long", timp: null, perc: "heart", climax: "bright", open: true,
     adds: ["drone", "perc", "trem", "second", "bell", "pad", "choir"] },
+  siege:  { zh: "围城", glyph: "围", en: "Siege", about: "a siege: walls, hunger, holding out for months; then the last assault", bpm: 70, mode: "dark", grid: 8,
+    tune: [["x---x---", "repeat", 1, 1], ["x-x-x---", "step", 1, 0], ["x---x-x-", "step", 2, 4], ["x-x-x---", "step", 3, 0]], climb: true, prog: ["1", "1", "6,", "7,"], second: "third", horn: "long", timp: "pulse", perc: "march", climax: "oct",
+    adds: ["ostinato", "perc", "horns", "second", "timp", "drive", "melee"] },
+  triumph: { zh: "凯旋", glyph: "胜", en: "Triumph", about: "victory, a triumph or a coronation: fanfares, bells, the crowd cheers", bpm: 112, mode: "bright", grid: 8,
+    tune: [["x-xxx---", "leap", 0, 4], ["x-x-xxx-", "step", 4, 5], ["x-xxx-x-", "leap", 5, 7], ["x-x-----", "step", 7, 5]], climb: false, prog: ["1", "4", "5", "1"], second: "third", horn: "fanfare", timp: "pulse", perc: "march", climax: "oct",
+    adds: ["perc", "horns", "low", "second", "timp", "choir", "bell"] },
+  build:  { zh: "营造", glyph: "筑", en: "Building", about: "building together: hammers and chisels, hauling stone, a work song keeps everyone in time", bpm: 96, mode: "scale", grid: 8,
+    tune: [["x-x-x-x-", "repeat", 2, 2], ["x-x-x---", "step", 2, 0], ["x-x-x-x-", "repeat", 3, 3], ["x-x-x---", "step", 3, 0]], climb: false, prog: ["1", "1", "4", "5"], second: "echo", horn: "long", timp: null, perc: "calm", climax: "oct",
+    adds: ["perc", "low", "second", "harp", "horns", "pad", "choir"] },
+  voyage: { zh: "远航", glyph: "航", en: "Voyage", about: "a voyage or a migration: leaving home, open water or open steppe, until new land is sighted", bpm: 96, mode: "scale", grid: 8,
+    tune: [["x-x-x---", "leap", 0, 4], ["x-xxx-x-", "wave", 2, 4], ["x-x-x-x-", "step", 3, 7], ["x-x-----", "step", 5, 5]], climb: false, prog: ["1", "6,", "4,", "5,"], second: "echo", horn: "call", timp: null, perc: "calm", climax: "bright",
+    adds: ["harp", "low", "second", "perc", "pad", "horns", "choir"] },
+  festival: { zh: "节庆", glyph: "节", en: "Festival", about: "a festival or the new year: everyone out, music and dancing, food and noise", bpm: 120, mode: "bright", grid: 8,
+    tune: [["xxxx-xx-", "step", 2, 5], ["xx-xx-x-", "leap", 5, 2], ["xxxxxxx-", "step", 3, 7], ["x-xxx---", "step", 5, 0]], climb: false, prog: ["1", "4", "5", "1"], second: "third", horn: "call", timp: null, perc: "calm", climax: "oct",
+    adds: ["perc", "second", "low", "horns", "harp", "drive", "sing"] },
+  games:  { zh: "竞技", glyph: "戏", en: "Games", about: "games and contests: the ball game, wrestling, races; the crowd holds its breath, then roars", bpm: 124, mode: "bright", grid: 8,
+    tune: [["xx-xxx--", "leap", 2, 5], ["xxxx-x--", "step", 5, 3], ["xx-xxx--", "leap", 3, 7], ["x-x-x---", "step", 4, 0]], climb: true, prog: ["1", "5,", "4,", "5,"], second: "third", horn: "call", timp: "pulse", perc: "march", climax: "oct",
+    adds: ["perc", "horns", "second", "low", "drive", "harp", "choir"] },
+  drought: { zh: "旱灾", glyph: "旱", en: "Drought", about: "drought and famine: the sky stays empty, the fields crack, people pray and wait", bpm: 56, mode: "dark", grid: 8,
+    tune: [["x-------", "step", 2, 2], ["x---x---", "sigh", 3, 2], ["x-----x-", "step", 1, 3], ["x-------", "step", 1, 0]], climb: false, prog: ["1", "1", "6,", "5,"], second: "long", horn: "long", timp: null, perc: "heart", climax: "oct",
+    adds: ["drone", "trem", "low", "second", "pad", "choir", "bell"] },
+  quake:  { zh: "地震", glyph: "震", en: "Earthquake", about: "an earthquake or an eruption: the ground roars, everything falls, then the long rebuilding", bpm: 76, mode: "dark", grid: 8,
+    tune: [["x-x-x---", "step", 2, 3], ["x0x0x0x0", "repeat", 3, 3], ["xxxxxxxx", "wave", 0, 5], ["x---x---", "sigh", 3, 0]], climb: true, prog: ["1", "7,", "6,", "5,"], second: "long", horn: "long", timp: "roll", perc: "march", climax: "oct",
+    adds: ["low", "timp", "trem", "perc", "horns", "choir", "pad"] },
+  winter: { zh: "寒冬", glyph: "冬", en: "Winter", about: "a hard winter: snow and a blizzard, enduring the cold together until spring", bpm: 58, mode: "dark", grid: 8,
+    tune: [["x-------", "step", 4, 4], ["x---x---", "step", 4, 2], ["x---x-x-", "step", 3, 5], ["x-------", "step", 1, 0]], climb: false, prog: ["1", "6,", "4,", "5,"], second: "long", horn: "long", timp: null, perc: "heart", climax: "oct", noDrums: true,
+    adds: ["harp", "drone", "low", "second", "pad", "bell", "choir"] },
+  plague: { zh: "瘟疫", glyph: "疫", en: "Plague", about: "a plague: bells, whispers, doors marked, a city falls silent; those who live remember", bpm: 50, mode: "dark", grid: 8,
+    tune: [["x---x---", "sigh", 3, 2], ["x---x---", "step", 2, 1], ["x-x-x---", "sigh", 4, 2], ["x-------", "step", 1, 0]], climb: false, prog: ["1", "6,", "4,", "5,"], second: "long", horn: "long", timp: "toll", perc: "heart", climax: "same", noDrums: true,
+    adds: ["bell", "drone", "low", "second", "choir", "pad", "trem"] },
+  wedding: { zh: "婚礼", glyph: "婚", en: "Wedding", about: "a wedding: the procession, two families joined, songs and a feast", bpm: 108, mode: "bright", grid: 8,
+    tune: [["xx-xxx--", "step", 2, 4], ["xxx-x---", "step", 4, 2], ["xx-xxx--", "step", 3, 6], ["x-x-x---", "step", 4, 0]], climb: false, prog: ["1", "4", "5", "1"], second: "third", horn: "long", timp: null, perc: "calm", climax: "oct",
+    adds: ["second", "perc", "low", "harp", "horns", "sing", "pad"] },
   death:  { zh: "死亡", glyph: "死", en: "Funeral", about: "funeral music, as this people mourns", bpm: 54, mode: "dark", grid: 4,
     tune: [["x--x", "sigh", 4, 3], ["x---", "step", 2, 2], ["x-xx", "sigh", 5, 3], ["x---", "step", 1, 0]], climb: false, prog: ["1", "6,", "4,", "5,"], second: "long", horn: "long", timp: "toll", perc: "heart", climax: "oct",
     adds: ["drone", "bell", "low", "second", "choir", "pad", "horns"] },
 };
-const ACTIVITY_IDS = Object.keys(ACTIVITIES);
+// Shown in this order: conflict, work and joy, the sky and the earth, life.
+const ACTIVITY_IDS = ["hunt", "battle", "siege", "triumph", "gather", "build", "voyage", "festival", "games", "ritual",
+  "rain", "drought", "flood", "wind", "fire", "thunder", "quake", "winter", "plague", "birth", "wedding", "death"];
+// Scenes a people would not have lived through.
+const NEVER = {
+  winter: "malay khmer burmese vietnamese lac-viet dravidians bengalis malians hausa mayans aztecs tupi egyptians saracens palmyrans ethiopians muisca",
+  quake: "dutch rus russians lithuanians poles slavs swedes malians hausa",
+};
 // tune: four bars, each [rhythm mask, shape, from, to]. Pitches are ranks in the
 // scale counted as if it had 5 notes an octave (0 tonic, 5 the octave), so a
 // shape reads the same in pentatonic and seven-note scales. Shapes:
@@ -154,6 +194,32 @@ function funeralOf(civ) {
   for (const [k, ids] of Object.entries(FUNERAL_OF)) if (ids.split(" ").includes(civ.id)) return k;
   return /Europe/.test(civ.region) ? "requiem" : "keening";
 }
+// Where a scene feels different to a people: overrides on the activity.
+const MOODS = {
+  inundation: { ids: "egyptians", act: "flood", about: "the inundation: the Nile rises and brings life; a festival, not a disaster", mode: "bright", climax: "oct", perc: "calm", timp: null,
+    adds: ["harp", "low", "perc", "pad", "choir", "second", "horns"] },
+  kamikaze: { ids: "japanese", act: "wind", about: "the divine wind (神風): a typhoon wrecks the invading fleet; terror turns to deliverance", climax: "bright" },
+  valhalla: { ids: "vikings", act: "death", about: "a warrior's pyre: grief, then glory; the dead feast in Valhalla", climax: "bright" },
+  thunderfear: { ids: "mongols golden-horde", act: "thunder", about: "thunder, what the steppe fears most: strangers are sent out of the ger, people wait it out" },
+  prayer: { ids: "saracens abbasids ayyubids turks ottomans berbers delhi-sultanate tughlaq-dynasty malay hausa malians", act: "ritual",
+    about: "prayer for guidance (istikhara), not divination: asking God about what is to come; solemn, not sad", noDrums: true, adds: ["drone", "low", "second", "pad", "choir", "harp", "trem"] },
+  rarerain: { ids: "berbers saracens palmyrans", act: "rain", about: "rain in the desert: a rare blessing, long waited for; then it comes" },
+  swidden: { ids: "tupi", act: "fire", about: "fire as work: clearing the forest for a new garden (slash and burn), planting in the ashes", mode: "scale", perc: "calm" },
+};
+const moodOf = (civ, act) => Object.values(MOODS).find((m) => m.act === act && m.ids.split(" ").includes(civ.id));
+// What "gathering" is for a people that doesn't farm or forage the usual way, and its rhythm.
+const GATHER_AS = [
+  ["mongols huns cumans tatars golden-horde", "milking the mares, making felt, moving with the herds", "ride"],
+  ["phoenicians carthaginians vikings maltese malay", "hauling the nets and rowing home", "row"],
+  ["berbers saracens palmyrans", "the date harvest at the oasis", null],
+  ["egyptians", "the Nile harvest", null],
+  ["dutch", "the herring catch and the market", "row"],
+  ["americans", "the wheat harvest", null],
+  ["haudenosaunee", "the Three Sisters (corn, beans, squash) and maple sugaring", null],
+  ["lakota", "gathering wild turnips and chokecherries", null],
+  ["tupi", "manioc and forest fruit", null],
+  ["mapuche", "the araucaria pine-nut harvest (ngülliw)", null],
+];
 // Peoples whose battles are led by a war drum: it marches from bar 2 and rolls (擂鼓) at the climax.
 const WAR_DRUMS = { zhangu: "chinese shang shu wei wu zhu-xis-legacy jurchens khitans" };
 function warDrumOf(civ) {
@@ -218,7 +284,9 @@ function storyBlock(text) {
 }
 function compose(civ, actId) {
   const fun = actId === "death" ? funeralOf(civ) : null;
-  const A = { ...ACTIVITIES[actId], ...(fun ? FUNERALS[fun] : {}) }, R = A.roles || {};
+  const mood = moodOf(civ, actId), gatherAs = actId === "gather" ? GATHER_AS.find(([ids]) => ids.split(" ").includes(civ.id)) : null;
+  const A = { ...ACTIVITIES[actId], ...(fun ? FUNERALS[fun] : {}), ...(mood || {}) }, R = A.roles || {};
+  if (gatherAs) A.about = `together: ${gatherAs[1]}; light and happy, unhurried`;
   // A role: the activity's override ("@flute" = the culture's own flute), else the culture's, else a default.
   const pick = (k, civSpec, def) => { let x = R[k]; if (x && x.startsWith("@")) x = civ[x.slice(1)]; if (k === "lead" && fun && FUNERAL_LEAD[civ.id]) x = FUNERAL_LEAD[civ.id]; return role(x || civSpec, def); };
   const scaleOf = (mode) => (mode === "dark" ? civ.dark : mode === "bright" ? civ.bright : null) || civ.scale;
@@ -332,14 +400,30 @@ function compose(civ, actId) {
   const drive = adds.indexOf("drive");
   adds.forEach((k, i) => (k === "perc" && drive > i ? layers.perc(i + 2, drive + 1) : layers[k](i + 2)));
   if (civ.extra) line(role(civ.extra), "grid=4", q(["1", "-", "-", "-"]), 9, 10);
-  if (!["death", "gather", "birth"].includes(actId)) drum("crash", "orch", "................|................|x...............", 9, 9);
+  if (!["death", "gather", "birth", "drought", "plague", "winter", "build", "voyage"].includes(actId)) drum("crash", "orch", "................|................|x...............", 9, 9);
   // Voices: the culture's war cry at the climax; people chatting while they gather.
   if (actId === "battle") for (const l of lookup(WAR_CRIES, civ) || ['crowd@cry shout "HAA" "x-------........"']) L.push(`. ${l} ?song.9-10`);
   if (actId === "gather") {
     const pool = lookup(MURMUR, civ);
     L.push(`. crowd@talk murmur${pool ? ` "${pool}"` : ""} voices=10 vol=0.7 ?song.3-8`);
+    if (gatherAs && gatherAs[2] === "row") L.push('. crowd@rowers chant "HEI ya" "x---....x---...." voices=12 pitch=0.9 ?song.5-10'); // pulling together
+    if (gatherAs && gatherAs[2] === "ride") L.push(`. drums@ride kit=${kit} "x..x..x.x..x..x.|................|..x.....x.....x." ?song.3-10`); // the gait of the horses
     if (["japanese", "yamato", "sengoku-daimyo"].includes(civ.id)) L.push('. crowd@hayashi chant "i-YA SA-SA" "x-x-x-x-........" voices=10 voice=mixed ?song.9-10'); // イヤサッサ
   }
+  // Sounds of each scene.
+  const cry = lookup(WAR_CRIES, civ) || ['crowd@cry shout "HAA" "x-------........"'];
+  if (actId === "siege") { for (const l of cry) L.push(`. ${l} ?song.9-10`); L.push(". crowd@hungry murmur voices=6 vol=0.4 pitch=0.85 ?song.3-6"); }
+  if (actId === "triumph" || actId === "games" || actId === "festival") {
+    L.push(`. crowd@people murmur${lookup(MURMUR, civ) ? ` "${lookup(MURMUR, civ)}"` : ""} voices=14 vol=0.8 ?song.2-10`);
+    L.push(`. crowd@cheer shout "${actId === "games" ? "O" : "HEI"}" "x-------........" voices=30 voice=mixed ?song.9-10`);
+  }
+  if (actId === "wedding") L.push(`. crowd@guests murmur${lookup(MURMUR, civ) ? ` "${lookup(MURMUR, civ)}"` : ""} voices=10 vol=0.6 ?song.6-10`, '. crowd@toast shout "HEI" "x-------........" voices=16 voice=mixed ?song.9');
+  if (actId === "build") L.push('. drums@work kit=work "................|x.......x.......|x...x...x...x..." ?song.2-10', '. crowd@haul chant "HEI ho" "x---....x---...." voices=14 pitch=0.9 ?song.4-10');
+  if (actId === "voyage") L.push(". wind@sea 0.25 gust=0.08Hz", '. crowd@rowers chant "HEI ya" "x---....x---...." voices=12 pitch=0.9 ?song.4-8');
+  if (actId === "plague") L.push(". crowd@whispers murmur voices=5 vol=0.35 pitch=0.8 ?song.3-8");
+  if (actId === "drought") L.push(". wind@dry 0.2 gust=0.05Hz");
+  if (actId === "winter") L.push(". wind@blizzard 0.4 gust=0.2Hz", ". wind@gale 0.6 gust=0.3Hz ?song.7-10");
+  if (actId === "quake") L.push(`. drums@rumble kit=sky "X${".".repeat(63)}|${".".repeat(64)}|${".".repeat(64)}" ?song.3-10`, '. drums@crack kit=sky "................|x..x....x.......|....x.x........." ?song.3-4', '. drums@aftershock kit=sky "x...............|................|................" ?song.9');
   if (A.fire) L.push(". fire@spark 0.25 crackle=0.2 ?song.1-6", ". fire@blaze 0.8 crackle=0.7 ?song.7-10", ". fire@embers 0.2 crackle=0.08 ?song.11-12");
   if (A.thunder) L.push(`. drums@thunder kit=sky "${"X".padEnd(32, ".")}|${".".repeat(32)}|${".".repeat(32)}" ?song.3-10`,
     '. drums@lightning kit=sky "................|x.......x.......|................" ?song.7-10', ". rain@storm 0.5 drops=0.4 ?song.5-11");
@@ -369,7 +453,7 @@ function compose(civ, actId) {
 const REGION_ORDER = ["East Asia", "South & Southeast Asia", "Steppe & Central Asia", "Middle East", "Africa", "Ancient Mediterranean & Near East",
   "Western Europe", "Northern & Central Europe", "Eastern Europe & Byzantium", "Americas"];
 function civKey(civ, act) { return `m:${civ.id}:${act}`; }
-function activitiesFor(civ) { return ACTIVITY_IDS.filter((a) => !(civ.skip || []).includes(a)); }
+function activitiesFor(civ) { return ACTIVITY_IDS.filter((a) => !(civ.skip || []).includes(a) && !(NEVER[a] || "").split(" ").includes(civ.id)); }
 for (const civ of CIVS) for (const a of activitiesFor(civ)) Object.defineProperty(EXAMPLES, civKey(civ, a), { get: () => compose(civ, a), enumerable: false });
 function renderMatrix() {
   const d = document.createElement("details"); d.className = "matrix"; d.open = true;

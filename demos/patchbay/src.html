@@ -208,7 +208,7 @@ ul.ideas { margin: 0; padding-left: 18px; display: grid; gap: 6px; font-size: 14
 .tree ul.civs { list-style: none; margin: 0; padding: 0 0 0 4px; display: grid; gap: 2px; }
 .tree ul.civs li { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 6px; }
 .tree ul.civs .civ { flex: 1 1 120px; min-width: 0; font-size: 13px; }
-.tree ul.civs .chips { display: inline-flex; gap: 1px; }
+.tree ul.civs .chips { display: flex; flex-wrap: wrap; gap: 1px; max-width: 100%; }
 .tree ul.civs .chips button { display: inline-block; width: 1.6em; padding: 2px 0; font-size: 12px; text-align: center; }
 .tree ul.civs .chips button:disabled { opacity: 0.25; }
 /*MONACO_CSS*/
@@ -1306,6 +1306,18 @@ KITS.temple = ["mokugyo", "rin", "hyoshigi"];
     else before(out, lane, t, accent);
   };
 }
+// Work: a hammer on stone or wood, a chisel's ring, a heave (hauling stone or timber).
+KITS.work = ["hammer", "chisel", "heave"];
+{
+  const before = kitHit;
+  kitHit = function (out, lane, t, accent) {
+    const a = accent ? 1.3 : 1, j = 0.9 + Math.random() * 0.2;
+    if (lane === "hammer") { voice(out, t, { freq: 210 * j, endFreq: 140, dur: 0.1, peak: 0.45 * a, type: "triangle" }); noise(out, t, 0.04, 0.25 * a, 1200); }
+    else if (lane === "chisel") { voice(out, t, { freq: 2600 * j, dur: 0.18, peak: 0.12 * a }); voice(out, t, { freq: 4100 * j, dur: 0.1, peak: 0.05 * a }); noise(out, t, 0.02, 0.15 * a, 4000); }
+    else if (lane === "heave") { const s = 0.35; noise(out, t, s, 0.12 * a, 200); voice(out, t, { freq: 70, endFreq: 55, dur: s, peak: 0.25 * a, attack: 0.08 }); }
+    else before(out, lane, t, accent);
+  };
+}
 // Weather: thunder (a long low rumble), a sharp crack, hail.
 KITS.sky = ["thunder", "crack", "hail"];
 {
@@ -1492,7 +1504,7 @@ for (const [k, doc] of [["marimba", "Marimba / balafon: wooden bars."], ["piano"
   ["brass", "Brass: horns, trumpets, 号角, karnay; the filter opens as the note swells."], ["timpani", "Timpani (kettle drums): tuned hits; fast repeated notes make a roll."]]) {
   CATALOG[k] = { doc, args: MELODIC_ARGS };
 }
-CATALOG.drums.args.push(["kit", "rock", "rock, darbuka, taiko, opera (京剧), aztec, african, tabla, gamelan, celtic, flamenco, orch (orchestra), zhangu (战鼓), sky (thunder), temple (木魚 りん); battle: clash (steel, metal shields), woodshield, rattan (藤牌), hide", Object.keys(KITS), { re: new RegExp(`^(${Object.keys(KITS).join("|")})$`) }]);
+CATALOG.drums.args.push(["kit", "rock", "rock, darbuka, taiko, opera (京剧), aztec, african, tabla, gamelan, celtic, flamenco, orch (orchestra), zhangu (战鼓), sky (thunder), temple (木魚 りん), work (hammer, chisel); battle: clash (steel, metal shields), woodshield, rattan (藤牌), hide", Object.keys(KITS), { re: new RegExp(`^(${Object.keys(KITS).join("|")})$`) }]);
 CATALOG.drums.args[1][3] = [...new Set(Object.values(KITS).flat())];
 CATALOG.drums.args[1][4] = { re: new RegExp(`^(${[...new Set(Object.values(KITS).flat())].join("|")})$`) };
 
@@ -2526,6 +2538,7 @@ const VALUE_DOCS = {
   "kit.opera": "京剧 锣鼓: 板 ban (clapper, the beat), 锣 luo (gong), 钹 bo (cymbals).",
   "mode.shout": "Everyone shouts the words once per pattern, rising then falling: a war cry.", "mode.chant": "Short syllables together on the rhythm: hu! ha!",
   "mode.ululate": "A high trilled cry (the tongue flicks l-l-l), like zaghārīd.", "mode.murmur": "Chatter: people talk in bursts of random syllables (walla).",
+  "kit.work": "Work: hammer (on stone or wood), chisel (a ring), heave (hauling stone or timber).",
   "kit.temple": "Temple: 木魚 mokugyo (wooden fish), りん rin (bowl bell), 拍子木 hyoshigi (clappers).",
   "kit.sky": "Weather: thunder (a long rumble), crack (a near strike), hail.",
   "kit.zhangu": "战鼓 Chinese war drum: 大鼓 dagu (the big drum), 鼓边 gubian (rim), 铙 nao (cymbals).",
