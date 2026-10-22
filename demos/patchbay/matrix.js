@@ -545,19 +545,31 @@ function renderPlayer() {
   const hr = document.createElement("tr"); hr.append(document.createElement("th"));
   for (const a of ACTIVITY_IDS) hr.append(Object.assign(document.createElement("th"), { textContent: ACTIVITIES[a].glyph, title: `${ACTIVITIES[a].zh} ${ACTIVITIES[a].en}: ${ACTIVITIES[a].about}`, scope: "col" }));
   head.append(hr);
-  let current = null;
+  let current = null, switching = 0;
+  // Fades on the master gain: out before switching or stopping, in after starting.
+  const fadeOut = (secs) => new Promise((done) => {
+    if (!running || !ctx) return done();
+    const g = master.gain, t = ctx.currentTime; g.cancelScheduledValues(t); g.setValueAtTime(g.value, t); g.linearRampToValueAtTime(0.0001, t + secs);
+    setTimeout(done, secs * 1000 + 30);
+  });
+  const fadeIn = (secs) => { const g = master.gain, t = ctx.currentTime; g.cancelScheduledValues(t); g.setValueAtTime(0.0001, t); g.linearRampToValueAtTime(volume(), t + secs); };
+  const stopSoftly = async () => { const my = ++switching; await fadeOut(0.6); if (my === switching) stop(); };
   const play = async (civ, a, btn) => {
     const key = civKey(civ, a);
-    if (current === btn && running) { stop(); btn.setAttribute("aria-pressed", "false"); current = null; return; }
+    if (current === btn && running) { btn.setAttribute("aria-pressed", "false"); current = null; return stopSoftly(); }
     if (current) current.setAttribute("aria-pressed", "false");
-    loadExample(key); await start(); current = btn; btn.setAttribute("aria-pressed", "true");
+    current = btn; btn.setAttribute("aria-pressed", "true");
+    const my = ++switching;
+    await fadeOut(0.5);
+    if (my !== switching) return; // another click came in while fading
+    loadExample(key); await start(); fadeIn(1.0);
     const A = ACTIVITIES[a], f = FEATURED.find(([k]) => featuredKey(k) === key);
     now.querySelector(".title").textContent = `${civ.zh} ${civ.name} × ${A.zh} ${A.en}${f ? " ★ " + f[2] : ""}`;
     const kind = storyOf(civ, a) ? (isHistory(civ, a) ? ["history", "recorded history"] : ["imagined", "an imagined scene"]) : null;
     let kb = now.querySelector(".kind"); if (!kb) { kb = document.createElement("span"); now.querySelector(".title").after(kb); }
     kb.className = "kind " + (kind ? kind[0] : ""); kb.textContent = kind ? kind[1] : "";
     const sb = now.querySelector(".story"); sb.textContent = (STORIES[`${civ.id}:${a}`] || A.about) + (civ.note ? `\n♪ ${civ.note}` : "");
-    if (!now.querySelector("button")) { const st = Object.assign(document.createElement("button"), { type: "button", textContent: "■ Stop" }); st.addEventListener("click", () => { stop(); if (current) current.setAttribute("aria-pressed", "false"); current = null; }); now.querySelector(".title").after(st); }
+    if (!now.querySelector("button")) { const st = Object.assign(document.createElement("button"), { type: "button", textContent: "■ Stop" }); st.addEventListener("click", () => { if (current) current.setAttribute("aria-pressed", "false"); current = null; stopSoftly(); }); now.querySelector(".title").after(st); }
   };
   const regions = [...new Set([...REGION_ORDER, ...CIVS.map((c) => c.region)])].filter((r) => CIVS.some((c) => c.region === r));
   for (const reg of regions) {
