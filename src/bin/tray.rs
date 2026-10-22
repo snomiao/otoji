@@ -929,25 +929,75 @@ mod tray_macos {
     /// Separator: `~` = streaming (output keeps up with each audio frame, so
     /// latency stays bounded however long you talk); `-` = chunked (waits
     /// for a chunk/segment — a timer, VAD end-of-speech — before emitting).
-    fn pipeline_labels() -> Vec<String> {
+    /// The slow-to-query parts (device name, model, timings) are cached by
+    /// `refresh_pipeline_info` at menu build; the counters are live.
+    static PIPELINE_INFO: std::sync::Mutex<Option<(String, String)>> = std::sync::Mutex::new(None);
+    /// The pipeline NSMenuItems of the current menu (retained by the menu).
+    static PIPELINE_ITEMS: std::sync::Mutex<Vec<usize>> = std::sync::Mutex::new(Vec::new());
+    /// Recent mic levels for the sparkline, oldest first.
+    static LEVEL_HISTORY: std::sync::Mutex<std::collections::VecDeque<u32>> =
+        std::sync::Mutex::new(std::collections::VecDeque::new());
+
+    static TICKS: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
+
+    fn refresh_pipeline_info() {
         use cpal::traits::{DeviceTrait, HostTrait};
         let mic = cpal::default_host()
             .default_input_device()
             .and_then(|d| d.name().ok())
             .unwrap_or_else(|| "no input device".into());
-
         let variant = active_stt_variant();
         let dir = otoji::asr::sensevoice::model_dir_for_variant(&variant);
         let present = parse_asset_kind("stt").is_present(&dir);
         let short = variant.strip_prefix("sherpa-onnx-").unwrap_or(&variant);
         // Same timings the listen child gets (it inherits this env + config).
         let sv = otoji::asr::sensevoice::SenseVoiceConfig::from_env();
+        let stt = format!(
+            "{}{} · partial every {} s, final after {} s silence",
+            truncate(short, 44),
+            if present { "" } else { " (not downloaded)" },
+            sv.partial_ms as f32 / 1000.0,
+            sv.vad_silence_ms as f32 / 1000.0,
+        );
+        *PIPELINE_INFO.lock().unwrap() = Some((truncate(&mic, 40), stt));
+    }
 
-        // The tray starts `otoji listen` without --ptt-polish / --ptt-translate-to,
-        // so neither stage runs yet; show that rather than the unused config.
+    fn sparkline(levels: &std::collections::VecDeque<u32>) -> String {
+        levels
+            .iter()
+            .map(|&p| match p {
+                0..=150 => '▁',
+                151..=600 => '▂',
+                601..=1500 => '▃',
+                1501..=4000 => '▅',
+                4001..=10000 => '▆',
+                _ => '▇',
+            })
+            .collect()
+    }
+
+    fn pipeline_labels() -> Vec<String> {
+        if PIPELINE_INFO.lock().unwrap().is_none() {
+            refresh_pipeline_info();
+        }
+        let (mic, stt) = PIPELINE_INFO.lock().unwrap().clone().unwrap_or_default();
+        let st = overlay::stats();
+        let running = overlay::is_listening();
+
+        let mic_live = if running {
+            let secs = st.mic_bytes / 32_000; // 16 kHz × 2 bytes
+            format!(
+                "{} · {}:{:02} captured",
+                sparkline(&LEVEL_HISTORY.lock().unwrap()),
+                secs / 60,
+                secs % 60
+            )
+        } else {
+            "stopped".to_string()
+        };
         // Stage 1 = audio sources, captured in parallel. Only the mic exists
-        // today; PC audio (1b) would join here. One source → plain "1.".
-        let sources = [format!("🎤 Mic: {}", truncate(&mic, 48))];
+        // today; PC audio (1b) would join here. One source → plain "1".
+        let sources = [format!("🎤 Mic: {mic} · {mic_live}")];
         let mut rows: Vec<String> = if sources.len() == 1 {
             vec![format!("1 ~ {}", sources[0])]
         } else {
@@ -957,18 +1007,46 @@ mod tray_macos {
                 .map(|(src, letter)| format!("1{letter} ~ {src}"))
                 .collect()
         };
+        let now = if st.text.is_empty() {
+            "      ↳ (nothing yet)".to_string()
+        } else if st.live {
+            format!("      ↳ hearing: “{}”", truncate(&st.text, 50))
+        } else {
+            format!("      ↳ last: “{}”", truncate(&st.text, 50))
+        };
         rows.extend([
+            format!("2 - 🧠 STT: {stt}"),
             format!(
-                "2 - 🧠 STT: {}{} · partial every {} s, final after {} s silence",
-                truncate(short, 44),
-                if present { "" } else { " (not downloaded)" },
-                sv.partial_ms as f32 / 1000.0,
-                sv.vad_silence_ms as f32 / 1000.0,
+                "      ↳ {} sentences · {} chars · {} partials",
+                st.finals, st.chars, st.partials
             ),
+            now,
+            // The tray starts `otoji listen` without --ptt-polish /
+            // --ptt-translate-to, so neither stage runs yet.
             "3a - ✨ Polish: off".to_string(),
             "3b - 🌐 Translate: off".to_string(),
         ]);
         rows
+    }
+
+    /// Called from the refresh tick: sample the mic level and retitle the
+    /// pipeline rows in place (the timer runs in common modes, so this keeps
+    /// updating while the menu is open).
+    unsafe fn update_pipeline_rows() {
+        {
+            let mut h = LEVEL_HISTORY.lock().unwrap();
+            h.push_back(overlay::stats().mic_level);
+            while h.len() > 12 {
+                h.pop_front();
+            }
+        }
+        let items = PIPELINE_ITEMS.lock().unwrap().clone();
+        if items.is_empty() {
+            return;
+        }
+        for (item, label) in items.iter().zip(pipeline_labels()) {
+            msg1_ptr(*item as *mut c_void, sel(b"setTitle:\0"), nsstring(&label));
+        }
     }
 
     unsafe fn rebuild_menu() {
@@ -1026,6 +1104,8 @@ mod tray_macos {
 
         // Pipeline the tray's `otoji listen` runs, one row per stage; any
         // row opens Settings to change it. 3a/3b run in parallel on finals.
+        refresh_pipeline_info();
+        let mut pipeline_items = Vec::new();
         for label in pipeline_labels() {
             let row = init_fn(
                 msg0(menuitem_cls, sel(b"alloc\0")),
@@ -1038,7 +1118,9 @@ mod tray_macos {
                 msg1_ptr(row, sel(b"setTarget:\0"), target);
             }
             msg1_ptr(menu, sel(b"addItem:\0"), row);
+            pipeline_items.push(row as usize);
         }
+        *PIPELINE_ITEMS.lock().unwrap() = pipeline_items;
 
         // Missing permissions: one clickable row each, gone once granted.
         let mut perm_rows: Vec<(&str, &[u8])> = Vec::new();
@@ -1236,6 +1318,9 @@ mod tray_macos {
         }
         overlay::tick();
         overlay::supervise();
+        if TICKS.fetch_add(1, Ordering::Relaxed) % 3 == 0 {
+            unsafe { update_pipeline_rows() };
+        }
         poll_permissions();
 
         let mtime = notes_mtime_secs();

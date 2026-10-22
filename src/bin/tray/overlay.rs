@@ -33,6 +33,50 @@ static CAPTION: Mutex<Caption> = Mutex::new(Caption {
     rev: 0,
 });
 static LISTEN_CHILD: Mutex<Option<std::process::Child>> = Mutex::new(None);
+
+// Live pipeline stats for the tray menu (reset on each listen start).
+/// PCM bytes the mic stage has delivered to listen (16 kHz s16le mono).
+static MIC_BYTES: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+/// Recent mic peak (0..32767), decaying, for the menu's level meter.
+static MIC_LEVEL: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
+static STT_PARTIALS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+static STT_FINALS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+static STT_CHARS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
+pub struct Stats {
+    pub mic_bytes: u64,
+    pub mic_level: u32,
+    pub partials: u64,
+    pub finals: u64,
+    /// Characters across all final sentences.
+    pub chars: u64,
+    /// Current caption and whether it is a still-changing partial.
+    pub text: String,
+    pub live: bool,
+}
+
+/// Whether the tray-owned listen child is alive.
+pub fn is_listening() -> bool {
+    LISTEN_CHILD
+        .lock()
+        .unwrap()
+        .as_mut()
+        .is_some_and(|c| matches!(c.try_wait(), Ok(None)))
+}
+
+pub fn stats() -> Stats {
+    use std::sync::atomic::Ordering::Relaxed;
+    let c = CAPTION.lock().unwrap();
+    Stats {
+        mic_bytes: MIC_BYTES.load(Relaxed),
+        mic_level: MIC_LEVEL.load(Relaxed),
+        partials: STT_PARTIALS.load(Relaxed),
+        finals: STT_FINALS.load(Relaxed),
+        chars: STT_CHARS.load(Relaxed),
+        text: c.text.clone(),
+        live: c.live,
+    }
+}
 /// The user wants otoji listening (cleared only by stop_listen), so a child
 /// that dies on its own gets restarted by `supervise`.
 static WANT_LISTEN: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
@@ -117,11 +161,20 @@ fn pump_mic(mut stdin: std::process::ChildStdin) {
     let mut last_report = Instant::now();
     let mut last_class = "";
     while let Some(chunk) = rx.blocking_recv() {
+        let mut chunk_peak = 0u32;
         for s in chunk.pcm.chunks_exact(2) {
             let v = i16::from_le_bytes([s[0], s[1]]) as i32;
+            chunk_peak = chunk_peak.max(v.unsigned_abs());
             peak = peak.max(v.abs());
             sum_sq += (v as f64) * (v as f64);
             n += 1;
+        }
+        {
+            use std::sync::atomic::Ordering::Relaxed;
+            MIC_BYTES.fetch_add(chunk.pcm.len() as u64, Relaxed);
+            // Fast attack, slow release (~25%/frame) so the meter is readable.
+            let prev = MIC_LEVEL.load(Relaxed);
+            MIC_LEVEL.store(chunk_peak.max(prev - prev / 4), Relaxed);
         }
         if last_report.elapsed() >= Duration::from_secs(5) {
             let rms = if n > 0 { (sum_sq / n as f64).sqrt() } else { 0.0 };
@@ -187,6 +240,9 @@ pub fn start_listen() -> bool {
     *guard = Some(child);
     drop(guard);
     WANT_LISTEN.store(true, Ordering::Release);
+    for c in [&MIC_BYTES, &STT_PARTIALS, &STT_FINALS, &STT_CHARS] {
+        c.store(0, Ordering::Relaxed);
+    }
     *LAST_START.lock().unwrap() = Some(Instant::now());
     if let Some(out) = stdout {
         std::thread::Builder::new()
@@ -278,8 +334,15 @@ fn read_events(out: std::process::ChildStdout) {
                     false,
                 )
             }
-            "partial" | "ptt_partial" if !text.is_empty() => set_caption(text, true),
+            "partial" | "ptt_partial" if !text.is_empty() => {
+                STT_PARTIALS.fetch_add(1, Ordering::Relaxed);
+                set_caption(text, true)
+            }
             "final" | "ptt_final" | "ptt_upgrade" | "ptt_translated" if !text.is_empty() => {
+                if matches!(kind, "final" | "ptt_final") {
+                    STT_FINALS.fetch_add(1, Ordering::Relaxed);
+                    STT_CHARS.fetch_add(text.chars().count() as u64, Ordering::Relaxed);
+                }
                 set_caption(text, false)
             }
             "error" => {
