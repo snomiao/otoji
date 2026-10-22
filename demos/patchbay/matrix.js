@@ -609,7 +609,7 @@ function renderMatrix() {
     for (const civ of civs) {
       const li = document.createElement("li");
       const nm = document.createElement("span"); nm.className = "civ";
-      nm.append(civLabel(civ));
+      nm.append(civLabel(civ)); if (civ.endonym) nm.title = `${civ.endonym} · ${nm.title || ""}`;
       nm.title = civ.note || "";
       const chips = document.createElement("span"); chips.className = "chips";
       for (const a of ACTIVITY_IDS) {
@@ -684,7 +684,9 @@ function renderPlayer() {
     rr.append(Object.assign(document.createElement("th"), { textContent: tr(reg), colSpan: ACTIVITY_IDS.length + 2, scope: "colgroup" })); body.append(rr);
     for (const civ of CIVS.filter((c) => c.region === reg)) {
       const row = document.createElement("tr");
-      row.append(Object.assign(document.createElement("th"), { textContent: civLabel(civ), scope: "row", title: civ.note || "" }));
+      const nameCell = Object.assign(document.createElement("th"), { textContent: civLabel(civ), scope: "row", title: civ.note || "" });
+      if (civ.endonym) nameCell.append(Object.assign(document.createElement("small"), { className: "endonym", textContent: civ.endonym, title: tr("what they call themselves") }));
+      row.append(nameCell);
       const intro = document.createElement("td"); intro.className = "sig"; intro.title = civ.note || "";
       if (civ.signature) intro.append(Object.assign(document.createElement("b"), { textContent: civ.signature }));
       intro.append(tr(civ.intro) || (civ.signature ? "" : tr(civ.note) || ""));
