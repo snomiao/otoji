@@ -171,6 +171,14 @@ ul.ideas { margin: 0; padding-left: 18px; display: grid; gap: 6px; font-size: 14
           <option value="poly">Two tempos, 3 against 2</option>
           <option value="dub">Dub chords with delay</option>
           <option value="speech">Speech drums: talk to play the kick</option>
+          <option value="strings">提琴: violin and cello</option>
+          <option value="egypt">Egyptian maqam Hijaz</option>
+          <option value="gothic">哥特 Gothic: organ, choir, bell</option>
+          <option value="japan">日式: koto, shakuhachi, taiko</option>
+          <option value="tang">唐: pipa, guqin, 编钟</option>
+          <option value="qing">清 · 京剧: 京胡 and 锣鼓</option>
+          <option value="cpop">现代华语: 中国风 pop</option>
+          <option value="fx">效果器 + 包絡: effects and fades</option>
           <option value="learn">Learn a beat: beatbox into drums</option>
           <option value="hum">Learn a tune: hum into piano</option>
         </select>
@@ -217,9 +225,14 @@ ul.ideas { margin: 0; padding-left: 18px; display: grid; gap: 6px; font-size: 14
         <tr><td><code>vad</code></td><td><code>threshold=0.02 silence=300ms holdoff=250ms</code> · other nodes react with <code>^vad ?vad !vad</code></td></tr>
         <tr><td><code>piano</code></td><td><code>chords="Am F C G"</code> one per bar · <code>style=arp|block</code> <code>oct=4</code> · or a melody <code>notes="E4 . . G4"</code></td></tr>
         <tr><td><code>bass</code></td><td><code>chords="…"</code> roots on beats 1 and 3</td></tr>
-        <tr><td><code>mix</code></td><td>sums its inputs</td></tr>
-        <tr><td><code>delay</code></td><td><code>time=3/16 feedback=0.35 mix=0.3</code>, tempo-synced</td></tr>
-        <tr><td><code>reverb</code></td><td><code>size=2 mix=0.25</code></td></tr>
+        <tr><td><code>strings pluck flute organ choir bell</code></td><td>instruments: <code>phrase="5 - 6 7 1'"</code> (简谱) with <code>scale=</code> <code>key=</code>, or chords; <code>adsr=</code> per note</td></tr>
+        <tr><td><code>scale</code></td><td>major minor dorian phrygian … hijaz bayati rast (maqam) · in yo hirajoshi ryukyu · gong shang jue zhi yu yanyue</td></tr>
+        <tr><td><code>kit=</code></td><td>drums: rock, darbuka, taiko, opera (京剧)</td></tr>
+        <tr><td><code>mix</code></td><td>mixer bus: adds inputs into one signal</td></tr>
+        <tr><td>effects</td><td><code>filter lp 800</code> <code>drive</code> <code>chorus</code> <code>phaser</code> <code>tremolo 6Hz</code> <code>pan auto=0.2Hz</code> <code>eq low=3</code> <code>comp -20</code> · <code>wet=</code> blends</td></tr>
+        <tr><td><code>env fadein fadeout</code></td><td>包絡: <code>env 50ms 2s ?vad</code>, <code>fadein 4bars</code>, <code>fadeout 2bars after=8bars</code></td></tr>
+        <tr><td><code>delay</code></td><td><code>time=3/16 feedback=0.35 wet=0.3</code>, tempo-synced</td></tr>
+        <tr><td><code>reverb</code></td><td><code>size=2 wet=0.25</code> (or <code>2s</code>)</td></tr>
         <tr><td><code>speaker</code></td><td><code>volume=0.5</code> · only what reaches a speaker is heard</td></tr>
       </table>
     </div>
@@ -255,7 +268,9 @@ ul.ideas { margin: 0; padding-left: 18px; display: grid; gap: 6px; font-size: 14
 "use strict";
 // <parser> — the otoji pipeline language (mirrors src/pipeline.rs)
 const ID = /^[A-Za-z0-9_-]+$/;
-const ENV_NEEDS = { metro: ["clock"], drums: ["clock"], piano: ["clock"], bass: ["clock"], delay: ["clock"], learn: ["clock"] };
+const ENV_NEEDS = { metro: ["clock"], drums: ["clock"], piano: ["clock"], bass: ["clock"], delay: ["clock"], learn: ["clock"],
+  strings: ["clock"], pluck: ["clock"], flute: ["clock"], organ: ["clock"], choir: ["clock"], bell: ["clock"],
+  env: ["clock"], fadein: ["clock"], fadeout: ["clock"] };
 const STATUS_SYMS = ["~", "-", "/", ".", "!", "?"];
 
 function isStatusComment(c) {
@@ -401,9 +416,11 @@ function nodeSource(n) {
 }
 // What each kind outputs and accepts, so `*>` only picks inputs that fit:
 // a speaker takes audio, never a mic signal, a vad's control or a clock.
-const OUT_TYPE = { clock: "env", mic: "mic", vad: "control", learn: null, speaker: null,
-  metro: "audio", drums: "audio", piano: "audio", bass: "audio", mix: "audio", delay: "audio", reverb: "audio" };
-const ACCEPTS = { mix: ["audio"], delay: ["audio"], reverb: ["audio"], speaker: ["audio"], vad: ["mic"], learn: ["mic"] };
+const AUDIO_OUT = ["metro", "drums", "piano", "bass", "strings", "pluck", "flute", "organ", "choir", "bell",
+  "mix", "delay", "reverb", "filter", "drive", "chorus", "phaser", "tremolo", "pan", "eq", "comp", "env", "fadein", "fadeout"];
+const OUT_TYPE = { clock: "env", mic: "mic", vad: "control", learn: null, speaker: null, ...Object.fromEntries(AUDIO_OUT.map((k) => [k, "audio"])) };
+const ACCEPTS = { speaker: ["audio"], vad: ["mic"], learn: ["mic"],
+  ...Object.fromEntries(["mix", "delay", "reverb", "filter", "drive", "chorus", "phaser", "tremolo", "pan", "eq", "comp", "env", "fadein", "fadeout"].map((k) => [k, ["audio"]])) };
 // Groups are paragraphs: separated by blank lines or `---`.
 function groupsOf(p) {
   const g = new Map(); let k = 0, gap = false;
@@ -538,6 +555,12 @@ function ms(v, def) { // "300ms", "0.3s" or a number of ms
   return Number(m[1]) * (m[2] === "s" ? 1000 : 1);
 }
 const LANES = ["kick", "snare", "hat"];
+function hz(v, def) { // "800", "800Hz", "2k", "0.5Hz"
+  if (v === undefined) return def;
+  const m = /^(\d+(?:\.\d+)?)(k)?(hz)?$/i.exec(v);
+  if (!m) throw new Error(`bad frequency \`${v}\` (try 800, 2k or 5Hz)`);
+  return Number(m[1]) * (m[2] ? 1000 : 1);
+}
 const KINDS = {
   // Input only: never routed to an output, so your voice is never played back.
   mic: { source: true, control: true, build: () => ({}) },
@@ -552,22 +575,16 @@ const KINDS = {
     source: true,
     build: (o) => {
       const lanes = (o.pattern || "x...x...x...x...|....x.......x...|..x...x...x...x.").split("|");
-      if (lanes.length > 3) throw new Error("pattern= takes up to 3 lanes: kick|snare|hat");
+      const kit = o.kit || "rock";
+      if (!KITS[kit]) throw new Error(`kit= is ${Object.keys(KITS).join(", ")}`);
+      if (lanes.length > 3) throw new Error(`pattern= takes up to 3 lanes: ${KITS[kit].join("|")}`);
       for (const l of lanes) if (!/^[xX.]+$/.test(l)) throw new Error("pattern= uses x, X and .");
-      const hit = o.hit || "kick";
-      if (!LANES.includes(hit)) throw new Error("hit= is kick, snare or hat");
+      const hit = o.hit || KITS[kit][0];
+      if (!KITS[kit].includes(hit)) throw new Error(`hit= is ${KITS[kit].join(", ")} for kit=${kit}`);
       const q = o.quantize || "16";
       if (!["4", "8", "16", "off"].includes(q)) throw new Error("quantize= is 4, 8, 16 or off");
-      return { lanes, hit, quantize: q === "off" ? 0 : 16 / Number(q) };
+      return { lanes, hit, kit, quantize: q === "off" ? 0 : 16 / Number(q) };
     },
-  },
-  piano: {
-    source: true,
-    build: (o) => ({
-      chords: (o.chords || "Am F C G").split(/\s+/).map(parseChord), style: o.style === "block" ? "block" : "arp", oct: num(o, "oct", 4, 2, 6),
-      // notes= is a melody, one token per 16th: a note (E4, C#5) or "." to hold/rest.
-      notes: o.notes ? o.notes.split(/\s+/).map((t) => { if (t !== "." && noteMidi(t) === null) throw new Error(`bad note \`${t}\` (try E4, C#5 or .)`); return t; }) : null,
-    }),
   },
   // Records N bars of the mic from the next bar, then rewrites a drums
   // (rhythm + timbre) or piano (pitch + rhythm) line, and turns itself off.
@@ -584,12 +601,29 @@ const KINDS = {
       return { to: o.to, count, unit, label: len === "section" ? "a section (4 bars)" : `${count} ${unit}${count > 1 ? "s" : ""}` };
     },
   },
-  bass: { source: true, build: (o) => ({ chords: (o.chords || "Am F C G").split(/\s+/).map(parseChord) }) },
   mix: { build: () => ({}) },
-  delay: { build: (o) => ({ beats: fraction(o.time), feedback: num(o, "feedback", 0.35, 0, 0.9), mix: num(o, "mix", 0.3, 0, 1) }) },
-  reverb: { build: (o) => ({ size: num(o, "size", 2, 0.3, 6), mix: num(o, "mix", 0.25, 0, 1) }) },
+  // wet= is how much effect is blended in (mix= is an old alias).
+  delay: { build: (o) => ({ beats: fraction(o.time), feedback: num(o, "feedback", 0.35, 0, 0.9), mix: num(o, o.wet !== undefined ? "wet" : "mix", 0.3, 0, 1) }) },
+  reverb: { build: (o) => ({ size: num(o, "size", 2, 0.3, 6), mix: num(o, o.wet !== undefined ? "wet" : "mix", 0.25, 0, 1) }) },
+  filter: { build: (o) => {
+    const type = { lp: "lowpass", hp: "highpass", bp: "bandpass", notch: "notch" }[o.type || "lp"];
+    if (!type) throw new Error("type= is lp, hp, bp or notch");
+    return { type, freq: hz(o.freq, 1200), q: num(o, "q", 1, 0.1, 30), sweep: o.sweep ? hz(o.sweep, 0) : 0 };
+  } },
+  drive: { build: (o) => ({ amount: num(o, "amount", 0.5, 0, 1), mix: num(o, "wet", 1, 0, 1) }) },
+  chorus: { build: (o) => ({ rate: hz(o.rate, 0.8), depth: num(o, "depth", 1, 0, 3), mix: num(o, "wet", 0.5, 0, 1) }) },
+  phaser: { build: (o) => ({ rate: hz(o.rate, 0.3), mix: num(o, "wet", 0.6, 0, 1) }) },
+  tremolo: { build: (o) => ({ rate: hz(o.rate, 5), depth: num(o, "depth", 0.6, 0, 1) }) },
+  pan: { build: (o) => ({ pos: { left: -0.8, right: 0.8, center: 0 }[o.pos] ?? num(o, "pos", 0, -1, 1), auto: o.auto ? hz(o.auto, 0.2) : 0 }) },
+  eq: { build: (o) => ({ low: num(o, "low", 0, -24, 24), mid: num(o, "mid", 0, -24, 24), high: num(o, "high", 0, -24, 24) }) },
+  comp: { build: (o) => ({ threshold: num(o, "threshold", -24, -60, 0), ratio: num(o, "ratio", 4, 1, 20) }) },
+  env: { build: (o) => ({ attack: lenOf(o.attack, { n: 20, unit: "ms" }), release: lenOf(o.release, { n: 300, unit: "ms" }), after: o.after ? lenOf(o.after) : null }) },
+  fadein: { build: (o) => ({ attack: lenOf(o.len, { n: 4, unit: "bar" }), release: { n: 300, unit: "ms" }, after: null }) },
+  fadeout: { build: (o) => ({ attack: { n: 10, unit: "ms" }, release: lenOf(o.len, { n: 2, unit: "bar" }), after: lenOf(o.after, { n: 8, unit: "bar" }) }) },
   speaker: { build: (o) => ({ volume: num(o, "volume", 0.5, 0, 1) }) },
 };
+// Melodic instruments share one set of options (scale, key, phrase, chords…).
+for (const k of ["piano", "bass", "strings", "pluck", "flute", "organ", "choir", "bell"]) KINDS[k] = { source: true, build: (o) => buildMelodic(k, o) };
 
 // ── autocomplete catalog: what each kind is, takes and accepts ────────
 // args: [key, default, doc, allowed values?]
@@ -607,12 +641,6 @@ const CATALOG = {
       ["hit", "kick", "with ^vad: which drum", ["kick", "snare", "hat"], { re: /^(kick|snare|hat)$/ }],
       ["quantize", "16", "with ^vad: snap to 1/16, 1/8, 1/4 or off", ["16", "8", "4", "off"], { re: /^(off|1\/(4|8|16))$/, to: (v) => v === "off" ? v : v.split("/")[1] }]],
   },
-  piano: { doc: "Chords per bar (arpeggio or block), or a melody with notes=.", args: [
-    ["chords", '"Am F C G"', "chord per bar", null, { re: /^"([A-G][#b]?(maj7|m7|m|7|dim|sus2|sus4)?\s*)+"$/ }],
-    ["notes", '"E4 . . G4 A4 . . ."', "melody: a note or . per 16th (learn writes this)", null, { re: /^"(([A-G][#b]?\d|\.)\s*)+"$/ }],
-    ["style", "arp", "arp or block", ["arp", "block"], { re: /^(arp|block)$/ }],
-    ["oct", "4", "octave", null, { re: /^[2-6]$/ }]] },
-  bass: { doc: "Chord roots on beats 1 and 3.", args: [["chords", '"Am F C G"', "chord per bar", null, { re: /^".*"$/ }]] },
   vad: { doc: "Speech detector on a mic. Other nodes react with ^vad, ?vad or !vad.", args: [
     ["threshold", "0.02", "energy that counts as speech", null, { re: /^0?\.\d+$/ }],
     ["silence", "300ms", "pause that ends speech", null, { re: /^\d+(\.\d+)?(ms|s)$/ }],
@@ -620,20 +648,35 @@ const CATALOG = {
   learn: { doc: "Records your voice for N bars from the next bar, then rewrites a drums line (beatbox: boom=kick, ka=snare, ts=hat) or a piano line (hum a tune), and turns itself off.", args: [
     ["len", "1bar", "how long to record: 4beats, 1bar, 2bars or section (4 bars)", ["4beats", "1bar", "2bars", "section"], { re: /^(\d+(beats?|bars?)|section)$/ }],
     ["to", "beat", "the drums or piano node to rewrite", null, { re: /^[A-Za-z_][\w-]*$/ }]] },
-  mix: { doc: "Sums its inputs.", args: [] },
-  delay: { doc: "Tempo-synced echo.", args: [["time", "3/16", "note length", null, { re: /^\d+\/\d+$/ }], ["feedback", "0.35", "0–0.9"], ["mix", "0.3", "wet level"]] },
-  reverb: { doc: "Room reverb.", args: [["size", "2", "seconds (shorthand 2s)", null, { re: /^\d+(\.\d+)?s$/, to: (v) => v.slice(0, -1) }], ["mix", "0.25", "wet level"]] },
+  mix: { doc: "Mixer bus: adds its inputs into one signal (not the wet= amount of an effect).", args: [] },
+  delay: { doc: "Tempo-synced echo.", args: [["time", "3/16", "note length", null, { re: /^\d+\/\d+$/ }], ["feedback", "0.35", "0–0.9"], ["wet", "0.3", "how much echo is blended in"]] },
+  reverb: { doc: "Room reverb.", args: [["size", "2", "seconds (shorthand 2s)", null, { re: /^\d+(\.\d+)?s$/, to: (v) => v.slice(0, -1) }], ["wet", "0.25", "how much reverb is blended in"]] },
+  filter: { doc: "Filter: lp (low-pass), hp, bp, notch. `filter lp 800`; sweep=0.2Hz moves it.", args: [
+    ["type", "lp", "lp, hp, bp or notch", ["lp", "hp", "bp", "notch"], { re: /^(lp|hp|bp|notch)$/ }],
+    ["freq", "800", "cutoff: 800, 2k, 800Hz", null, { re: /^\d+(\.\d+)?(k|hz|khz)?$/i }], ["q", "1", "resonance"], ["sweep", "0.2Hz", "LFO rate that sweeps the cutoff"]] },
+  drive: { doc: "Distortion / overdrive.", args: [["amount", "0.5", "0–1", null, { re: /^(0|1|0?\.\d+)$/ }], ["wet", "1", "blend"]] },
+  chorus: { doc: "Chorus: a slightly detuned copy for width.", args: [["rate", "0.8Hz", "LFO rate", null, { re: /^\d+(\.\d+)?hz$/i }], ["depth", "1", "0–3"], ["wet", "0.5", "blend"]] },
+  phaser: { doc: "Phaser: swirling notches.", args: [["rate", "0.3Hz", "LFO rate", null, { re: /^\d+(\.\d+)?hz$/i }], ["wet", "0.6", "blend"]] },
+  tremolo: { doc: "Tremolo: volume wobble.", args: [["rate", "5Hz", "wobbles per second", null, { re: /^\d+(\.\d+)?hz$/i }], ["depth", "0.6", "0–1", null, { re: /^(0|1|0?\.\d+)$/ }]] },
+  pan: { doc: "Stereo position; auto=0.2Hz pans back and forth.", args: [["pos", "0", "-1 (left) … 1 (right), or left/right/center", ["left", "center", "right"], { re: /^(left|right|center|-?(0|1|0?\.\d+))$/ }], ["auto", "0.2Hz", "auto-pan rate"]] },
+  eq: { doc: "3-band EQ in dB.", args: [["low", "0", "dB around 250 Hz"], ["mid", "0", "dB around 1 kHz"], ["high", "0", "dB around 4 kHz"]] },
+  comp: { doc: "Compressor: evens out the level.", args: [["threshold", "-24", "dB", null, { re: /^-\d+(\.\d+)?$/ }], ["ratio", "4", "1–20"]] },
+  env: { doc: "包絡 (envelope) on what passes through: fades in from Start; with ?x / !x it opens and closes with attack/release.", args: [
+    ["attack", "20ms", "fade-in time: 20ms, 2s, 4beats, 2bars", null, { re: /^\d+(\.\d+)?(ms|s|beats?|bars?)$/ }],
+    ["release", "300ms", "fade-out time", null, { re: /^\d+(\.\d+)?(ms|s|beats?|bars?)$/ }], ["after", "8bars", "fade out once this much has played"]] },
+  fadein: { doc: "Fade in from Start (alias of env attack=).", args: [["len", "4bars", "how long", null, { re: /^\d+(\.\d+)?(ms|s|beats?|bars?)$/ }]] },
+  fadeout: { doc: "Fade out after a while (alias of env after= release=).", args: [["len", "2bars", "how long the fade takes", null, { re: /^\d+(\.\d+)?(ms|s|beats?|bars?)$/ }], ["after", "8bars", "when it starts"]] },
   speaker: { doc: "Output. Only what reaches a speaker is heard.", args: [["volume", "0.5", "0–1", null, { re: /^(0|1|0?\.\d+)$/ }]] },
 };
-const SOURCE_KINDS = ["clock", "mic", "metro", "drums", "piano", "bass"];
-const AUDIO_KINDS = ["metro", "drums", "piano", "bass", "mix", "delay", "reverb"];
+const SOURCE_KINDS = ["clock", "mic", "metro", "drums", "piano", "bass", "strings", "pluck", "flute", "organ", "choir", "bell"];
+const AUDIO_KINDS = AUDIO_OUT;
 // Kinds that make sense after `refs>`, given the kinds of the refs.
 function consumersFor(inKinds) {
   if (!inKinds.length) return Object.keys(CATALOG).filter((k) => !SOURCE_KINDS.includes(k) || k === "drums");
   if (inKinds.every((k) => k === "mic")) return ["vad", "learn"];
   if (inKinds.every((k) => k === "vad")) return ["drums"];
-  if (inKinds.every((k) => k === "clock")) return ["metro", "drums", "piano", "bass", "delay"];
-  if (inKinds.every((k) => AUDIO_KINDS.includes(k))) return ["mix", "delay", "reverb", "speaker"];
+  if (inKinds.every((k) => k === "clock")) return ["metro", "drums", ...MELODIC];
+  if (inKinds.every((k) => AUDIO_KINDS.includes(k))) return ["speaker", "mix", "reverb", "delay", "filter", "drive", "chorus", "phaser", "tremolo", "pan", "eq", "comp", "env", "fadein", "fadeout"];
   return ["mix", "speaker"];
 }
 
@@ -666,7 +709,7 @@ function rebuild() {
     const inKinds = r.error ? [] : eff.get(n.id).filter((x) => !x.implicit).map((x) => kindOfId(x.node));
     if (!r.error && inKinds.includes("mic") && n.kind !== "vad" && n.kind !== "learn") r.error = "mic is input only: feed it to a vad or learn (mic> vad)";
     else if (!r.error && n.kind === "learn" && !inKinds.includes("mic")) r.error = "needs a mic: write `mic> learn beat 1bar`";
-    else if (!r.error && n.kind === "learn" && !["drums", "piano"].includes(kindOfId(r.cfg.to))) r.error = kindOfId(r.cfg.to) ? `can rewrite drums or piano, not ${kindOfId(r.cfg.to)}` : `unknown node \`${r.cfg.to}\` to rewrite`;
+    else if (!r.error && n.kind === "learn" && !(kindOfId(r.cfg.to) === "drums" || MELODIC.includes(kindOfId(r.cfg.to)))) r.error = kindOfId(r.cfg.to) ? `can rewrite drums or an instrument, not ${kindOfId(r.cfg.to)}` : `unknown node \`${r.cfg.to}\` to rewrite`;
     else if (!r.error && n.kind === "vad" && !inKinds.length) r.error = "needs a mic: write `mic> vad`";
     else if (!r.error && n.kind === "vad" && inKinds.some((k) => k !== "mic")) r.error = "vad listens to a mic only";
     else if (!r.error && inKinds.includes("vad")) r.error = `vad controls nodes instead of feeding them: write \`. ${n.kind} ^vad\``;
@@ -701,7 +744,8 @@ function rebuild() {
         r.inGain.connect(r.out); r.inGain.connect(conv).connect(wet).connect(r.out);
       } else if (k === "speaker") {
         r.inGain.connect(r.out); r.out.gain.value = r.node.enabled ? r.cfg.volume : 0; r.out.connect(master);
-      } else r.inGain.connect(r.out);
+      } else if (EFFECTS[k]) EFFECTS[k](r);
+      else r.inGain.connect(r.out);
     }
   }
   for (const r of live.values()) {
@@ -742,12 +786,349 @@ function noise(dest, t, dur, peak, hp) {
   g.gain.setValueAtTime(peak, t); g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
   s.connect(f).connect(g).connect(dest); s.start(t); s.stop(t + dur + 0.02);
 }
-function drumHit(out, lane, t, accent) {
-  if (lane === "kick") voice(out, t, { freq: 150, endFreq: 42, dur: 0.32, peak: accent ? 0.95 : 0.75 });
-  if (lane === "snare") { noise(out, t, 0.16, accent ? 0.5 : 0.35, 1400); voice(out, t, { freq: 190, dur: 0.1, peak: 0.18, type: "triangle" }); }
-  if (lane === "hat") noise(out, t, 0.045, accent ? 0.22 : 0.13, 7000);
-}
 const mark = (r, t, dur) => { r.busy.push([t, t + Math.max(dur, 0.1)]); if (r.busy.length > 64) r.busy.shift(); };
+
+// ── scales: 简谱 degrees 1–7 → cents above the key; null = not in the scale
+// (that degree snaps to the nearest one, so jianpu writes as usual) ──────
+const SCALES = {
+  major: [0, 200, 400, 500, 700, 900, 1100], minor: [0, 200, 300, 500, 700, 800, 1000],
+  harmonic: [0, 200, 300, 500, 700, 800, 1100],
+  dorian: [0, 200, 300, 500, 700, 900, 1000], phrygian: [0, 100, 300, 500, 700, 800, 1000],
+  lydian: [0, 200, 400, 600, 700, 900, 1100], mixolydian: [0, 200, 400, 500, 700, 900, 1000],
+  aeolian: [0, 200, 300, 500, 700, 800, 1000], locrian: [0, 100, 300, 500, 600, 800, 1000],
+  // Arabic / Egyptian maqam (bayati and rast use quarter tones)
+  hijaz: [0, 100, 400, 500, 700, 800, 1000], bayati: [0, 150, 300, 500, 700, 800, 1000],
+  rast: [0, 200, 350, 500, 700, 900, 1050], nahawand: [0, 200, 300, 500, 700, 800, 1100],
+  // Japanese
+  in: [0, 100, null, 500, 700, 800, null], yo: [0, 200, null, 500, 700, 900, null],
+  hirajoshi: [0, 200, 300, null, 700, 800, null], ryukyu: [0, null, 400, 500, 700, null, 1100],
+  // Chinese pentatonic modes (宫商角徵羽) and Tang 燕乐
+  gong: [0, 200, 400, null, 700, 900, null], shang: [0, 200, null, 500, 700, null, 1000],
+  jue: [0, null, 300, 500, null, 800, 1000], zhi: [0, 200, null, 500, 700, 900, null],
+  yu: [0, null, 300, 500, 700, null, 1000], yanyue: [0, 200, 400, 500, 700, 900, 1000],
+};
+const SCALE_NAMES = Object.keys(SCALES);
+// Phrase tokens: 1–7 degree (#/b prefix, ' up / , down an octave), 0 rest, - hold.
+function parsePhrase(s) {
+  return s.trim().split(/\s+/).map((t) => {
+    if (t === "-") return { hold: true };
+    if (t === "0") return { rest: true };
+    const m = /^([#b]?)([1-7])(['’,]*)$/.exec(t);
+    if (!m) throw new Error(`bad phrase token \`${t}\` (1–7, 0 rest, - hold, ' or , for octaves)`);
+    const oct = [...m[3]].reduce((a, c) => a + (c === "," ? -1 : 1), 0);
+    return { deg: Number(m[2]), acc: m[1] === "#" ? 100 : m[1] === "b" ? -100 : 0, oct };
+  });
+}
+function degreeCents(scale, d) {
+  let c = scale[d - 1];
+  if (c === null) { // snap to the nearest degree that exists (ties go down)
+    for (let k = 1; k < 7; k++) {
+      if (d - 1 - k >= 0 && scale[d - 1 - k] !== null) { c = scale[d - 1 - k]; break; }
+      if (d - 1 + k < 7 && scale[d - 1 + k] !== null) { c = scale[d - 1 + k]; break; }
+    }
+  }
+  return c;
+}
+const keyMidi = (key, oct) => 12 * (oct + 1) + ((NOTE[key[0]] + (key[1] === "#" ? 1 : key[1] === "b" ? -1 : 0) + 12) % 12);
+
+// ── instruments: one note into `out` ─────────────────────────────────
+// adsr = [attack s, decay s, sustain 0–1, release s]
+function envGain(g, t, dur, peak, adsr) {
+  const [a, d, sus, rel] = adsr, p = Math.max(peak, 0.0002);
+  g.gain.setValueAtTime(0.0001, t);
+  g.gain.linearRampToValueAtTime(p, t + a);
+  g.gain.setTargetAtTime(Math.max(p * sus, 0.0001), t + a, d / 3 + 0.001);
+  const end = Math.max(t + a + 0.01, t + dur);
+  g.gain.setTargetAtTime(0.0001, end, rel / 4 + 0.001);
+  return end + rel + 0.05;
+}
+const INSTRUMENTS = {
+  piano: { adsr: [0.006, 0.6, 0.25, 0.3], play(out, t, f, dur, adsr, peak) {
+    const g = ctx.createGain(); const stop = envGain(g, t, dur, peak, adsr);
+    for (const [mul, lvl, type] of [[1, 1, "triangle"], [2, 0.25, "sine"], [3, 0.08, "sine"]]) {
+      const o = ctx.createOscillator(); o.type = type; o.frequency.value = f * mul;
+      const l = ctx.createGain(); l.gain.value = lvl; o.connect(l).connect(g); o.start(t); o.stop(stop);
+    }
+    g.connect(out);
+  } },
+  // violin / cello / 京胡 / erhu: bowed saw, slow attack, vibrato after the onset
+  strings: { adsr: [0.09, 0.3, 0.85, 0.25], play(out, t, f, dur, adsr, peak) {
+    const o = ctx.createOscillator(), o2 = ctx.createOscillator(), lp = ctx.createBiquadFilter(), g = ctx.createGain();
+    o.type = o2.type = "sawtooth"; o.frequency.value = f; o2.frequency.value = f; o2.detune.value = 7;
+    lp.type = "lowpass"; lp.frequency.value = Math.min(9000, f * 6); lp.Q.value = 0.8;
+    const lfo = ctx.createOscillator(), depth = ctx.createGain(); lfo.frequency.value = 5.6;
+    depth.gain.setValueAtTime(0, t); depth.gain.linearRampToValueAtTime(14, t + Math.min(0.35, dur * 0.6));
+    lfo.connect(depth); depth.connect(o.detune); depth.connect(o2.detune);
+    const stop = envGain(g, t, dur, peak * 0.55, adsr);
+    o.connect(lp); o2.connect(lp); lp.connect(g).connect(out);
+    for (const x of [o, o2, lfo]) { x.start(t); x.stop(stop); }
+  } },
+  // koto / guzheng / pipa / oud: bright pluck with a small pitch drop at the attack
+  pluck: { adsr: [0.002, 0.9, 0.0, 0.2], play(out, t, f, dur, adsr, peak) {
+    const o = ctx.createOscillator(), o2 = ctx.createOscillator(), lp = ctx.createBiquadFilter(), g = ctx.createGain();
+    o.type = "triangle"; o2.type = "square"; o.frequency.value = f; o2.frequency.value = f;
+    for (const x of [o, o2]) { x.detune.setValueAtTime(35, t); x.detune.exponentialRampToValueAtTime(1, t + 0.05); }
+    const l2 = ctx.createGain(); l2.gain.value = 0.18;
+    lp.type = "lowpass"; lp.frequency.setValueAtTime(f * 10, t); lp.frequency.exponentialRampToValueAtTime(f * 2, t + 0.4);
+    const stop = envGain(g, t, Math.max(dur, 0.6), peak, adsr);
+    o.connect(lp); o2.connect(l2).connect(lp); lp.connect(g).connect(out);
+    for (const x of [o, o2]) { x.start(t); x.stop(stop); }
+  } },
+  // ney / shakuhachi / dizi: sine + breath noise + gentle vibrato
+  flute: { adsr: [0.06, 0.2, 0.8, 0.15], play(out, t, f, dur, adsr, peak) {
+    const o = ctx.createOscillator(), g = ctx.createGain(); o.type = "sine"; o.frequency.value = f;
+    const lfo = ctx.createOscillator(), depth = ctx.createGain(); lfo.frequency.value = 4.8; depth.gain.value = 10;
+    lfo.connect(depth).connect(o.detune);
+    const stop = envGain(g, t, dur, peak * 0.8, adsr);
+    o.connect(g).connect(out);
+    if (!noiseBuf) noise(ctx.createGain(), t, 0.01, 0.0001, 100); // builds the buffer
+    const n = ctx.createBufferSource(), bp = ctx.createBiquadFilter(), ng = ctx.createGain();
+    n.buffer = noiseBuf; n.loop = true; bp.type = "bandpass"; bp.frequency.value = f * 2; bp.Q.value = 2; ng.gain.value = 0.12;
+    n.connect(bp).connect(ng).connect(g);
+    for (const x of [o, lfo, n]) { x.start(t); x.stop(stop); }
+  } },
+  organ: { adsr: [0.02, 0.1, 1, 0.12], play(out, t, f, dur, adsr, peak) {
+    const g = ctx.createGain(); const stop = envGain(g, t, dur, peak * 0.5, adsr);
+    for (const [mul, lvl] of [[0.5, 0.5], [1, 1], [2, 0.6], [3, 0.3], [4, 0.25], [8, 0.08]]) {
+      const o = ctx.createOscillator(); o.type = "sine"; o.frequency.value = f * mul;
+      const l = ctx.createGain(); l.gain.value = lvl; o.connect(l).connect(g); o.start(t); o.stop(stop);
+    }
+    g.connect(out);
+  } },
+  // choir "ah": detuned saws through two vowel formants
+  choir: { adsr: [0.35, 0.4, 0.85, 0.6], play(out, t, f, dur, adsr, peak) {
+    const g = ctx.createGain(), sum = ctx.createGain(); const stop = envGain(g, t, dur, peak * 0.6, adsr);
+    for (const det of [-9, 0, 8]) { const o = ctx.createOscillator(); o.type = "sawtooth"; o.frequency.value = f; o.detune.value = det; o.connect(sum); o.start(t); o.stop(stop); }
+    for (const [ff, q, lvl] of [[730, 6, 1], [1090, 7, 0.6], [2440, 8, 0.25]]) {
+      const bp = ctx.createBiquadFilter(), l = ctx.createGain(); bp.type = "bandpass"; bp.frequency.value = ff; bp.Q.value = q; l.gain.value = lvl;
+      sum.connect(bp).connect(l).connect(g);
+    }
+    g.connect(out);
+  } },
+  // 编钟 / temple bell / church bell: inharmonic partials, long ring
+  bell: { adsr: [0.003, 2.4, 0.0, 1.5], play(out, t, f, dur, adsr, peak) {
+    const g = ctx.createGain(); const stop = envGain(g, t, Math.max(dur, 2), peak * 0.6, adsr);
+    for (const [mul, lvl] of [[0.5, 0.4], [1, 1], [2.76, 0.5], [5.4, 0.25], [8.93, 0.12]]) {
+      const o = ctx.createOscillator(); o.type = "sine"; o.frequency.value = f * mul;
+      const l = ctx.createGain(); l.gain.value = lvl; o.connect(l).connect(g); o.start(t); o.stop(stop);
+    }
+    g.connect(out);
+  } },
+  bass: { adsr: [0.008, 0.3, 0.6, 0.12], play(out, t, f, dur, adsr, peak) {
+    const o = ctx.createOscillator(), lp = ctx.createBiquadFilter(), g = ctx.createGain();
+    o.type = "sawtooth"; o.frequency.value = f; lp.type = "lowpass"; lp.frequency.value = 480; lp.Q.value = 4;
+    const stop = envGain(g, t, dur, peak, adsr); o.connect(lp).connect(g).connect(out); o.start(t); o.stop(stop);
+  } },
+};
+const MELODIC = Object.keys(INSTRUMENTS);
+
+// Options shared by every melodic kind.
+function buildMelodic(kind, o) {
+  const inst = INSTRUMENTS[kind];
+  const scale = o.scale || "major";
+  if (!SCALES[scale]) throw new Error(`scale= is one of ${SCALE_NAMES.slice(0, 8).join(", ")}…`);
+  const key = o.key || "C";
+  if (!/^[A-G][#b]?$/.test(key)) throw new Error("key= is a note name like D or Bb");
+  const grid = Number(o.grid || 8);
+  if (![4, 8, 16].includes(grid)) throw new Error("grid= is 4, 8 or 16 (notes per bar of 4/4)");
+  let adsr = inst.adsr;
+  if (o.adsr) {
+    const parts = o.adsr.split(",");
+    if (parts.length !== 4) throw new Error("adsr= is attack,decay,sustain,release like 10ms,200ms,0.6,400ms");
+    adsr = [ms(parts[0]) / 1000, ms(parts[1]) / 1000, Number(parts[2]), ms(parts[3]) / 1000];
+    if (!(adsr[2] >= 0 && adsr[2] <= 1)) throw new Error("adsr sustain is 0–1");
+  }
+  const defOct = { bass: 2, strings: 4, pluck: 4, flute: 5, organ: 3, choir: 4, bell: 4, piano: 4 }[kind];
+  const style = o.style || (kind === "bass" ? "root" : kind === "organ" || kind === "choir" ? "block" : "arp");
+  if (!["arp", "block", "drone", "root"].includes(style)) throw new Error("style= is arp, block, drone or root");
+  return {
+    inst, adsr, scale: SCALES[scale], scaleName: scale, key, grid, style, vol: num(o, "vol", 1, 0, 2),
+    oct: num(o, "oct", defOct, 1, 7),
+    phrase: o.phrase ? parsePhrase(o.phrase) : null,
+    chords: (o.chords || "Am F C G").split(/\s+/).map(parseChord),
+    notes: o.notes ? o.notes.split(/\s+/).map((t) => { if (t !== "." && noteMidi(t) === null) throw new Error(`bad note \`${t}\` (try E4, C#5 or .)`); return t; }) : null,
+  };
+}
+function playMelodic(r, c, step, t) {
+  const cfg = r.cfg, out = r.out, stepDur = 60 / c.bpm / 4, bar = Math.floor(step / (4 * c.sig)), barSteps = 4 * c.sig;
+  const peak = 0.22 * cfg.vol;
+  const note = (f, dur, p = peak) => { cfg.inst.play(out, t, f, dur, cfg.adsr, p); mark(r, t, Math.min(dur, 1.5)); };
+  if (cfg.phrase) {
+    const per = 16 / cfg.grid;
+    if (step % per) return;
+    const i = (step / per) % cfg.phrase.length, tok = cfg.phrase[i];
+    if (tok.rest || tok.hold) return;
+    let hold = 1; while (hold < cfg.phrase.length && cfg.phrase[(i + hold) % cfg.phrase.length].hold) hold++;
+    const cents = degreeCents(cfg.scale, tok.deg) + tok.acc + 1200 * tok.oct;
+    note(midiHz(keyMidi(cfg.key, cfg.oct)) * Math.pow(2, cents / 1200), stepDur * per * hold * 0.95);
+    r.detail = `${tok.deg}${"'".repeat(Math.max(0, tok.oct))}${",".repeat(Math.max(0, -tok.oct))} · ${cfg.scaleName} on ${cfg.key}`;
+    return;
+  }
+  if (cfg.notes) {
+    const i = step % cfg.notes.length, tok = cfg.notes[i];
+    if (tok === ".") return;
+    let hold = 1; while (hold < 8 && cfg.notes[(i + hold) % cfg.notes.length] === ".") hold++;
+    note(midiHz(noteMidi(tok)), stepDur * hold * 0.95); r.detail = `note ${tok}`;
+    return;
+  }
+  const ch = cfg.chords[bar % cfg.chords.length], base = 12 * (cfg.oct + 1) + ch.root;
+  r.detail = `${ch.name} · ${cfg.style}`;
+  if (cfg.style === "root" && step % 8 === 0) note(midiHz(base), stepDur * 6, peak * 1.2);
+  else if (cfg.style === "drone" && step % barSteps === 0) for (const iv of [0, 7]) note(midiHz(base + iv), stepDur * barSteps, peak * 0.7);
+  else if (cfg.style === "block" && step % barSteps === 0) for (const iv of ch.ivs) note(midiHz(base + iv), stepDur * barSteps * 0.95, peak * 0.6);
+  else if (cfg.style === "arp" && step % 2 === 0) {
+    const seq = [...ch.ivs, ch.ivs[1] + 12]; note(midiHz(base + seq[(step / 2) % seq.length]), stepDur * 3);
+  }
+}
+
+// ── drum kits: same x/X/. lanes, different instruments ─────────────────
+const KITS = {
+  rock: ["kick", "snare", "hat"],
+  darbuka: ["dum", "tek", "ka"],      // Egyptian / Arabic goblet drum
+  taiko: ["don", "ka", "shime"],      // Japanese
+  opera: ["ban", "luo", "bo"],        // 京剧: 板 clapper, 锣 gong, 钹 cymbals
+};
+function kitHit(out, lane, t, accent) {
+  const a = accent ? 1.3 : 1;
+  switch (lane) {
+    case "kick": voice(out, t, { freq: 150, endFreq: 42, dur: 0.32, peak: 0.72 * a }); break;
+    case "snare": noise(out, t, 0.16, 0.35 * a, 1400); voice(out, t, { freq: 190, dur: 0.1, peak: 0.18, type: "triangle" }); break;
+    case "hat": noise(out, t, 0.045, 0.13 * a, 7000); break;
+    case "dum": voice(out, t, { freq: 120, endFreq: 75, dur: 0.38, peak: 0.6 * a }); noise(out, t, 0.03, 0.05, 400); break;
+    case "tek": noise(out, t, 0.05, 0.32 * a, 3200); voice(out, t, { freq: 900, dur: 0.04, peak: 0.12, type: "triangle" }); break;
+    case "ka": noise(out, t, 0.04, 0.2 * a, 1600); break;
+    case "don": voice(out, t, { freq: 95, endFreq: 55, dur: 0.9, peak: 0.85 * a }); noise(out, t, 0.06, 0.08, 200); break;
+    case "shime": voice(out, t, { freq: 420, endFreq: 360, dur: 0.12, peak: 0.3 * a, type: "triangle" }); noise(out, t, 0.03, 0.08, 2500); break;
+    case "ban": noise(out, t, 0.03, 0.4 * a, 2600); voice(out, t, { freq: 1900, dur: 0.03, peak: 0.15, type: "square" }); break;
+    case "luo": voice(out, t, { freq: 340, endFreq: 420, dur: 0.9, peak: 0.3 * a, type: "triangle" }); voice(out, t, { freq: 937, dur: 0.7, peak: 0.08 }); break;
+    case "bo": noise(out, t, 0.6, 0.2 * a, 5000); break;
+  }
+}
+
+// ── effects: build(r) wires r.inGain → … → r.out ───────────────────────
+function lfo(rate, depth, target) {
+  const o = ctx.createOscillator(), g = ctx.createGain(); o.frequency.value = rate; g.gain.value = depth;
+  o.connect(g).connect(target); o.start(); return o;
+}
+function driveCurve(k) {
+  const n = 2048, c = new Float32Array(n);
+  for (let i = 0; i < n; i++) { const x = (i * 2) / n - 1; c[i] = ((1 + k) * x) / (1 + k * Math.abs(x)); }
+  return c;
+}
+const EFFECTS = {
+  filter(r) {
+    const f = ctx.createBiquadFilter(); f.type = r.cfg.type; f.frequency.value = r.cfg.freq; f.Q.value = r.cfg.q;
+    if (r.cfg.sweep) lfo(r.cfg.sweep, r.cfg.freq * 0.6, f.frequency);
+    r.inGain.connect(f).connect(r.out);
+  },
+  drive(r) {
+    const w = ctx.createWaveShaper(), wet = ctx.createGain(), dry = ctx.createGain();
+    w.curve = driveCurve(r.cfg.amount * 40); w.oversample = "4x"; wet.gain.value = r.cfg.mix * 0.6; dry.gain.value = 1 - r.cfg.mix;
+    r.inGain.connect(w).connect(wet).connect(r.out); r.inGain.connect(dry).connect(r.out);
+  },
+  chorus(r) {
+    const d = ctx.createDelay(0.1), wet = ctx.createGain(); d.delayTime.value = 0.022; wet.gain.value = r.cfg.mix;
+    lfo(r.cfg.rate, 0.004 * r.cfg.depth, d.delayTime);
+    r.inGain.connect(r.out); r.inGain.connect(d).connect(wet).connect(r.out);
+  },
+  phaser(r) {
+    let head = r.inGain; const wet = ctx.createGain(); wet.gain.value = r.cfg.mix;
+    for (let i = 0; i < 4; i++) { const ap = ctx.createBiquadFilter(); ap.type = "allpass"; ap.frequency.value = 700; lfo(r.cfg.rate, 500, ap.frequency); head.connect(ap); head = ap; }
+    head.connect(wet).connect(r.out); r.inGain.connect(r.out);
+  },
+  tremolo(r) {
+    const g = ctx.createGain(); g.gain.value = 1 - r.cfg.depth / 2; lfo(r.cfg.rate, r.cfg.depth / 2, g.gain);
+    r.inGain.connect(g).connect(r.out);
+  },
+  pan(r) {
+    const p = ctx.createStereoPanner(); p.pan.value = r.cfg.pos;
+    if (r.cfg.auto) lfo(r.cfg.auto, 0.8, p.pan);
+    r.inGain.connect(p).connect(r.out);
+  },
+  eq(r) {
+    let head = r.inGain;
+    for (const [type, freq, gain] of [["lowshelf", 250, r.cfg.low], ["peaking", 1000, r.cfg.mid], ["highshelf", 4000, r.cfg.high]]) {
+      const f = ctx.createBiquadFilter(); f.type = type; f.frequency.value = freq; f.gain.value = gain; head.connect(f); head = f;
+    }
+    head.connect(r.out);
+  },
+  comp(r) {
+    const c = ctx.createDynamicsCompressor(); c.threshold.value = r.cfg.threshold; c.ratio.value = r.cfg.ratio; c.attack.value = 0.005; c.release.value = 0.15;
+    const makeup = ctx.createGain(); makeup.gain.value = Math.pow(10, -r.cfg.threshold / 40);
+    r.inGain.connect(c).connect(makeup).connect(r.out);
+  },
+  // env / fadein / fadeout: a gain envelope; its level follows applyEnvelopes().
+  env(r) { r.envGain = ctx.createGain(); r.envGain.gain.value = 0; r.inGain.connect(r.envGain).connect(r.out); },
+};
+EFFECTS.fadein = EFFECTS.env; EFFECTS.fadeout = EFFECTS.env;
+const FX_KINDS = Object.keys(EFFECTS);
+
+// Durations for envelopes: 300ms, 2s, 4beats, 2bars.
+function lenOf(v, def) {
+  if (v === undefined) return def;
+  const m = /^(\d+(?:\.\d+)?)(ms|s|beats?|bars?)$/.exec(v);
+  if (!m) throw new Error(`bad length \`${v}\` (try 300ms, 2s, 4beats or 2bars)`);
+  return { n: Number(m[1]), unit: m[2].startsWith("beat") ? "beat" : m[2].startsWith("bar") ? "bar" : m[2] };
+}
+function lenSec(L, c) {
+  if (!L) return 0;
+  if (L.unit === "ms") return L.n / 1000;
+  if (L.unit === "s") return L.n;
+  const beat = 60 / (c ? c.bpm : 92);
+  return L.unit === "beat" ? L.n * beat : L.n * beat * (c ? c.sig : 4);
+}
+let startedAt = 0;
+// Envelope level for each env-like node: fade in from Start, fade out after
+// a time, and open/close through ?x / !x with its own attack and release.
+function applyEnvelopes() {
+  const fc = firstClock(), c = fc && fc.c, now = ctx.currentTime;
+  for (const r of live.values()) {
+    if (!r.envGain) continue;
+    const atk = lenSec(r.cfg.attack, c), rel = lenSec(r.cfg.release, c);
+    let target = r.node.enabled ? 1 : 0, ramp = atk;
+    if ((r.gates || []).length && !gateOpen(r)) { target = 0; ramp = rel; }
+    if (r.cfg.after) {
+      const at = startedAt + lenSec(r.cfg.after, c);
+      if (now >= at) { target = 0; ramp = rel; }
+    }
+    // Fade in from Start: the level follows elapsed time, so edits don't restart it.
+    if (target === 1 && atk > 0 && now < startedAt + atk) {
+      r.envGain.gain.setValueAtTime(Math.max(0, (now - startedAt) / atk), now);
+      r.envGain.gain.linearRampToValueAtTime(1, startedAt + atk);
+      r.envWas = "in"; continue;
+    }
+    const key = `${target}`;
+    if (r.envWas !== key) {
+      r.envGain.gain.cancelScheduledValues(now);
+      r.envGain.gain.setValueAtTime(r.envGain.gain.value, now);
+      r.envGain.gain.linearRampToValueAtTime(target, now + Math.max(0.01, ramp));
+      r.envWas = key;
+    }
+  }
+}
+
+// Shared by every melodic instrument.
+const MELODIC_ARGS = [
+  ["phrase", '"1 2 3 5 6 - 5 3"', "简谱 melody: 1–7, 0 rest, - hold, ' up / , down an octave", null, { re: /^"(([#b]?[0-7]['’,]*|-)\s*)+"$/ }],
+  ["scale", "major", "colours the degrees", null, null],
+  ["key", "C", "tonic", null, { re: /^[A-G][#b]?$/ }],
+  ["chords", '"Am F C G"', "chord per bar", null, { re: /^"([A-G][#b]?(maj7|m7|m|7|dim|sus2|sus4)?\s*)+"$/ }],
+  ["notes", '"E4 . . G4 A4 . . ."', "melody by note names, one per 16th (learn writes this)", null, { re: /^"(([A-G][#b]?\d|\.)\s*)+"$/ }],
+  ["style", "arp", "for chords: arp, block, drone (root+5th) or root", ["arp", "block", "drone", "root"], { re: /^(arp|block|drone|root)$/ }],
+  ["oct", "4", "octave", null, { re: /^[1-7]$/ }],
+  ["grid", "8", "phrase notes per bar of 4/4: 4, 8 or 16"],
+  ["adsr", "10ms,200ms,0.6,400ms", "包絡 per note: attack,decay,sustain,release"],
+  ["vol", "1", "level 0–2"],
+];
+MELODIC_ARGS[1][3] = Object.keys(SCALES); MELODIC_ARGS[1][4] = { re: new RegExp(`^(${Object.keys(SCALES).join("|")})$`) };
+for (const [k, doc] of [["piano", "Piano: chords, or a melody by phrase= / notes=."], ["bass", "Bass: chord roots on beats 1 and 3, or a phrase."],
+  ["strings", "提琴 strings (violin, cello, 京胡): bowed, with vibrato."], ["pluck", "Plucked strings: koto, guzheng, pipa, oud."],
+  ["flute", "Flute: ney, shakuhachi, dizi."], ["organ", "Pipe organ."], ["choir", "Choir 'ah'."], ["bell", "Bell: 编钟, temple or church bell."]]) {
+  CATALOG[k] = { doc, args: MELODIC_ARGS };
+}
+CATALOG.drums.args.push(["kit", "rock", "rock (kick|snare|hat), darbuka (dum|tek|ka), taiko (don|ka|shime), opera (ban|luo|bo — 京剧 板 锣 钹)", Object.keys(KITS), { re: /^(rock|darbuka|taiko|opera)$/ }]);
+CATALOG.drums.args[1][3] = [...new Set(Object.values(KITS).flat())];
+CATALOG.drums.args[1][4] = { re: new RegExp(`^(${[...new Set(Object.values(KITS).flat())].join("|")})$`) };
 
 function playStep(r, c, step, t) {
   const k = r.node.kind, cfg = r.cfg, out = r.out;
@@ -760,37 +1141,12 @@ function playStep(r, c, step, t) {
     const len = Math.max(...cfg.lanes.map((l) => l.length)), i = step % len; let hit = false;
     cfg.lanes.forEach((lane, li) => {
       const ch = lane[step % lane.length];
-      if (ch !== ".") { drumHit(out, LANES[li], t, ch === "X"); hit = true; }
+      if (ch !== ".") { kitHit(out, KITS[cfg.kit][li], t, ch === "X"); hit = true; }
     });
     if (hit) mark(r, t, 0.1);
     r.detail = `step ${String(i + 1).padStart(2)}/${len}`;
   }
-  if (k === "piano" || k === "bass") {
-    const ch = cfg.chords[bar % cfg.chords.length];
-    if (k === "piano" && cfg.notes) {
-      const i = step % cfg.notes.length, tok = cfg.notes[i];
-      if (tok !== ".") {
-        let hold = 1; while (hold < 8 && cfg.notes[(i + hold) % cfg.notes.length] === ".") hold++;
-        voice(out, t, { type: "triangle", freq: midiHz(noteMidi(tok)), dur: stepDur * hold * 0.95, peak: 0.18, attack: 0.008 });
-        mark(r, t, stepDur * hold); r.detail = `note ${tok}`;
-      }
-    } else if (k === "piano") {
-      const base = 12 * (cfg.oct + 1) + ch.root;
-      if (cfg.style === "block" && step % (4 * c.sig) === 0) {
-        for (const iv of ch.ivs) voice(out, t, { type: "triangle", freq: midiHz(base + iv), dur: stepDur * 4 * c.sig * 0.95, peak: 0.12, attack: 0.01 });
-        mark(r, t, stepDur * 4 * c.sig);
-      } else if (cfg.style === "arp" && step % 2 === 0) {
-        const seq = [...ch.ivs, ch.ivs[1] + 12]; const iv = seq[(step / 2) % seq.length];
-        voice(out, t, { type: "triangle", freq: midiHz(base + iv), dur: stepDur * 3, peak: 0.16, attack: 0.006 });
-        mark(r, t, stepDur * 1.6);
-      }
-      r.detail = `${ch.name} · ${cfg.style}`;
-    } else if (step % (2 * 4) === 0) {
-      const n = 36 + ch.root;
-      voice(out, t, { type: "sawtooth", freq: midiHz(n), dur: stepDur * 6, peak: 0.28, attack: 0.008, filter: { type: "lowpass", freq: 420, q: 4 } });
-      mark(r, t, stepDur * 5); r.detail = `${NAMES[ch.root]}${2}`;
-    }
-  }
+  if (MELODIC.includes(k)) playMelodic(r, c, step, t);
 }
 
 // ── mic + vad ─────────────────────────────────────────────────────────
@@ -955,7 +1311,7 @@ function runVad(eff) {
           if (!controlsOf(d.node).some((c) => c.kind === "on" && c.node === r.node.id)) continue;
           if (!gateOpen(d)) continue;
           const t = gridTime(d, eff);
-          drumHit(d.out, d.cfg.hit, t, true); mark(d, t, 0.12); d.hits = (d.hits || 0) + 1;
+          kitHit(d.out, d.cfg.hit, t, true); mark(d, t, 0.12); d.hits = (d.hits || 0) + 1;
         }
       }
       st.speaking = true; st.quietSince = now;
@@ -989,7 +1345,7 @@ function gateOpen(r) {
 // Gated nodes also fade their output, so sustained notes duck smoothly.
 function applyGates() {
   for (const r of live.values()) {
-    if (!r.out || !r.gates || !r.gates.length) continue;
+    if (!r.out || !r.gates || !r.gates.length || r.envGain) continue;
     const open = gateOpen(r);
     if (r.gateWas !== open) { r.out.gain.setTargetAtTime(open && r.node.enabled ? (r.node.kind === "speaker" ? r.cfg.volume : 1) : 0, ctx.currentTime, 0.04); r.gateWas = open; }
   }
@@ -1001,6 +1357,7 @@ function tick() {
   runVad(eff);
   runLearn(eff);
   applyGates();
+  applyEnvelopes();
   for (const [cid, c] of clocks) {
     const cr = live.get(cid);
     if (!cr || cr.error) continue;
@@ -1166,7 +1523,7 @@ const EXAMPLES = {
 .                       piano   chords="Am F C G" style=arp oct=4
 .                       bass    chords="Am F C G"
 *>                      mix
->                       reverb  size=2 mix=0.25
+>                       reverb  size=2 wet=0.25
 >                       speaker volume=0.5
 `,
   metro: `# 节拍器: accent on beat 1, three beats to the bar
@@ -1180,6 +1537,82 @@ const EXAMPLES = {
 .               metro        tone=800
 clock2>         metro2=metro tone=1500
 metro,metro2>   speaker      volume=0.4
+`,
+  strings: `# 提琴: a violin melody over a cello line, in A minor.
+.             clock           72 4/4
+.             violin=strings  minor A oct=4 phrase="5 - 6 7 1' - 7 6 5 - 4 3 2 - - -"
+.             cello=strings   oct=2 "Am F C G" root
+violin,cello> reverb          3s wet=0.35
+>             speaker         0.5
+`,
+  egypt: `# Egyptian maqam Hijaz on D: darbuka maqsum rhythm, oud and ney over a drone.
+.  clock          100 4/4
+.  darbuka=drums  kit=darbuka "x.......x.......|..x...x.....x...|..........x...x."
+.  oud=pluck      hijaz D phrase="5 6 5 4 3 2 1 - 3 4 5 - 6 5 4 3"
+.  ney=flute      hijaz D oct=5 phrase="1' - - - 7 - 6 - 5 - - - - - - -"
+.  drone=strings  "D" drone oct=2 vol=0.6
+*> reverb         2s wet=0.3
+>  speaker        0.5
+`,
+  gothic: `# 哥特 Gothic: organ and choir in E Phrygian, a tolling bell, cathedral reverb.
+.      clock    56 4/4
+.      organ    "Em F G Em" block oct=3
+.      choir    phrygian E phrase="5 - 6 - 5 - 4 - 3 - 2 - 1 - - -"
+choir> fadein   4bars
+.      bell     phrygian E oct=3 phrase="1 - - - - - - -"
+*>     reverb   5s wet=0.5
+>      speaker  0.45
+`,
+  japan: `# 日式: koto in the In (都節) scale, shakuhachi and taiko.
+.  clock             84 4/4
+.  koto=pluck        in D phrase="1 2 4 5 6 - 5 4 2 1 6, - 1 - - -"
+.  shakuhachi=flute  in D oct=5 phrase="5 - - 4 2 - - - 1 - - - - - - -"
+.  taiko=drums       kit=taiko "x.......x...x...|....x.......x...|x.x.x.x.x.x.x.x."
+*> reverb            2.5s wet=0.3
+>  speaker           0.5
+`,
+  tang: `# 唐: the Tang court 燕乐 scale, with pipa, guqin and 编钟 bells.
+.  clock           66 4/4
+.  pipa=pluck      yanyue D phrase="5 6 1' 2' 1' 6 5 - 3 5 6 5 3 2 1 -"
+.  guqin=pluck     yanyue D oct=3 grid=4 phrase="1 - 5, - 6, - 5, -" adsr=5ms,1.5s,0,800ms
+.  bianzhong=bell  yanyue D oct=4 grid=4 phrase="1 - - - 5 - - -"
+*> reverb          3s wet=0.35
+>  speaker         0.5
+`,
+  qing: `# 清 · 京剧: 京胡 fiddle in 西皮 style with 板 / 锣 / 钹 percussion, in 2/4.
+.  clock           126 2/4
+.  jinghu=strings  gong A oct=5 phrase="6 5 3 5 6 1' 6 5 3 2 3 5 2 - - -"
+.  luogu=drums     kit=opera "x...x...|x.......|....x..."
+.  yueqin=pluck    gong A phrase="6 - 3 - 5 - 2 -"
+*> reverb          1.2s wet=0.2
+>  speaker         0.5
+`,
+  cpop: `# 现代华语 (中国风 pop): the 4536251 progression, pop drums, guzheng and dizi in the 宫 pentatonic.
+.  clock          76 4/4
+.  drums          "x.....x...x.....|....x.......x...|x.x.x.x.x.x.x.x."
+.  piano          "F G Em Am Dm G C C" arp
+.  bass           "F G Em Am Dm G C C"
+.  guzheng=pluck  gong C oct=5 phrase="3 5 6 1' 6 5 3 2 1 2 3 5 3 - - -"
+.  dizi=flute     gong C oct=5 phrase="0 0 0 0 0 0 0 0 5 6 1' 6 5 - - -"
+*> mix
+>  reverb         2s wet=0.25
+>  speaker        0.5
+`,
+  fx: `# 效果器 + 包絡: filter sweep, chorus, tremolo, auto-pan, drive, EQ, compressor, fades.
+.       clock         90 4/4
+.       pad=choir     "Am F C G" block
+pad>    filter        lp 900 sweep=0.15Hz q=4
+>       chorus        0.8Hz
+.       lead=strings  minor A oct=5 phrase="1' - 7 6 5 - 3 - 5 - 6 7 1' - - -" adsr=150ms,300ms,0.7,600ms
+lead>   tremolo       6Hz 0.4
+>       pan           auto=0.25Hz
+.       drums         "x...x...x...x...|....x.......x...|..x...x...x...x."
+drums>  drive         0.3
+*>      eq            low=3 high=2
+>       comp          -20
+>       fadein        2bars
+>       fadeout       4bars after=16bars
+>       speaker       0.5
 `,
   learn: `# Beatbox 1 bar after the count-in: "boom" = kick, "ka" = snare, "ts" = hat.
 # learn rewrites \`beat\` and then turns itself off; Ctrl+T on it records again, Ctrl+Z undoes.
@@ -1212,8 +1645,8 @@ mic>         vad           0.02 300ms
 .               clock   bpm=76
 .               drums   pattern="x.......x.......|....x.......x..."
 .               piano   chords="Dm7 Gm7 C Fmaj7" style=block oct=4
-piano>          delay   time=3/16 feedback=0.45 mix=0.35
-drums,delay>    reverb  size=3 mix=0.3
+piano>          delay   time=3/16 feedback=0.45 wet=0.35
+drums,delay>    reverb  size=3 wet=0.3
 >               speaker volume=0.5
 `,
 };
@@ -1502,7 +1935,7 @@ const startBtn = document.getElementById("startBtn");
 async function start() {
   ensureAudio(); await ctx.resume();
   master.gain.setTargetAtTime(volume(), ctx.currentTime, 0.02);
-  running = true; mic.error = null; rebuild();
+  running = true; mic.error = null; startedAt = ctx.currentTime + 0.06; rebuild();
   for (const c of clocks.values()) { c.nextTime = ctx.currentTime + 0.06; c.step = 0; }
   startBtn.setAttribute("aria-pressed", "true"); startBtn.textContent = "● Playing";
 }
