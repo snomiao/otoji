@@ -1451,15 +1451,37 @@ INSTRUMENTS.timpani = { adsr: [0.004, 1.4, 0, 0.8], play(out, t, f, dur, adsr, p
 // the key's tonic, and a whistled melody that is a single overtone of it,
 // picked out by a very narrow resonance. Notes snap to the nearest harmonic,
 // as a singer's do, so melodies fall into the natural overtone scale.
-INSTRUMENTS.throat = { adsr: [0.12, 0.3, 0.9, 0.35], play(out, t, f, dur, adsr, peak, cfg) {
-  const fund = cfg ? midiHz(keyMidi(cfg.key, 2)) : 110, k = Math.max(1, Math.round(f / fund));
-  const g = ctx.createGain(), body = ctx.createBiquadFilter(), whistle = ctx.createBiquadFilter(), bg = ctx.createGain(), wg = ctx.createGain(), src = ctx.createGain();
-  const stop = envGain(g, t, dur, peak * 0.6, adsr);
-  for (const det of [0, 4]) { const o = ctx.createOscillator(); o.type = "sawtooth"; o.frequency.value = fund; o.detune.value = det; o.connect(src); o.start(t); o.stop(stop); }
-  body.type = "lowpass"; body.frequency.value = 600; body.Q.value = 2; bg.gain.value = k > 1 ? 0.45 : 1;
-  whistle.type = "bandpass"; whistle.frequency.value = k * fund; whistle.Q.value = 28; wg.gain.value = k > 1 ? 7 : 0;
-  const lfo = ctx.createOscillator(), d = ctx.createGain(); lfo.frequency.value = 5.2; d.gain.value = k * fund * 0.004; lfo.connect(d).connect(whistle.frequency); lfo.start(t); lfo.stop(stop);
-  src.connect(body).connect(bg).connect(g); src.connect(whistle).connect(wg).connect(g); g.connect(out);
+INSTRUMENTS.throat = { adsr: [0.15, 0.3, 0.9, 0.4], play(out, t, f, dur, adsr, peak, cfg) {
+  // A human voice: a slightly irregular glottal pulse through the vowel's
+  // formants; the vowel drifts with the melody (u→o→a→o, as the mouth reshapes
+  // to pick out overtones). Low lines (kargyraa) add the false-fold sub-octave
+  // growl; high lines (sygyt/khöömii) add the narrow whistled overtone.
+  const fund = cfg ? midiHz(keyMidi(cfg.key, 2)) : 110, k = Math.max(1, Math.round(f / fund)), deep = k <= 3;
+  const g = ctx.createGain(), src = ctx.createGain(), stop = envGain(g, t, dur, peak * 0.7, adsr);
+  const glott = [];
+  for (const [mul, det, lvl] of [[1, 0, 1], [1, 7, 0.6], ...(deep ? [[0.5, 0, 0.55]] : [])]) {
+    const o = ctx.createOscillator(), l = ctx.createGain(); o.type = "sawtooth"; o.frequency.value = fund * mul; o.detune.value = det; l.gain.value = lvl;
+    o.connect(l).connect(src); o.start(t); o.stop(stop); glott.push(o);
+  }
+  const jit = ctx.createOscillator(), jd = ctx.createGain(); jit.type = "triangle"; jit.frequency.value = 4.7 + Math.random(); jd.gain.value = fund * 0.006;
+  jit.connect(jd); for (const o of glott) jd.connect(o.frequency); jit.start(t); jit.stop(stop);
+  // the vowel: three formants that glide between u, o and a
+  const V = deep ? [[300, 640, 2240], [400, 800, 2400], [480, 900, 2400]] : [[330, 900, 2300], [500, 860, 2400], [730, 1090, 2440]];
+  const path = [0, 1, 2, 1].map((x) => V[(x + k) % 3]);
+  [[8, 1], [10, 0.6], [12, 0.25]].forEach(([q, lvl], n) => {
+    const bp = ctx.createBiquadFilter(), l = ctx.createGain(); bp.type = "bandpass"; bp.Q.value = q; l.gain.value = lvl * (deep ? 1.4 : 1);
+    bp.frequency.setValueAtTime(path[0][n], t); path.forEach((v, m) => bp.frequency.linearRampToValueAtTime(v[n], t + (dur * (m + 1)) / path.length));
+    src.connect(bp).connect(l).connect(g);
+  });
+  if (k > 3) { // the whistle: one overtone, picked out very narrowly
+    const w = ctx.createBiquadFilter(), wg = ctx.createGain(); w.type = "bandpass"; w.frequency.value = k * fund; w.Q.value = 30; wg.gain.value = 6;
+    const lfo = ctx.createOscillator(), d = ctx.createGain(); lfo.frequency.value = 5.2; d.gain.value = k * fund * 0.004; lfo.connect(d).connect(w.frequency); lfo.start(t); lfo.stop(stop);
+    src.connect(w).connect(wg).connect(g);
+  }
+  if (!noiseBuf) noise(ctx.createGain(), t, 0.01, 0.0001, 100); // breath
+  const nb = ctx.createBufferSource(), nf = ctx.createBiquadFilter(), ng = ctx.createGain(); nb.buffer = noiseBuf; nb.loop = true;
+  nf.type = "bandpass"; nf.frequency.value = 1500; nf.Q.value = 0.8; ng.gain.value = 0.02; nb.connect(nf).connect(ng).connect(g); nb.start(t); nb.stop(stop);
+  g.connect(out);
 } };
 // Double reed (suona, zurna, shehnai, hichiriki, shawm, chirimía): a bright
 // buzz through nasal resonances, a scoop up into each note, a wide vibrato.
