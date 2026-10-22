@@ -3,10 +3,14 @@ import { readFileSync } from "fs";
 const [cf, sf] = process.argv.slice(2);
 globalThis.CIVS = []; globalThis.CULTURE_SCALES = {}; globalThis.STORIES = {};
 new Function(readFileSync(cf, "utf8"))(); new Function(readFileSync(sf, "utf8"))();
-const ACTS = ["hunt", "battle", "gather", "ritual", "rain", "flood", "wind", "fire", "thunder", "birth", "death"];
+// The activities and the scenes a people never lived through, read from matrix.js.
+const mx = readFileSync(new URL("../../matrix.js", import.meta.url), "utf8");
+const ACTS = JSON.parse(/const ACTIVITY_IDS = (\[[^\]]*\])/.exec(mx)[1].replace(/\s+/g, " "));
+const NEVER = new Function("return " + /const NEVER = (\{[^}]*\})/.exec(mx)[1])();
+const never = (c, a) => (NEVER[a] || "").split(" ").includes(c.id);
 let bad = 0, n = 0;
 for (const c of CIVS) for (const a of ACTS) {
-  if ((c.skip || []).includes(a)) continue;
+  if ((c.skip || []).includes(a) || never(c, a) || a === "showcase") continue; // 楽 shows the instruments; the people's intro stands in for a story
   const s = STORIES[`${c.id}:${a}`]; n++;
   if (!s) { console.log(`✗ missing ${c.id}:${a}`); bad++; continue; }
   const words = s.trim().split(/\s+/).length;

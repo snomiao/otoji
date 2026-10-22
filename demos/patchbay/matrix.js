@@ -650,7 +650,7 @@ function renderPlayer() {
     const kind = storyOf(civ, a) ? (isHistory(civ, a) ? ["history", "recorded history"] : ["imagined", "an imagined scene"]) : null;
     let kb = now.querySelector(".kind"); if (!kb) { kb = document.createElement("span"); now.querySelector(".title").after(kb); }
     kb.className = "kind " + (kind ? kind[0] : ""); kb.textContent = kind ? kind[1] : "";
-    const sb = now.querySelector(".story"); sb.textContent = (STORIES[`${civ.id}:${a}`] || A.about) + (civ.note ? `\n♪ ${civ.note}` : "");
+    const sb = now.querySelector(".story"); sb.textContent = (STORIES[`${civ.id}:${a}`] || (a === "showcase" && civ.intro) || A.about) + (civ.note ? `\n♪ ${civ.note}` : "");
     if (!now.querySelector("button")) { const st = Object.assign(document.createElement("button"), { type: "button", textContent: "■ Stop" }); st.addEventListener("click", () => { if (current) current.setAttribute("aria-pressed", "false"); current = null; stopSoftly(); }); now.querySelector(".title").after(st); }
   };
   const regions = [...new Set([...REGION_ORDER, ...CIVS.map((c) => c.region)])].filter((r) => CIVS.some((c) => c.region === r));
