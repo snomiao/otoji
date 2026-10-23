@@ -296,6 +296,8 @@ body.player-mode #subtitle, body.instruments-mode #subtitle { max-width: min(900
 #explainCard:not([open]) { width: auto; }
 body.player-mode #explainCard, body.instruments-mode #explainCard { display: none; }
 .side-right .help { padding-bottom: 42vh; } /* the last rows can scroll clear of the fixed box */
+.rec-opt { font-size: 13px; color: var(--muted); display: inline-flex; gap: 4px; align-items: center; }
+.rec-opt input[type=number] { width: 3.2em; font: inherit; }
 .reload-toast { position: fixed; left: 16px; bottom: 16px; z-index: 50; padding: 8px 12px; border-radius: 8px; background: var(--screen); color: var(--ink); border: 1px solid var(--line); border-left: 3px solid var(--feature); font-size: 13px; box-shadow: 0 2px 10px rgba(0,0,0,.15); }
 .reload-toast button { font: inherit; margin-left: 6px; cursor: pointer; }
 #player td button.shared { outline: 3px solid var(--focus); outline-offset: 2px; animation: shared-pulse 1.2s ease-in-out 3; }
@@ -347,6 +349,8 @@ body.player-mode #explainCard, body.instruments-mode #explainCard { display: non
     <button class="btn" id="stopBtn">■ Stop</button>
     <button class="btn" id="recBtn" title="Record what the patch plays (before the volume slider) and save it as a file, with an .lrc of its captions; starts playing if it isn't" aria-pressed="false">● Rec</button>
     <select id="recFmt" class="btn" aria-label="Recording format" title="WAV: lossless 24-bit, for releases · WebM: small Opus"><option value="wav">WAV</option><option value="webm">WebM</option></select>
+    <label class="rec-opt" title="Play the arrangement this many times from bar 1, then stop and let it ring out (0: until you stop)">loops <input type="number" id="recLoops" min="0" max="99" value="0"></label>
+    <label class="rec-opt" title="WAV: bring the integrated loudness to −14 LUFS (ITU-R BS.1770), peaks kept under −1 dBFS"><input type="checkbox" id="recNorm" checked> −14 LUFS</label>
     <label class="vol" for="vol">Volume <input id="vol" type="range" min="0" max="100" value="30"> <span id="volText" class="readout">30%</span></label>
     <div class="lamps" id="lamps" aria-label="Beat lamps"></div>
     <span class="readout" id="pos">stopped</span>
@@ -4015,9 +4019,9 @@ async function start() {
 }
 function stop() {
   const recording = rec.on;
-  if (recording) setTimeout(stopRec, 1500); // keep the reverb tail
+  if (recording) setTimeout(stopRec, 3000); // keep the last notes and the reverb tail
   running = false;
-  if (ctx) { master.gain.setTargetAtTime(0, ctx.currentTime, 0.01); setTimeout(() => { if (!running && ctx) ctx.suspend(); }, recording ? 1700 : 80); }
+  if (ctx) { master.gain.setTargetAtTime(0, ctx.currentTime, 0.01); setTimeout(() => { if (!running && ctx) ctx.suspend(); }, recording ? 3300 : 80); }
   clocks.clear(); releaseMic(); releaseScreen(); midiPanic();
   startBtn.setAttribute("aria-pressed", "false"); startBtn.textContent = "▶ Start audio";
   rowsKey = ""; renderStatus();
@@ -4038,11 +4042,15 @@ const REC_TAP = `class RecTap extends AudioWorkletProcessor {
 registerProcessor("rec-tap", RecTap);`;
 let recTapReady = null;
 async function startRec() {
-  ensureAudio(); if (!running) await start();
+  ensureAudio();
+  const loops = Math.max(0, Math.min(99, Number(document.getElementById("recLoops").value) || 0));
+  if (loops && running) { stop(); await new Promise((r) => setTimeout(r, 120)); } // a fixed-length render starts at bar 1
+  if (!running) await start();
+  rec.loops = loops;
   rec.fmt = document.getElementById("recFmt").value;
   const lim = ctx.createDynamicsCompressor(); lim.threshold.value = -3; lim.knee.value = 0; lim.ratio.value = 20; lim.attack.value = 0.002; lim.release.value = 0.15;
   bus.connect(lim); if (screenCap.recOnly) screenCap.recOnly.connect(lim);
-  rec.lrc = []; rec.lastCaption = null; rec.t0 = Date.now(); rec.ctx0 = ctx.currentTime;
+  rec.lrc = []; rec.lastCaption = null; rec.ending = false; rec.t0 = Date.now(); rec.ctx0 = ctx.currentTime;
   if (rec.fmt === "wav") {
     recTapReady = recTapReady || ctx.audioWorklet.addModule(URL.createObjectURL(new Blob([REC_TAP], { type: "text/javascript" })));
     await recTapReady;
@@ -4061,7 +4069,14 @@ async function startRec() {
   rec.on = true; if (captionText) recCaption(captionText); // what is already showing
   const b = document.getElementById("recBtn"); b.setAttribute("aria-pressed", "true");
   const show = () => { const s = Math.floor((Date.now() - rec.t0) / 1000); b.textContent = `■ Rec ${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`; };
-  show(); rec.timer = setInterval(show, 500);
+  show(); rec.timer = setInterval(() => { show(); if (rec.loops) checkRenderEnd(); }, 100);
+}
+// A fixed-length render ends after its loops of the arrangement (8 bars when there is none).
+function checkRenderEnd() {
+  const fc = firstClock(); if (!fc || !fc.c || !running) return;
+  const arr = [...live.values()].find((r) => r.node.kind === "arrange" && !r.error && r.node.enabled);
+  const bars = (arr ? arr.cfg.total : 8) * rec.loops, endStep = bars * 4 * fc.c.sig;
+  if (stepAtTime(ctx.currentTime) >= endStep) { rec.loops = 0; rec.ending = true; stop(); }
 }
 function stopRec() {
   if (!rec.on) return;
@@ -4069,7 +4084,14 @@ function stopRec() {
   const b = document.getElementById("recBtn"); b.setAttribute("aria-pressed", "false"); b.textContent = "● Rec";
   if (rec.fmt === "wav") { // the tap's last partial block, then the file
     const node = rec.node; node.port.postMessage("flush");
-    setTimeout(() => { node.port.onmessage = null; saveRec(wavBlob(rec.pcm, rec.frames, ctx.sampleRate), "wav"); rec.pcm = [[], []]; }, 150);
+    setTimeout(() => {
+      node.port.onmessage = null;
+      const flat = (parts) => { const a = new Float32Array(rec.frames); let k = 0; for (const q of parts) { a.set(q.subarray(0, Math.min(q.length, rec.frames - k)), k); k += q.length; if (k >= rec.frames) break; } return a; };
+      const chans = [flat(rec.pcm[0]), flat(rec.pcm[1])]; rec.pcm = [[], []];
+      let note = "";
+      if (document.getElementById("recNorm").checked) { const n = normalizeLoudness(chans, ctx.sampleRate, -14, -1); note = n.note; }
+      saveRec(wavBlob(chans, rec.frames, ctx.sampleRate), "wav", note);
+    }, 150);
   } else rec.mr.stop();
 }
 // 24-bit PCM stereo WAV.
@@ -4078,15 +4100,38 @@ function wavBlob(chans, frames, rate) {
   const str = (o, s) => { for (let k = 0; k < s.length; k++) v.setUint8(o + k, s.charCodeAt(k)); };
   str(0, "RIFF"); v.setUint32(4, 36 + data, true); str(8, "WAVE"); str(12, "fmt "); v.setUint32(16, 16, true); v.setUint16(20, 1, true); v.setUint16(22, 2, true);
   v.setUint32(24, rate, true); v.setUint32(28, rate * 2 * bytes, true); v.setUint16(32, 2 * bytes, true); v.setUint16(34, 8 * bytes, true); str(36, "data"); v.setUint32(40, data, true);
-  const L = [], R = []; let o = 44;
-  const flat = (parts) => { const a = new Float32Array(frames); let k = 0; for (const p of parts) { a.set(p.subarray(0, Math.min(p.length, frames - k)), k); k += p.length; if (k >= frames) break; } return a; };
-  const l = flat(chans[0]), r = flat(chans[1]);
+  let o = 44; const l = chans[0], r = chans[1];
   for (let n = 0; n < frames; n++) for (const x of [l[n], r[n]]) { const q = Math.max(-8388608, Math.min(8388607, Math.round(Math.max(-1, Math.min(1, x)) * 8388607))); v.setUint8(o, q & 255); v.setUint8(o + 1, (q >> 8) & 255); v.setUint8(o + 2, (q >> 16) & 255); o += 3; }
   return new Blob([buf], { type: "audio/wav" });
 }
+// Integrated loudness, ITU-R BS.1770-4: K-weighting (a high shelf, then a high-pass), mean
+// square over 400 ms blocks (75% overlap), gated at −70 LUFS and then 10 LU below the mean.
+function lufs(chans, rate) {
+  const biquad = (x, b0, b1, b2, a1, a2) => { const y = new Float32Array(x.length); let x1 = 0, x2 = 0, y1 = 0, y2 = 0; for (let n = 0; n < x.length; n++) { const v = b0 * x[n] + b1 * x1 + b2 * x2 - a1 * y1 - a2 * y2; x2 = x1; x1 = x[n]; y2 = y1; y1 = v; y[n] = v; } return y; };
+  // the filters as libebur128 designs them (they give the standard's 48 kHz coefficients exactly)
+  const shelf = (() => { const fc = 1681.974450955533, G = 3.999843853973347, Q = 0.7071752369554196, K = Math.tan(Math.PI * fc / rate), Vh = Math.pow(10, G / 20), Vb = Math.pow(Vh, 0.4996667741545416), a0 = 1 + K / Q + K * K;
+    return [(Vh + Vb * K / Q + K * K) / a0, 2 * (K * K - Vh) / a0, (Vh - Vb * K / Q + K * K) / a0, 2 * (K * K - 1) / a0, (1 - K / Q + K * K) / a0]; })();
+  const hp = (() => { const fc = 38.13547087602444, Q = 0.5003270373238773, K = Math.tan(Math.PI * fc / rate), a0 = 1 + K / Q + K * K; return [1, -2, 1, 2 * (K * K - 1) / a0, (1 - K / Q + K * K) / a0]; })();
+  const k = chans.map((x) => biquad(biquad(x, ...shelf), ...hp));
+  const size = Math.round(0.4 * rate), hop = Math.round(0.1 * rate), blocks = [];
+  for (let s0 = 0; s0 + size <= k[0].length; s0 += hop) { let z = 0; for (const ch of k) { let m = 0; for (let n = s0; n < s0 + size; n++) m += ch[n] * ch[n]; z += m / size; } blocks.push(z); }
+  const L = (z) => -0.691 + 10 * Math.log10(z + 1e-20), mean = (a) => a.reduce((x, y) => x + y, 0) / Math.max(1, a.length);
+  const abs = blocks.filter((z) => L(z) > -70); if (!abs.length) return -Infinity;
+  const rel = L(mean(abs)) - 10, gated = abs.filter((z) => L(z) > rel);
+  return L(mean(gated));
+}
+// Bring a recording to a loudness target, never letting a sample peak pass the ceiling (dBFS).
+function normalizeLoudness(chans, rate, target, ceiling) {
+  const before = lufs(chans, rate); if (!isFinite(before)) return { note: "silent: left as it is" };
+  let peak = 0; for (const ch of chans) for (const x of ch) peak = Math.max(peak, Math.abs(x));
+  const want = Math.pow(10, (target - before) / 20), cap = Math.pow(10, ceiling / 20) / Math.max(peak, 1e-9), gain = Math.min(want, cap);
+  for (const ch of chans) for (let n = 0; n < ch.length; n++) ch[n] *= gain;
+  const after = before + 20 * Math.log10(gain), pk = 20 * Math.log10(peak * gain);
+  return { before, after, note: `${before.toFixed(1)} → ${after.toFixed(1)} LUFS, peak ${pk.toFixed(1)} dBFS` + (gain < want ? ` (held under ${ceiling} dBFS)` : "") };
+}
 // Captions seen while recording, as LRC: [mm:ss.xx]words
 function recCaption(text) {
-  if (!rec.on || text === rec.lastCaption) return; rec.lastCaption = text;
+  if (!rec.on || text === rec.lastCaption || (rec.ending && text)) return; rec.lastCaption = text; // a render's lyrics end with it
   rec.lrc.push([ctx.currentTime - rec.ctx0, text.replace(/ \/ /g, " ").replace(/\n/g, " ")]);
 }
 function lrcText() {
@@ -4094,14 +4139,21 @@ function lrcText() {
   const title = (patch.lines.find((l) => l.type === "comment") || {}).text || currentExample || "otoji";
   return [`[ti:${title.replace(/^#\s*/, "").split(" — ")[0]}]`, "[re:otoji Patchbay]", ...rec.lrc.map(([t, w]) => stamp(Math.max(0, t)) + w)].join("\n") + "\n";
 }
-function saveRec(blob, ext) {
+function saveRec(blob, ext, note = "") {
   if (rec.tap) { try { bus.disconnect(rec.tap[0]); } catch (e) { /* already gone */ } rec.tap = null; }
   const base = `otoji-${(currentExample || "patch").replace(/[^\w一-鿿-]+/g, "-")}-${new Date(rec.t0).toISOString().slice(0, 19).replace(/[T:]/g, "-")}`;
   const download = (b, name) => { const a = Object.assign(document.createElement("a"), { href: URL.createObjectURL(b), download: name }); document.body.append(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 60000); };
   download(blob, `${base}.${ext}`);
+  const secs = ext === "wav" ? (blob.size - 44) / 6 / ctx.sampleRate : (Date.now() - rec.t0) / 1000;
+  recNote(`Saved ${base}.${ext} · ${Math.floor(secs / 60)}:${String(Math.round(secs % 60)).padStart(2, "0")}${note ? " · " + note : ""}${rec.lrc.some(([, w]) => w) ? " · with .lrc" : ""}`);
   if (rec.lrc.some(([, w]) => w)) setTimeout(() => download(new Blob([lrcText()], { type: "text/plain" }), `${base}.lrc`), 400);
 }
 document.getElementById("recBtn").addEventListener("click", () => (rec.on ? stopRec() : startRec()));
+function recNote(text) {
+  let n = document.getElementById("recNote");
+  if (!n) { n = Object.assign(document.createElement("div"), { id: "recNote", className: "reload-toast", role: "status" }); document.body.append(n); }
+  n.textContent = text; n.hidden = false; clearTimeout(n.timer); n.timer = setTimeout(() => (n.hidden = true), 9000);
+}
 // Live reload on the lab site: its server reports the newest file time at ./__version
 // (elsewhere that 404s and this stays off). When a file changes the page reloads where it
 // was (the address holds the example and its edits); while sound plays it waits for Stop.
