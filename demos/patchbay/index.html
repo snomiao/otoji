@@ -284,6 +284,10 @@ body.player-mode #player { display: block; }
 #player td button:hover { background: var(--bg); color: var(--ink); }
 #player td button:focus-visible { outline: 2px solid var(--focus); }
 #player td button.featured { color: var(--feature); background: var(--feature-soft); font-weight: 700; }
+#player td button.shared { outline: 3px solid var(--focus); outline-offset: 2px; animation: shared-pulse 1.2s ease-in-out 3; }
+@keyframes shared-pulse { 50% { outline-color: transparent; } }
+@media (prefers-reduced-motion: reduce) { #player td button.shared { animation: none; } }
+#instruments .head .link { margin-left: 6px; font-size: 13px; text-decoration: none; opacity: 0.6; } #instruments .head .link:hover { opacity: 1; }
 #player td button.history { color: var(--history); box-shadow: inset 0 -2px 0 var(--history); }
 #player td button.history:not(.featured) { background: var(--history-soft); }
 #player .legend i { color: var(--history); font-style: normal; font-weight: 700; }
@@ -337,6 +341,7 @@ body.player-mode #player { display: block; }
     <div class="patch-bar">
       <div class="left">
         <button class="btn" id="fmtBtn" title="Align columns and tidy inputs">Format</button>
+        <button class="btn" id="shareBtn" title="Copy a link to this patch: an example's own link, or your edited patch packed into the link">🔗 Link</button>
       </div>
       <span class="count" id="count">—</span>
     </div>
@@ -433,7 +438,7 @@ body.player-mode #player { display: block; }
 </aside>
 </div>
 
-<script>var CIVS = [], CULTURE_SCALES = {}, STORIES = {}, I18N = { "zh-CN": { stories: {}, text: {} } }, INSTRUMENT_CATALOG = [], PIECES = {}, FAMOUS = {};</script>
+<script>var CIVS = [], CULTURE_SCALES = {}, STORIES = {}, I18N = { "zh-CN": { stories: {}, text: {}, instruments: {} } }, INSTRUMENT_CATALOG = [], PIECES = {}, FAMOUS = {};</script>
 <script src="cultures/famous/asia.js"></script>
 <script src="cultures/recordings.js"></script>
 <script src="cultures/famous/westasia-africa.js"></script>
@@ -469,6 +474,12 @@ body.player-mode #player { display: block; }
 <script src="cultures/i18n/zh-CN/ancient-americas.js"></script>
 <script src="cultures/i18n/zh-CN/europe-west.js"></script>
 <script src="cultures/i18n/zh-CN/europe-northeast.js"></script>
+<script src="cultures/i18n/zh-CN/instruments/asia.js"></script>
+<script src="cultures/i18n/zh-CN/instruments/asia-2.js"></script>
+<script src="cultures/i18n/zh-CN/instruments/westasia-africa.js"></script>
+<script src="cultures/i18n/zh-CN/instruments/ancient-americas.js"></script>
+<script src="cultures/i18n/zh-CN/instruments/europe-west.js"></script>
+<script src="cultures/i18n/zh-CN/instruments/europe-northeast.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.52.2/min/vs/loader.js"></script>
 <script>
 "use strict";
@@ -3327,12 +3338,46 @@ function boot(chosen) {
   ui = chosen;
   let saved = null;
   try { saved = localStorage.getItem("otoji-patchbay"); } catch (e) { /* storage unavailable */ }
-  // ?ex=<example> opens that example directly (e.g. ?ex=pipaxing, ?ex=m:chinese:battle)
-  const want = new URLSearchParams(location.search).get("ex");
-  if (want && EXAMPLES[want]) { loadExample(want); return; }
-  const text = saved || EXAMPLES.groove;
-  ui.setText(text); applyText(text);
+  // Every example has its own link: ?ex=<example> (e.g. ?ex=pipaxing, ?ex=m:chinese:battle,
+  // ?ex=inst:guqin); an edited patch travels in the link itself as #p=<deflated text>.
+  // The matrix and instrument examples are defined by later scripts, so wait for them.
+  const go = async () => {
+    const packed = /^#p=/.test(location.hash) && await unpackPatch(location.hash.slice(3)).catch(() => null);
+    if (packed) { currentExample = null; ui.setText(packed); applyText(packed); return; }
+    const want = new URLSearchParams(location.search).get("ex");
+    if (want && EXAMPLES[want]) { loadExample(want); return; }
+    const text = saved || EXAMPLES.groove;
+    ui.setText(text); applyText(text);
+  };
+  if (document.readyState === "complete") go(); else addEventListener("load", go, { once: true });
 }
+// A patch packed into a link: deflate-raw, base64url.
+async function packPatch(text) {
+  const buf = await new Response(new Blob([text]).stream().pipeThrough(new CompressionStream("deflate-raw"))).arrayBuffer();
+  return btoa(String.fromCharCode(...new Uint8Array(buf))).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+}
+async function unpackPatch(code) {
+  const bin = atob(code.replace(/-/g, "+").replace(/_/g, "/")), bytes = Uint8Array.from(bin, (c) => c.charCodeAt(0));
+  return new Response(new Blob([bytes]).stream().pipeThrough(new DecompressionStream("deflate-raw"))).text();
+}
+// The page's address names what is showing, so it can be shared as is.
+function setExampleUrl(key) {
+  const u = new URL(location.href); u.hash = "";
+  if (key) u.searchParams.set("ex", key); else u.searchParams.delete("ex");
+  const href = u.href.replace(/([?&]ex=)([^&#]*)/, (m, k, v) => k + v.replace(/%3A/gi, ":")); // keep m:mongols:battle readable
+  if (href !== location.href) history.replaceState(null, "", href);
+}
+async function shareLink() {
+  const text = ui.getText(), u = new URL(location.href); u.hash = "";
+  for (const k of ["player", "instruments"]) u.searchParams.delete(k);
+  if (currentExample && EXAMPLES[currentExample] === text) u.searchParams.set("ex", currentExample);
+  else { u.searchParams.delete("ex"); u.hash = "p=" + await packPatch(text); }
+  history.replaceState(null, "", u);
+  const b = document.getElementById("shareBtn"), was = b.textContent;
+  try { await navigator.clipboard.writeText(u.href); b.textContent = "✓ Link copied"; } catch (e) { b.textContent = "✓ Link in the address bar"; }
+  setTimeout(() => (b.textContent = was), 1800);
+}
+document.getElementById("shareBtn").addEventListener("click", shareLink);
 // Fork a built-in scale: its definition goes into the patch, after the
 // clock / arrange / scale lines at the top, where it can be edited.
 document.getElementById("explain").addEventListener("click", (e) => {
@@ -3360,7 +3405,7 @@ const EXAMPLE_TREE = [
 ];
 let currentExample = null;
 function loadExample(key) {
-  currentExample = key; ui.setText(EXAMPLES[key]); applyText(EXAMPLES[key]);
+  currentExample = key; ui.setText(EXAMPLES[key]); applyText(EXAMPLES[key]); setExampleUrl(key);
   document.querySelectorAll("#tree button[data-ex]").forEach((b) => b.setAttribute("aria-current", String(b.dataset.ex === key)));
 }
 function renderTree() {

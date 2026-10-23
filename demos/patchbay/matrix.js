@@ -777,7 +777,7 @@ function renderPlayer() {
           if (f) btn.classList.add("featured");
           if (isHistory(civ, a)) { btn.classList.add("history"); btn.title += " · from recorded history"; }
           const pk = civKey(civ, a).slice(2), pc = (PIECES[pk] && PIECES[pk].melody ? PIECES[pk] : FAMOUS[pk]) || PIECES[pk]; if (pc) { btn.classList.add("piece"); btn.title += ` · ♫ ${pc.title}`; }
-          btn.addEventListener("click", () => play(civ, a, btn));
+          btn.addEventListener("click", () => play(civ, a, btn)); btn.dataset.ex = civKey(civ, a);
           td.append(btn);
         }
         row.append(td);
@@ -786,5 +786,12 @@ function renderPlayer() {
     }
   }
   if (/[?&]player\b/.test(location.search)) document.body.classList.add("player-mode");
+  // ?player&ex=m:<people>:<scene> (the address while a piece plays) points at that piece;
+  // browsers only let sound start on a click, so it waits there, marked, for one.
+  const want = new URLSearchParams(location.search).get("ex"), wb = want && body.querySelector(`button[data-ex="${CSS.escape(want)}"]`);
+  if (wb && document.body.classList.contains("player-mode")) {
+    wb.classList.add("shared"); now.querySelector(".title").textContent = `▶ ${tr("press the marked button to play")}: ${wb.title}`;
+    requestAnimationFrame(() => { wb.scrollIntoView({ block: "center" }); wb.focus({ preventScroll: true }); });
+  }
 }
 renderPlayer();

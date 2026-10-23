@@ -211,4 +211,6 @@ Object.assign(I18N["zh-CN"].text, {
   "together: gathering wild turnips and chokecherries; light and happy, unhurried": "一起劳作：采挖野芜菁和稠李果；轻快愉悦、从容不迫",
   "together: manioc and forest fruit; light and happy, unhurried": "一起劳作：木薯和林中野果；轻快愉悦、从容不迫",
   "together: the araucaria pine-nut harvest (ngülliw); light and happy, unhurried": "一起劳作：智利南洋杉松子的收获（ngülliw）；轻快愉悦、从容不迫",
+  "press the marked button to play": "按下标出的按钮即可播放",
+  "link to this instrument": "此乐器的链接",
 });

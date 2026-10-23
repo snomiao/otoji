@@ -122,11 +122,13 @@ function demoPatch(entry) {
   const text = lines.join("\n");
   try { return formatPatch(parsePatch(text.replace(/\n$/, ""))) + "\n"; } catch (e) { return text; }
 }
-// Open a patch in the editor view of this page.
-function openInEditor(text) {
+// Each instrument's demo is an example with its own link: ?ex=inst:<id>.
+for (const e of INSTRUMENT_CATALOG) Object.defineProperty(EXAMPLES, `inst:${e.id}`, { get: () => demoPatch(e), enumerable: false });
+// Open an example in the editor view of this page.
+function openInEditor(key) {
   stopAudition(); document.body.classList.remove("instruments-mode", "player-mode");
-  const u = new URL(location.href); u.searchParams.delete("instruments"); u.searchParams.delete("player"); history.pushState(null, "", u);
-  ui.setText(text); applyText(text); window.scrollTo(0, 0);
+  const u = new URL(location.href); u.searchParams.delete("instruments"); u.searchParams.delete("player"); u.hash = ""; history.pushState(null, "", u);
+  loadExample(key); window.scrollTo(0, 0);
 }
 
 // ── page ─────────────────────────────────────────────────────────────────
@@ -143,6 +145,10 @@ function renderInstruments() {
   document.body.append(root);
   const cards = root.querySelector(".cards"), fams = root.querySelector(".fams"), byId = new Map(list.map((e) => [e.id, e]));
   let last = null;
+  // translated fields: I18N[LANG].instruments[id] = { sound, history, …, techniques: [{ name, how }] }
+  const own = (e) => (LANG !== "en" && I18N[LANG] && I18N[LANG].instruments && I18N[LANG].instruments[e.id]) || {};
+  const itr = (e, k) => own(e)[k] || tr(e[k]);
+  const zhName = LANG.startsWith("zh");
   const civName = (id) => { const c = CIVS.find((x) => x.id === id); return c ? civLabel(c) : id; };
   // One card per instrument (a fresh element each time it is shown).
   const makeCard = (e, where) => {
@@ -150,14 +156,15 @@ function renderInstruments() {
     // the search box looks through every field, techniques included (Ctrl+F also finds text inside the folded sections)
     art.dataset.find = [e.name, e.native, e.zh, ...(e.aliases || []), ...e.peoples.map(civName),
       ...["sound", "range", "tuning", "acoustics", "materials", "making", "usage", "role", "players", "skills", "scenes", "repertoire", "notation", "meaning", "origin", "finds", "history", "variants", "today", "hs"].map((k) => e[k] || ""),
-      ...(e.techniques || []).flatMap((t) => [t.name, t.native || "", t.how || ""])].join(" ").toLowerCase();
+      ...(e.techniques || []).flatMap((t) => [t.name, t.native || "", t.how || ""]),
+      ...Object.values(own(e)).flatMap((v) => (Array.isArray(v) ? v.flatMap((t) => [t.name || "", t.how || ""]) : [v]))].join(" ").toLowerCase();
     const icon = document.createElement("button"); icon.type = "button"; icon.className = "icon"; icon.title = tr("play a note"); icon.setAttribute("aria-label", `${tr("play")} ${e.name}`);
     icon.innerHTML = e.svg; // shapes only: checked by cultures/instruments/check.mjs
     const hs = homeScale(e);
     icon.addEventListener("click", () => { last = e; auditionNote(e, hs.notes[0], 0.9, 0, hs.civ.key); });
     const head = document.createElement("div"); head.className = "head";
-    head.append(Object.assign(document.createElement("h3"), { textContent: `${e.name}` }),
-      Object.assign(document.createElement("span"), { className: "native", textContent: `${e.native}${e.zh && e.zh !== e.native ? " · " + e.zh : ""}` }));
+    head.append(Object.assign(document.createElement("h3"), { textContent: zhName && e.zh ? e.zh : e.name }),
+      Object.assign(document.createElement("span"), { className: "native", textContent: `${e.native}${zhName ? (e.name !== e.native ? " · " + e.name : "") : e.zh && e.zh !== e.native ? " · " + e.zh : ""}` }));
     const ppl = document.createElement("div"); ppl.className = "peoples";
     for (const p of e.peoples) ppl.append(Object.assign(document.createElement("span"), { className: "chip", textContent: civName(p) }));
     const keys = document.createElement("div"); keys.className = "keys";
@@ -165,24 +172,25 @@ function renderInstruments() {
     const tune = Object.assign(document.createElement("button"), { type: "button", className: "tune", textContent: `♪ ${tr("its tune")}`, title: civName(hs.civ.id) });
     tune.addEventListener("click", () => { last = e; playTune(e); }); keys.append(tune);
     const demo = Object.assign(document.createElement("button"), { type: "button", className: "tune", textContent: `✎ ${tr("demo")}`, title: tr("open a demo of this instrument in the editor") });
-    demo.addEventListener("click", () => openInEditor(demoPatch(e))); keys.append(demo);
+    demo.addEventListener("click", () => openInEditor(`inst:${e.id}`)); keys.append(demo);
     let techRow = null;
     if (e.techniques && e.techniques.length) {
       const tq = document.createElement("div"); tq.className = "techs";
       tq.append(Object.assign(document.createElement("span"), { className: "lbl", textContent: tr("techniques") }));
-      for (const t of e.techniques) {
-        const b = document.createElement("button"); b.type = "button"; b.textContent = t.native ? `${t.name} ${t.native}` : t.name; b.title = tr(t.how || "");
+      e.techniques.forEach((t, i) => {
+        const tt = (own(e).techniques || [])[i] || {}, nm = tt.name || t.name;
+        const b = document.createElement("button"); b.type = "button"; b.textContent = t.native ? `${nm} ${t.native}` : nm; b.title = tt.how || tr(t.how || "");
         b.addEventListener("click", () => { last = e; auditionTechnique(e, TECHNIQUES.includes(t.play) ? t.play : "normal", hs.notes[0], hs.civ.key); });
         tq.append(b);
-      }
+      });
       techRow = tq;
     }
     const det = document.createElement("dl");
     // Always shown: what it sounds like and its range. The rest folds into four sections.
-    const field = (dl, k, label) => { if (!e[k]) return; dl.append(Object.assign(document.createElement("dt"), { textContent: tr(label) }), Object.assign(document.createElement("dd"), { textContent: tr(e[k]) })); };
+    const field = (dl, k, label) => { if (!e[k]) return; dl.append(Object.assign(document.createElement("dt"), { textContent: tr(label) }), Object.assign(document.createElement("dd"), { textContent: itr(e, k) })); };
     const chips = (dl, ids, label) => {
       if (!ids || !ids.length) return; const dd = document.createElement("dd");
-      for (const p of ids) { const pe = byId.get(p); dd.append(pe ? Object.assign(document.createElement("a"), { href: `#inst-${p}`, className: "chip", textContent: pe.name }) : Object.assign(document.createElement("span"), { className: "chip", textContent: p })); }
+      for (const p of ids) { const pe = byId.get(p); dd.append(pe ? Object.assign(document.createElement("a"), { href: `#inst-${p}`, className: "chip", textContent: zhName && pe.zh ? pe.zh : pe.name }) : Object.assign(document.createElement("span"), { className: "chip", textContent: p })); }
       dl.append(Object.assign(document.createElement("dt"), { textContent: tr(label) }), dd);
     };
     field(det, "sound", "Sound"); field(det, "range", "Range");
@@ -200,7 +208,8 @@ function renderInstruments() {
       const d = document.createElement("details"); d.className = "more";
       d.append(Object.assign(document.createElement("summary"), { textContent: tr(title) }), dl); more.push(d);
     }
-    if (e.uncertain) head.append(Object.assign(document.createElement("span"), { className: "info", textContent: " ⓘ", title: tr(e.uncertain), tabIndex: 0, role: "note" }));
+    head.append(Object.assign(document.createElement("a"), { className: "link", href: `?instruments${LANG !== "en" ? "&lang=" + LANG : ""}#inst-${e.id}`, textContent: "🔗", title: tr("link to this instrument") }));
+    if (e.uncertain) head.append(Object.assign(document.createElement("span"), { className: "info", textContent: " ⓘ", title: itr(e, "uncertain"), tabIndex: 0, role: "note" }));
     art.append(icon, head, ppl, keys, ...(techRow ? [techRow] : []), det, ...more);
     art.addEventListener("pointerenter", () => { last = e; });
     return art;
@@ -314,3 +323,5 @@ function renderInstruments() {
 }
 renderInstruments();
 if (/[?&]instruments\b/.test(location.search)) document.body.classList.add("instruments-mode");
+// Back and forward between the editor, the player and this page: show what the address names.
+addEventListener("popstate", () => location.reload());
