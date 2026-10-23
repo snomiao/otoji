@@ -1,4 +1,7 @@
 # SPA fallback: serve the app for room paths like /kru-dfmq-atg.
 # Real static assets are served first; /signal/* is a Workers route (takes
 # precedence over Pages), so it is unaffected.
+# The Patchbay editor lives at /editor/ (copied in by vite.config.ts); its files load
+# relative to that folder, so the bare path gets its slash.
+/editor  /editor/  301
 /*  /index.html  200

@@ -3,6 +3,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>otoji Patchbay</title>
+<script>/* the page loads its files relative to itself: /editor needs to be /editor/ */ if (!/\/$|\.html$/.test(location.pathname)) location.replace(location.pathname + "/" + location.search + location.hash);</script>
 <link rel="icon" href="data:,">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -4175,7 +4176,7 @@ function recNote(text) {
     toast.append("Updated — reloads when you stop. ", now); document.body.append(toast);
   };
   const check = async () => {
-    let v = null; try { const r = await fetch(url, { cache: "no-store" }); if (r.ok) v = await r.text(); else if (seen === null) return; } catch (e) { /* offline: try again */ }
+    let v = null; try { const r = await fetch(url, { cache: "no-store" }); if (r.ok) v = (await r.text()).trim(); if (v !== null && !/^\d+$/.test(v)) v = null; if (v === null && seen === null) return; } catch (e) { /* offline: try again */ } // only the lab server answers a bare number
     if (v !== null) { if (seen === null) seen = v; else if (v !== seen) { seen = v; waiting = true; } }
     if (waiting) { if (running || document.querySelector("#player [aria-pressed=true]")) note(); else return reload(); }
     setTimeout(check, document.hidden ? 5000 : 1500);

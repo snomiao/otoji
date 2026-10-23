@@ -1,7 +1,8 @@
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 import { VitePWA } from "vite-plugin-pwa";
-import { dirname } from "node:path";
+import { dirname, join } from "node:path";
+import { cpSync, existsSync, mkdirSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { rguiAlias, rguiAliases } from "./rgui-alias";
 
@@ -18,6 +19,20 @@ const dropWasmAssets = {
   },
 };
 
+// otoji.org/editor/ — the Patchbay (demos/patchbay: editor, player, instruments) is
+// plain static files; copy them into the build so Pages serves them before the
+// SPA fallback. Its checkers (*.mjs), notes (*.md), src.html and build.sh stay out.
+const copyEditor = {
+  name: "copy-editor",
+  closeBundle() {
+    const from = fileURLToPath(new URL("../demos/patchbay/", import.meta.url)), to = fileURLToPath(new URL("./dist/editor/", import.meta.url));
+    if (!existsSync(join(from, "index.html"))) return;
+    mkdirSync(to, { recursive: true });
+    for (const f of ["index.html", "matrix.js", "instruments.js", "pm-worklet.js"]) cpSync(join(from, f), join(to, f));
+    cpSync(join(from, "cultures"), join(to, "cultures"), { recursive: true, filter: (src) => !/\.(mjs|md)$/.test(src) });
+  },
+};
+
 // @snomiao/rgui resolution (live local source — sibling worktree → submodule →
 // stub, no npm wait) lives in ./rgui-alias.ts, shared with vitest.config.ts.
 const url = (rel: string) => fileURLToPath(new URL(rel, import.meta.url));
@@ -26,6 +41,7 @@ export default defineConfig({
   plugins: [
     react(),
     dropWasmAssets,
+    copyEditor,
     VitePWA({
       registerType: "autoUpdate",
       injectRegister: "auto",
@@ -49,7 +65,8 @@ export default defineConfig({
       workbox: {
         maximumFileSizeToCacheInBytes: 30 * 1024 * 1024,
         navigateFallback: "/index.html",
-        navigateFallbackDenylist: [/^\/signal(?:\/|$)/, /\/[^/?]+\.[^/?]+(?:\?.*)?$/],
+        navigateFallbackDenylist: [/^\/signal(?:\/|$)/, /^\/editor(?:\/|$)/, /\/[^/?]+\.[^/?]+(?:\?.*)?$/],
+        globIgnores: ["editor/**"], // the Patchbay loads its own files; don't precache them with the app
         // NOTE: no huggingface.co route here on purpose — HF `resolve` URLs
         // 302 to cdn-lfs, and a CacheFirst replay of a redirected response
         // makes the SECOND fetch throw "Failed to fetch" (hit live). Model
