@@ -25,7 +25,8 @@ class Reso {
 }
 
 // Plucked string: a noise burst shaped by the pluck position circulates in a
-// delay loop; each pass loses a little of its highs. A body adds formants;
+// delay loop; each pass loses a little of its highs. A body adds formants
+// (unless ext: the Patchbay then plays the line through a full body response);
 // buzz (jawari / a sitar's flat bridge) clips the string against the bridge.
 class Pluck {
   constructor(sr, p) {
@@ -57,7 +58,7 @@ class Pluck {
     if (!this.on) return 0;
     if (this.silent) { // a tap on the body: a short noise burst through the body formants only
       const x = this.knock > 0 ? (Math.random() * 2 - 1) * (this.knock-- / (this.sr * 0.004)) : 0;
-      let o = 0; for (const b of this.body) o += b.tick(x) * 2.5;
+      let o = 0; if (this.p.ext) o = x * 1.5; else for (const b of this.body) o += b.tick(x) * 2.5; // ext: the line's body rings it
       if (--this.left <= 0) this.on = false;
       return o * this.amp;
     }
@@ -67,7 +68,7 @@ class Pluck {
     let fb = this.lp.tick(y) * this.g;
     if (this.t > this.stopAt && this.p.mute) fb *= 0.995; // damped by the hand after the note
     this.d.write(fb); this.t++;
-    let o = y; for (const b of this.body) o += b.tick(y) * (this.p.bodyMix || 0.6);
+    let o = y; if (!this.p.ext) for (const b of this.body) o += b.tick(y) * (this.p.bodyMix || 0.6);
     if (--this.left <= 0) this.on = false;
     return o * this.amp;
   }
@@ -106,7 +107,7 @@ class Bowed {
     let slope = 5 - 4 * (this.p.force || 0.6), tbl = Math.pow(Math.abs(dv * slope + 0.001) + 0.75, -4); if (tbl > 1) tbl = 1;
     const nv = dv * tbl;
     this.neck.write(bridgeRefl + nv); this.bridge.write(nutRefl + nv);
-    const s = this.bridge.read(); let o = s * 0.2; for (const b of this.body) o += b.tick(s);
+    const s = this.bridge.read(); let o = s * 0.2; if (this.p.ext) o = s; else for (const b of this.body) o += b.tick(s);
     this.t++; if (this.t > this.release && this.vel < 0.0005) this.on = false;
     return o * this.peak * 0.6;
   }

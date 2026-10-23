@@ -445,6 +445,7 @@ body.player-mode #explainCard, body.instruments-mode #explainCard { display: non
         <tr data-help="kind:env kind:fadein kind:fadeout"><td><code>env</code> <code>fadein</code> <code>fadeout</code></td><td>包絡: <code>env 50ms 2s ?vad</code>, <code>fadein 4bars</code>, <code>fadeout 2bars after=8bars</code></td></tr>
         <tr data-help="kind:delay"><td><code>delay</code></td><td><code>time=3/16 feedback=0.35 wet=0.3</code>, tempo-synced</td></tr>
         <tr data-help="kind:reverb"><td><code>reverb</code></td><td><code>size=2 wet=0.25</code> (or <code>2s</code>)</td></tr>
+        <tr data-help="kind:space"><td><code>space</code></td><td>where it is heard: <code>space temple</code> · room hall ancestral temple church cathedral theatre pavilion courtyard cave boat river forest valley field · <code>size=1 wet= dry=1</code></td></tr>
         <tr data-help="kind:speaker"><td><code>speaker</code></td><td><code>volume=0.5</code> · only what reaches a speaker is heard</td></tr>
       </table>
     </details>
@@ -684,14 +685,14 @@ function nodeSource(n) {
 // What each kind outputs and accepts, so `*>` only picks inputs that fit:
 // a speaker takes audio, never a mic signal, a vad's control or a clock.
 const AUDIO_OUT = ["screen", "metro", "drums", "piano", "bass", "strings", "pluck", "flute", "organ", "choir", "bell", "marimba", "brass", "timpani", "throat", "chant", "reed", "jawharp", "hurdygurdy", "bagpipe", "rain", "wind", "crowd", "fire", "water", "boat", "insects", "reeds",
-  "mix", "delay", "reverb", "filter", "drive", "chorus", "phaser", "tremolo", "pan", "eq", "comp", "env", "fadein", "fadeout"];
+  "mix", "delay", "reverb", "space", "filter", "drive", "chorus", "phaser", "tremolo", "pan", "eq", "comp", "env", "fadein", "fadeout"];
 const OUT_TYPE = { clock: "env", mic: "mic", vad: "control", arrange: "control", scale: null, caption: null, key: null, learn: null, speaker: null, ...Object.fromEntries(AUDIO_OUT.map((k) => [k, "audio"])) };
 // MIDI: midi-in sends note events; instruments and drums also make notes, which midi-out takes.
 const NOTE_KINDS = ["drums", "piano", "bass", "strings", "pluck", "flute", "organ", "choir", "bell", "marimba", "brass", "timpani", "throat", "chant", "reed", "jawharp", "hurdygurdy", "bagpipe"];
 Object.assign(OUT_TYPE, { "midi-in": "midi", "midi-out": null });
 const ACCEPTS = { speaker: ["audio"], vad: ["mic"], learn: ["mic"], "midi-out": ["notes", "midi"],
   ...Object.fromEntries(NOTE_KINDS.map((k) => [k, ["midi"]])),
-  ...Object.fromEntries(["mix", "delay", "reverb", "filter", "drive", "chorus", "phaser", "tremolo", "pan", "eq", "comp", "env", "fadein", "fadeout"].map((k) => [k, ["audio"]])) };
+  ...Object.fromEntries(["mix", "delay", "reverb", "space", "filter", "drive", "chorus", "phaser", "tremolo", "pan", "eq", "comp", "env", "fadein", "fadeout"].map((k) => [k, ["audio"]])) };
 // Groups are paragraphs: separated by blank lines or `---`.
 function groupsOf(p) {
   const g = new Map(); let k = 0, gap = false;
@@ -981,7 +982,7 @@ function consumersFor(inKinds) {
   if (inKinds.every((k) => k === "vad")) return ["drums"];
   if (inKinds.every((k) => k === "clock")) return ["metro", "drums", ...MELODIC];
   if (inKinds.every((k) => k === "midi-in")) return [...MELODIC, "drums", "midi-out"];
-  if (inKinds.every((k) => AUDIO_KINDS.includes(k))) return ["speaker", "mix", "reverb", "delay", "filter", "drive", "chorus", "phaser", "tremolo", "pan", "eq", "comp", "env", "fadein", "fadeout"]
+  if (inKinds.every((k) => AUDIO_KINDS.includes(k))) return ["speaker", "mix", "reverb", "space", "delay", "filter", "drive", "chorus", "phaser", "tremolo", "pan", "eq", "comp", "env", "fadein", "fadeout"]
     .concat(inKinds.every((k) => NOTE_KINDS.includes(k)) ? ["midi-out"] : []);
   return ["mix", "speaker"];
 }
@@ -1001,9 +1002,9 @@ function ensureAudio() {
   master.connect(limiter).connect(ctx.destination);
   bus = ctx.createGain(); bus.connect(master); // every speaker, before the volume (● Rec records from here)
   // Physical models (pm-worklet.js); until they load, the oscillator voices play.
-  if (ctx.audioWorklet && !/[?&]pm=0\b/.test(location.search)) ctx.audioWorklet.addModule("pm-worklet.js").then(() => { pmReady = true; }, () => { pmReady = false; });
+  if (ctx.audioWorklet && !/[?&]pm=0\b/.test(location.search)) pmLoading = ctx.audioWorklet.addModule("pm-worklet.js").then(() => { pmReady = true; }, () => { pmReady = false; });
 }
-let pmReady = false;
+let pmReady = false, pmLoading = Promise.resolve();
 // Which physical model and preset an instrument line gets, from its kind and its name.
 function pmFor(kind, id) {
   const n = id.toLowerCase(), has = (re) => re.test(n);
@@ -1024,6 +1025,252 @@ function pmFor(kind, id) {
   if (kind === "flute") return { model: "flute", params: { jetRatio: has(/shakuhachi|xiao|ney|nay|kaval|quena|duduk|sebi|danso/) ? 0.38 : 0.32, noise: has(/shakuhachi|ney|nay|kaval|xiao/) ? 0.22 : 0.12, vibDepth: 0.025 } };
   if (kind === "reed") return { model: "reed", params: { conical: !has(/clarinet|chalumeau|zummara|arghul|launeddas|memet|hornpipe|pibgorn/), bright: has(/suona|zurna|shehnai|nadaswaram|ghaita|algaita|mizmar/) ? 0.7 : 0.5, pressure: 0.85 } };
   return null;
+}
+// Resonating bodies. A string barely sounds by itself: its bridge shakes a
+// soundbox (a guitar's top and air cavity, a sitar's gourd, a banjo's skin),
+// and the box's modes colour every note. Each family is a set of modes
+// [Hz, Q, level]; more, weaker modes fill in above (a box gets denser with
+// frequency). They become a short impulse response that every voice of the
+// line plays through, the physical model and the oscillator voice alike.
+const BODIES = {
+  guitar: { doc: "flat top over an air cavity (guitar, vihuela): the air mode near 100 Hz, the top near 200", modes: [[98, 18, 1], [204, 25, 0.9], [228, 20, 0.45], [390, 30, 0.55], [455, 30, 0.4], [580, 30, 0.35], [790, 35, 0.3], [1050, 35, 0.22]], fill: [18, 600, 4000, 0.12, 30] },
+  lute: { doc: "bowl back with a thin top (oud, lute, saz, dombra): warm, the air mode near 125 Hz", modes: [[125, 15, 0.8], [240, 22, 0.9], [330, 25, 0.6], [470, 28, 0.5], [650, 30, 0.4], [900, 30, 0.3]], fill: [16, 500, 3500, 0.12, 28] },
+  small: { doc: "small box (mandolin, charango, balalaika): high air mode, bright and short", modes: [[210, 18, 0.9], [410, 25, 0.8], [560, 30, 0.5], [870, 30, 0.4], [1150, 35, 0.35]], fill: [16, 800, 5000, 0.15, 30] },
+  pipa: { doc: "pear-shaped solid back, thin paulownia top (pipa, biwa): little low air, bright upper modes", modes: [[170, 12, 0.4], [400, 25, 0.9], [620, 30, 0.7], [980, 30, 0.5], [1500, 35, 0.4], [2400, 40, 0.25]], fill: [16, 700, 5000, 0.14, 32] },
+  moon: { doc: "round flat body (ruan, yueqin, đàn nguyệt): a hollow moon of wood", modes: [[150, 14, 0.6], [300, 22, 0.9], [520, 28, 0.6], [830, 30, 0.4], [1300, 32, 0.3]], fill: [14, 600, 4000, 0.12, 30] },
+  zither: { doc: "long board over a long box (zheng, koto, gayageum, kantele, gusli): many low modes, a long ring", modes: [[75, 18, 0.6], [130, 25, 0.8], [190, 30, 0.8], [260, 30, 0.7], [350, 35, 0.6], [470, 35, 0.5], [640, 40, 0.45], [880, 40, 0.35]], fill: [22, 300, 3500, 0.12, 40] },
+  qin: { doc: "the qin's hollow paulownia board: deep, dark and quiet, a box for the player", modes: [[65, 20, 0.8], [110, 30, 0.9], [160, 35, 0.8], [230, 40, 0.6], [320, 40, 0.5], [450, 40, 0.35]], fill: [18, 250, 2200, 0.1, 45], tilt: 1.2 },
+  dulcimer: { doc: "hammered dulcimer box (santur, yangqin, cimbalom, qanun): bright, ringing", modes: [[110, 25, 0.6], [230, 35, 0.7], [390, 40, 0.7], [600, 40, 0.6], [900, 45, 0.5], [1400, 45, 0.4]], fill: [22, 500, 6000, 0.14, 45] },
+  gourd: { doc: "a gourd resonator (sitar, veena, tanpura, ektara): a strong round low mode", modes: [[95, 12, 1], [190, 25, 0.6], [280, 30, 0.5], [520, 30, 0.45], [900, 30, 0.35], [1500, 30, 0.3]], fill: [14, 400, 4000, 0.12, 25] },
+  calabash: { doc: "a big calabash under cowhide (kora, krar): a deep port boom and a skin", modes: [[85, 10, 1], [260, 20, 0.8], [410, 25, 0.6], [560, 30, 0.45], [820, 30, 0.35]], fill: [12, 400, 3500, 0.12, 20] },
+  skin: { doc: "a skin head (banjo, shamisen, sanxian, ngoni, sarod, tar): the drum's twang and ring", skin: 290, modes: [[120, 8, 0.3]], fill: [10, 1500, 6000, 0.15, 20] },
+  harp: { doc: "a harp's or lyre's soundboard and box: open and soft", modes: [[150, 15, 0.7], [260, 22, 0.7], [400, 25, 0.6], [640, 28, 0.5], [1000, 30, 0.4]], fill: [14, 400, 3000, 0.1, 25] },
+  harpsichord: { doc: "a harpsichord's thin soundboard: bright and dense", modes: [[90, 15, 0.5], [180, 25, 0.7], [300, 30, 0.7], [520, 35, 0.6], [800, 40, 0.5], [1300, 40, 0.45], [2100, 40, 0.35]], fill: [24, 400, 7000, 0.15, 40] },
+  violin: { doc: "violin: the air mode A0 (275 Hz), the body modes B1− and B1+ (460, 540) and the bridge hill (2–3 kHz)", modes: [[275, 15, 0.7], [405, 25, 0.4], [460, 30, 0.9], [540, 30, 0.9], [700, 30, 0.5], [870, 30, 0.5], [1050, 30, 0.45], [2400, 4, 0.5], [3000, 6, 0.4]], fill: [20, 600, 5000, 0.18, 30] },
+  viol: { doc: "a larger wooden fiddle (viol, vielle, gudok, morin khuur, hurdy-gurdy): lower modes, a softer bridge hill", modes: [[220, 15, 0.7], [360, 25, 0.7], [450, 28, 0.7], [620, 30, 0.5], [900, 30, 0.4], [1400, 30, 0.35], [2200, 5, 0.35]], fill: [18, 500, 4500, 0.15, 28] },
+  cello: { doc: "cello: the air mode near 100 Hz, body modes near 220 and 290", modes: [[100, 15, 0.7], [190, 25, 0.6], [220, 28, 0.9], [290, 30, 0.8], [420, 30, 0.5], [600, 30, 0.4], [1000, 30, 0.35], [1700, 5, 0.4]], fill: [20, 300, 4000, 0.14, 30] },
+  doublebass: { doc: "double bass: a big box, the air mode near 58 Hz", modes: [[58, 12, 0.7], [105, 22, 0.8], [140, 25, 0.8], [200, 28, 0.6], [320, 30, 0.5], [520, 30, 0.35]], fill: [14, 200, 2500, 0.12, 28] },
+  huqin: { doc: "a small wooden tube under python skin (erhu, jinghu, haegeum): nasal, the skin rings near 800 Hz", modes: [[480, 15, 0.6], [780, 20, 0.8], [1150, 25, 0.7], [1650, 25, 0.55], [2300, 25, 0.45], [3200, 20, 0.3]], fill: [14, 600, 5000, 0.14, 20] },
+  skinbowl: { doc: "a skin over a carved bowl (kamancheh, rebab, sarangi, masenqo): reedy, a voice-like hollow", modes: [[300, 12, 0.7], [620, 20, 0.8], [950, 25, 0.6], [1400, 25, 0.5], [2100, 20, 0.4]], fill: [14, 500, 4500, 0.14, 20] },
+  piano: { doc: "a piano's soundboard: dense modes from the bass up, ringing longer than any small box", modes: [[90, 20, 0.6], [150, 25, 0.6], [240, 30, 0.5]], fill: [46, 45, 4000, 0.5, 50] },
+};
+// Which body a line gets: body= wins, then its name; names that tell nothing
+// (pluck@fast) borrow the body of another line of the same kind in the patch.
+function bodyByName(kind, id) {
+  const n = id.toLowerCase(), has = (re) => re.test(n);
+  if (kind === "piano") return has(/harpsichord|cembalo|clavecin|spinet|virginal/) ? "harpsichord" : "piano";
+  if (kind === "bass") return has(/kontrabas|double|contra|upright|basy|bogo|bőgő|violone/) ? "doublebass" : has(/guitarron|bajo/) ? "guitar" : null;
+  if (kind === "hurdygurdy") return "viol";
+  if (kind === "pluck") {
+    if (has(/harpsichord|cembalo|clavecin|spinet|virginal/)) return "harpsichord";
+    if (has(/guqin|^qin|geomungo|tsukushi/)) return "qin";
+    if (has(/sitar|veena|vina|tanpura|tambura|tandura|rudra|kinnari|ektara|gottuvadhyam|surbahar|been/)) return "gourd";
+    if (has(/kora|krar|bolon|kamalengoni|seperewa|arpa-andina/)) return "calabash";
+    if (has(/banjo|shamisen|sanxian|sanshin|jamisen|gimbri|guembri|ngoni|xalam|akonting|rabab|rubab|sarod|^tar\b|garaya|molo|kuntigi|dotara|khamak|sammu|zagsal|topshur|tovshuur|dumbyra/)) return "skin";
+    if (has(/pipa|biwa|bipa|ty-ba/)) return "pipa";
+    if (has(/ruan|yueqin|nguyet|liuqin|qinqin/)) return "moon";
+    if (has(/santur|santoor|yangqin|yanggeum|cimbalom|cymbaly|hackbrett|dulcimer|qanun|kanun|kanon|psalter|swarmandal|khim/)) return "dulcimer";
+    if (has(/zheng|koto|gakuso|wagon|gayageum|kayagum|^se\b|zither|kantele|kankl|kokle|gusli|kusle|citera|hummel|yatga|zhetigen|jetigen|chatkhan|kecapi|dan-tranh|krapeu|chapei|mi-gyaung|jantar|zhu\b|^zhu|^se-|nevel/)) return "zither";
+    if (has(/harp|harpa|arpa|chang|konghou|gonghu|telyn|clarsach|lyre|lyra|kithara|cithara|kinnor|benet|saung|begena|barbitos|phorminx|rote|yazh|zinar|ladder-harp|dan-goong|chelys/)) return "harp";
+    if (has(/mandolin|charango|bandurria|cavaquinho|balalaika|ukulele|jarana|domra|tiple|bandolim|^prim|kontra|cuatro/)) return "small";
+    if (has(/guitar|vihuela|viola-de|gittern|cittern|citole|chitarra|cura|theorbo/)) return "guitar";
+    if (has(/oud|ud\b|lute|luit|barbat|tanbur|tambur|saz|baglama|bouzouki|dombra|dutar|dotar|kopuz|komuz|koboz|panduri|chonguri|gambus|setar|loutar|long-lute|divan|tovshur/)) return "lute";
+    return null;
+  }
+  if (kind === "strings") {
+    if (has(/tanpura|tambura|tanbura|tampura/)) return "gourd";
+    if (has(/cello|violoncell/)) return "cello";
+    if (has(/bass|bogo|bőgő|violone|kontrabas/)) return "doublebass";
+    if (has(/erhu|huqin|jinghu|banhu|gehu|haegeum|dan-nhi|dan-ho|sihu|xiqin|jiqin|kokyu|tro\b|^tro|ravanahatha|yazheng|ajaeng|dan-gao|khuuchir/)) return "huqin";
+    if (has(/kamanch|kamancheh|kamanja|kemanche|rebab|rababa|sarang|sarinda|esraj|masenqo|imzad|goje|soku|chuniri|igil|ikil|kobyz|kubyz|kamaicha|ghichak|ghaychak|tayaw/)) return "skinbowl";
+    if (has(/viol\b|viols|gamba|gamben|vielle|fidel|rebec|rabeca|gudok|gudki|gadulka|lyra|kemence|crwth|nyckelharpa|gesle|suka|kapela|pusline|morin|khuur|hurdy|tenor|low/)) return "viol";
+    if (has(/violin|violon|fiddle|hegedu|housle|biola|friss|reel|viola/)) return "violin";
+    return null;
+  }
+  return null;
+}
+const BODY_KINDS = ["pluck", "strings", "piano", "bass", "hurdygurdy"];
+const BODY_DRY = 0.12; // the string's own sound; the box makes up the rest
+function bodyFor(r, siblings) {
+  const k = r.node.kind, want = r.cfg && r.cfg.body;
+  if (!BODY_KINDS.includes(k) || want === "none" || /[?&]body=0\b/.test(location.search)) return null; // ?body=0: bare strings, to compare
+  if (want && want !== "auto") return want;
+  const own = bodyByName(k, r.node.id);
+  if (own) return own;
+  for (const m of siblings) if (m !== r && m.node.kind === k) { const b = bodyByName(k, m.node.id); if (b) return b; }
+  return bodyDefault(k);
+}
+const bodyDefault = (kind) => ({ pluck: "lute", strings: "violin", piano: "piano", hurdygurdy: "viol" })[kind] || null;
+// A body chain into `dest`: voices go into .in, the line's box and a little of the bare string come out.
+function bodyChain(r, dest, isCurrent) {
+  const conv = ctx.createConvolver(), dry = ctx.createGain(), wet = ctx.createGain(), input = ctx.createGain(), k = r.node.kind;
+  conv.normalize = false; conv.buffer = bodyIR(r.body); dry.gain.value = BODY_DRY;
+  const pm = pmFor(k, r.node.id), ref = pm ? { old: pm.params.body, dry: pm.model === "bowed" ? 0.2 : 1, mix: pm.model === "bowed" ? 1 : 0.6 } : { dry: 1, mix: 0 };
+  wet.gain.value = bodyGain(r.body, lineHz(r.cfg), ref); calibrateBody(r, wet, isCurrent);
+  input.connect(dry).connect(dest); input.connect(conv).connect(wet).connect(dest);
+  return { in: input, dry, wet };
+}
+// A seeded random, so a body (and a space) sounds the same every time.
+function seeded(name) { let s = 2166136261; for (const ch of name) s = Math.imul(s ^ ch.charCodeAt(0), 16777619); return () => { s = Math.imul(s ^ (s >>> 15), 2246822507); s = Math.imul(s ^ (s >>> 13), 3266489909); return ((s ^= s >>> 16) >>> 0) / 4294967296; }; }
+const bodyIRs = new Map();
+function bodyIR(name) {
+  const key = name + "@" + ctx.sampleRate;
+  if (bodyIRs.has(key)) return bodyIRs.get(key);
+  const b = BODIES[name], sr = ctx.sampleRate, rnd = seeded(name), modes = b.modes.slice();
+  // A skin head rings at the circular membrane's ratios (Bessel zeros).
+  if (b.skin) [1, 1.594, 2.136, 2.296, 2.653, 2.918, 3.156, 3.501].forEach((x, i) => modes.push([b.skin * x, 50 - i * 3, 0.9 / (1 + i * 0.35)]));
+  const [n, lo, hi, g, q] = b.fill;
+  for (let i = 0; i < n; i++) {
+    const f = lo * Math.pow(hi / lo, (i + rnd()) / n);
+    modes.push([f, q * (0.7 + 0.6 * rnd()), g * (0.5 + rnd()) * Math.min(1, Math.pow(1000 / f, b.tilt || 0.5))]);
+  }
+  const t60 = (f, q) => (6.91 * q) / (Math.PI * f);
+  const len = Math.ceil(sr * Math.min(0.8, Math.max(...modes.map(([f, q]) => t60(f, q))) + 0.02)), buf = ctx.createBuffer(2, len, sr);
+  const chans = [buf.getChannelData(0), buf.getChannelData(1)];
+  for (const [f, q, lvl] of modes) {
+    const decay = Math.exp(-6.91 / (t60(f, q) * sr)), w = (2 * Math.PI * f) / sr;
+    for (let ch = 0; ch < 2; ch++) { // low modes move the whole box; higher ones radiate a little differently left and right
+      const ph = f < 350 ? 0 : rnd() * 2 * Math.PI, a = lvl * (f < 350 ? 1 : 0.6 + 0.8 * rnd()), d = chans[ch];
+      let env = a; for (let i = 0; i < len && env > 1e-5; i++, env *= decay) d[i] += env * Math.sin(w * i + ph);
+    }
+  }
+  for (const d of chans) { let e = 0; for (const x of d) e += x * x; const s = 1 / Math.sqrt(e || 1); for (let i = 0; i < len; i++) d[i] *= s; }
+  bodyIRs.set(key, buf);
+  return buf;
+}
+
+// How loud a body makes a line in its register: a test tone (harmonics falling
+// as 1/k) on notes through the octave above the line's tonic goes through the
+// string's direct sound plus the box; the box's level is set so the line comes
+// out as loud as it did before bodies (the bare voice, or the physical model's
+// own few formants, `ref`). It colours, it doesn't boost.
+const bodyGains = new Map();
+function bodyGain(name, f0, ref) {
+  const buf = bodyIR(name), sr = buf.sampleRate, key = `${name}@${sr}@${Math.round(12 * Math.log2(f0 / 440))}@${JSON.stringify(ref)}`;
+  const old = (ref.old || []).map(([f, q]) => { const w = 2 * Math.PI * f / sr, al = Math.sin(w) / (2 * q), a0 = 1 + al; return [al / a0, -2 * Math.cos(w) / a0, (1 - al) / a0]; });
+  const T = (f) => { // power of the old voice at f: dry + mix × its resonant bandpasses
+    const w = 2 * Math.PI * f / sr; let re = ref.dry, im = 0;
+    for (const [b0, a1, a2] of old) { // (b0 − b0 z⁻²) / (1 + a1 z⁻¹ + a2 z⁻²)
+      const nr = b0 - b0 * Math.cos(2 * w), ni = b0 * Math.sin(2 * w), dr = 1 + a1 * Math.cos(w) + a2 * Math.cos(2 * w), di = -a1 * Math.sin(w) - a2 * Math.sin(2 * w), m = dr * dr + di * di;
+      re += ref.mix * (nr * dr + ni * di) / m; im += ref.mix * (ni * dr - nr * di) / m;
+    }
+    return re * re + im * im;
+  };
+  if (bodyGains.has(key)) return bodyGains.get(key);
+  const d = buf.getChannelData(0), H = (f) => { const w = (2 * Math.PI * f) / sr; let re = 0, im = 0; for (let j = 0; j < d.length; j += 2) { re += d[j] * Math.cos(w * j); im -= d[j] * Math.sin(w * j); } return [re * 2, im * 2]; }; // every other sample: plenty below 6 kHz
+  let A = 0, B = 0, P = 0, PT = 0;
+  for (let st = 0; st < 12; st += 2) {
+    const f = f0 * Math.pow(2, st / 12);
+    for (let k = 1; k <= 24 && f * k < 6000; k++) { const [re, im] = H(f * k), a2 = 1 / (k * k); A += a2 * (re * re + im * im); B += a2 * re; P += a2; PT += a2 * T(f * k); }
+  }
+  const dd = BODY_DRY, w = (-2 * dd * B + Math.sqrt(Math.max(0, 4 * dd * dd * B * B - 4 * A * (dd * dd * P - PT)))) / (2 * A);
+  const g = Math.max(0.05, Math.min(3, w || 1));
+  bodyGains.set(key, g);
+  return g;
+}
+
+// The guess above assumes a spectrum; real strings differ. So each line's own
+// voice is also rendered offline (once per body, voice and set of notes): the
+// notes the line plays most, as before bodies, then through the string's direct sound and the box
+// apart, and the box's level is set so the line is exactly as loud as before.
+const bodyCal = new Map();
+// Where a line plays: its first chord's root, or its key's tonic.
+function lineHz(cfg) {
+  if (!cfg.phrase && !cfg.notes && cfg.chords && cfg.chords.length) return midiHz(12 * ((cfg.oct || 4) + 1) + cfg.chords[0].root);
+  return midiHz(keyMidi(cfg.key || "C", cfg.oct || 4));
+}
+// The pitches a line plays most (up to 8, in Hz), from its phrase, notes or chords.
+function linePitches(cfg) {
+  const count = new Map(), add = (hz) => { if (hz > 20) { const k = Math.round(hz * 10) / 10; count.set(k, (count.get(k) || 0) + 1); } };
+  const tonic = midiHz(keyMidi(cfg.key || "C", cfg.oct || 4));
+  if (cfg.phrase) for (const tok of cfg.phrase) for (const x of tok.rest || tok.hold ? [] : tok.chord || [tok]) add(tonic * Math.pow(2, (degreeCents(cfg.scale, x.deg) + x.acc + 1200 * x.oct) / 1200));
+  else if (cfg.notes) for (const t of cfg.notes) { if (t !== ".") add(midiHz(noteMidi(t))); }
+  else for (const ch of (cfg.chords || []).slice(0, 4)) {
+    const base = 12 * ((cfg.oct || 4) + 1) + ch.root;
+    for (const iv of cfg.style === "root" ? [0] : cfg.style === "drone" ? [0, 7] : ch.ivs) add(midiHz(base + iv));
+  }
+  const top = [...count.entries()].sort((a, b) => b[1] - a[1]).slice(0, 8).map(([hz]) => hz);
+  return top.length ? top : [tonic];
+}
+function calibrateBody(r, wet, isCurrent = () => live.get(r.node.id) === r) {
+  const k = r.node.kind, pitches = linePitches(r.cfg), spec = pmFor(k, r.node.id);
+  const key = JSON.stringify([r.body, k, spec, pitches]);
+  if (!bodyCal.has(key)) bodyCal.set(key, pmLoading.then(async () => {
+    const pm = pmReady ? spec : null, sr = ctx.sampleRate, dur = 0.65, len = Math.ceil(sr * (0.05 + pitches.length * 0.75 + 0.4));
+    const notes = pitches.map((f, i) => [0.05 + i * 0.75, f]); // a sharp resonance (a gourd's) is hit by some notes and not others: use the line's own
+    const render = async (ext) => {
+      const oc = new OfflineAudioContext(3, len, sr), m = oc.createChannelMerger(3);
+      let src;
+      if (pm) {
+        await oc.audioWorklet.addModule("pm-worklet.js");
+        src = new AudioWorkletNode(oc, "pm", { numberOfInputs: 0, outputChannelCount: [1], processorOptions: { ...pm, params: { ...pm.params, ext }, events: notes.map(([t, f], idx) => ({ t, f, dur, peak: 0.35, idx: 0 })) } });
+      } else {
+        src = oc.createGain(); const keep = ctx; ctx = oc; // the oscillator voices build on `ctx`
+        try { for (const [t, f] of notes) INSTRUMENTS[k].play(src, t, f, dur, r.cfg.adsr, 0.22, r.cfg); } finally { ctx = keep; }
+      }
+      if (ext) { const conv = oc.createConvolver(), sp = oc.createChannelSplitter(2); conv.normalize = false; conv.buffer = bodyIR(r.body); src.connect(conv).connect(sp); sp.connect(m, 0, 0); sp.connect(m, 1, 1); }
+      src.connect(m, 0, 2); m.connect(oc.destination);
+      return oc.startRendering();
+    };
+    const sum = (a, b) => { let s = 0; for (let i = 0; i < a.length; i++) s += a[i] * b[i]; return s; };
+    const before = (await render(false)).getChannelData(2), Pold = 2 * sum(before, before);
+    const out = await render(true), x = out.getChannelData(2), L = out.getChannelData(0), Rr = out.getChannelData(1);
+    const d = BODY_DRY, A = sum(L, L) + sum(Rr, Rr), B = sum(x, L) + sum(x, Rr), C = 2 * d * d * sum(x, x) - Pold;
+    const w = (-2 * d * B + Math.sqrt(Math.max(0, 4 * d * d * B * B - 4 * A * C))) / (2 * A);
+    return Number.isFinite(w) && w > 0 ? Math.min(6, w) : null;
+  }).catch(() => null));
+  bodyCal.get(key).then((w) => { if (w && ctx && isCurrent()) wet.gain.setTargetAtTime(w, ctx.currentTime, 0.05); });
+}
+
+// Spaces: where the music is heard. Reverb times per band [low, mid, high] in
+// seconds, the first reflection's delay, early reflections {count, span, level},
+// and distant echoes [delay, level, blur] (a valley or a far river bank).
+const SPACES = {
+  room: { doc: "a small room or study 书房: close walls, a short warm tail", rt: [0.5, 0.4, 0.3], pre: 0.004, er: [14, 0.025, 0.6], wet: 0.22 },
+  hall: { doc: "a concert hall: a full, even tail of about two seconds", rt: [2.4, 2, 1.4], pre: 0.025, er: [24, 0.08, 0.5], wet: 0.3 },
+  ancestral: { doc: "a great wooden hall of an ancestral temple 宗庙, stone floor: where bianzhong 编钟 rang", rt: [2.8, 2.2, 1.2], pre: 0.03, er: [20, 0.1, 0.45], wet: 0.38 },
+  temple: { doc: "a mountain temple 山寺: a stone courtyard before the hall, and the valley answering a bell", rt: [2, 1.6, 0.9], pre: 0.04, er: [10, 0.12, 0.35], echo: [[0.45, 0.35, 0.04], [0.95, 0.2, 0.06], [1.6, 0.1, 0.08]], wet: 0.35 },
+  church: { doc: "a stone church: three seconds of tail", rt: [3.6, 3, 2], pre: 0.03, er: [18, 0.1, 0.4], wet: 0.4 },
+  cathedral: { doc: "a cathedral: a vast dark tail of five or six seconds, for organ and chant", rt: [7, 5.5, 3.2], pre: 0.05, er: [16, 0.14, 0.35], wet: 0.45 },
+  theatre: { doc: "a theatre or teahouse stage 戏台: lively but clear", rt: [1.3, 1.1, 0.8], pre: 0.015, er: [18, 0.06, 0.5], wet: 0.25 },
+  pavilion: { doc: "an open-sided pavilion 亭 or pendopo: a roof and a floor, the rest is air", rt: [0.9, 0.7, 0.5], pre: 0.008, er: [6, 0.03, 0.45], late: 0.4, wet: 0.2 },
+  courtyard: { doc: "a walled courtyard 院子: slap echoes between the walls", rt: [1.1, 0.9, 0.6], pre: 0.012, er: [8, 0.05, 0.5], echo: [[0.09, 0.25, 0.01], [0.18, 0.12, 0.015], [0.27, 0.06, 0.02]], wet: 0.28 },
+  cave: { doc: "a cave or grotto: dense hard reflections, a long wet tail", rt: [3.5, 3, 2.4], pre: 0.012, er: [40, 0.06, 0.6], wet: 0.45 },
+  boat: { doc: "the cabin of a wooden boat: very close, a hollow box, the water around it", rt: [0.45, 0.3, 0.18], pre: 0.003, er: [16, 0.015, 0.6], echo: [[0.22, 0.12, 0.05]], wet: 0.25 },
+  river: { doc: "on open water at night: the water's surface close under the sound, the banks answering from afar", rt: [0.6, 0.4, 0.25], pre: 0.006, er: [3, 0.01, 0.5], late: 0.35, echo: [[0.38, 0.18, 0.05], [0.8, 0.08, 0.08]], wet: 0.25 },
+  forest: { doc: "a forest: trunks scatter the sound into a soft short tail, the highs lost in leaves", rt: [1.2, 0.9, 0.45], pre: 0.01, er: [30, 0.12, 0.35], wet: 0.28 },
+  valley: { doc: "a mountain valley: the slopes throw back echoes, one after another", rt: [0.5, 0.4, 0.25], pre: 0.01, er: [4, 0.03, 0.4], late: 0.4, echo: [[0.6, 0.4, 0.04], [1.25, 0.25, 0.06], [1.9, 0.12, 0.09], [2.6, 0.06, 0.12]], wet: 0.35 },
+  field: { doc: "open air, a steppe or a field: only the ground answers, and faintly a far edge", rt: [0.25, 0.2, 0.12], pre: 0.004, er: [2, 0.008, 0.5], late: 0.3, echo: [[1.1, 0.05, 0.1]], wet: 0.15 },
+};
+const spaceIRs = new Map(), SPACE_GAIN = 1;
+function spaceIR(name, size) {
+  const key = `${name}@${size}@${ctx.sampleRate}`;
+  if (spaceIRs.has(key)) return spaceIRs.get(key);
+  const s = SPACES[name], sr = ctx.sampleRate, rnd = seeded(name), rt = s.rt.map((x) => x * size), pre = s.pre * size;
+  const echoes = (s.echo || []).map(([t, g, b]) => [t * size, g, b]);
+  const len = Math.ceil(sr * (pre + Math.max(...rt) * 1.1 + Math.max(0, ...echoes.map(([t, , b]) => t + b + 0.3)))), buf = ctx.createBuffer(2, len, sr);
+  const [erN, erSpan, erLvl] = s.er, late = s.late ?? 1, lp = (fc) => 1 - Math.exp((-2 * Math.PI * fc) / sr);
+  for (let ch = 0; ch < 2; ch++) {
+    const d = buf.getChannelData(ch);
+    // early reflections: sparse taps, quieter the later they come
+    for (let i = 0; i < erN; i++) { const t = pre + Math.pow(rnd(), 1.5) * erSpan * size, at = Math.floor(t * sr); if (at < len) d[at] += (rnd() < 0.5 ? -1 : 1) * erLvl * (0.4 + 0.6 * rnd()) * Math.sqrt(pre / Math.max(t, pre)); }
+    // the diffuse tail: noise split in three bands, each dying at its own rate, building up after the first reflections
+    const a1 = lp(250), a2 = lp(2500), start = pre + erSpan * size * 0.3;
+    let l1 = 0, l2 = 0;
+    for (let i = Math.floor(start * sr); i < len; i++) {
+      const t = i / sr - start, w = rnd() * 2 - 1; l1 += a1 * (w - l1); l2 += a2 * (w - l2);
+      const low = l1, mid = l2 - l1, high = w - l2;
+      d[i] += late * 0.5 * (1 - Math.exp(-t / 0.03)) * (low * Math.exp((-6.91 * t) / rt[0]) + mid * Math.exp((-6.91 * t) / rt[1]) + high * Math.exp((-6.91 * t) / rt[2]));
+    }
+    // distant echoes: a smeared, darker copy for each
+    for (const [t, g, blur] of echoes) {
+      const at = Math.floor((t + (rnd() - 0.5) * 0.004) * sr), n = Math.floor((blur + 0.03) * sr), a = lp(1800 / (1 + blur * 20)); let y = 0;
+      for (let i = 0; i < n && at + i < len; i++) { y += a * ((rnd() * 2 - 1) - y); d[at + i] += g * 6 * y * Math.exp(-i / (sr * (blur * 0.5 + 0.004))); }
+    }
+  }
+  for (let ch = 0; ch < 2; ch++) { const d = buf.getChannelData(ch); let e = 0; for (const x of d) e += x * x; const k = 1 / Math.sqrt(e || 1); for (let i = 0; i < len; i++) d[i] *= k; }
+  spaceIRs.set(key, buf);
+  return buf;
 }
 const volume = () => Number(document.getElementById("vol").value) / 100;
 
@@ -1078,6 +1325,9 @@ function rebuild() {
     if (KINDS[k].control) continue;
     r.out = ctx.createGain(); r.out.gain.value = r.node.enabled ? 1 : 0;
     if (k === "clock") continue;
+    if ((r.body = bodyFor(r, live.values()))) { // the instrument's own soundbox: voices → body → output
+      const b = bodyChain(r, r.out); r.voiceIn = b.in; r.bodyMix = [b.dry, b.wet];
+    }
     if (k === "fire") { // a low roar that breathes; crackles come per step
       const len = ctx.sampleRate * 3, buf = ctx.createBuffer(1, len, ctx.sampleRate), d = buf.getChannelData(0);
       for (let i = 0; i < len; i++) d[i] = Math.random() * 2 - 1;
@@ -1143,6 +1393,10 @@ function rebuild() {
         const d = ctx.createDelay(4), fb = ctx.createGain(), wet = ctx.createGain();
         r.delay = d; fb.gain.value = r.cfg.feedback; wet.gain.value = r.cfg.mix;
         r.inGain.connect(r.out); r.inGain.connect(d); d.connect(fb).connect(d); d.connect(wet).connect(r.out);
+      } else if (k === "space") {
+        const conv = ctx.createConvolver(), wet = ctx.createGain(), dry = ctx.createGain();
+        conv.normalize = false; conv.buffer = spaceIR(r.cfg.room, r.cfg.size); wet.gain.value = r.cfg.mix * SPACE_GAIN; dry.gain.value = r.cfg.dry;
+        r.inGain.connect(dry).connect(r.out); r.inGain.connect(conv).connect(wet).connect(r.out);
       } else if (k === "reverb") {
         const conv = ctx.createConvolver(), wet = ctx.createGain();
         wet.gain.value = r.cfg.mix; conv.buffer = impulse(r.cfg.size);
@@ -1433,6 +1687,7 @@ function buildMelodic(kind, o) {
     phrase: o.phrase ? parsePhrase(o.phrase) : null,
     dyn: parseDyn(o.dyn),
     human: num(o, "human", 0, 0, 1),
+    body: o.body === undefined ? null : o.body === "auto" || o.body === "none" || BODIES[o.body] ? o.body : (() => { throw new Error(`body= is auto, none or one of ${Object.keys(BODIES).join(", ")}`); })(),
     tech: o.tech ? (Object.values(TECH_LETTERS).includes(o.tech) ? o.tech : (() => { throw new Error(`tech= is one of ${Object.values(TECH_LETTERS).join(", ")}`); })()) : null,
     chords: (o.chords || "Am F C G").split(/\s+/).map(parseChord),
     notes: o.notes ? o.notes.split(/\s+/).map((t) => { if (t !== "." && noteMidi(t) === null) throw new Error(`bad note \`${t}\` (try E4, C#5 or .)`); return t; }) : null,
@@ -1450,8 +1705,10 @@ function dynAt(levels, step, barSteps) {
   if (i >= levels.length - 1) return levels[levels.length - 1];
   return levels[i] + (levels[i + 1] - levels[i]) * (b - i);
 }
+// A model on a line with a body radiates only its string; the body does the rest.
+const withBody = (r, spec) => (spec && r.body ? { ...spec, params: { ...spec.params, ext: true } } : spec);
 function playMelodic(r, c, step, t) {
-  const cfg = r.cfg, out = r.out, stepDur = 60 / c.bpm / 4, bar = Math.floor(step / (4 * c.sig)), barSteps = 4 * c.sig;
+  const cfg = r.cfg, out = r.voiceIn || r.out, stepDur = 60 / c.bpm / 4, bar = Math.floor(step / (4 * c.sig)), barSteps = 4 * c.sig;
   let peak = 0.22 * cfg.vol;
   if (cfg.dyn) peak *= dynAt(cfg.dyn, step, barSteps);
   if (cfg.human) { // a player, not a sequencer: beats lean, nothing is exactly even
@@ -1462,10 +1719,10 @@ function playMelodic(r, c, step, t) {
   // borrows a plucked string for pizzicato and col legno), else the oscillator voice.
   const pmNode = (spec, slot) => { r.pms = r.pms || {}; if (!r.pms[slot]) { r.pms[slot] = new AudioWorkletNode(ctx, "pm", { numberOfInputs: 0, outputChannelCount: [1], processorOptions: spec }); r.pms[slot].connect(out); if (slot === "main") r.pm = r.pms[slot]; } return r.pms[slot]; };
   const emit = (f, dur, p, idx, ev = {}) => {
-    const pm = pmReady && (r.pmSpec !== undefined ? r.pmSpec : (r.pmSpec = pmFor(r.node.kind, r.node.id)));
+    const pm = pmReady && (r.pmSpec !== undefined ? r.pmSpec : (r.pmSpec = withBody(r, pmFor(r.node.kind, r.node.id))));
     const at = t + (ev.at || 0), plucky = ["pizz", "col-legno", "knock"].includes(ev.tech) && pm && pm.model === "bowed";
     if (pm && !plucky) { pmNode(pm, "main").port.postMessage({ t: at, f, dur, peak: p * 1.6, idx, tech: ev.tech, bend: ev.bend, legato: ev.legato }); return; }
-    if (plucky) { const ps = pmFor("pluck", r.node.id); const n = pmNode(ps, "pluck"); if (ev.tech === "col-legno") { n.port.postMessage({ t: at, f, dur: 0.05, peak: p * 1.6, tech: "knock" }); n.port.postMessage({ t: at, f, dur: 0.05, peak: p * 0.8, tech: "mute" }); } else n.port.postMessage({ t: at, f, dur, peak: p * 1.6, tech: ev.tech === "knock" ? "knock" : undefined }); return; }
+    if (plucky) { const ps = withBody(r, pmFor("pluck", r.node.id)); const n = pmNode(ps, "pluck"); if (ev.tech === "col-legno") { n.port.postMessage({ t: at, f, dur: 0.05, peak: p * 1.6, tech: "knock" }); n.port.postMessage({ t: at, f, dur: 0.05, peak: p * 0.8, tech: "mute" }); } else n.port.postMessage({ t: at, f, dur, peak: p * 1.6, tech: ev.tech === "knock" ? "knock" : undefined }); return; }
     if (ev.tech === "knock" || ev.tech === "col-legno") { kitHit(out, "rim", at, false); return; }
     cfg.inst.play(out, at, ev.tech === "harmonic" ? f * 2 : f, ev.tech === "mute" ? dur * 0.25 : dur, cfg.adsr, p, cfg);
   };
@@ -2091,6 +2348,7 @@ const MELODIC_ARGS = [
   ["vol", "1", "level 0–2"],
   ["dyn", '"p mf f"', "loudness per bar from where the line comes in, glided between (crescendo, diminuendo): ppp pp p mp mf f ff fff or 0–2"],
   ["human", "0.4", "0–1: a player's unevenness: beats lean, timing and loudness vary a little"],
+  ["body", "guitar", "the instrument's own resonating box, chosen from its name (auto); body=none for a bare string, or another: guitar, lute, pipa, zither, qin, gourd, skin, violin, huqin…", ["auto", "none", "guitar", "lute", "small", "pipa", "moon", "zither", "qin", "dulcimer", "gourd", "calabash", "skin", "harp", "harpsichord", "violin", "viol", "cello", "doublebass", "huqin", "skinbowl", "piano"]],
   ["tech", "pizz", "a playing technique for every note: knock, harmonic, mute, pizz, spiccato, col-legno, tremolo, overblow, flutter", ["knock", "harmonic", "mute", "pizz", "spiccato", "col-legno", "tremolo", "overblow", "flutter"]],
 ];
 MELODIC_ARGS[1][3] = Object.keys(SCALES); MELODIC_ARGS[1][4] = { re: { test: (v) => !!scaleNamed(v) } };
@@ -2109,6 +2367,14 @@ CATALOG.insects = { doc: "Insects: crickets at night, a few at different distanc
 CATALOG.reeds = { doc: "Reeds: the dry rustle of reeds and rushes in a light wind (荻花秋瑟瑟).", args: [["level", "0.3", "0–1", null, { re: /^(0|1|0?\.\d+)$/ }], ["gust", "0.08Hz", "how fast the wind comes and goes"]] };
 CATALOG.fire = { doc: "Fire: the roar of a blaze and its crackles and pops.", args: [["level", "0.5", "0–1", null, { re: /^(0|1|0?\.\d+)$/ }], ["crackle", "0.4", "how much it crackles, 0–1"]] };
 CATALOG.screen = { doc: "Shared audio: on Start, pick a tab, a window or the whole screen to share, with its sound (tick Share audio). A shared tab is muted where it is and heard through the patch (screen> reverb > speaker); the whole screen's sound (which holds this page's own) is recorded by ● Rec but not played, so it can't feed back. Stop ends the sharing.", args: [["vol", "1", "level 0–2"]] };
+CATALOG.space = { doc: "Space: the place the music is heard in, built from its acoustics: reverb time per band, early reflections off near walls, echoes from far ones. `*> space temple > speaker`. Instruments bring their own resonating box; space is the room around them.", args: [
+  ["room", "hall", "which place", Object.keys(SPACES), { re: new RegExp(`^(${Object.keys(SPACES).join("|")})$`) }],
+  ["size", "1", "0.3–3 × its size (reverb time, delays and echoes)"], ["wet", "0.3", "how much of the space is heard, 0–1 (each place has its own default)"], ["dry", "1", "the direct sound, 0–1: lower it to put the music far away"]] };
+KINDS.space = { build: (o) => {
+  const room = o.room || "hall";
+  if (!SPACES[room]) throw new Error(`a space is one of ${Object.keys(SPACES).join(", ")}`);
+  return { room, size: num(o, "size", 1, 0.3, 3), mix: num(o, "wet", SPACES[room].wet, 0, 1), dry: num(o, "dry", 1, 0, 1) };
+} };
 CATALOG.key = { doc: "Key: the scale and tonic for every melodic line that names none: . key yanyue D (an environment, like clock; a line can still say its own).", args: [["scale", "major", "a scale name or one defined with scale@", null, { re: { test: (v) => !!scaleNamed(v) } }], ["key", "C", "tonic", null, { re: /^[A-G][#b]?$/ }]] };
 CATALOG.caption = { doc: "Caption: words shown in the floating subtitle while this line plays (\" / \" breaks a line), e.g. a poem's lines, one per section: . caption \"大弦嘈嘈如急雨\" ?song.4", args: [["text", '"…"', "the words", null, { re: /^".*"$/ }]] };
 CATALOG.wind = { doc: "Wind: a howling gale (bands of noise that rise and fall), the background of a storm.", args: [["level", "0.5", "0–1", null, { re: /^(0|1|0?\.\d+)$/ }], ["gust", "0.12Hz", "how fast the gusts come", null, { re: /^\d+(\.\d+)?hz$/i }]] };
@@ -2471,7 +2737,7 @@ function midiPlayLive(d, note, vel, t) {
   const held = d.held || (d.held = new Map()), prev = held.get(note);
   if (prev) { prev.release(t); held.delete(note); midiOut(d, note, 0, t, false); }
   if (!vel) return;
-  const h = holdNote(d.cfg.inst, d.out, t, midiHz(note), d.cfg.adsr, 0.22 * d.cfg.vol * Math.min(1.3, vel / 100));
+  const h = holdNote(d.cfg.inst, d.voiceIn || d.out, t, midiHz(note), d.cfg.adsr, 0.22 * d.cfg.vol * Math.min(1.3, vel / 100));
   const iv = [t, t + HELD_MAX]; d.busy.push(iv); if (d.busy.length > 64) d.busy.shift();
   held.set(note, { release: (t2) => { h.release(t2); iv[1] = t2 + d.cfg.adsr[3]; } });
   d.detail = `live ${midiName(note)} vel ${vel}`;
@@ -3051,10 +3317,10 @@ function nodeStatusInner(r, eff) {
   }
   const routed = k === "speaker" || reaches(n.id, "speaker", eff);
   const extra = routed ? "" : " · not routed to a speaker";
-  if (k === "reverb" && running && !r.out) return [".", "building"];
+  if ((k === "reverb" || k === "space") && running && !r.out) return [".", "building"];
   if (!KINDS[k].source) {
     const ins = (eff.get(n.id) || []).filter((x) => kindOfId(x.node) !== "clock").length;
-    const what = k === "delay" ? `${n.args.find((a) => a.startsWith("time=")) || "time=3/16"}` : k === "reverb" ? `size ${r.cfg.size}s · wet ${Math.round(r.cfg.mix * 100)}%` : `${ins} input${ins === 1 ? "" : "s"}`;
+    const what = k === "delay" ? `${n.args.find((a) => a.startsWith("time=")) || "time=3/16"}` : k === "reverb" ? `size ${r.cfg.size}s · wet ${Math.round(r.cfg.mix * 100)}%` : k === "space" ? `${r.cfg.room} · RT ${(SPACES[r.cfg.room].rt[1] * r.cfg.size).toFixed(1)}s · wet ${Math.round(r.cfg.mix * 100)}%` : `${ins} input${ins === 1 ? "" : "s"}`;
     return [running && upstreamSounding(n.id, eff, t) ? "~" : "-", what + extra];
   }
   if (!running) return ["-", "stopped" + extra];
@@ -3234,6 +3500,8 @@ function applyText(text) {
 // ── "Under the cursor": explain the word at the cursor / mouse in the help
 // panel, and highlight + scroll to the matching reference row ─────────────
 const VALUE_DOCS = {
+  ...Object.fromEntries(Object.entries(SPACES).map(([k, v]) => [`room.${k}`, v.doc[0].toUpperCase() + v.doc.slice(1) + "."])),
+  ...Object.fromEntries(Object.entries(BODIES).map(([k, v]) => [`body.${k}`, v.doc[0].toUpperCase() + v.doc.slice(1) + "."])),
   "style.arp": "Arpeggio: the chord's notes one after another, an 8th note each, rising (root, 3rd, 5th, octave).",
   "style.block": "Block chord: all the chord's notes together, held for the whole bar.",
   "style.drone": "Drone: root and fifth held for the whole bar, the bed under maqam, Gothic chant or a raga.",
@@ -3335,7 +3603,9 @@ function explainAt(model, lineNo, col) {
   if (tok.comment) return { title: "# comment", body: "A note to yourself; ignored." };
   if (tok === toks[0]) {
     const named = l.id !== l.kind ? ` Named ${code(l.id)}, so other lines can use it as ${code(l.id + ">")}.` : "";
-    return { title: kind, body: (spec ? esc(spec.doc) : `Unknown kind ${code(kind)}.`) + named + (spec && spec.args.length ? `<br>Options: ${spec.args.map((a) => code(a[0] + "=")).join(" ")}` : ""), help: `kind:${kind}` };
+    const lr = live.get(l.id), bodyName = lr && !lr.error && lr.cfg ? bodyFor(lr, live.values()) : null;
+    const body = bodyName ? `<br>Body: ${code(bodyName)}, ${esc(BODIES[bodyName].doc)}${lr.cfg.body && lr.cfg.body !== "auto" ? "" : " (from its name; body= changes it)"}.` : "";
+    return { title: kind, body: (spec ? esc(spec.doc) : `Unknown kind ${code(kind)}.`) + named + body + (spec && spec.args.length ? `<br>Options: ${spec.args.map((a) => code(a[0] + "=")).join(" ")}` : ""), help: `kind:${kind}` };
   }
   if (kind === "arrange" && !parseControl(tok.text)) {
     const m = /^(?:([\p{L}_][\p{L}\p{N}_-]*):)?(\d+)bars?(?:@(~)?(\d+))?$/u.exec(tok.text);
@@ -4022,6 +4292,7 @@ function applyPendingAtBar(cid, c) {
 const startBtn = document.getElementById("startBtn");
 async function start() {
   ensureAudio(); await ctx.resume();
+  if (!running) { rebuild(); await Promise.race([Promise.all(bodyCal.values()), new Promise((r) => setTimeout(r, 800))]); } // the bodies' levels (once, a few hundred ms)
   master.gain.setTargetAtTime(volume(), ctx.currentTime, 0.02);
   running = true; mic.error = null; midi.error = null; startedAt = ctx.currentTime + 0.06; rebuild();
   if (nodes(patch).some((n) => n.kind === "screen" && n.enabled)) ensureScreen();

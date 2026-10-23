@@ -8,12 +8,23 @@ const FAMILY_LABEL = { plucked: "Plucked strings", bowed: "Bowed strings", "stru
 const INST_OCT = { bass: 2, strings: 4, pluck: 4, flute: 5, organ: 3, choir: 4, bell: 4, piano: 4, marimba: 4, brass: 3, timpani: 2, throat: 5, reed: 4, jawharp: 4, hurdygurdy: 4, bagpipe: 4 };
 
 // ── sound: one note of an instrument, on its physical model when it has one ──
-let auditionOut = null; const auditionPm = new Map();
+let auditionOut = null; const auditionPm = new Map(), auditionBodies = new Map();
+// Where an instrument's notes go: through its own soundbox (as in a patch), into the bus.
+function auditionDest(entry, spec) {
+  const name = entry.aliases[0];
+  const body = BODY_KINDS.includes(entry.kind) && !/[?&]body=0\b/.test(location.search) ? bodyByName(entry.kind, name) || bodyByName(entry.kind, entry.id) || bodyDefault(entry.kind) : null;
+  if (!body) return { dest: auditionOut, spec };
+  if (!auditionBodies.has(entry.id)) {
+    const bus = auditionOut, r = { node: { kind: entry.kind, id: name }, body, cfg: { oct: INST_OCT[entry.kind] ?? 4, key: homeScale(entry).civ.key || "C" } };
+    auditionBodies.set(entry.id, bodyChain(r, bus, () => auditionOut === bus));
+  }
+  return { dest: auditionBodies.get(entry.id).in, spec: withBody({ body }, spec) };
+}
 // Stop everything playing here: fade the bus out, drop it and its physical models.
 function stopAudition() {
   if (!auditionOut || !ctx) return;
   const bus = auditionOut, pms = [...auditionPm.values()];
-  bus.gain.setTargetAtTime(0, ctx.currentTime, 0.05); auditionOut = null; auditionPm.clear();
+  bus.gain.setTargetAtTime(0, ctx.currentTime, 0.05); auditionOut = null; auditionPm.clear(); auditionBodies.clear();
   setTimeout(() => { for (const n of pms) { n.port.postMessage("stop"); n.disconnect(); } bus.disconnect(); }, 300);
 }
 function auditionNote(entry, f, dur = 0.7, at = 0, key = "C") {
@@ -22,14 +33,14 @@ function auditionNote(entry, f, dur = 0.7, at = 0, key = "C") {
   master.gain.setTargetAtTime(volume(), ctx.currentTime, 0.02);
   const t = ctx.currentTime + 0.03 + at;
   if (entry.kind.startsWith("kit:")) { kitHit(auditionOut, entry.kind.split(":")[2], t, false); return; }
-  const spec = pmReady && pmFor(entry.kind, entry.aliases[0]);
+  const { dest, spec } = auditionDest(entry, pmReady && pmFor(entry.kind, entry.aliases[0]));
   if (spec) {
     let n = auditionPm.get(entry.id);
-    if (!n) { n = new AudioWorkletNode(ctx, "pm", { numberOfInputs: 0, outputChannelCount: [1], processorOptions: spec }); n.connect(auditionOut); auditionPm.set(entry.id, n); }
+    if (!n) { n = new AudioWorkletNode(ctx, "pm", { numberOfInputs: 0, outputChannelCount: [1], processorOptions: spec }); n.connect(dest); auditionPm.set(entry.id, n); }
     n.port.postMessage({ t, f, dur, peak: 0.35, idx: 0 });
     return;
   }
-  const inst = INSTRUMENTS[entry.kind]; if (inst) inst.play(auditionOut, t, f, dur, inst.adsr, 0.22, { key });
+  const inst = INSTRUMENTS[entry.kind]; if (inst) inst.play(dest, t, f, dur, inst.adsr, 0.22, { key });
 }
 // A playing technique (entry.techniques[].play), heard on this instrument.
 const TECHNIQUES = ["normal", "knock", "harmonic", "mute", "tremolo", "slide", "pizz", "strum", "flutter", "overblow", "roll", "gliss", "spiccato", "col-legno"];
@@ -39,7 +50,7 @@ function auditionTechnique(entry, play, f, key) {
   master.gain.setTargetAtTime(volume(), ctx.currentTime, 0.02);
   const pmNote = (spec, ev) => {
     const k = `${entry.id}:${spec.model}`; let n = auditionPm.get(k);
-    if (!n) { n = new AudioWorkletNode(ctx, "pm", { numberOfInputs: 0, outputChannelCount: [1], processorOptions: spec }); n.connect(auditionOut); auditionPm.set(k, n); }
+    if (!n) { const to = auditionDest(entry, spec); n = new AudioWorkletNode(ctx, "pm", { numberOfInputs: 0, outputChannelCount: [1], processorOptions: to.spec }); n.connect(to.dest); auditionPm.set(k, n); }
     n.port.postMessage({ peak: 0.35, idx: 0, dur: 0.7, ...ev, t: ctx.currentTime + 0.03 + (ev.at || 0) });
   };
   const name = entry.aliases[0], str = ["pluck", "strings", "hurdygurdy"].includes(entry.kind);
@@ -140,10 +151,38 @@ function demoPatch(entry) {
     const partner = (entry.partners || []).map((p) => INSTRUMENT_CATALOG.find((x) => x.id === p)).find((x) => x && !x.kind.startsWith("kit:"));
     lines.push(partner ? `. ${partner.kind}@${partner.aliases[0]}-drone ${sc} ${key} oct=3 grid=8 "1+5 - - - - - - -" ?song.3` : `. strings@drone ${sc} ${key} oct=3 grid=8 "1+5 - - - - - - -" ?song.3`);
   }
-  lines.push("", "*> reverb 2s wet=0.25", "> speaker 0.5", "");
+  lines.push("", `*> space ${homeSpace(entry)}`, "> speaker 0.5", "");
   const text = lines.join("\n");
   try { return formatPatch(parsePatch(text.replace(/\n$/, ""))) + "\n"; } catch (e) { return text; }
 }
+// Where an instrument is usually heard (its demo plays there; a `space` node in
+// the patch, so it can be changed): 编钟 in an ancestral temple's hall, a temple
+// bell in a mountain temple, an organ in a cathedral, a qin in a study, the
+// alphorn and the long trumpets across a valley, gamelan in an open pavilion.
+const HOME_SPACES = [
+  [/^(bianzhong|bianqing|bo|nao|chunyu|goudiao|fangxiang|pyeonjong|pyeongyeong|shoko|hichiriki|ryuteki|komabue|sho|gakudaiko|gakuso|gakubiwa|yu|se|chi|xun|zhu|hyangbipa|dangbipa|ajaeng)$/, "ancestral"],
+  [/^(bonsho|kane|rin|dora|ghanta|tingsha|dotaku|shakuhachi|horagai|shankh|sankh|shofar|triton-shell|dungchen|tongbo|kyi-waing|semantron)$/, "temple"],
+  [/^(organ|organo|bourdon)$/, "cathedral"],
+  [/^(positiv|portative|regal|handbell|psalterium|organistrum|rebec|vielle|chimes)$/, "church"],
+  [/^(churchbell|carillon|bell-tower|zvon|kolomp)$/, "courtyard"],
+  [/^(guqin|qin|geomungo|xiao|harpsichord|theorbo|lute|koto|guzheng|gayageum|zither|hackbrett|kankles|kantele|gusli|sitar|rudra-veena|veena|surbahar|sarangi|esraj|tanpura|swarmandal|santoor|santur|yangqin|yanggeum|cimbalom|harmonium|sruti-petti|pump-organ|garmon|bayan|recorder|viol|gamben|baryton)$/, "room"],
+  [/^(alphorn|dungchen|trembita|trombita|karnay|lur|carnyx|nafir|nafiri|waqra-phuku|pututu|bukina|bure|bureree|daegak|jiao|olifant|signal-horn|cor-de-chasse|waldhorn|kull-kull|trutruka|fujarka|quena|siku|antara|kaval|tsuur)$/, "valley"],
+  [/^(saron|gong-agung|kong-vong|roneat-ek|roneat-thung|pattala|cong-chieng|saung-gauk|rebab|kecapi|seruling|sralai|khloy|t-rung|dan-da|ken)$/, "pavilion"],
+  [/^(violin|cello|viola|double-bass|timpani|kettledrum|trumpet|valve-trumpet|cornet|harp|arpa|telyn|clarsach)$/, "hall"],
+  [/^(erhu|jinghu|banhu|xiqin|suona|dizi|pipa|yueqin|ruan|sanxian|dagu|tanggu|jiangu|buk|jeolgo|piri|taepyeongso|haegeum|janggu|shamisen|biwa|satsuma-biwa|nohkan|shinobue|kokyu|shehnai|nadaswaram|thavil|pakhawaj)$/, "theatre"],
+  [/^(morin-khuur|khuuchir|igil|ikil|kobyz|tovshuur|topshur|dombra|khoomei|khoomii|uzlyau|kai|kurai|sybyzgy|shaman-bells|asatayak|kungyrau|camel-bells|dauylpaz|kogerge|tuogu|bagpipe|gaida|gaita-galega|gaita-transmontana|zampogna|sackpipa|dudy|duda|gudastviri|zurna|davul|ghaita|algaita|kakaki|nagara|naqqara|kos)$/, "field"],
+  [/^(kora|ngoni|bolon|balafon|djembe|sheng|saenghwang|khen|paixiao|panpipe|syrinx|aulos|kithara|lyre|barbitos|phorminx|salpinx|keras|tympanon|cornu|tuba-roman|lituus|buccina)$/, "courtyard"],
+];
+function homeSpace(e) {
+  const names = [e.id, ...(e.aliases || [])];
+  for (const [re, space] of HOME_SPACES) if (names.some((n) => re.test(n))) return space;
+  if (e.kind === "organ") return "church";
+  if (e.kind === "bell" || e.kind === "marimba") return "pavilion";
+  if (["timpani", "brass", "bagpipe", "throat", "jawharp", "reed"].includes(e.kind) || e.kind.startsWith("kit:")) return "field";
+  if (e.kind === "flute") return "forest";
+  return "room"; // strings and plucked ones: played indoors, close
+}
+
 // Each instrument's demo is an example with its own link: ?ex=inst:<id>.
 for (const e of INSTRUMENT_CATALOG) Object.defineProperty(EXAMPLES, `inst:${e.id}`, { get: () => demoPatch(e), enumerable: false });
 // Open an example in the editor view of this page.
@@ -163,9 +202,15 @@ function renderInstruments() {
     <label class="grouping">${tr("group by")} <select class="group"><option value="type">${tr("type of instrument")}</option><option value="region">${tr("region and people")}</option></select></label>
     <button type="button" class="playall" title="${tr("Play every instrument shown (the search box filters them), one after another")}">▶ ${tr("Play all shown")}</button>
     <button type="button" class="stop">${tr("■ Stop")}</button>
+    <select class="lang" aria-label="Language">${Object.entries(LANGS).map(([k, v]) => `<option value="${k}"${k === LANG ? " selected" : ""}>${v}</option>`).join("")}</select>
     <span class="legend">${list.length} ${tr("instruments")} · ${tr("click a shape to hear it · keys A S D F G H J K play the scale of the last one you touched · ♪ plays its people's tune · Esc or ■ stops")}</span></header>
     <nav class="fams"></nav><div class="cards"></div>`;
   document.body.append(root);
+  root.querySelector(".lang").addEventListener("change", (e) => {
+    LANG = e.target.value; try { localStorage.setItem("otoji-lang", LANG); } catch (err) { /* storage unavailable */ }
+    const u = new URL(location.href); u.searchParams.set("lang", LANG); history.replaceState(null, "", u);
+    stopQueue(); root.remove(); renderInstruments();
+  });
   const cards = root.querySelector(".cards"), fams = root.querySelector(".fams"), byId = new Map(list.map((e) => [e.id, e]));
   let last = null;
   // translated fields: I18N[LANG].instruments[id] = { sound, history, …, techniques: [{ name, how }] }
@@ -341,7 +386,7 @@ function renderInstruments() {
   root.querySelector(".find").addEventListener("input", filter);
   // A S D F G H J K play the scale of the last instrument touched.
   document.addEventListener("keydown", (ev) => {
-    if (!document.body.classList.contains("instruments-mode")) return;
+    if (!root.isConnected || !document.body.classList.contains("instruments-mode")) return; // a page re-rendered in another language has its own
     if (ev.key === "Escape") { stopQueue(); stopAudition(); return; }
     if (ev.target.matches("input, textarea") || ev.repeat || !last) return;
     const i = "asdfghjk".indexOf(ev.key.toLowerCase()); if (i < 0) return;

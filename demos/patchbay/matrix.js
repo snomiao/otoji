@@ -85,7 +85,8 @@ let LANG = (() => {
   return /^zh/i.test(navigator.language || "") ? "zh-CN" : "en";
 })();
 // A short text in the chosen language (looked up by its English), or the English.
-const tr = (en) => (LANG !== "en" && en && I18N[LANG] && I18N[LANG].text[en]) || en;
+const trMissing = new Set(); // texts with no translation yet, for checking a language (trMissing in the console)
+const tr = (en) => { const t = LANG !== "en" && en && I18N[LANG] && I18N[LANG].text[en]; if (!t && LANG !== "en" && en) trMissing.add(en); return t || en; };
 // A story in the chosen language, or the English one.
 const storyText = (key) => (LANG !== "en" && I18N[LANG] && I18N[LANG].stories[key]) || STORIES[key];
 const ACTIVITY_IDS = ["showcase", "hunt", "battle", "siege", "triumph", "gather", "build", "voyage", "festival", "games", "ritual",
