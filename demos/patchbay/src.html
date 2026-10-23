@@ -332,6 +332,7 @@ body.player-mode #explainCard, body.instruments-mode #explainCard { display: non
   <section class="transport" aria-label="Transport">
     <button class="btn primary" id="startBtn" aria-pressed="false">▶ Start audio</button>
     <button class="btn" id="stopBtn">■ Stop</button>
+    <button class="btn" id="recBtn" title="Record what the patch plays (before the volume slider) and save it as a file; starts playing if it isn't" aria-pressed="false">● Rec</button>
     <label class="vol" for="vol">Volume <input id="vol" type="range" min="0" max="100" value="30"> <span id="volText" class="readout">30%</span></label>
     <div class="lamps" id="lamps" aria-label="Beat lamps"></div>
     <span class="readout" id="pos">stopped</span>
@@ -937,7 +938,7 @@ function consumersFor(inKinds) {
 }
 
 // ── runtime ────────────────────────────────────────────────────────────
-let ctx = null, master = null, running = false;
+let ctx = null, master = null, bus = null, running = false;
 let patch = parsePatch(""), live = new Map(); // id → runtime node
 const clocks = new Map(); // id → { nextTime, step, bpm, sig }
 const STEP_AHEAD = 0.12;
@@ -949,6 +950,7 @@ function ensureAudio() {
   limiter.threshold.value = -12; limiter.knee.value = 6; limiter.ratio.value = 20; limiter.attack.value = 0.003; limiter.release.value = 0.2;
   master = ctx.createGain(); master.gain.value = volume();
   master.connect(limiter).connect(ctx.destination);
+  bus = ctx.createGain(); bus.connect(master); // every speaker, before the volume (● Rec records from here)
   // Physical models (pm-worklet.js); until they load, the oscillator voices play.
   if (ctx.audioWorklet && !/[?&]pm=0\b/.test(location.search)) ctx.audioWorklet.addModule("pm-worklet.js").then(() => { pmReady = true; }, () => { pmReady = false; });
 }
@@ -1067,7 +1069,7 @@ function rebuild() {
         wet.gain.value = r.cfg.mix; conv.buffer = impulse(r.cfg.size);
         r.inGain.connect(r.out); r.inGain.connect(conv).connect(wet).connect(r.out);
       } else if (k === "speaker") {
-        r.inGain.connect(r.out); r.out.gain.value = r.node.enabled ? r.cfg.volume : 0; r.out.connect(master);
+        r.inGain.connect(r.out); r.out.gain.value = r.node.enabled ? r.cfg.volume : 0; r.out.connect(bus);
       } else if (EFFECTS[k]) EFFECTS[k](r);
       else r.inGain.connect(r.out);
     }
@@ -3685,13 +3687,45 @@ async function start() {
   startBtn.setAttribute("aria-pressed", "true"); startBtn.textContent = "● Playing";
 }
 function stop() {
+  const recording = rec.mr && rec.mr.state === "recording";
+  if (recording) setTimeout(stopRec, 1500); // keep the reverb tail
   running = false;
-  if (ctx) { master.gain.setTargetAtTime(0, ctx.currentTime, 0.01); setTimeout(() => { if (!running && ctx) ctx.suspend(); }, 80); }
+  if (ctx) { master.gain.setTargetAtTime(0, ctx.currentTime, 0.01); setTimeout(() => { if (!running && ctx) ctx.suspend(); }, recording ? 1700 : 80); }
   clocks.clear(); releaseMic(); midiPanic();
   startBtn.setAttribute("aria-pressed", "false"); startBtn.textContent = "▶ Start audio";
   rowsKey = ""; renderStatus();
 }
 function toggleTransport() { running ? stop() : start(); }
+// ● Rec: the speakers' sum (before the volume) through its own limiter into a MediaRecorder;
+// saved as a file when recording stops (Rec again, or Stop after the tail rings out).
+const rec = { mr: null, chunks: [], t0: 0, timer: 0, tap: null };
+async function startRec() {
+  ensureAudio(); if (!running) await start();
+  const lim = ctx.createDynamicsCompressor(); lim.threshold.value = -3; lim.knee.value = 0; lim.ratio.value = 20; lim.attack.value = 0.002; lim.release.value = 0.15;
+  const dest = ctx.createMediaStreamDestination(); bus.connect(lim).connect(dest); rec.tap = [lim, dest];
+  const type = ["audio/webm;codecs=opus", "audio/webm", "audio/mp4"].find((t) => window.MediaRecorder && MediaRecorder.isTypeSupported(t));
+  rec.mr = new MediaRecorder(dest.stream, type ? { mimeType: type, audioBitsPerSecond: 192000 } : undefined); rec.chunks = [];
+  rec.mr.ondataavailable = (e) => { if (e.data.size) rec.chunks.push(e.data); };
+  rec.mr.onstop = saveRec;
+  rec.mr.start(1000); rec.t0 = Date.now();
+  const b = document.getElementById("recBtn"); b.setAttribute("aria-pressed", "true");
+  const show = () => { const s = Math.floor((Date.now() - rec.t0) / 1000); b.textContent = `■ Rec ${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`; };
+  show(); rec.timer = setInterval(show, 500);
+}
+function stopRec() {
+  if (!rec.mr || rec.mr.state === "inactive") return;
+  rec.mr.stop(); clearInterval(rec.timer);
+  const b = document.getElementById("recBtn"); b.setAttribute("aria-pressed", "false"); b.textContent = "● Rec";
+}
+function saveRec() {
+  const type = rec.mr.mimeType || "audio/webm", ext = type.includes("mp4") ? "m4a" : "webm";
+  const blob = new Blob(rec.chunks, { type }); rec.chunks = [];
+  if (rec.tap) { try { bus.disconnect(rec.tap[0]); } catch (e) { /* already gone */ } rec.tap = null; }
+  const name = `otoji-${(currentExample || "patch").replace(/[^\w\u4e00-\u9fff-]+/g, "-")}-${new Date().toISOString().slice(0, 19).replace(/[T:]/g, "-")}.${ext}`;
+  const a = Object.assign(document.createElement("a"), { href: URL.createObjectURL(blob), download: name }); document.body.append(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 60000);
+}
+document.getElementById("recBtn").addEventListener("click", () => (rec.mr && rec.mr.state === "recording" ? stopRec() : startRec()));
 // Live reload on the lab site: its server reports the newest file time at ./__version
 // (elsewhere that 404s and this stays off). When a file changes the page reloads where it
 // was (the address holds the example and its edits); while sound plays it waits for Stop.
