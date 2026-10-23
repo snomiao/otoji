@@ -286,6 +286,11 @@ body.player-mode #player { display: block; }
 #player td button.featured { color: var(--feature); background: var(--feature-soft); font-weight: 700; }
 .link-note { margin: 0; padding: 6px 10px; border: 1px solid var(--line); border-left: 3px solid var(--feature); border-radius: 6px; font-size: 13px; }
 .link-note .btn { margin-left: 6px; }
+#subtitle { position: fixed; left: 50%; bottom: 28px; transform: translate(-50%, 8px); z-index: 45; max-width: min(820px, calc(100vw - 440px)); padding: 10px 22px; border-radius: 12px; background: rgba(10, 12, 18, 0.78); color: #f4f1e8; font-size: 22px; line-height: 1.5; text-align: center; white-space: pre-line; letter-spacing: 0.06em; box-shadow: 0 6px 24px rgba(0,0,0,.25); opacity: 0; pointer-events: none; transition: opacity .5s ease, transform .5s ease; }
+#subtitle.on { opacity: 1; transform: translate(-50%, 0); }
+body.player-mode #subtitle, body.instruments-mode #subtitle { max-width: min(900px, calc(100vw - 32px)); }
+@media (max-width: 1000px) { #subtitle { max-width: calc(100vw - 32px); font-size: 18px; bottom: 16px; } }
+@media (prefers-reduced-motion: reduce) { #subtitle { transition: none; } }
 #explainCard { position: fixed; right: 16px; bottom: 16px; z-index: 40; width: min(380px, calc(100vw - 32px)); max-height: 40vh; overflow: auto; margin: 0; padding: 6px 12px 10px; background: var(--screen); border: 1px solid var(--line); border-radius: 10px; box-shadow: 0 4px 18px rgba(0,0,0,.18); }
 #explainCard > summary { cursor: pointer; } #explainCard > summary h2 { display: inline; font-size: 13px; }
 #explainCard:not([open]) { width: auto; }
@@ -412,6 +417,9 @@ body.player-mode #explainCard, body.instruments-mode #explainCard { display: non
         <tr data-help="kind:scale"><td><code>scale@name</code></td><td>define a 调式: <code>. scale@mygong 1 2 3 5 6</code> · <code>#4</code> <code>b7</code> a semitone · <code>2:150</code> exact cents · named like a built-in, it replaces it; on any scale name, <b>Fork</b> copies its code into the patch</td></tr>
         <tr data-help="kind:crowd"><td><code>crowd</code></td><td>voices: <code>. crowd shout "i-YA-SA-SA"</code> · <code>chant "HU" "x...x...x.x.x..."</code> · <code>ululate</code> · <code>murmur</code> (chatter) · <code>voices=24</code> <code>voice=women</code></td></tr>
         <tr data-help="kind:fire"><td><code>fire</code></td><td>a blaze: <code>. fire 0.6 crackle=0.5</code></td></tr>
+        <tr data-help="kind:key"><td><code>key</code></td><td><code>. key yanyue D</code> · environment: melodic lines that name no scale or key take these</td></tr>
+        <tr data-help="kind:caption"><td><code>caption</code></td><td>words in the floating subtitle while the line plays: <code>. caption "大弦嘈嘈如急雨" ?song.4</code></td></tr>
+        <tr data-help="kind:water kind:boat kind:insects kind:reeds"><td><code>water</code> <code>boat</code> <code>insects</code> <code>reeds</code></td><td>a night by the water: <code>. water lap=0.4 splash=0.05</code> · <code>. boat creak=0.4</code> · <code>. insects temp=14</code> (crickets chirp slower when cool) · <code>. reeds</code></td></tr>
         <tr data-help="kind:wind"><td><code>wind</code></td><td>a howling gale behind the music: <code>. wind 0.5 gust=0.15Hz</code></td></tr>
         <tr data-help="opt:scale"><td><code>scale</code></td><td>major minor dorian phrygian … hijaz bayati rast (maqam) · in yo hirajoshi ryukyu · gong shang jue zhi yu yanyue</td></tr>
         <tr data-help="opt:kit"><td><code>kit=</code></td><td>drums: rock, darbuka, taiko, opera (京剧)</td></tr>
@@ -501,7 +509,8 @@ const ID = /^[A-Za-z0-9_-]+$/;
 const ENV_NEEDS = { metro: ["clock"], drums: ["clock"], piano: ["clock"], bass: ["clock"], delay: ["clock"], learn: ["clock"],
   strings: ["clock"], pluck: ["clock"], flute: ["clock"], organ: ["clock"], choir: ["clock"], bell: ["clock"],
   env: ["clock"], fadein: ["clock"], fadeout: ["clock"], arrange: ["clock"], rain: ["clock"], marimba: ["clock"],
-  brass: ["clock"], timpani: ["clock"], throat: ["clock"], reed: ["clock"], jawharp: ["clock"], hurdygurdy: ["clock"], bagpipe: ["clock"], wind: ["clock"], crowd: ["clock"], fire: ["clock"] };
+  brass: ["clock"], timpani: ["clock"], throat: ["clock"], reed: ["clock"], jawharp: ["clock"], hurdygurdy: ["clock"], bagpipe: ["clock"], wind: ["clock"], crowd: ["clock"], fire: ["clock"],
+  water: ["clock"], boat: ["clock"], insects: ["clock"], reeds: ["clock"] };
 const STATUS_SYMS = ["~", "-", "/", ".", "!", "?"];
 
 function isStatusComment(c) {
@@ -657,9 +666,9 @@ function nodeSource(n) {
 }
 // What each kind outputs and accepts, so `*>` only picks inputs that fit:
 // a speaker takes audio, never a mic signal, a vad's control or a clock.
-const AUDIO_OUT = ["screen", "metro", "drums", "piano", "bass", "strings", "pluck", "flute", "organ", "choir", "bell", "marimba", "brass", "timpani", "throat", "reed", "jawharp", "hurdygurdy", "bagpipe", "rain", "wind", "crowd", "fire",
+const AUDIO_OUT = ["screen", "metro", "drums", "piano", "bass", "strings", "pluck", "flute", "organ", "choir", "bell", "marimba", "brass", "timpani", "throat", "reed", "jawharp", "hurdygurdy", "bagpipe", "rain", "wind", "crowd", "fire", "water", "boat", "insects", "reeds",
   "mix", "delay", "reverb", "filter", "drive", "chorus", "phaser", "tremolo", "pan", "eq", "comp", "env", "fadein", "fadeout"];
-const OUT_TYPE = { clock: "env", mic: "mic", vad: "control", arrange: "control", scale: null, learn: null, speaker: null, ...Object.fromEntries(AUDIO_OUT.map((k) => [k, "audio"])) };
+const OUT_TYPE = { clock: "env", mic: "mic", vad: "control", arrange: "control", scale: null, caption: null, key: null, learn: null, speaker: null, ...Object.fromEntries(AUDIO_OUT.map((k) => [k, "audio"])) };
 // MIDI: midi-in sends note events; instruments and drums also make notes, which midi-out takes.
 const NOTE_KINDS = ["drums", "piano", "bass", "strings", "pluck", "flute", "organ", "choir", "bell", "marimba", "brass", "timpani", "throat", "reed", "jawharp", "hurdygurdy", "bagpipe"];
 Object.assign(OUT_TYPE, { "midi-in": "midi", "midi-out": null });
@@ -870,6 +879,8 @@ const KINDS = {
 };
 KINDS.arrange = { control: true, build: () => ({}) }; // built from its section list in rebuild()
 KINDS.scale = { control: true, build: () => ({}) }; // built from its degree list in rebuild()
+// caption: words shown in the floating subtitle while the line's gate is open (a poem's lines with ?song.N)
+KINDS.caption = { control: true, build: (o) => { if (!o.text) throw new Error('write the words: . caption "大弦嘈嘈如急雨" ?song.4'); return { text: o.text.replace(/^"|"$/g, "") }; } };
 // Web MIDI (asks on Start). midi-in sends note events to instruments / drums;
 // midi-out sends the notes of what feeds it to an external device.
 const midiBuild = (o) => ({ device: o.device || null, channel: num(o, "channel", 0, 1, 16) });
@@ -877,6 +888,12 @@ KINDS["midi-in"] = { source: true, control: true, build: midiBuild };
 KINDS["midi-out"] = { control: true, build: midiBuild };
 KINDS.rain = { source: true, build: (o) => ({ level: num(o, "level", 0.5, 0, 1), drops: num(o, "drops", 0.35, 0, 1) }) };
 KINDS.crowd = { source: true, build: (o) => buildCrowd(o) };
+// A night by the water: a calm river with laps and the odd fish, a wooden boat's creaks,
+// crickets (their chirp rate follows the temperature, Dolbear's law), reeds in the wind.
+KINDS.water = { source: true, build: (o) => ({ level: num(o, "level", 0.4, 0, 1), lap: num(o, "lap", 0.4, 0, 1), splash: num(o, "splash", 0.05, 0, 1) }) };
+KINDS.boat = { source: true, build: (o) => ({ level: num(o, "level", 0.4, 0, 1), creak: num(o, "creak", 0.4, 0, 1) }) };
+KINDS.insects = { source: true, build: (o) => ({ level: num(o, "level", 0.3, 0, 1), temp: num(o, "temp", 18, 5, 35), count: num(o, "count", 3, 1, 6) }) };
+KINDS.reeds = { source: true, build: (o) => ({ level: num(o, "level", 0.3, 0, 1), gust: o.gust ? hz(o.gust, 0.08) : 0.08 }) };
 KINDS.fire = { source: true, build: (o) => ({ level: num(o, "level", 0.5, 0, 1), crackle: num(o, "crackle", 0.4, 0, 1) }) };
 KINDS.screen = { source: true, build: (o) => ({ vol: num(o, "vol", 1, 0, 2) }) };
 KINDS.wind = { source: true, build: (o) => ({ level: num(o, "level", 0.5, 0, 1), gust: o.gust ? hz(o.gust, 0.12) : 0.12 }) };
@@ -933,7 +950,7 @@ const CATALOG = {
     ["device", '"IAC"', "part of the output's name or a wildcard like \"*IAC*\" (first match), or device=2; the first output if left out", [], { re: /^"[^"]*"$/ }],
     ["channel", "1", "1–16 (default 1; drums 10)", Array.from({ length: 16 }, (_, i) => String(i + 1)), { re: /^([1-9]|1[0-6])$/ }]] },
 };
-const SOURCE_KINDS = ["clock", "mic", "screen", "midi-in", "arrange", "scale", "metro", "drums", "piano", "bass", "strings", "pluck", "flute", "organ", "choir", "bell", "marimba", "brass", "timpani", "throat", "reed", "jawharp", "hurdygurdy", "bagpipe", "rain", "wind", "crowd", "fire"];
+const SOURCE_KINDS = ["clock", "mic", "screen", "midi-in", "arrange", "scale", "key", "caption", "metro", "drums", "piano", "bass", "strings", "pluck", "flute", "organ", "choir", "bell", "marimba", "brass", "timpani", "throat", "reed", "jawharp", "hurdygurdy", "bagpipe", "rain", "wind", "crowd", "fire", "water", "boat", "insects", "reeds"];
 const AUDIO_KINDS = AUDIO_OUT;
 // Kinds that make sense after `refs>`, given the kinds of the refs.
 function consumersFor(inKinds) {
@@ -1071,6 +1088,25 @@ function rebuild() {
       src.start(); r.src = src;
       continue;
     }
+    if (k === "water") { // the river's body: low noise that swells slowly; laps and fish come per step
+      const len = ctx.sampleRate * 4, buf = ctx.createBuffer(1, len, ctx.sampleRate), d = buf.getChannelData(0);
+      let b = 0; for (let i = 0; i < len; i++) { b = 0.97 * b + 0.03 * (Math.random() * 2 - 1); d[i] = b * 4; } // brown-ish
+      const src = ctx.createBufferSource(), lp = ctx.createBiquadFilter(), g = ctx.createGain();
+      src.buffer = buf; src.loop = true; lp.type = "lowpass"; lp.frequency.value = 520; lp.Q.value = 0.5; g.gain.value = 0.22 * r.cfg.level;
+      r.lfos = [lfo(0.11, 0.12 * r.cfg.level, g.gain), lfo(0.07, 160, lp.frequency)];
+      src.connect(lp).connect(g).connect(r.out); src.start(); r.src = src;
+      continue;
+    }
+    if (k === "reeds") { // a dry high rustle that breathes with the gusts
+      const len = ctx.sampleRate * 3, buf = ctx.createBuffer(1, len, ctx.sampleRate), d = buf.getChannelData(0);
+      for (let i = 0; i < len; i++) d[i] = Math.random() * 2 - 1;
+      const src = ctx.createBufferSource(), hp = ctx.createBiquadFilter(), bp = ctx.createBiquadFilter(), g = ctx.createGain();
+      src.buffer = buf; src.loop = true; hp.type = "highpass"; hp.frequency.value = 2200; bp.type = "bandpass"; bp.frequency.value = 5200; bp.Q.value = 0.6; g.gain.value = 0.09 * r.cfg.level;
+      r.lfos = [lfo(r.cfg.gust, 0.08 * r.cfg.level, g.gain), lfo(r.cfg.gust * 1.9, 1200, bp.frequency)];
+      src.connect(hp).connect(bp).connect(g).connect(r.out); src.start(); r.src = src;
+      continue;
+    }
+    if (k === "boat" || k === "insects") continue; // all their sounds are events
     if (k === "rain") { // continuous filtered noise; droplets come per step
       const len = ctx.sampleRate * 2, buf = ctx.createBuffer(1, len, ctx.sampleRate), d = buf.getChannelData(0);
       for (let i = 0; i < len; i++) d[i] = Math.random() * 2 - 1;
@@ -1132,6 +1168,29 @@ function noise(dest, t, dur, peak, hp) {
   s.buffer = noiseBuf; f.type = "highpass"; f.frequency.value = hp;
   g.gain.setValueAtTime(peak, t); g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
   s.connect(f).connect(g).connect(dest); s.start(t); s.stop(t + dur + 0.02);
+}
+// A soft swish of band-passed noise that swells and falls (a lap of water, a gust in reeds).
+function swish(dest, t, dur, peak, freq, q) {
+  noise(ctx.createGain(), t, 0.01, 0, 1); // makes sure noiseBuf exists
+  const s = ctx.createBufferSource(), f = ctx.createBiquadFilter(), g = ctx.createGain();
+  s.buffer = noiseBuf; s.loop = true; f.type = "bandpass"; f.frequency.setValueAtTime(freq, t); f.frequency.linearRampToValueAtTime(freq * 0.7, t + dur); f.Q.value = q;
+  g.gain.setValueAtTime(0.0001, t); g.gain.linearRampToValueAtTime(peak, t + dur * 0.35); g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+  s.connect(f).connect(g).connect(dest); s.start(t, Math.random() * 0.5); s.stop(t + dur + 0.02);
+}
+// A drop or a fish: a bubble rings at a pitch that rises as it closes, with a touch of splash.
+function plop(dest, t, peak) {
+  const f0 = 500 + Math.random() * 700;
+  voice(dest, t, { freq: f0, endFreq: f0 * 2.2, dur: 0.07, peak, attack: 0.001, type: "sine" });
+  noise(dest, t, 0.05, peak * 0.4, 1800);
+}
+// Wood rubbing on wood: stick-slip pulses (a sawtooth whose rate wanders) through the timbers' resonances.
+function creak(dest, t, dur, peak) {
+  const o = ctx.createOscillator(), b1 = ctx.createBiquadFilter(), b2 = ctx.createBiquadFilter(), g = ctx.createGain(), mix = ctx.createGain();
+  const r0 = 28 + Math.random() * 40;
+  o.type = "sawtooth"; o.frequency.setValueAtTime(r0, t); o.frequency.linearRampToValueAtTime(r0 * (0.6 + Math.random() * 0.9), t + dur);
+  b1.type = "bandpass"; b1.frequency.value = 420 + Math.random() * 200; b1.Q.value = 3; b2.type = "bandpass"; b2.frequency.value = 1150 + Math.random() * 400; b2.Q.value = 4;
+  g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(peak, t + dur * 0.3); g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+  o.connect(b1).connect(mix); o.connect(b2).connect(mix); mix.connect(g).connect(dest); o.start(t); o.stop(t + dur + 0.02);
 }
 const mark = (r, t, dur) => { r.busy.push([t, t + Math.max(dur, 0.1)]); if (r.busy.length > 64) r.busy.shift(); };
 
@@ -1312,12 +1371,26 @@ const INSTRUMENTS = {
 };
 const MELODIC = Object.keys(INSTRUMENTS);
 
+// The key environment: the first `. key yanyue D` line gives every melodic line that
+// names no scale or key its own (as music nodes take the first clock).
+function keyEnv() {
+  const n = typeof patch !== "undefined" && patch && nodes(patch).find((m) => m.kind === "key" && m.enabled);
+  if (!n) return {};
+  const a = n.args.map(unquote);
+  return { scale: a.find((x) => !/=/.test(x) && scaleNamed(x)) || (a.find((x) => x.startsWith("scale=")) || "").slice(6) || undefined,
+    key: a.find((x) => /^[A-G][#b]?$/.test(x)) || (a.find((x) => x.startsWith("key=")) || "").slice(4) || undefined };
+}
+KINDS.key = { control: true, build: (o) => {
+  if (o.scale && !scaleNamed(o.scale)) throw new Error(`scale= is one of ${SCALE_NAMES.slice(0, 8).join(", ")}… or one defined with \`. scale@name 1 2 3 5 6\``);
+  if (o.key && !/^[A-G][#b]?$/.test(o.key)) throw new Error("key= is a note name like D or Bb");
+  return { scale: o.scale || "major", key: o.key || "C" };
+} };
 // Options shared by every melodic kind.
 function buildMelodic(kind, o) {
-  const inst = INSTRUMENTS[kind];
-  const scale = o.scale || "major";
+  const inst = INSTRUMENTS[kind], env = keyEnv();
+  const scale = o.scale || env.scale || "major";
   if (!scaleNamed(scale)) throw new Error(`scale= is one of ${SCALE_NAMES.slice(0, 8).join(", ")}… or one defined with \`. scale@name 1 2 3 5 6\``);
-  const key = o.key || "C";
+  const key = o.key || env.key || "C";
   if (!/^[A-G][#b]?$/.test(key)) throw new Error("key= is a note name like D or Bb");
   const grid = Number(o.grid || 8);
   if (![4, 8, 16].includes(grid)) throw new Error("grid= is 4, 8 or 16 (notes per bar of 4/4)");
@@ -1855,8 +1928,14 @@ CATALOG.crowd = { doc: "Crowd of synthesized voices (no recordings): shout a war
   ["voices", "24", "how many people, 1–48", null, { re: /^\d+$/ }],
   ["voice", "men", "men · women · mixed", ["men", "women", "mixed"], { re: /^(men|women|mixed)$/ }],
   ["pitch", "1", "0.5–2 × their natural pitch"], ["vol", "1", "level 0–2"]] };
+CATALOG.water = { doc: "Water: a calm river or lake by a boat — its body, laps against the hull with the swell, and now and then a fish (a rising plop).", args: [["level", "0.4", "0–1", null, { re: /^(0|1|0?\.\d+)$/ }], ["lap", "0.4", "how often it laps against the hull, 0–1"], ["splash", "0.05", "fish and drops, 0–1"]] };
+CATALOG.boat = { doc: "Boat: a moored wooden boat — slow creaks of its timbers (stick-slip of wood on wood) and the odd hollow knock of the hull.", args: [["level", "0.4", "0–1", null, { re: /^(0|1|0?\.\d+)$/ }], ["creak", "0.4", "how often it creaks, 0–1"]] };
+CATALOG.insects = { doc: "Insects: crickets at night, a few at different distances. Their chirp rate follows the air temperature (Dolbear's law): cool autumn nights chirp slowly.", args: [["level", "0.3", "0–1", null, { re: /^(0|1|0?\.\d+)$/ }], ["temp", "18", "air temperature in °C, 5–35"], ["count", "3", "how many crickets, 1–6"]] };
+CATALOG.reeds = { doc: "Reeds: the dry rustle of reeds and rushes in a light wind (荻花秋瑟瑟).", args: [["level", "0.3", "0–1", null, { re: /^(0|1|0?\.\d+)$/ }], ["gust", "0.08Hz", "how fast the wind comes and goes"]] };
 CATALOG.fire = { doc: "Fire: the roar of a blaze and its crackles and pops.", args: [["level", "0.5", "0–1", null, { re: /^(0|1|0?\.\d+)$/ }], ["crackle", "0.4", "how much it crackles, 0–1"]] };
 CATALOG.screen = { doc: "Shared audio: on Start, pick a tab, a window or the whole screen to share, with its sound (tick Share audio). A shared tab is muted where it is and heard through the patch (screen> reverb > speaker); the whole screen's sound (which holds this page's own) is recorded by ● Rec but not played, so it can't feed back. Stop ends the sharing.", args: [["vol", "1", "level 0–2"]] };
+CATALOG.key = { doc: "Key: the scale and tonic for every melodic line that names none: . key yanyue D (an environment, like clock; a line can still say its own).", args: [["scale", "major", "a scale name or one defined with scale@", null, { re: { test: (v) => !!scaleNamed(v) } }], ["key", "C", "tonic", null, { re: /^[A-G][#b]?$/ }]] };
+CATALOG.caption = { doc: "Caption: words shown in the floating subtitle while this line plays (\" / \" breaks a line), e.g. a poem's lines, one per section: . caption \"大弦嘈嘈如急雨\" ?song.4", args: [["text", '"…"', "the words", null, { re: /^".*"$/ }]] };
 CATALOG.wind = { doc: "Wind: a howling gale (bands of noise that rise and fall), the background of a storm.", args: [["level", "0.5", "0–1", null, { re: /^(0|1|0?\.\d+)$/ }], ["gust", "0.12Hz", "how fast the gusts come", null, { re: /^\d+(\.\d+)?hz$/i }]] };
 CATALOG.rain = { doc: "Rain: soft noise and droplets, for a quiet ending.", args: [["level", "0.5", "0–1", null, { re: /^(0|1|0?\.\d+)$/ }], ["drops", "0.35", "droplets per step, 0–1"]] };
 for (const [k, doc] of [["marimba", "Marimba / balafon: wooden bars."], ["piano", "Piano: chords, or a melody by phrase= / notes=."], ["bass", "Bass: chord roots on beats 1 and 3, or a phrase."],
@@ -2046,6 +2125,29 @@ function playStep(r, c, step, t) {
     mark(r, t, stepDur); r.detail = "fire";
   }
   if (k === "wind" && step % 4 === 0) { mark(r, t, stepDur * 4); r.detail = "wind"; }
+  if (k === "water") {
+    if (Math.random() < cfg.lap * 0.22) { const dur = 0.18 + Math.random() * 0.3; swish(out, t + Math.random() * stepDur, dur, 0.09 * cfg.level, 260 + Math.random() * 300, 1.2); }
+    if (Math.random() < cfg.splash * 0.08) plop(out, t + Math.random() * stepDur, 0.06 * cfg.level);
+    mark(r, t, stepDur); r.detail = "water";
+  }
+  if (k === "boat") {
+    if (Math.random() < cfg.creak * 0.12) creak(out, t + Math.random() * stepDur, 0.35 + Math.random() * 0.6, 1.6 * cfg.level);
+    if (Math.random() < cfg.creak * 0.02) voice(out, t, { freq: 110 + Math.random() * 40, endFreq: 80, dur: 0.35, peak: 0.12 * cfg.level, type: "sine" }); // the hull knocks
+    mark(r, t, stepDur); r.detail = "boat";
+  }
+  if (k === "insects") { // each cricket chirps on its own clock (real time, not the beat)
+    const perMin = Math.max(15, 7 * (cfg.temp - 10) + 40), end = t + stepDur; // Dolbear: °C = 10 + (chirps a minute − 40) / 7
+    r.crickets = r.crickets || Array.from({ length: cfg.count }, (_, i) => ({ next: t + Math.random() * 1.5, f: 4300 + i * 260 + Math.random() * 150, g: 0.4 * (1 - i * 0.22), rate: 60 / perMin * (0.9 + Math.random() * 0.25) }));
+    for (const cr of r.crickets) while (cr.next < end) {
+      if (cr.next >= t - 0.05) for (let p = 0; p < 3 + (Math.random() < 0.4); p++) voice(out, cr.next + p * 0.028, { freq: cr.f, dur: 0.018, peak: cr.g * cfg.level, attack: 0.002, type: "sine" });
+      cr.next += cr.rate * (0.93 + Math.random() * 0.14) + (Math.random() < 0.06 ? 1 + Math.random() * 3 : 0); // and now and then a pause
+    }
+    mark(r, t, stepDur); r.detail = `${cfg.count} cricket${cfg.count > 1 ? "s" : ""} · ${Math.round(perMin)} chirps/min at ${cfg.temp}°C`;
+  }
+  if (k === "reeds" && step % 4 === 0) {
+    if (Math.random() < 0.3) swish(out, t + Math.random() * stepDur * 4, 0.4 + Math.random() * 0.8, 0.03 * cfg.level, 4200, 0.8);
+    mark(r, t, stepDur * 4); r.detail = "reeds";
+  }
   if (k === "rain") {
     for (let i = 0; i < 2; i++) if (Math.random() < cfg.drops) voice(out, t + Math.random() * stepDur, { freq: 1800 + Math.random() * 2600, endFreq: 900, dur: 0.03, peak: 0.05 * cfg.level, type: "sine" });
     mark(r, t, stepDur); r.detail = "rain";
@@ -2747,6 +2849,8 @@ function nodeStatusInner(r, eff) {
     const q = r.cfg.quantize ? `snapped to 1/${16 / r.cfg.quantize}` : "immediate";
     return [running && soundingAt(r, t) ? "~" : "-", `${r.cfg.hit} on speech · ${q} · ${r.hits || 0} hits` + (routed ? "" : " · not routed to a speaker")];
   }
+  if (k === "key") return ["-", `${r.cfg.scale} on ${r.cfg.key} for every line that names none`];
+  if (k === "caption") return running && captionShown(r) ? ["~", `“${r.cfg.text}”`] : ["-", r.gates && r.gates.length ? "shows while its section plays" : "shows while playing"];
   if (k === "screen") {
     if (!running) return ["?", "press Start (asks which tab, window or screen to share, with its sound)"];
     if (screenCap.error) return ["!", screenCap.error];
@@ -2890,8 +2994,8 @@ drums>  drive         0.3
   csardas: "# Hungarian Romani csárdás, in Hungarian minor on D (raised 4th and 7th) · §1 the scale on violin\n# §2 lassú, the slow sorrowful opening, on violin over cimbalom · §3 + bass · §4 friss: the wild fast dance · §5 a violin lament · then it loops\n.            clock   72 4/4\n.            arrange@song scale:2bars lassu:4bars lassu2:4bars friss:4bars sirato:4bars\n\n.            strings@ladder hungarian D oct=4 \"1 2 3 4 5 6 7 1' 1' 7 6 5 4 3 2 1\" ?song.1\n.            strings@violin hungarian D oct=5 \"5 - 4 3 4 - 5 - 6 - 5 4 3 - - - 3 4 5 6 7 - 1' - 7 6 5 4 3 - - - 1 2 3 4 5 - 6 5 4 - 3 2 1 - 7, - 1 2 3 1 7, 6, 7, 1 1 - - - - - - -\" ?song.2-3\n.            pluck@cimbalom \"Dm A Dm A Gm A Dm Dm\" arp oct=4 ?song.2-3\n.            bass         \"Gm A Dm Dm\" ?song.3\n.            strings@friss hungarian D oct=5 grid=16 \"5 4 5 6 5 4 3 4 5 6 7 1' 7 6 5 4 3 2 3 4 3 2 1 2 3 4 5 6 5 4 3 2 5' 4' 5' 6' 5' 4' 3' 4' 5' 6' 7' 1'' 7' 6' 5' 4' 3' 2' 3' 4' 3' 2' 1' 2' 3' 4' 5' 6' 5' 4' 3' 2'\" ?song.4\n.            pluck@drive  \"Dm A Dm A\" arp oct=3 ?song.4\n.            bass@pulse   \"Dm A Dm A\" ?song.4\n.            strings@sirato hungarian D oct=5 grid=4 \"5 - 4 3 4 - 3 2 1 - 7, - 1 - - -\" ?song.5\n.            strings       hungarian D oct=3 grid=4 \"1 - - - - - - - 5, - - - - - - -\" ?song.5\n\n*>           reverb  2s wet=0.3\n>            speaker 0.5\n",
   aztec: "# Aztec / Maya (Mesoamerica) · §1 a minor pentatonic on clay flute · §2 huehuetl, teponaztli and a flute call\n# §3 + a second flute and a slit-drum melody · §4 frenzy: shrieking flutes, fast drums · §5 a low ocarina over a slow heartbeat · then it loops\n.            clock   96 4/4\n.            arrange@song scale:2bars ritual:4bars ritual2:4bars frenzy:4bars night:4bars\n\n.            flute@ladder  minorpenta A oct=5 \"1 3 4 5 7 1' 3' 4' 4' 3' 1' 7 5 4 3 1\" ?song.1\n.            drums         kit=aztec \"x.......x.......|..x...x...x...x.|x.x.x.x.x.x.x.x.\" ?song.2-3\n.            flute@call    minorpenta A oct=5 \"5 - 3 - 1 - - - 3 4 5 - 4 3 1 -\" ?song.2-3\n.            marimba@slit  minorpenta A oct=3 \"1 - 5, - 1 - 3 -\" ?song.3\n.            flute@answer  minorpenta A oct=6 \"0 0 0 0 0 0 0 0 5 - 4 3 1 - - -\" ?song.3\n.            flute@shriek  minorpenta A oct=6 grid=16 \"1' 7 5 4 5 7 1' 3' 1' 7 5 4 3 1 3 4 5 4 3 1 7, 1 3 4 5 7 1' 7 5 4 3 1 1'' 7' 5' 4' 5' 7' 1'' 3'' 1'' 7' 5' 4' 3' 1' 3' 4' 5' 4' 3' 1' 7 1' 3' 4' 5' 7' 1'' 7' 5' 4' 3' 1'\" ?song.4\n.            drums@frenzy  kit=aztec \"x.x.x.xxx.x.x.xx|..x..x..x..x..xx|xxxxxxxxxxxxxxxx\" ?song.4\n.            flute@ocarina minorpenta A oct=4 grid=4 \"5 - 4 3 1 - - - 7, - 5, - 1 - - -\" ?song.5\n.            drums@heart   kit=aztec \"x.......x.......|................|................\" ?song.5\n\n*>           reverb  2.5s wet=0.3\n>            speaker 0.5\n",
   andes: "# Andean (Inca highlands) · §1 a minor pentatonic on quena · §2 a huayno: charango and quena\n# §3 + zampoña and bombo · §4 fiesta: fast charango, quena up high · §5 a yaraví, the Andes' sad slow song · then it loops\n.            clock   92 4/4\n.            arrange@song scale:2bars huayno:4bars huayno2:4bars fiesta:4bars yaravi:4bars\n\n.            flute@ladder  minorpenta E oct=5 \"1 3 4 5 7 1' 3' 4' 4' 3' 1' 7 5 4 3 1\" ?song.1\n.            pluck@charango \"Em G D Em\" arp oct=4 ?song.2-3\n.            flute@quena   minorpenta E oct=5 \"5 - 4 3 1 - 3 4 5 - 7 5 4 - - - 5 - 4 3 1 3 4 3 1 - - - - - - -\" ?song.2-3\n.            flute@zampona minorpenta E oct=4 \"0 0 0 0 5 - 4 3 0 0 0 0 1 - - -\" ?song.3\n.            drums@bombo   kit=aztec \"x..x..x.x..x..x.|................|....x.......x...\" ?song.3-4\n.            pluck@strum   minorpenta E grid=16 \"1 3 5 1 3 5 1 3 4 5 4 3 1 3 1 7, 5 4 3 1 3 4 5 7 5 4 3 4 3 1 7, 1 1' 3' 5' 1' 3' 5' 1' 3' 4' 5' 4' 3' 1' 3' 1' 7 5' 4' 3' 1' 3' 4' 5' 7' 5' 4' 3' 4' 3' 1' 7 1'\" ?song.4\n.            flute@yaravi  minorpenta E oct=5 grid=4 \"5 - 4 3 4 - 3 1 7, - 1 3 1 - - -\" ?song.5\n.            pluck@sad    \"Em Am Em B\" block oct=3 vol=0.6 ?song.5\n\n*>           reverb  2.5s wet=0.3\n>            speaker 0.5\n",
-  pozhen: "# 秦王破阵乐 (The Prince of Qin Breaks the Ranks, 627) — how might it have sounded to its own listeners?\n# §1 序 as Japanese gagaku plays Tang music today (皇帝破陣楽): slow and stately — shō clusters, hichiriki, ryūteki, gakubiwa, kakko roll, great taiko\n# §2 渐急 the same theme quickens toward a Tang tempo (Laurence Picken's view: the same notes, many times faster, as dance music)\n# §3 破阵 the Tang court ensemble — five-string pipa, bili, hengdi, jiegu and the big drum, fangxiang, paiban · §4 阵 the war dance at its height · §5 收 the ranks settle\n# The melody is written in the style of 燕乐; the real piece survives in Japanese scores (三五要録 pipa, 仁智要録 zheng, 五絃譜) and in gagaku. Its notes are not reproduced here.\n# Compared with the reconstruction by 古樂尋蹤 (HGofACH), https://www.youtube.com/watch?v=hwnnDVy-cdM, which centres on F# at about 70 bpm with steady court dynamics; the Tang tempo and key here follow it.\n# For contrast, a modern orchestral work on the theme: https://www.youtube.com/watch?v=3LDdjqmgHp4 (林偉華、張大華 曲, HCYCO).\n.  clock             46 4/4\n.  arrange@song      序:4bars 渐急:2bars@~70 破阵:4bars@70 阵:2bars@~84 收:2bars@~56\n.  scale@yanyue      1 2 3 4 5 6 b7\n.  organ@sho         yanyue F# oct=4 grid=4 dyn=\"pp mp mf mf mf p\" \"6,+2+3 - - - 1+2+5 - - - 2+3+6 - - - 6,+1+3 - - -\" ?song.1-2\n.  reed@hichiriki    yanyue F# oct=4 grid=4 human=0.6 dyn=\"mp mf mf mp\" \"6,~1 - 2 3 - 2 1 - 6, - 3 - 2~1 6, - -\" ?song.1\n.  flute@ryuteki     yanyue F# oct=5 grid=8 human=0.6 dyn=\"p mp mp p\" \"0 0 6, - 1 2 3 - 3 - 2 1 - - - 6, - 6, 3 - - 2 1 6, - - - - 6,~1 - - -\" ?song.1\n.  pluck@gakubiwa    yanyue F# oct=3 grid=4 dyn=\"mp\" \"6,+3/ 0 0 0 1+5/ 0 0 0 2+6/ 0 0 0 6,+3/ 0 0 0\" ?song.1-2\n.  drums@kakko       kit=taiko \"................|................|x...x...x.x.xxxx\" ?song.1-2\n.  drums@taiko       kit=taiko \"x...............|................|................\" ?song.1-2\n.  reed@bili         yanyue F# oct=4 grid=8 human=0.4 dyn=\"mf mf f f f ff ff f\" \"6, - 1 2 3 - 2 1 6, - 3 - 2 1 6, - 1 2 3 5 6 - 5 3 2 3 2 1 6, - - -\" ?song.2-5\n.  flute@hengdi      yanyue F# oct=5 grid=8 human=0.5 dyn=\"p mp mf f f ff ff mf\" \"6, 1 1 2 3 5 2 1 6, - 3 5 2 1 6, - 1 2 3 5 6 1' 5 3 2 3 2 1 6, - - -\" ?song.2-5\n.  pluck@pipa-wuxian yanyue F# oct=4 grid=16 human=0.3 dyn=\"mf f f ff ff ff f\" \"6, 6, 1 1 2 2 3 3 2 2 1 1 6, 6, 6, 0 3 3 5 5 6 6 5 5 3 3 2 2 1 1 1 0 2 2 3 3 5 5 6 6 1' 1' 6 6 5 5 3 3 2 2 3 3 2 2 1 1 6, 6, 6,r - 6, 0\" ?song.3-4\n.  pluck@pipa-strum  yanyue F# oct=3 grid=4 human=0.3 dyn=\"p mf f f ff ff\" \"6,+3+6/ 6,+3+6/ 1+5+1'/ 1+5+1'/ 2+6+2'/ 2+6+2'/ 6,+3+6/ 6,+3+6/\" ?song.2-4\n.  bell@fangxiang    yanyue F# oct=5 grid=4 dyn=\"mf f\" \"6 - 3 - 5 - 1' - 6 - 5 - 6, - - -\" ?song.3-4\n.  drums@jiegu       kit=taiko \"x.x.x.xxx.x.x.xx|....x.......x...|xxxxxxxxxxxxxxxx\" ?song.3-4\n.  drums@jiegu-enter kit=taiko \"x.......x...x...|................|x.x.x.x.x.x.x.x.\" ?song.2\n.  drums@dagu        kit=zhangu \"X.......X.......|....x.......x...|................\" ?song.3-4\n.  drums@paiban      kit=opera \"x...x...x...x...|................|................\" ?song.3-4\n.  crowd@dancers     chant \"HA\" \"x-------x---x-x-\" voices=8 voice=men vol=0.7 ?song.4\n.  drums@dagu-close  kit=zhangu \"X...............|................|................\" ?song.5\n.  pluck@pipa-close  yanyue F# oct=3 grid=4 dyn=\"f mp\" \"6,+3+6/ - - - 6,+3+6/ - - -\" ?song.5\n*> reverb            2.5s wet=0.3\n>  speaker           0.5\n",
-  pipaxing: "# 琵琶行 · 白居易 (816) — the poem's own description of Tang pipa playing, passage by passage\n# §1 江州's 山歌与村笛 (呕哑嘲哳难为听) · §2 转轴拨弦 · §3 轻拢慢捻抹复挑 · §4 大弦嘈嘈如急雨 · §5 小弦切切如私语 · §6 大珠小珠落玉盘\n# §7 冰泉冷涩弦凝绝 · §8 此时无声胜有声 · §9 银瓶乍破 铁骑突出 · §10 当心画 四弦一声如裂帛 · §11 唯见江心秋月白\n# one 燕乐-style theme runs through it all (霓裳 and 六幺 are lost); the tempo breathes with the poem: slow, quickening, frozen, bursting, still\n\"\"\"\n岂无山歌与村笛？呕哑嘲哳难为听。今夜闻君琵琶语，如听仙乐耳暂明。\n转轴拨弦三两声，未成曲调先有情。轻拢慢捻抹复挑，初为霓裳后六幺。\n大弦嘈嘈如急雨，小弦切切如私语。嘈嘈切切错杂弹，大珠小珠落玉盘。\n间关莺语花底滑，幽咽泉流冰下难。冰泉冷涩弦凝绝，凝绝不通声暂歇。\n别有幽愁暗恨生，此时无声胜有声。银瓶乍破水浆迸，铁骑突出刀枪鸣。\n曲终收拨当心画，四弦一声如裂帛。东船西舫悄无言，唯见江心秋月白。\n\"\"\"\n. clock        64 4/4\n. arrange@song 村笛:2bars 转轴:2bars@~52 拢捻:4bars@~58 大弦:2bars@~76 小弦:2bars 错杂:2bars@~88 凝绝:3bars@~44 无声:1bars 银瓶:2bars@96 裂帛:1bars@~60 秋月:3bars@~50\n. scale@yanyue 1 2 3 4 5 6 b7\n\n. reed@cundi        yanyue D oct=5 grid=8 human=0.7 dyn=\"mf mf p ppp\" \"5~6 6 5~3 2~1 - 2 1 6,~1 - 2~3 2 1~6, - - -\" ?song.1-2\n. crowd@shange      chant \"ya o YA o\" \"x---x---x-x-x---\" voices=3 voice=mixed pitch=1.07 vol=0.6 ?song.1\n. pluck@pipa-tuning yanyue D grid=8 human=0.5 dyn=\"p mp\" \"1, - - - 5, - - - 1+5/ - - - 0 0 (2)3 -\" ?song.2\n. pluck@pipa-theme  yanyue D grid=8 human=0.5 dyn=\"p mp mf mp\" \"(5)6 - - 5 6~1' - 6 5 3 - 5 3 2~3 - 2 1 2 - 3 5 6 - 5 3 2~1 6, - 1 - - -\" ?song.3\n. strings@pipa-ring yanyue D oct=3 grid=4 vol=0.25 dyn=\"pp p p pp pp ppp\" \"1+5 - - - 1+5 - - - 6,+3 - - - 1+5 - - -\" ?song.3-4\n. pluck@pipa-daxian   yanyue D oct=3 grid=8 human=0.4 dyn=\"mf f pp pp mf f\" \"3r - 5r - 6r - 5r 3r 2r - 3r - 2r 1r 6,r -\" ?song.4-6\n. pluck@pipa-xiaoxian yanyue D oct=5 grid=16 human=0.6 vol=0.7 dyn=\"p pp\" \"6 5 6 1' 6 5 3 - 5 3 5 6 5 3 2 - 3 2 3 5 3 2 1 - 2 1 2 3 2 - - -\" ?song.5\n. pluck@pipa-zhuzi    yanyue D oct=5 grid=16 human=0.6 dyn=\"mp f\" \"6 1' 6 5 6h 5 3 5 2' 1' 6 5 3h 5 6 1' 6 5 3 2 3 5 6 5 2' 1' 6 1' 2'h - - -\" ?song.6\n. pluck@pipa-ningjue yanyue D grid=8 human=0.8 dyn=\"mp p pp\" \"3 2~3 - 2 1 - 6, - 1 - - 2~1 - - - 6,m - - - - - - - 0 0 0 0 0 0 0 0\" ?song.7\n. strings@pipa-quan  yanyue D oct=3 grid=4 vol=0.2 dyn=\"p pp ppp\" \"6,+3 - - - 6,+3 - - - - - - -\" ?song.7\n. pluck@pipa-yinping yanyue D grid=16 human=0.3 dyn=\"ff fff\" \"1+5+1'/ 0 5x 0 1+5+1'/ 1+5+1'/ 5x 0 2+6+2'/ 0 6x 0 2+6+2'/ 2+6+2'/ 6x 6x 1+5+1'/ 1+5+1'/ 5x 1+5+1'/ 6x 6x 5x 0 2+6+2'/ 2+6+2'/ 6x 2+6+2'/ 1+5+1'/ 5x 5x 5x\" ?song.9\n. pluck@pipa-liebo   yanyue D grid=8 dyn=\"ff\" \"1,+5,+1+5/ - - - - - 0 0\" ?song.10\n. strings@jiangyue  yanyue D oct=3 grid=4 vol=0.3 dyn=\"pp p pp\" \"1+5 - - - - - - - - - - -\" ?song.11\n. pluck@pipa-qiuyue yanyue D oct=5 grid=8 human=0.5 dyn=\"pp p ppp\" \"6h - - 5 6h - - - 3h - 2 1 2h - - - 1h - - - - - - -\" ?song.11\n\n*> reverb  3.5s wet=0.4\n>  speaker 0.5\n\n",
+  pozhen: "# 秦王破阵乐 (The Prince of Qin Breaks the Ranks, 627) — how might it have sounded to its own listeners?\n# §1 序 as Japanese gagaku plays Tang music today (皇帝破陣楽): slow and stately — shō clusters, hichiriki, ryūteki, gakubiwa, kakko roll, great taiko\n# §2 渐急 the same theme quickens toward a Tang tempo (Laurence Picken's view: the same notes, many times faster, as dance music)\n# §3 破阵 the Tang court ensemble — five-string pipa, bili, hengdi, jiegu and the big drum, fangxiang, paiban · §4 阵 the war dance at its height · §5 收 the ranks settle\n# The melody is written in the style of 燕乐; the real piece survives in Japanese scores (三五要録 pipa, 仁智要録 zheng, 五絃譜) and in gagaku. Its notes are not reproduced here.\n# Compared with the reconstruction by 古樂尋蹤 (HGofACH), https://www.youtube.com/watch?v=hwnnDVy-cdM, which centres on F# at about 70 bpm with steady court dynamics; the Tang tempo and key here follow it.\n# For contrast, a modern orchestral work on the theme: https://www.youtube.com/watch?v=3LDdjqmgHp4 (林偉華、張大華 曲, HCYCO).\n.  clock             46 4/4\n.  arrange@song      序:4bars 渐急:2bars@~70 破阵:4bars@70 阵:2bars@~84 收:2bars@~56\n.  scale@yanyue      1 2 3 4 5 6 b7\n.  key               yanyue F#\n.  organ@sho         oct=4 grid=4 dyn=\"pp mp mf mf mf p\" \"6,+2+3 - - - 1+2+5 - - - 2+3+6 - - - 6,+1+3 - - -\" ?song.1-2\n.  reed@hichiriki    oct=4 grid=4 human=0.6 dyn=\"mp mf mf mp\" \"6,~1 - 2 3 - 2 1 - 6, - 3 - 2~1 6, - -\" ?song.1\n.  flute@ryuteki     oct=5 grid=8 human=0.6 dyn=\"p mp mp p\" \"0 0 6, - 1 2 3 - 3 - 2 1 - - - 6, - 6, 3 - - 2 1 6, - - - - 6,~1 - - -\" ?song.1\n.  pluck@gakubiwa    oct=3 grid=4 dyn=\"mp\" \"6,+3/ 0 0 0 1+5/ 0 0 0 2+6/ 0 0 0 6,+3/ 0 0 0\" ?song.1-2\n.  drums@kakko       kit=taiko \"................|................|x...x...x.x.xxxx\" ?song.1-2\n.  drums@taiko       kit=taiko \"x...............|................|................\" ?song.1-2\n.  reed@bili         oct=4 grid=8 human=0.4 dyn=\"mf mf f f f ff ff f\" \"6, - 1 2 3 - 2 1 6, - 3 - 2 1 6, - 1 2 3 5 6 - 5 3 2 3 2 1 6, - - -\" ?song.2-5\n.  flute@hengdi      oct=5 grid=8 human=0.5 dyn=\"p mp mf f f ff ff mf\" \"6, 1 1 2 3 5 2 1 6, - 3 5 2 1 6, - 1 2 3 5 6 1' 5 3 2 3 2 1 6, - - -\" ?song.2-5\n.  pluck@pipa-wuxian oct=4 grid=16 human=0.3 dyn=\"mf f f ff ff ff f\" \"6, 6, 1 1 2 2 3 3 2 2 1 1 6, 6, 6, 0 3 3 5 5 6 6 5 5 3 3 2 2 1 1 1 0 2 2 3 3 5 5 6 6 1' 1' 6 6 5 5 3 3 2 2 3 3 2 2 1 1 6, 6, 6,r - 6, 0\" ?song.3-4\n.  pluck@pipa-strum  oct=3 grid=4 human=0.3 dyn=\"p mf f f ff ff\" \"6,+3+6/ 6,+3+6/ 1+5+1'/ 1+5+1'/ 2+6+2'/ 2+6+2'/ 6,+3+6/ 6,+3+6/\" ?song.2-4\n.  bell@fangxiang    oct=5 grid=4 dyn=\"mf f\" \"6 - 3 - 5 - 1' - 6 - 5 - 6, - - -\" ?song.3-4\n.  drums@jiegu       kit=taiko \"x.x.x.xxx.x.x.xx|....x.......x...|xxxxxxxxxxxxxxxx\" ?song.3-4\n.  drums@jiegu-enter kit=taiko \"x.......x...x...|................|x.x.x.x.x.x.x.x.\" ?song.2\n.  drums@dagu        kit=zhangu \"X.......X.......|....x.......x...|................\" ?song.3-4\n.  drums@paiban      kit=opera \"x...x...x...x...|................|................\" ?song.3-4\n.  crowd@dancers     chant \"HA\" \"x-------x---x-x-\" voices=8 voice=men vol=0.7 ?song.4\n.  drums@dagu-close  kit=zhangu \"X...............|................|................\" ?song.5\n.  pluck@pipa-close  oct=3 grid=4 dyn=\"f mp\" \"6,+3+6/ - - - 6,+3+6/ - - -\" ?song.5\n*> reverb            2.5s wet=0.3\n>  speaker           0.5\n",
+  pipaxing: "# 琵琶行 · 白居易 (816) — the poem's own description of Tang pipa playing, passage by passage\n# §1 江州's 山歌与村笛 (呕哑嘲哳难为听) · §2 转轴拨弦 · §3 轻拢慢捻抹复挑 · §4 大弦嘈嘈如急雨 · §5 小弦切切如私语 · §6 大珠小珠落玉盘\n# §7 冰泉冷涩弦凝绝 · §8 此时无声胜有声 · §9 银瓶乍破 铁骑突出 · §10 当心画 四弦一声如裂帛 · §11 唯见江心秋月白\n# 浔阳江头夜送客: an autumn night on the river at 湓浦口 — calm water lapping at the hull, the boat's timbers, crickets slow in the cool air, reeds (荻花秋瑟瑟); no birds at night, and the frogs are quiet by autumn\n# one 燕乐-style theme runs through it all (霓裳 and 六幺 are lost); the tempo breathes with the poem: slow, quickening, frozen, bursting, still\n\"\"\"\n岂无山歌与村笛？呕哑嘲哳难为听。今夜闻君琵琶语，如听仙乐耳暂明。\n转轴拨弦三两声，未成曲调先有情。轻拢慢捻抹复挑，初为霓裳后六幺。\n大弦嘈嘈如急雨，小弦切切如私语。嘈嘈切切错杂弹，大珠小珠落玉盘。\n间关莺语花底滑，幽咽泉流冰下难。冰泉冷涩弦凝绝，凝绝不通声暂歇。\n别有幽愁暗恨生，此时无声胜有声。银瓶乍破水浆迸，铁骑突出刀枪鸣。\n曲终收拨当心画，四弦一声如裂帛。东船西舫悄无言，唯见江心秋月白。\n\"\"\"\n. clock        64 4/4\n. arrange@song 村笛:2bars 转轴:2bars@~52 拢捻:4bars@~58 大弦:2bars@~76 小弦:2bars 错杂:2bars@~88 凝绝:3bars@~44 无声:1bars 银瓶:2bars@96 裂帛:1bars@~60 秋月:3bars@~50\n. scale@yanyue 1 2 3 4 5 6 b7\n. key          yanyue D\n\n. caption@poem1       \"岂无山歌与村笛？呕哑嘲哳难为听。 / 今夜闻君琵琶语，如听仙乐耳暂明。\" ?song.1\n. caption@poem2       \"转轴拨弦三两声，未成曲调先有情。\" ?song.2\n. caption@poem3       \"轻拢慢捻抹复挑，初为霓裳后六幺。\" ?song.3\n. caption@poem4       \"大弦嘈嘈如急雨，\" ?song.4\n. caption@poem5       \"小弦切切如私语。\" ?song.5\n. caption@poem6       \"嘈嘈切切错杂弹，大珠小珠落玉盘。\" ?song.6\n. caption@poem7       \"间关莺语花底滑，幽咽泉流冰下难。 / 冰泉冷涩弦凝绝，凝绝不通声暂歇。\" ?song.7\n. caption@poem8       \"别有幽愁暗恨生，此时无声胜有声。\" ?song.8\n. caption@poem9       \"银瓶乍破水浆迸，铁骑突出刀枪鸣。\" ?song.9\n. caption@poem10      \"曲终收拨当心画，四弦一声如裂帛。\" ?song.10\n. caption@poem11      \"东船西舫悄无言，唯见江心秋月白。\" ?song.11\n. water@jiang         level=0.4 lap=0.4 splash=0.04\n. boat@chuan          level=0.35 creak=0.35\n. insects@cuzhi       level=0.25 temp=14 count=3\n. reeds@dihua         level=0.25 gust=0.06Hz\n. reed@cundi          oct=5 grid=8 human=0.7 dyn=\"mf mf p ppp\" \"5~6 6 5~3 2~1 - 2 1 6,~1 - 2~3 2 1~6, - - -\" ?song.1-2\n. crowd@shange        chant \"ya o YA o\" \"x---x---x-x-x---\" voices=3 voice=mixed pitch=1.07 vol=0.6 ?song.1\n. pluck@pipa-tuning   grid=8 human=0.5 dyn=\"p mp\" \"1, - - - 5, - - - 1+5/ - - - 0 0 (2)3 -\" ?song.2\n. pluck@pipa-theme    grid=8 human=0.5 dyn=\"p mp mf mp\" \"(5)6 - - 5 6~1' - 6 5 3 - 5 3 2~3 - 2 1 2 - 3 5 6 - 5 3 2~1 6, - 1 - - -\" ?song.3\n. strings@pipa-ring   oct=3 grid=4 vol=0.25 dyn=\"pp p p pp pp ppp\" \"1+5 - - - 1+5 - - - 6,+3 - - - 1+5 - - -\" ?song.3-4\n. pluck@pipa-daxian   oct=3 grid=8 human=0.4 dyn=\"mf f pp pp mf f\" \"3r - 5r - 6r - 5r 3r 2r - 3r - 2r 1r 6,r -\" ?song.4-6\n. pluck@pipa-xiaoxian oct=5 grid=16 human=0.6 vol=0.7 dyn=\"p pp\" \"6 5 6 1' 6 5 3 - 5 3 5 6 5 3 2 - 3 2 3 5 3 2 1 - 2 1 2 3 2 - - -\" ?song.5\n. pluck@pipa-zhuzi    oct=5 grid=16 human=0.6 dyn=\"mp f\" \"6 1' 6 5 6h 5 3 5 2' 1' 6 5 3h 5 6 1' 6 5 3 2 3 5 6 5 2' 1' 6 1' 2'h - - -\" ?song.6\n. pluck@pipa-ningjue  grid=8 human=0.8 dyn=\"mp p pp\" \"3 2~3 - 2 1 - 6, - 1 - - 2~1 - - - 6,m - - - - - - - 0 0 0 0 0 0 0 0\" ?song.7\n. strings@pipa-quan   oct=3 grid=4 vol=0.2 dyn=\"p pp ppp\" \"6,+3 - - - 6,+3 - - - - - - -\" ?song.7\n. pluck@pipa-yinping  grid=16 human=0.3 dyn=\"ff fff\" \"1+5+1'/ 0 5x 0 1+5+1'/ 1+5+1'/ 5x 0 2+6+2'/ 0 6x 0 2+6+2'/ 2+6+2'/ 6x 6x 1+5+1'/ 1+5+1'/ 5x 1+5+1'/ 6x 6x 5x 0 2+6+2'/ 2+6+2'/ 6x 2+6+2'/ 1+5+1'/ 5x 5x 5x\" ?song.9\n. pluck@pipa-liebo    grid=8 dyn=\"ff\" \"1,+5,+1+5/ - - - - - 0 0\" ?song.10\n. strings@jiangyue    oct=3 grid=4 vol=0.3 dyn=\"pp p pp\" \"1+5 - - - - - - - - - - -\" ?song.11\n. pluck@pipa-qiuyue   oct=5 grid=8 human=0.5 dyn=\"pp p ppp\" \"6h - - 5 6h - - - 3h - 2 1 2h - - - 1h - - - - - - -\" ?song.11\n\n*> reverb  3.5s wet=0.4\n>  speaker 0.5\n",
   learn: `# Beatbox 1 bar after the count-in: "boom" = kick, "ka" = snare, "ts" = hat.
 # learn rewrites \`beat\` and then turns itself off; Alt+T on it records again, Ctrl+Z undoes.
 .          clock   90 4/4
@@ -3094,7 +3198,7 @@ function explainAt(model, lineNo, col) {
     for (const part of parts) { if (inner >= pos && inner < pos + part.length && part.trim()) piece = part; pos += part.length; }
     if (piece) {
       let o; try { o = argMap(kind, l.args); } catch (e) { o = {}; }
-      const sc = scaleNamed(o.scale || "major") || SCALES.major, keyName = o.key || "C", oct = Number(o.oct || { bass: 2, flute: 5, organ: 3 }[kind] || 4);
+      const env = keyEnv(), sc = scaleNamed(o.scale || env.scale || "major") || SCALES.major, keyName = o.key || env.key || "C", oct = Number(o.oct || { bass: 2, flute: 5, organ: 3 }[kind] || 4);
       try {
         const t = parsePhrase(piece)[0];
         if (t.rest) body += `<br><b>0</b>: a rest.`;
@@ -3103,7 +3207,7 @@ function explainAt(model, lineNo, col) {
           const cents = degreeCents(sc, t.deg) + t.acc + 1200 * t.oct, midi = keyMidi(keyName, oct) + cents / 100;
           const name = Number.isInteger(midi) ? midiName(midi) : `${midiName(Math.floor(midi))} +${Math.round((midi % 1) * 100)}¢`;
           const octWord = t.oct > 0 ? `, ${t.oct} octave(s) up` : t.oct < 0 ? `, ${-t.oct} octave(s) down` : "";
-          body += `<br><b>${esc(piece)}</b>: degree ${t.deg}${octWord} → <b>${esc(name)}</b> in the ${esc(o.scale || "major")} scale on ${esc(keyName)} (${cents} cents)` + (sc[t.deg - 1] === null ? "; not in this scale, so it snaps to the nearest degree" : "") + ".";
+          body += `<br><b>${esc(piece)}</b>: degree ${t.deg}${octWord} → <b>${esc(name)}</b> in the ${esc(o.scale || keyEnv().scale || "major")} scale on ${esc(keyName)} (${cents} cents)` + (sc[t.deg - 1] === null ? "; not in this scale, so it snaps to the nearest degree" : "") + ".";
         }
       } catch (e) { body += `<br>${esc(e.message)}`; }
     }
@@ -3253,10 +3357,11 @@ function monacoUI(monaco) {
   const editor = monaco.editor.create(host, {
     language: "otoji", theme: isDark() ? "otoji-dark" : "otoji-light",
     fontFamily: v("--font-code"), fontSize: 13, lineHeight: 22, minimap: { enabled: false },
-    wordWrap: "off", scrollBeyondLastLine: false, automaticLayout: true, renderWhitespace: "none",
+    wordWrap: "on", wrappingIndent: "deepIndent", scrollBeyondLastLine: false, // a long line and its status wrap onto the next row automaticLayout: true, renderWhitespace: "none",
     tabSize: 2, insertSpaces: true, lineNumbersMinChars: 3, glyphMargin: false, folding: false,
     padding: { top: 10, bottom: 10 }, fixedOverflowWidgets: true,
   });
+  editor.onDidLayoutChange(() => { rowsKey = ""; }); // the status column's alignment depends on the width
   matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => monaco.editor.setTheme(isDark() ? "otoji-dark" : "otoji-light"));
   const model = editor.getModel();
   let timer = 0;
@@ -3414,12 +3519,15 @@ function monacoUI(monaco) {
     pendingLines,
     takePending: () => { const l = pendingLines(); editor.deltaDecorations(pendingIds, []); pendingIds = []; return l; },
     renderStatus: (rows) => {
-      // Align the status column per block (runs of non-blank lines).
+      // Align the status column per block (runs of non-blank lines), but no further than
+      // about half the editor's width: longer lines put their status after themselves and wrap.
       const n = model.getLineCount(), cols = new Array(n).fill(0);
+      const li = editor.getLayoutInfo(), cw = editor.getOption(monaco.editor.EditorOption.fontInfo).typicalHalfwidthCharacterWidth || 8;
+      const alignMax = Math.max(24, Math.floor((li.contentWidth / cw) * 0.55));
       for (let i = 0; i < n; ) {
         if (!model.getLineContent(i + 1).trim()) { i++; continue; }
         let j = i, w = 0;
-        while (j < n && model.getLineContent(j + 1).trim()) { if (!model.getLineContent(j + 1).trim().startsWith("# ")) w = Math.max(w, model.getLineLength(j + 1)); j++; }
+        while (j < n && model.getLineContent(j + 1).trim()) { const L = model.getLineLength(j + 1); if (!model.getLineContent(j + 1).trim().startsWith("# ") && L <= alignMax) w = Math.max(w, L); j++; }
         for (let k = i; k < j; k++) cols[k] = w;
         i = j;
       }
@@ -3427,7 +3535,7 @@ function monacoUI(monaco) {
       rows.forEach((r, i) => {
         if (!r.sym || i >= n) return;
         const len = model.getLineLength(i + 1);
-        const pad = " ".repeat(Math.max(2, cols[i] - len + 2));
+        const pad = len > cols[i] ? "  " : " ".repeat(cols[i] - len + 2);
         decos.push({
           range: new monaco.Range(i + 1, len + 1, i + 1, len + 1),
           options: { showIfCollapsed: true, after: { content: `${pad}# ${r.sym}${r.detail ? " " + r.detail : ""}`, inlineClassName: "st" + (SYM_CLASS[r.sym] ? " st-" + SYM_CLASS[r.sym] : ""), cursorStops: 0 } },
@@ -3822,7 +3930,19 @@ document.getElementById("vol").addEventListener("input", () => {
 });
 
 setInterval(tick, 25);
-setInterval(() => { renderStatus(); renderLamps(); }, 50);
+// The floating subtitle: the words of every caption line whose gate is open.
+function captionShown(r) { return !r.error && r.node.enabled && gateOpen(r, ctx ? ctx.currentTime : 0); }
+let captionText = null;
+function renderCaption() {
+  const words = running && ctx ? [...live.values()].filter((r) => r.node.kind === "caption" && captionShown(r)).map((r) => r.cfg.text) : [];
+  const text = words.join("\n");
+  if (text === captionText) return; captionText = text;
+  let el = document.getElementById("subtitle");
+  if (!el) { el = Object.assign(document.createElement("div"), { id: "subtitle", role: "status" }); el.setAttribute("aria-live", "polite"); document.body.append(el); }
+  if (text) el.textContent = text.replace(/ \/ /g, "\n"); // " / " breaks a line
+  el.classList.toggle("on", !!text);
+}
+setInterval(() => { renderStatus(); renderLamps(); renderCaption(); }, 50);
 
 // Monaco from cdnjs; its CSS is inlined above (the loader's own <link>
 // stylesheets are switched off). Falls back to the textarea after 10 s.
