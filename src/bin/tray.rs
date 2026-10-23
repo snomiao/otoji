@@ -29,7 +29,9 @@ fn main() {
     let marker = quit_marker();
     let by_launchd = std::env::var("XPC_SERVICE_NAME").as_deref() == Ok("com.snomiao.otoji");
     if by_launchd && marker.exists() {
-        eprintln!("otoji-tray: quit by the user earlier; not starting (open otoji.app to start it again)");
+        eprintln!(
+            "otoji-tray: quit by the user earlier; not starting (open otoji.app to start it again)"
+        );
         return;
     }
     if !by_launchd {
@@ -105,7 +107,11 @@ mod tray_macos {
             );
         }
         let mic_ok = state & 1 != 0;
-        if mic_ok && AUTO_LISTEN.load(Ordering::Acquire) && graph::wants_listen() && !listen_is_running() {
+        if mic_ok
+            && AUTO_LISTEN.load(Ordering::Acquire)
+            && graph::wants_listen()
+            && !listen_is_running()
+        {
             AUTO_LISTEN.store(false, Ordering::Release);
             overlay::start_listen();
         }
@@ -121,12 +127,20 @@ mod tray_macos {
         }
     }
 
-    unsafe extern "C" fn action_grant_mic(_this: *mut c_void, _cmd: *mut c_void, _sender: *mut c_void) {
+    unsafe extern "C" fn action_grant_mic(
+        _this: *mut c_void,
+        _cmd: *mut c_void,
+        _sender: *mut c_void,
+    ) {
         AUTO_LISTEN.store(true, Ordering::Release);
         permissions::ensure_mic_interactive();
     }
 
-    unsafe extern "C" fn action_grant_ax(_this: *mut c_void, _cmd: *mut c_void, _sender: *mut c_void) {
+    unsafe extern "C" fn action_grant_ax(
+        _this: *mut c_void,
+        _cmd: *mut c_void,
+        _sender: *mut c_void,
+    ) {
         // Bundled PermissionFlow helper: opens the pane and floats a "drag
         // otoji here" card beside System Settings. Falls back to the system
         // prompt + plain deeplink when running outside the .app.
@@ -137,9 +151,15 @@ mod tray_macos {
         let nsurl = msg1_ptr(
             cls(b"NSURL\0"),
             sel(b"URLWithString:\0"),
-            nsstring("x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility"),
+            nsstring(
+                "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility",
+            ),
         );
-        msg1_ptr(msg0(cls(b"NSWorkspace\0"), sel(b"sharedWorkspace\0")), sel(b"openURL:\0"), nsurl);
+        msg1_ptr(
+            msg0(cls(b"NSWorkspace\0"), sel(b"sharedWorkspace\0")),
+            sel(b"openURL:\0"),
+            nsurl,
+        );
     }
     use std::ffi::c_void;
     use std::sync::atomic::{AtomicPtr, Ordering};
@@ -794,10 +814,19 @@ mod tray_macos {
     }
 
     /// Click on a pipeline row → turn that node's line on or off.
-    unsafe extern "C" fn action_toggle_node(_this: *mut c_void, _cmd: *mut c_void, sender: *mut c_void) {
-        let tag: extern "C" fn(*mut c_void, *mut c_void) -> i64 = std::mem::transmute(objc_msgSend as *const ());
+    unsafe extern "C" fn action_toggle_node(
+        _this: *mut c_void,
+        _cmd: *mut c_void,
+        sender: *mut c_void,
+    ) {
+        let tag: extern "C" fn(*mut c_void, *mut c_void) -> i64 =
+            std::mem::transmute(objc_msgSend as *const ());
         let i = tag(sender, sel(b"tag\0")) as usize;
-        let id = PIPELINE_ITEMS.lock().unwrap().get(i).map(|(_, id)| id.clone());
+        let id = PIPELINE_ITEMS
+            .lock()
+            .unwrap()
+            .get(i)
+            .map(|(_, id)| id.clone());
         if let Some(id) = id.filter(|id| !id.is_empty()) {
             graph::toggle(&id);
             apply_pipeline();
@@ -806,9 +835,16 @@ mod tray_macos {
     }
 
     /// Click → open pipeline.otoji in the default text editor.
-    unsafe extern "C" fn action_edit_pipeline(_this: *mut c_void, _cmd: *mut c_void, _sender: *mut c_void) {
+    unsafe extern "C" fn action_edit_pipeline(
+        _this: *mut c_void,
+        _cmd: *mut c_void,
+        _sender: *mut c_void,
+    ) {
         graph::reload();
-        let _ = std::process::Command::new("open").arg("-t").arg(graph::path()).spawn();
+        let _ = std::process::Command::new("open")
+            .arg("-t")
+            .arg(graph::path())
+            .spawn();
     }
 
     /// LaunchAgent label from scripts/install-launch-agent.sh.
@@ -980,13 +1016,18 @@ mod tray_macos {
             .filter(|s| !s.is_empty())
             .unwrap_or_else(|| {
                 let v = otoji::config::load().sherpa_model_variant;
-                if v.is_empty() { otoji::config::DEFAULT_SHERPA_VARIANT.to_string() } else { v }
+                if v.is_empty() {
+                    otoji::config::DEFAULT_SHERPA_VARIANT.to_string()
+                } else {
+                    v
+                }
             })
     }
 
     /// The pipeline rows of the current menu (retained by the menu) and the
     /// node id each one toggles ("" = comment row).
-    static PIPELINE_ITEMS: std::sync::Mutex<Vec<(usize, String)>> = std::sync::Mutex::new(Vec::new());
+    static PIPELINE_ITEMS: std::sync::Mutex<Vec<(usize, String)>> =
+        std::sync::Mutex::new(Vec::new());
     static TICKS: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
 
     /// Monospaced menu title so the pipeline's columns line up.
@@ -994,16 +1035,34 @@ mod tray_macos {
         let font = {
             let f: extern "C" fn(*mut c_void, *mut c_void, f64, f64) -> *mut c_void =
                 std::mem::transmute(objc_msgSend as *const ());
-            f(cls(b"NSFont\0"), sel(b"monospacedSystemFontOfSize:weight:\0"), 12.0, 0.0)
+            f(
+                cls(b"NSFont\0"),
+                sel(b"monospacedSystemFontOfSize:weight:\0"),
+                12.0,
+                0.0,
+            )
         };
         let attrs = {
-            let f: extern "C" fn(*mut c_void, *mut c_void, *mut c_void, *mut c_void) -> *mut c_void =
-                std::mem::transmute(objc_msgSend as *const ());
-            f(cls(b"NSDictionary\0"), sel(b"dictionaryWithObject:forKey:\0"), font, nsstring("NSFont"))
+            let f: extern "C" fn(
+                *mut c_void,
+                *mut c_void,
+                *mut c_void,
+                *mut c_void,
+            ) -> *mut c_void = std::mem::transmute(objc_msgSend as *const ());
+            f(
+                cls(b"NSDictionary\0"),
+                sel(b"dictionaryWithObject:forKey:\0"),
+                font,
+                nsstring("NSFont"),
+            )
         };
         let astr = {
-            let f: extern "C" fn(*mut c_void, *mut c_void, *mut c_void, *mut c_void) -> *mut c_void =
-                std::mem::transmute(objc_msgSend as *const ());
+            let f: extern "C" fn(
+                *mut c_void,
+                *mut c_void,
+                *mut c_void,
+                *mut c_void,
+            ) -> *mut c_void = std::mem::transmute(objc_msgSend as *const ());
             f(
                 msg0(cls(b"NSAttributedString\0"), sel(b"alloc\0")),
                 sel(b"initWithString:attributes:\0"),
@@ -1123,7 +1182,10 @@ mod tray_macos {
             let row = init_fn(
                 msg0(menuitem_cls, sel(b"alloc\0")),
                 init_sel,
-                nsstring(&format!("⚠️  pipeline.otoji: {} (using the last good version)", truncate(&err, 60))),
+                nsstring(&format!(
+                    "⚠️  pipeline.otoji: {} (using the last good version)",
+                    truncate(&err, 60)
+                )),
                 sel(b"editPipeline:\0"),
                 nsstring(""),
             );
@@ -1134,7 +1196,11 @@ mod tray_macos {
         }
         let mut pipeline_items = Vec::new();
         for (text, id) in graph::rows(permissions::mic_status() == permissions::Mic::Authorized) {
-            let action = if id.is_some() { sel(b"toggleNode:\0") } else { std::ptr::null_mut() };
+            let action = if id.is_some() {
+                sel(b"toggleNode:\0")
+            } else {
+                std::ptr::null_mut()
+            };
             let row = init_fn(
                 msg0(menuitem_cls, sel(b"alloc\0")),
                 init_sel,
@@ -1169,7 +1235,10 @@ mod tray_macos {
             perm_rows.push(("⚠️  Allow microphone access…", b"grantMic:\0"));
         }
         if !permissions::accessibility_granted() {
-            perm_rows.push(("⚠️  Allow Accessibility for the Fn+/ on/off hotkey…", b"grantAx:\0"));
+            perm_rows.push((
+                "⚠️  Allow Accessibility for the Fn+/ on/off hotkey…",
+                b"grantAx:\0",
+            ));
         }
         for (label, action) in perm_rows {
             let row = init_fn(
@@ -1568,8 +1637,7 @@ mod tray_macos {
     static SLASH_SWALLOWED: std::sync::atomic::AtomicBool =
         std::sync::atomic::AtomicBool::new(false);
     /// Same for an Alt+F18 (remapped Caps Lock) keyDown.
-    static F18_SWALLOWED: std::sync::atomic::AtomicBool =
-        std::sync::atomic::AtomicBool::new(false);
+    static F18_SWALLOWED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
     static HOTKEY_TAP: std::sync::atomic::AtomicPtr<c_void> =
         std::sync::atomic::AtomicPtr::new(std::ptr::null_mut());
 
@@ -1596,7 +1664,10 @@ mod tray_macos {
             return;
         }
         apply_pipeline();
-        eprintln!("otoji-tray: toggled {} by hotkey", if on { "on" } else { "off" });
+        eprintln!(
+            "otoji-tray: toggled {} by hotkey",
+            if on { "on" } else { "off" }
+        );
         unsafe { rebuild_menu() };
     }
 
@@ -1634,7 +1705,9 @@ mod tray_macos {
             unsafe { CGEventGetIntegerValueField(event, K_CG_KEYBOARD_EVENT_KEYCODE) } as u64;
         let flags = unsafe { CGEventGetFlags(event) };
         match etype {
-            K_CG_EVENT_KEY_DOWN if keycode == KEYCODE_SLASH && flags & FLAG_MASK_SECONDARY_FN != 0 => {
+            K_CG_EVENT_KEY_DOWN
+                if keycode == KEYCODE_SLASH && flags & FLAG_MASK_SECONDARY_FN != 0 =>
+            {
                 let repeat =
                     unsafe { CGEventGetIntegerValueField(event, K_CG_KEYBOARD_EVENT_AUTOREPEAT) };
                 if repeat == 0 {
@@ -1643,7 +1716,9 @@ mod tray_macos {
                 SLASH_SWALLOWED.store(true, SeqCst);
                 std::ptr::null_mut()
             }
-            K_CG_EVENT_KEY_UP if keycode == KEYCODE_SLASH && SLASH_SWALLOWED.swap(false, SeqCst) => {
+            K_CG_EVENT_KEY_UP
+                if keycode == KEYCODE_SLASH && SLASH_SWALLOWED.swap(false, SeqCst) =>
+            {
                 std::ptr::null_mut()
             }
             K_CG_EVENT_KEY_DOWN if keycode == KEYCODE_F18 && flags & FLAG_MASK_ALTERNATE != 0 => {
