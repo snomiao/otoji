@@ -868,7 +868,7 @@ const NUM = /^\d+(\.\d+)?$/;
 const CATALOG = {
   clock: { doc: "Tempo source. Music nodes take the first clock automatically.", args: [
     ["bpm", "92", "beats per minute", null, { re: NUM }],
-    ["sig", "4", "beats per bar (shorthand 3/4)", null, { re: /^\d+\/4$/, to: (v) => v.split("/")[0] }]] },
+    ["sig", "4", "beats per bar (shorthand 3/4; 6/8 = three beats)", null, { re: /^(\d+\/4|(6|12)\/8)$/, to: (v) => String(v.split("/")[0] * 4 / v.split("/")[1]) }]] },
   mic: { doc: "Microphone (asks on Start). Input only: feed it to a vad or learn. Pick a device by number, name, wildcard or alias.", args: [
     ["device", "default", "default · system (loopback audio) · tab (another tab's audio) · 2 (the 2nd input) · \"USB\" or \"*USB*\" (first match)", ["default", "system", "tab"], { re: /^(default|system|tab|\d+|".*")$/ }]] },
   metro: { doc: "节拍器: click on every beat, accent on beat 1.", args: [["tone", "1000", "click pitch in Hz", null, { re: NUM }]] },

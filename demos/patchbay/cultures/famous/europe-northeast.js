@@ -1,4 +1,4 @@
-// Well-known public-domain music for a scene: FAMOUS["<civ id>:<activity>"] = { title, native, about, melody, key, scale, grid, source }.
+// Well-known public-domain music for a scene: FAMOUS["<civ id>:<activity>"] = { title, native, about, melody, key, scale, meter, grid, source } (meter: "3/4" or "6/8" for a tune in three; default 4/4).
 Object.assign(FAMOUS, {
   "teutons:death": { title: "Dies irae", native: "Dies irae, dies illa", about: "The thirteenth-century Latin sequence of the Day of Wrath, sung at the Requiem Mass in the Order's churches as the brethren buried their dead.", melody: "3 2 3 1 2 7, 1 1", key: "D", scale: "dorian", grid: 4, source: "Gregorian sequence, attributed to Thomas of Celano (13th c.)" },
   "germans:siege": { title: "A Mighty Fortress Is Our God", native: "Ein feste Burg ist unser Gott", about: "Martin Luther's hymn of God as a stronghold that no foe can take, the battle song of the Reformation, fitting a people holding out behind their walls.", melody: "0 0 0 1 1 1 5, 6, 7, 1 7, 6, 5, - - -", key: "C", scale: "major", grid: 4, source: "hymn, Martin Luther (c. 1529)" },

@@ -1,4 +1,4 @@
-// Well-known public-domain music for a scene: FAMOUS["<civ id>:<activity>"] = { title, native, about, melody, key, scale, grid, source }.
+// Well-known public-domain music for a scene: FAMOUS["<civ id>:<activity>"] = { title, native, about, melody, key, scale, meter, grid, source } (meter: "3/4" or "6/8" for a tune in three; default 4/4).
 Object.assign(FAMOUS, {
   "japanese:festival": {
     title: "Sakura Sakura", native: "さくら さくら",
@@ -18,7 +18,7 @@ Object.assign(FAMOUS, {
     title: "Arirang", native: "아리랑",
     about: "Korea's best-known folk song, of a love who leaves over the Arirang pass, the song of parting and setting out.",
     melody: "5, - - 6, 5, 6, 1 - - 2 1 2 3 2 1 6, 5, 6, - - - - - -",
-    key: "G", scale: "gong", grid: 8,
+    key: "G", scale: "gong", meter: "3/4", grid: 8,
     source: "traditional (Gyeonggi Arirang, Joseon folk song; popularized 1926)",
   },
   "chinese:gather": {

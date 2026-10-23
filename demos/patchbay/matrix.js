@@ -121,6 +121,20 @@ function chordOf(root, gapped, spread = 0) {
 }
 const perBar = (toks, grid) => toks.flatMap((t) => [t, ...hold(grid - 1)]);
 const q = (toks) => `"${toks.join(" ")}"`;
+// A piece in three (3/4, 6/8): the tune is written in its own meter; every other
+// line was written four beats to the bar, so each of its bars keeps its first three beats.
+function inThree(L, keep) {
+  const cut = (toks, per) => toks.filter((t, i) => i % per < (per * 3) / 4);
+  L.forEach((ln, n) => {
+    if (keep.includes(ln)) return;
+    const grid = Number((ln.match(/\sgrid=(\d+)/) || [])[1]) || 0;
+    L[n] = ln.replace(/"([^"]*)"/g, (m, body) => {
+      if (/^[xXo.\-|]+$/.test(body)) return `"${body.split("|").map((lane) => [...lane].filter((c, i) => i % 16 < 12).join("")).join("|")}"`; // drum lanes: sixteenths, 16 to the bar
+      if (grid && body.includes(" ")) return `"${cut(body.trim().split(/\s+/), grid).join(" ")}"`;
+      return m;
+    });
+  });
+}
 
 // role spec "kind@name opt=v …" → { kind, name, opts }
 function role(spec, fallback) {
@@ -443,7 +457,7 @@ function compose(civ, actId) {
     let id = nm; for (let k = 2; names[id]; k++) id = `${nm}${k}`; names[id] = true;
     L.push(`. drums@${id} kit=${kitName} "${pattern}"${vol ? "" : ""} ?song.${a === b ? a : `${a}-${b}`}`);
   };
-  const g = A.grid;
+  const g = A.grid, tuneLines = [];
   // The lead's 4-bar tune as ranks (null = hold/rest char kept in `chars`).
   const P = (SCALES[scale] || SCALES.major).map((c, i) => (c === null ? null : i)).filter((x) => x !== null);
   const rnd = seeded(`${civ.id}:${actId}`);
@@ -475,10 +489,12 @@ function compose(civ, actId) {
   // The story's named piece; if its melody is lost, a well-known piece for the scene (cultures/famous/).
   const storyPiece = PIECES[`${civ.id}:${actId}`], famous = FAMOUS[`${civ.id}:${actId}`];
   const piece = storyPiece && storyPiece.melody ? storyPiece : famous && famous.melody ? famous : storyPiece, tune = piece && piece.melody && SCALES[piece.scale] ? piece.melody.trim().split(/\s+/) : null;
+  const meter = tune && piece.meter; // "3/4" or "6/8": a tune in three
   if (tune) {
     const up = tune.map((t) => (/^[#b]?[1-7]/.test(t) ? t.replace(/^([#b]?[1-7])([',]*)$/, (_, d, o) => d + (o.includes(",") ? o.slice(1) : o + "'")) : t));
     line(lead, `grid=${piece.grid || 8}`, q(tune), 1, 6, `${piece.scale} ${piece.key || key}`);
     line(lead, `grid=${piece.grid || 8}`, q(up), 7, 10, `${piece.scale} ${piece.key || key}`);
+    tuneLines.push(L[L.length - 2], L[L.length - 1]);
   } else
   // Bars 1–6 (起承): the motif, its answer, the motif a step up; a new phrase, the answer turned back, a half cadence.
   line(lead, `grid=${g}`, q(qiCheng.flatMap((b) => render(b, scale))), 1, 6);
@@ -607,11 +623,12 @@ function compose(civ, actId) {
     civ.note ? `# ${civ.note}` : null,
     ...(piece ? [`# ♫ ${piece.title}${piece.native ? ` (${piece.native})` : ""} — ${piece.about || ""}${tune ? " · its melody leads (" + (piece.source || "") + ")" : piece.source === "lost" ? " · the melody is lost" : ""}`] : []),
     ...storyBlock(storyText(`${civ.id}:${actId}`), LANG),
-    `. clock ${bpm} 4/4`,
+    `. clock ${bpm} ${meter || "4/4"}`,
     `. arrange@song ${secs.join(" ")}`,
     ...[...new Set([scale, A.climax === "bright" || A.climax === "dance" || A.open ? scaleOf("bright") : scale, A.danger ? scaleOf("dark") : scale, tune ? piece.scale : scale])].map((n) => `. scale@${n} ${formatScaleDef(SCALES[n])}`),
     "",
   ].filter((x) => x !== null);
+  if (meter) inThree(L, tuneLines);
   const text = [...head, ...L, "", `*> reverb ${A.bpm < 70 ? "3.5s wet=0.38" : "2.5s wet=0.3"}`, "> speaker 0.5", ""].join("\n");
   try { return formatPatch(parsePatch(text.replace(/\n$/, ""))) + "\n"; } catch (e) { return text; }
 }
