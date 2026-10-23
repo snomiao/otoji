@@ -284,6 +284,8 @@ body.player-mode #player { display: block; }
 #player td button:hover { background: var(--bg); color: var(--ink); }
 #player td button:focus-visible { outline: 2px solid var(--focus); }
 #player td button.featured { color: var(--feature); background: var(--feature-soft); font-weight: 700; }
+.link-note { margin: 0; padding: 6px 10px; border: 1px solid var(--line); border-left: 3px solid var(--feature); border-radius: 6px; font-size: 13px; }
+.link-note .btn { margin-left: 6px; }
 #player td button.shared { outline: 3px solid var(--focus); outline-offset: 2px; animation: shared-pulse 1.2s ease-in-out 3; }
 @keyframes shared-pulse { 50% { outline-color: transparent; } }
 @media (prefers-reduced-motion: reduce) { #player td button.shared { animation: none; } }
@@ -337,6 +339,7 @@ body.player-mode #player { display: block; }
       </div>
       <span class="count" id="count">—</span>
     </div>
+    <p class="link-note" id="linkNote" role="status" hidden></p>
     <div class="patch-body">
       <div class="editor-col">
     <div id="monaco" class="monaco-host screen-wrap" aria-label="Patch source"></div>
@@ -2832,6 +2835,7 @@ function applyText(text) {
   patch = parsePatch(text.replace(/\n$/, ""));
   rebuild(); rowsKey = ""; renderStatus();
   try { localStorage.setItem("otoji-patchbay", text); } catch (e) { /* storage unavailable */ }
+  if (typeof followEdits === "function" && !document.body.matches(".player-mode, .instruments-mode")) followEdits(text);
 }
 
 // ── "Under the cursor": explain the word at the cursor / mouse in the help
@@ -3334,9 +3338,18 @@ function boot(chosen) {
   // ?ex=inst:guqin); an edited patch travels in the link itself as #p=<deflated text>.
   // The matrix and instrument examples are defined by later scripts, so wait for them.
   const go = async () => {
+    const want = new URLSearchParams(location.search).get("ex");
+    if (want && EXAMPLES[want] && /^#d=/.test(location.hash)) { // an edited example: the example plus its edits
+      const d = await decodeDiff(EXAMPLES[want], location.hash.slice(3)).catch(() => null);
+      if (d) {
+        currentExample = want; ui.setText(d.text); applyText(d.text); markExample(want);
+        if (!d.exact) linkNote(d.failed ? `This example has changed since the link was made; ${d.failed} of its edits could not be placed. ` : "This example has changed since the link was made; its edits were placed by matching lines. ", want);
+        return;
+      }
+      linkNote("This link's edits could not be read; showing the example as it is now. ", null);
+    }
     const packed = /^#p=/.test(location.hash) && await unpackPatch(location.hash.slice(3)).catch(() => null);
     if (packed) { currentExample = null; ui.setText(packed); applyText(packed); return; }
-    const want = new URLSearchParams(location.search).get("ex");
     if (want && EXAMPLES[want]) { loadExample(want); return; }
     const text = saved || EXAMPLES.groove;
     ui.setText(text); applyText(text);
@@ -3352,21 +3365,143 @@ async function unpackPatch(code) {
   const bin = atob(code.replace(/-/g, "+").replace(/_/g, "/")), bytes = Uint8Array.from(bin, (c) => c.charCodeAt(0));
   return new Response(new Blob([bytes]).stream().pipeThrough(new DecompressionStream("deflate-raw"))).text();
 }
+// Edits to an example travel as a diff against it: ?ex=<key>#d=<base58>. Each hunk is a
+// line range refined to characters, with a hash of the lines it replaces, so it can find
+// its place again if the example changes later; the whole base text is hashed too.
+// payload = [ver<<4|flags][base hash, 3 bytes][hunk*]   flags bit0: body deflate-raw'd
+// hunk    = skipLines delLines anchor:u16 nOps (skip del insLen utf8)*   (varints; ops count code points)
+const utf8Enc = new TextEncoder(), utf8Dec = new TextDecoder();
+const B58 = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz";
+function b58enc(u8) {
+  let z = 0; while (z < u8.length && !u8[z]) z++;
+  let n = 0n; for (const b of u8) n = (n << 8n) | BigInt(b);
+  let s = ""; while (n) { s = B58[Number(n % 58n)] + s; n /= 58n; }
+  return "1".repeat(z) + s;
+}
+function b58dec(s) {
+  let z = 0; while (s[z] === "1") z++;
+  let n = 0n; for (const c of s) { const i = B58.indexOf(c); if (i < 0) throw new Error("bad b58"); n = n * 58n + BigInt(i); }
+  const out = []; while (n) { out.unshift(Number(n & 255n)); n >>= 8n; }
+  return new Uint8Array([...Array(z).fill(0), ...out]);
+}
+const fnv = (s) => { let h = 0x811c9dc5; for (const b of utf8Enc.encode(s)) h = Math.imul(h ^ b, 0x01000193); return h >>> 0; };
+const h16 = (s) => fnv(s) & 0xffff;
+const splitLines = (s) => s.match(/[^\n]*\n|[^\n]+$/g) || [];
+const pipe = async (u8, t) => new Uint8Array(await new Response(new Blob([u8]).stream().pipeThrough(t)).arrayBuffer());
+const putV = (a, n) => { while (n > 127) { a.push((n & 127) | 128); n >>>= 7; } a.push(n); };
+const getV = (u, p) => { let n = 0, s = 0, b; do { b = u[p.i++]; n += (b & 127) * 2 ** s; s += 7; } while (b & 128); return n; };
+
+// Myers O(ND) diff -> hunks [{skip, del, ins:[items]}]; prefix/suffix trimmed first.
+function myersDiff(a, b) {
+  let p = 0; while (p < a.length && p < b.length && a[p] === b[p]) p++;
+  let q = 0; while (q < a.length - p && q < b.length - p && a[a.length - 1 - q] === b[b.length - 1 - q]) q++;
+  const A = a.slice(p, a.length - q), B = b.slice(p, b.length - q), N = A.length, M = B.length, o = N + M + 1;
+  const v = new Int32Array(2 * o + 1), tr = [];
+  outer: for (let d = 0; d <= N + M; d++) {
+    tr.push(v.slice());
+    for (let k = -d; k <= d; k += 2) {
+      let x = (k === -d || (k !== d && v[o + k - 1] < v[o + k + 1])) ? v[o + k + 1] : v[o + k - 1] + 1, y = x - k;
+      while (x < N && y < M && A[x] === B[y]) { x++; y++; }
+      v[o + k] = x; if (x >= N && y >= M) break outer;
+    }
+  }
+  const ops = []; let x = N, y = M;
+  for (let d = tr.length - 1; d >= 0 && (x || y); d--) {
+    const w = tr[d], k = x - y, dn = k === -d || (k !== d && w[o + k - 1] < w[o + k + 1]);
+    const pk = dn ? k + 1 : k - 1, px = w[o + pk], py = px - pk;
+    while (x > px && y > py) { ops.push(0); x--; y--; }
+    if (d) ops.push(dn ? [B[--y]] : 1), dn || x--;
+  }
+  ops.reverse();
+  const H = []; let skip = p, cur = null;
+  for (const op of ops) {
+    if (op === 0) { if (cur) H.push(cur), (cur = null); skip++; continue; }
+    if (!cur) cur = { skip, del: 0, ins: [] }, (skip = 0);
+    op === 1 ? cur.del++ : cur.ins.push(op[0]);
+  }
+  if (cur) H.push(cur);
+  return H;
+}
+
+async function encodeDiff(base, text) {
+  const bl = splitLines(base), out = []; let pos = 0;
+  for (const h of myersDiff(bl, splitLines(text))) {
+    pos += h.skip;
+    const region = bl.slice(pos, pos + h.del).join(""), next = h.ins.join("");
+    putV(out, h.skip); putV(out, h.del);
+    const anc = h16(h.del ? region : (bl[pos - 1] ?? "")); out.push(anc & 255, anc >> 8);
+    const ch = myersDiff([...region], [...next]); putV(out, ch.length);
+    for (const c of ch) { const u = utf8Enc.encode(c.ins.join("")); putV(out, c.skip); putV(out, c.del); putV(out, u.length); out.push(...u); }
+    pos += h.del;
+  }
+  let raw = new Uint8Array(out), flags = 0;
+  const z = await pipe(raw, new CompressionStream("deflate-raw"));
+  if (z.length < raw.length) raw = z, (flags = 1);
+  const hb = fnv(base);
+  return b58enc(new Uint8Array([0x10 | flags, hb & 255, (hb >> 8) & 255, (hb >> 16) & 255, ...raw]));
+}
+
+// -> {text, exact, failed}; exact=false means the example changed and hunks were relocated by anchor.
+async function decodeDiff(base, code) {
+  const u = b58dec(code), ver = u[0] >> 4, flags = u[0] & 15;
+  if (ver !== 1) throw new Error("unknown link version");
+  const hb = fnv(base), exact = u[1] === (hb & 255) && u[2] === ((hb >> 8) & 255) && u[3] === ((hb >> 16) & 255);
+  let body = u.subarray(4); if (flags & 1) body = await pipe(body, new DecompressionStream("deflate-raw"));
+  const bl = splitLines(base), res = []; let pos = 0, shift = 0, failed = 0; const p = { i: 0 };
+  while (p.i < body.length) {
+    const skip = getV(body, p), del = getV(body, p), anc = body[p.i] | (body[p.i + 1] << 8); p.i += 2;
+    const n = getV(body, p), ops = [];
+    for (let j = 0; j < n; j++) { const s = getV(body, p), d = getV(body, p), l = getV(body, p); ops.push([s, d, utf8Dec.decode(body.subarray(p.i, p.i + l))]); p.i += l; }
+    let at = pos + skip + shift;
+    if (!exact) { // find nearest position (>= pos) whose anchor matches
+      const ok = (i) => i >= pos && i + del <= bl.length && h16(del ? bl.slice(i, i + del).join("") : (bl[i - 1] ?? "")) === anc;
+      let f = -1; for (let r = 0; r < 200 && f < 0; r++) f = ok(at + r) ? at + r : ok(at - r) ? at - r : -1;
+      if (f < 0) { failed++; continue; } shift += f - at; at = f;
+    }
+    res.push(bl.slice(pos, at).join(""));
+    const cp = [...bl.slice(at, at + del).join("")]; let c = 0, s = "";
+    for (const [sk, d, ins] of ops) { s += cp.slice(c, c + sk).join("") + ins; c += sk + d; }
+    res.push(s + cp.slice(c).join("")); pos = at + del;
+  }
+  res.push(bl.slice(pos).join(""));
+  return { text: res.join(""), exact, failed };
+}
+
 // The page's address names what is showing, so it can be shared as is.
-function setExampleUrl(key) {
-  const u = new URL(location.href); u.hash = "";
+function setExampleUrl(key, hash = "") {
+  const u = new URL(location.href); u.hash = hash;
   if (key) u.searchParams.set("ex", key); else u.searchParams.delete("ex");
   const href = u.href.replace(/([?&]ex=)([^&#]*)/, (m, k, v) => k + v.replace(/%3A/gi, ":")); // keep m:mongols:battle readable
   if (href !== location.href) history.replaceState(null, "", href);
 }
+// The link for the text in the editor: the example's own, its edits as a diff, or the
+// whole patch packed, whichever is shortest.
+async function linkFor(text) {
+  const base = currentExample && EXAMPLES[currentExample];
+  if (base === text) return [currentExample, ""];
+  const p = "p=" + await packPatch(text);
+  if (!base) return [null, p];
+  const d = "d=" + await encodeDiff(base, text);
+  return d.length <= p.length ? [currentExample, d] : [null, p];
+}
+// While editing, the address keeps up (a moment after typing stops).
+let linkTimer = 0;
+function followEdits(text) {
+  clearTimeout(linkTimer);
+  linkTimer = setTimeout(async () => { if (ui.getText() !== text) return; const [k, h] = await linkFor(text); setExampleUrl(k, h); }, 600);
+}
+function markExample(key) { document.querySelectorAll("#tree button[data-ex]").forEach((b) => b.setAttribute("aria-current", String(b.dataset.ex === key))); }
+function linkNote(msg, key) {
+  const n = document.getElementById("linkNote"); n.hidden = false; n.replaceChildren(msg);
+  if (key) { const b = Object.assign(document.createElement("button"), { type: "button", className: "btn", textContent: "Open the example as it is now" }); b.addEventListener("click", () => { n.hidden = true; loadExample(key); }); n.append(b); }
+  const x = Object.assign(document.createElement("button"), { type: "button", className: "btn", textContent: "✕", title: "Dismiss" }); x.addEventListener("click", () => (n.hidden = true)); n.append(" ", x);
+}
 async function shareLink() {
-  const text = ui.getText(), u = new URL(location.href); u.hash = "";
-  for (const k of ["player", "instruments"]) u.searchParams.delete(k);
-  if (currentExample && EXAMPLES[currentExample] === text) u.searchParams.set("ex", currentExample);
-  else { u.searchParams.delete("ex"); u.hash = "p=" + await packPatch(text); }
-  history.replaceState(null, "", u);
+  const text = ui.getText(), [k, h] = await linkFor(text), u = new URL(location.href);
+  for (const q of ["player", "instruments"]) u.searchParams.delete(q);
+  history.replaceState(null, "", u); setExampleUrl(k, h); clearTimeout(linkTimer);
   const b = document.getElementById("shareBtn"), was = b.textContent;
-  try { await navigator.clipboard.writeText(u.href); b.textContent = "✓ Link copied"; } catch (e) { b.textContent = "✓ Link in the address bar"; }
+  try { await navigator.clipboard.writeText(location.href); b.textContent = "✓ Link copied"; } catch (e) { b.textContent = "✓ Link in the address bar"; }
   setTimeout(() => (b.textContent = was), 1800);
 }
 document.getElementById("shareBtn").addEventListener("click", shareLink);
@@ -3397,8 +3532,7 @@ const EXAMPLE_TREE = [
 ];
 let currentExample = null;
 function loadExample(key) {
-  currentExample = key; ui.setText(EXAMPLES[key]); applyText(EXAMPLES[key]); setExampleUrl(key);
-  document.querySelectorAll("#tree button[data-ex]").forEach((b) => b.setAttribute("aria-current", String(b.dataset.ex === key)));
+  currentExample = key; ui.setText(EXAMPLES[key]); applyText(EXAMPLES[key]); setExampleUrl(key); markExample(key);
 }
 function renderTree() {
   const branch = (node) => {
