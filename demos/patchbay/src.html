@@ -336,6 +336,7 @@ body.player-mode #player { display: block; }
       <div class="left">
         <button class="btn" id="fmtBtn" title="Align columns and tidy inputs">Format</button>
         <button class="btn" id="shareBtn" title="Copy a link to this patch: an example's own link, or your edited patch packed into the link">🔗 Link</button>
+        <button class="btn" id="resetBtn" title="Put the example back as it was, dropping your edits (you can undo this)" disabled>↺ Reset</button>
       </div>
       <span class="count" id="count">—</span>
     </div>
@@ -3487,7 +3488,7 @@ async function linkFor(text) {
 // While editing, the address keeps up (a moment after typing stops).
 let linkTimer = 0;
 function followEdits(text) {
-  clearTimeout(linkTimer);
+  clearTimeout(linkTimer); resetState(text);
   linkTimer = setTimeout(async () => { if (ui.getText() !== text) return; const [k, h] = await linkFor(text); setExampleUrl(k, h); }, 600);
 }
 function markExample(key) { document.querySelectorAll("#tree button[data-ex]").forEach((b) => b.setAttribute("aria-current", String(b.dataset.ex === key))); }
@@ -3505,6 +3506,20 @@ async function shareLink() {
   setTimeout(() => (b.textContent = was), 1800);
 }
 document.getElementById("shareBtn").addEventListener("click", shareLink);
+// ↺ Reset puts the example back; until the next edit the same button undoes that.
+let beforeReset = null;
+function resetState(text) {
+  const b = document.getElementById("resetBtn"), base = currentExample && EXAMPLES[currentExample];
+  if (beforeReset !== null && text === base) { b.disabled = false; b.textContent = "↶ Undo reset"; b.title = "Bring back the edits you just reset"; return; }
+  beforeReset = null; b.textContent = "↺ Reset"; b.title = "Put the example back as it was, dropping your edits (you can undo this)";
+  b.disabled = !base || base === text;
+}
+document.getElementById("resetBtn").addEventListener("click", () => {
+  const base = currentExample && EXAMPLES[currentExample]; if (!base) return;
+  const now = ui.getText();
+  if (beforeReset !== null && now === base) { const t = beforeReset; beforeReset = null; ui.setText(t); applyText(t); return; }
+  beforeReset = now; ui.setText(base); applyText(base);
+});
 // Fork a built-in scale: its definition goes into the patch, after the
 // clock / arrange / scale lines at the top, where it can be edited.
 document.getElementById("explain").addEventListener("click", (e) => {
@@ -3532,7 +3547,7 @@ const EXAMPLE_TREE = [
 ];
 let currentExample = null;
 function loadExample(key) {
-  currentExample = key; ui.setText(EXAMPLES[key]); applyText(EXAMPLES[key]); setExampleUrl(key); markExample(key);
+  currentExample = key; beforeReset = null; ui.setText(EXAMPLES[key]); applyText(EXAMPLES[key]); setExampleUrl(key); markExample(key);
 }
 function renderTree() {
   const branch = (node) => {
