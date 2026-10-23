@@ -1,13 +1,13 @@
 #!/bin/bash
 # Run otoji.app as a per-user LaunchAgent: starts at login and relaunches the
-# tray within ~10 s whenever it exits (e.g. when WindowServer restarts, which
-# takes every GUI app down with it).
+# tray within ~10 s when it crashes or is killed (e.g. when WindowServer
+# restarts, which takes every GUI app down with it). A clean exit stays down.
 #
 #   scripts/install-launch-agent.sh [app-dir]   install + start (default ~/Applications)
 #   scripts/install-launch-agent.sh --uninstall stop + remove
 #
-# With KeepAlive, `pkill -f otoji-tray` only restarts it. The tray menu's
-# "Quit otoji" unloads the agent (until next login); or stop it with:
+# `pkill -f otoji-tray` (a signal) only restarts it. The tray menu's "Quit otoji"
+# keeps it quit, also across logins, until otoji.app is opened again; or stop it with:
 #   launchctl bootout gui/$(id -u)/com.snomiao.otoji
 set -euo pipefail
 
@@ -36,7 +36,7 @@ cat > "$PLIST" << EOF
     <key>ProgramArguments</key>
     <array><string>$EXE</string></array>
     <key>RunAtLoad</key><true/>
-    <key>KeepAlive</key><true/>
+    <key>KeepAlive</key><dict><key>SuccessfulExit</key><false/></dict>
     <key>ThrottleInterval</key><integer>10</integer>
     <key>LimitLoadToSessionType</key><string>Aqua</string>
     <key>ProcessType</key><string>Interactive</string>

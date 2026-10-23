@@ -22,7 +22,26 @@ fn main() {
         }
         return;
     }
+    // "Quit otoji" means quit until the user opens otoji again: launchd may start
+    // the tray at login (or, with an older KeepAlive agent, after any exit), and
+    // that start finds the marker and exits cleanly. Opening the app by hand
+    // clears it.
+    let marker = quit_marker();
+    let by_launchd = std::env::var("XPC_SERVICE_NAME").as_deref() == Ok("com.snomiao.otoji");
+    if by_launchd && marker.exists() {
+        eprintln!("otoji-tray: quit by the user earlier; not starting (open otoji.app to start it again)");
+        return;
+    }
+    if !by_launchd {
+        let _ = std::fs::remove_file(&marker);
+    }
     tray_macos::run();
+}
+
+/// Present while the user has quit the tray (see main).
+#[cfg(target_os = "macos")]
+fn quit_marker() -> std::path::PathBuf {
+    otoji::notes::data_dir().join("tray-quit")
 }
 
 #[cfg(not(target_os = "macos"))]
@@ -795,10 +814,11 @@ mod tray_macos {
     /// LaunchAgent label from scripts/install-launch-agent.sh.
     const LAUNCH_AGENT_LABEL: &str = "com.snomiao.otoji";
 
-    /// Click → Quit. Under the KeepAlive LaunchAgent a plain exit would be
-    /// relaunched, so unload the agent first (it loads again at next login).
+    /// Click → Quit. Leaves the quit marker (so launchd's next start, e.g. at
+    /// login, exits at once) and unloads the agent for this session.
     unsafe extern "C" fn action_quit(_this: *mut c_void, _cmd: *mut c_void, _sender: *mut c_void) {
         overlay::stop_listen();
+        let _ = std::fs::write(super::quit_marker(), b"quit from the menu\n");
         if std::env::var("XPC_SERVICE_NAME").as_deref() == Ok(LAUNCH_AGENT_LABEL) {
             eprintln!("otoji-tray: quit — unloading LaunchAgent {LAUNCH_AGENT_LABEL}");
             // bootout SIGTERMs this process; the exit below is the fallback.
