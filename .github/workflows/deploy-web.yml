@@ -11,6 +11,7 @@ on:
     branches: [main]
     paths:
       - "web/**"
+      - "demos/patchbay/**" # served at otoji.org/editor/
       - "lib/rgui" # submodule bumps change the shipped renderer
       - ".github/workflows/deploy-web.yml"
   workflow_dispatch: # allow manual re-deploys
