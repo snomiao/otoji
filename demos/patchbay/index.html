@@ -402,6 +402,7 @@ body.player-mode #explainCard, body.instruments-mode #explainCard { display: non
         <tr data-help="kind:metro"><td><code>metro</code></td><td>节拍器, accent on beat 1 · <code>tone=1000</code></td></tr>
         <tr data-help="kind:drums"><td><code>drums</code></td><td><code>pattern="kick|snare|hat"</code>, 16 steps, <code>x</code> hit, <code>X</code> accent · with <code>^vad</code>: <code>kick|snare|hat</code>, <code>1/16|1/8|1/4|off</code></td></tr>
         <tr data-help="kind:mic"><td><code>mic</code></td><td>asks for the microphone on Start; input only, never played back</td></tr>
+        <tr data-help="kind:screen"><td><code>screen</code></td><td>shared audio: on Start pick a tab, window or screen (tick Share audio) · <code>screen&gt; reverb</code> · a tab is heard through the patch; the whole screen is recorded by ● Rec, not played</td></tr>
         <tr data-help="kind:midi-in kind:midi-out"><td><code>midi-in</code> <code>midi-out</code></td><td>asks for MIDI on Start · <code>midi-in&gt; piano</code> plays a keyboard live (drums: GM 36/38/42 → lanes) · <code>piano&gt; midi-out</code> sends notes out · <code>device="name"</code> <code>channel=1</code></td></tr>
         <tr data-help="kind:learn"><td><code>learn</code></td><td><code>mic&gt; learn beat 4beats|2bars|section</code> · records from the next beat or bar, rewrites a drums (beatbox) or piano (hum) line, then turns itself off</td></tr>
         <tr data-help="kind:vad"><td><code>vad</code></td><td><code>threshold=0.02 silence=300ms holdoff=250ms</code> · other nodes react with <code>^vad ?vad !vad</code></td></tr>
@@ -656,7 +657,7 @@ function nodeSource(n) {
 }
 // What each kind outputs and accepts, so `*>` only picks inputs that fit:
 // a speaker takes audio, never a mic signal, a vad's control or a clock.
-const AUDIO_OUT = ["metro", "drums", "piano", "bass", "strings", "pluck", "flute", "organ", "choir", "bell", "marimba", "brass", "timpani", "throat", "reed", "jawharp", "hurdygurdy", "bagpipe", "rain", "wind", "crowd", "fire",
+const AUDIO_OUT = ["screen", "metro", "drums", "piano", "bass", "strings", "pluck", "flute", "organ", "choir", "bell", "marimba", "brass", "timpani", "throat", "reed", "jawharp", "hurdygurdy", "bagpipe", "rain", "wind", "crowd", "fire",
   "mix", "delay", "reverb", "filter", "drive", "chorus", "phaser", "tremolo", "pan", "eq", "comp", "env", "fadein", "fadeout"];
 const OUT_TYPE = { clock: "env", mic: "mic", vad: "control", arrange: "control", scale: null, learn: null, speaker: null, ...Object.fromEntries(AUDIO_OUT.map((k) => [k, "audio"])) };
 // MIDI: midi-in sends note events; instruments and drums also make notes, which midi-out takes.
@@ -877,6 +878,7 @@ KINDS["midi-out"] = { control: true, build: midiBuild };
 KINDS.rain = { source: true, build: (o) => ({ level: num(o, "level", 0.5, 0, 1), drops: num(o, "drops", 0.35, 0, 1) }) };
 KINDS.crowd = { source: true, build: (o) => buildCrowd(o) };
 KINDS.fire = { source: true, build: (o) => ({ level: num(o, "level", 0.5, 0, 1), crackle: num(o, "crackle", 0.4, 0, 1) }) };
+KINDS.screen = { source: true, build: (o) => ({ vol: num(o, "vol", 1, 0, 2) }) };
 KINDS.wind = { source: true, build: (o) => ({ level: num(o, "level", 0.5, 0, 1), gust: o.gust ? hz(o.gust, 0.12) : 0.12 }) };
 // Melodic instruments share one set of options (scale, key, phrase, chords…).
 for (const k of ["piano", "bass", "strings", "pluck", "flute", "organ", "choir", "bell", "marimba", "brass", "timpani", "throat", "reed", "jawharp", "hurdygurdy", "bagpipe"]) KINDS[k] = { source: true, build: (o) => buildMelodic(k, o) };
@@ -931,7 +933,7 @@ const CATALOG = {
     ["device", '"IAC"', "part of the output's name or a wildcard like \"*IAC*\" (first match), or device=2; the first output if left out", [], { re: /^"[^"]*"$/ }],
     ["channel", "1", "1–16 (default 1; drums 10)", Array.from({ length: 16 }, (_, i) => String(i + 1)), { re: /^([1-9]|1[0-6])$/ }]] },
 };
-const SOURCE_KINDS = ["clock", "mic", "midi-in", "arrange", "scale", "metro", "drums", "piano", "bass", "strings", "pluck", "flute", "organ", "choir", "bell", "marimba", "brass", "timpani", "throat", "reed", "jawharp", "hurdygurdy", "bagpipe", "rain", "wind", "crowd", "fire"];
+const SOURCE_KINDS = ["clock", "mic", "screen", "midi-in", "arrange", "scale", "metro", "drums", "piano", "bass", "strings", "pluck", "flute", "organ", "choir", "bell", "marimba", "brass", "timpani", "throat", "reed", "jawharp", "hurdygurdy", "bagpipe", "rain", "wind", "crowd", "fire"];
 const AUDIO_KINDS = AUDIO_OUT;
 // Kinds that make sense after `refs>`, given the kinds of the refs.
 function consumersFor(inKinds) {
@@ -1044,6 +1046,17 @@ function rebuild() {
       src.buffer = buf; src.loop = true; lp.type = "lowpass"; lp.frequency.value = 380; lp.Q.value = 0.9; g.gain.value = 0.4 * r.cfg.level;
       r.lfos = [lfo(0.23, 0.18 * r.cfg.level, g.gain), lfo(0.37, 140, lp.frequency)];
       src.connect(lp).connect(g).connect(r.out); src.start(); r.src = src;
+      continue;
+    }
+    if (k === "screen") { // the shared tab, window or screen (see ensureScreen)
+      if (screenCap.node) {
+        try { screenCap.node.disconnect(); } catch (e) { /* not connected */ }
+        const g = ctx.createGain(); g.gain.value = r.cfg.vol;
+        screenCap.node.connect(g);
+        if (screenCap.surface === "monitor") { screenCap.recOnly = g; if (rec.tap) g.connect(rec.tap[0]); } // whole screen: to ● Rec only
+        else g.connect(r.out);
+        screenCap.level = ctx.createAnalyser(); screenCap.level.fftSize = 1024; g.connect(screenCap.level);
+      }
       continue;
     }
     if (k === "wind") { // two bands of looping noise whose pitch and level drift: a low roar and a whistle
@@ -1843,6 +1856,7 @@ CATALOG.crowd = { doc: "Crowd of synthesized voices (no recordings): shout a war
   ["voice", "men", "men · women · mixed", ["men", "women", "mixed"], { re: /^(men|women|mixed)$/ }],
   ["pitch", "1", "0.5–2 × their natural pitch"], ["vol", "1", "level 0–2"]] };
 CATALOG.fire = { doc: "Fire: the roar of a blaze and its crackles and pops.", args: [["level", "0.5", "0–1", null, { re: /^(0|1|0?\.\d+)$/ }], ["crackle", "0.4", "how much it crackles, 0–1"]] };
+CATALOG.screen = { doc: "Shared audio: on Start, pick a tab, a window or the whole screen to share, with its sound (tick Share audio). A shared tab is muted where it is and heard through the patch (screen> reverb > speaker); the whole screen's sound (which holds this page's own) is recorded by ● Rec but not played, so it can't feed back. Stop ends the sharing.", args: [["vol", "1", "level 0–2"]] };
 CATALOG.wind = { doc: "Wind: a howling gale (bands of noise that rise and fall), the background of a storm.", args: [["level", "0.5", "0–1", null, { re: /^(0|1|0?\.\d+)$/ }], ["gust", "0.12Hz", "how fast the gusts come", null, { re: /^\d+(\.\d+)?hz$/i }]] };
 CATALOG.rain = { doc: "Rain: soft noise and droplets, for a quiet ending.", args: [["level", "0.5", "0–1", null, { re: /^(0|1|0?\.\d+)$/ }], ["drops", "0.35", "droplets per step, 0–1"]] };
 for (const [k, doc] of [["marimba", "Marimba / balafon: wooden bars."], ["piano", "Piano: chords, or a melody by phrase= / notes=."], ["bass", "Bass: chord roots on beats 1 and 3, or a phrase."],
@@ -2473,6 +2487,28 @@ function releaseMic() {
   learnState.clear();
   mic = { stream: null, analyser: null, buf: null, pending: false, error: mic.error, level: 0, history: [] };
 }
+// Screen-share audio for `screen` nodes: asked for on Start (it needs the click).
+let screenCap = { stream: null, node: null, surface: "", label: "", error: null, pending: false, level: null, recOnly: null, hist: [] };
+async function ensureScreen() {
+  if (screenCap.stream || screenCap.pending) return;
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getDisplayMedia) { screenCap.error = "this browser can't share a screen's audio"; return; }
+  screenCap.pending = true; screenCap.error = null;
+  try {
+    const stream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: { suppressLocalAudioPlayback: true, echoCancellation: false, noiseSuppression: false, autoGainControl: false }, systemAudio: "include", selfBrowserSurface: "exclude" });
+    const a = stream.getAudioTracks()[0], v = stream.getVideoTracks()[0];
+    if (!a) { stream.getTracks().forEach((t) => t.stop()); throw new Error("no sound was shared: share again and tick Share audio"); }
+    if (v) v.enabled = false; // only the sound is used
+    a.addEventListener("ended", () => { releaseScreen(); rebuild(); });
+    screenCap = { ...screenCap, stream, node: ctx.createMediaStreamSource(new MediaStream([a])), surface: (v && v.getSettings().displaySurface) || "", label: (v && v.label) || a.label || "" };
+    rebuild();
+  } catch (e) { screenCap.error = e.name === "NotAllowedError" ? "sharing was cancelled (press Start again to choose)" : e.message; }
+  screenCap.pending = false;
+}
+function releaseScreen() {
+  if (screenCap.stream) screenCap.stream.getTracks().forEach((t) => t.stop());
+  if (screenCap.node) try { screenCap.node.disconnect(); } catch (e) { /* not connected */ }
+  screenCap = { stream: null, node: null, surface: "", label: "", error: screenCap.error, pending: false, level: null, recOnly: null, hist: [] };
+}
 // Called every tick: measure the mic, run each vad, fire drums on onsets.
 function runVad(eff) {
   if (!mic.analyser) return;
@@ -2710,6 +2746,16 @@ function nodeStatusInner(r, eff) {
     const routed = reaches(n.id, "speaker", eff);
     const q = r.cfg.quantize ? `snapped to 1/${16 / r.cfg.quantize}` : "immediate";
     return [running && soundingAt(r, t) ? "~" : "-", `${r.cfg.hit} on speech · ${q} · ${r.hits || 0} hits` + (routed ? "" : " · not routed to a speaker")];
+  }
+  if (k === "screen") {
+    if (!running) return ["?", "press Start (asks which tab, window or screen to share, with its sound)"];
+    if (screenCap.error) return ["!", screenCap.error];
+    if (!screenCap.stream) return [".", "choose what to share"];
+    let lvl = 0; if (screenCap.level) { const b = new Float32Array(1024); screenCap.level.getFloatTimeDomainData(b); let s2 = 0; for (const x of b) s2 += x * x; lvl = Math.sqrt(s2 / b.length); }
+    screenCap.hist.push(lvl); if (screenCap.hist.length > 10) screenCap.hist.shift();
+    const spark = screenCap.hist.map((v) => "▁▂▃▅▆▇"[Math.min(5, Math.max(0, Math.floor((20 * Math.log10(v + 1e-9) + 60) / 10)))]).join("");
+    const what = { browser: "tab", window: "window", monitor: "whole screen" }[screenCap.surface] || "tab or window";
+    return [lvl > 1e-4 ? "~" : "-", `${spark} · sharing a ${what}` + (screenCap.surface === "monitor" ? " · recorded by ● Rec, not played (it holds this page's own sound)" : "")];
   }
   if (k === "speaker") {
     if (!running) return ["?", `press Start · vol ${Math.round(r.cfg.volume * 100)}%`];
@@ -3691,6 +3737,7 @@ async function start() {
   ensureAudio(); await ctx.resume();
   master.gain.setTargetAtTime(volume(), ctx.currentTime, 0.02);
   running = true; mic.error = null; midi.error = null; startedAt = ctx.currentTime + 0.06; rebuild();
+  if (nodes(patch).some((n) => n.kind === "screen" && n.enabled)) ensureScreen();
   for (const c of clocks.values()) { c.nextTime = ctx.currentTime + 0.06; c.step = 0; }
   startBtn.setAttribute("aria-pressed", "true"); startBtn.textContent = "● Playing";
 }
@@ -3699,7 +3746,7 @@ function stop() {
   if (recording) setTimeout(stopRec, 1500); // keep the reverb tail
   running = false;
   if (ctx) { master.gain.setTargetAtTime(0, ctx.currentTime, 0.01); setTimeout(() => { if (!running && ctx) ctx.suspend(); }, recording ? 1700 : 80); }
-  clocks.clear(); releaseMic(); midiPanic();
+  clocks.clear(); releaseMic(); releaseScreen(); midiPanic();
   startBtn.setAttribute("aria-pressed", "false"); startBtn.textContent = "▶ Start audio";
   rowsKey = ""; renderStatus();
 }
@@ -3711,6 +3758,7 @@ async function startRec() {
   ensureAudio(); if (!running) await start();
   const lim = ctx.createDynamicsCompressor(); lim.threshold.value = -3; lim.knee.value = 0; lim.ratio.value = 20; lim.attack.value = 0.002; lim.release.value = 0.15;
   const dest = ctx.createMediaStreamDestination(); bus.connect(lim).connect(dest); rec.tap = [lim, dest];
+  if (screenCap.recOnly) screenCap.recOnly.connect(lim);
   const type = ["audio/webm;codecs=opus", "audio/webm", "audio/mp4"].find((t) => window.MediaRecorder && MediaRecorder.isTypeSupported(t));
   rec.mr = new MediaRecorder(dest.stream, type ? { mimeType: type, audioBitsPerSecond: 192000 } : undefined); rec.chunks = [];
   rec.mr.ondataavailable = (e) => { if (e.data.size) rec.chunks.push(e.data); };
