@@ -84,6 +84,28 @@ function playTune(entry) {
     const m = base + (degreeCents(sc, n.deg) + n.acc + 1200 * n.oct) / 100;
     auditionNote(entry, midiHz(m), step * hold * 0.95, step * i, civ.key);
   });
+  return toks.length * step; // seconds
+}
+// Play a list of cards one after another, each its tune; the playing card is marked and kept in view.
+const instQueue = { list: [], i: 0, timer: 0, on: false };
+function playCards(arts) {
+  stopQueue(); if (!arts.length) return;
+  Object.assign(instQueue, { list: arts, i: 0, on: true }); nextCard();
+}
+function nextCard() {
+  document.querySelectorAll("#instruments article.now-playing").forEach((a) => a.classList.remove("now-playing"));
+  if (!instQueue.on || instQueue.i >= instQueue.list.length) { instQueue.on = false; queueLabel(); return; }
+  const art = instQueue.list[instQueue.i++], dur = playTune(art._entry);
+  art.classList.add("now-playing"); art.scrollIntoView({ block: "center", behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth" });
+  queueLabel(); instQueue.timer = setTimeout(nextCard, (dur + 0.7) * 1000);
+}
+function stopQueue() {
+  clearTimeout(instQueue.timer); instQueue.on = false;
+  document.querySelectorAll("#instruments article.now-playing").forEach((a) => a.classList.remove("now-playing")); queueLabel();
+}
+function queueLabel() {
+  const b = document.querySelector("#instruments .playall"); if (!b) return;
+  b.textContent = instQueue.on ? `▶ ${instQueue.i} / ${instQueue.list.length}` : `▶ ${tr("Play all shown")}`;
 }
 
 // ── a demo patch for an instrument, written from its data (no network, no model) ──
@@ -139,6 +161,7 @@ function renderInstruments() {
     <a class="to-player" href="?player&lang=${LANG}">${tr("▶ the player")}</a> <a class="to-player" href="?lang=${LANG}">${tr("✎ the editor")}</a>
     <input type="search" class="find" placeholder="${tr("find: an instrument, a people, a technique, a material…")}" aria-label="${tr("find")}">
     <label class="grouping">${tr("group by")} <select class="group"><option value="type">${tr("type of instrument")}</option><option value="region">${tr("region and people")}</option></select></label>
+    <button type="button" class="playall" title="${tr("Play every instrument shown (the search box filters them), one after another")}">▶ ${tr("Play all shown")}</button>
     <button type="button" class="stop">${tr("■ Stop")}</button>
     <span class="legend">${list.length} ${tr("instruments")} · ${tr("click a shape to hear it · keys A S D F G H J K play the scale of the last one you touched · ♪ plays its people's tune · Esc or ■ stops")}</span></header>
     <nav class="fams"></nav><div class="cards"></div>`;
@@ -152,7 +175,7 @@ function renderInstruments() {
   const civName = (id) => { const c = CIVS.find((x) => x.id === id); return c ? civLabel(c) : id; };
   // One card per instrument (a fresh element each time it is shown).
   const makeCard = (e, where) => {
-    const art = document.createElement("article"); art.className = "inst"; art.id = `inst-${e.id}${where ? "-" + where : ""}`; art.tabIndex = -1;
+    const art = document.createElement("article"); art.className = "inst"; art._entry = e; art.id = `inst-${e.id}${where ? "-" + where : ""}`; art.tabIndex = -1;
     // the search box looks through every field, techniques included (Ctrl+F also finds text inside the folded sections)
     art.dataset.find = [e.name, e.native, e.zh, ...(e.aliases || []), ...e.peoples.map(civName),
       ...["sound", "range", "tuning", "acoustics", "materials", "making", "usage", "role", "players", "skills", "scenes", "repertoire", "notation", "meaning", "origin", "finds", "history", "variants", "today", "hs"].map((k) => e[k] || ""),
@@ -218,7 +241,10 @@ function renderInstruments() {
   const CLASSES = [["Strings (chordophones)", ["plucked", "bowed", "struck-string"]], ["Winds (aerophones)", ["flute", "reed", "free-reed", "bagpipe", "brass"]],
     ["Drums (membranophones)", ["drum"]], ["Bells, gongs & rattles (idiophones)", ["idiophone"]], ["Voices", ["voice"]]];
   const section = (title, n, id, open = true) => { const d = document.createElement("details"); d.open = open; d.id = id; d.className = "sec";
-    d.append(Object.assign(document.createElement("summary"), { textContent: `${title} (${n})` })); const g = document.createElement("div"); g.className = "grid"; d.append(g); return [d, g]; };
+    const sum = Object.assign(document.createElement("summary"), { textContent: `${title} (${n}) ` });
+    const pb = Object.assign(document.createElement("button"), { type: "button", className: "secplay", textContent: "▶", title: tr("Play this group, one after another") });
+    pb.addEventListener("click", (ev) => { ev.preventDefault(); ev.stopPropagation(); d.open = true; playCards([...d.querySelectorAll("article:not([hidden])")].filter((a) => !a.closest("details[hidden]"))); });
+    sum.append(pb); d.append(sum); const g = document.createElement("div"); g.className = "grid"; d.append(g); return [d, g]; };
   const render = (mode) => {
     cards.replaceChildren(); fams.replaceChildren();
     if (mode === "type") {
@@ -310,12 +336,13 @@ function renderInstruments() {
   refs.append(ul2);
   refs.append(Object.assign(document.createElement("p"), { className: "caveat", textContent: tr("The instrument descriptions, histories and stories were written by an AI model from general knowledge, not from individually cited sources; native-script spellings marked uncertain are flagged with ⓘ. Treat them as a starting point and check them before relying on them.") }));
   root.append(refs);
-  root.querySelector(".stop").addEventListener("click", stopAudition);
+  root.querySelector(".stop").addEventListener("click", () => { stopQueue(); stopAudition(); });
+  root.querySelector(".playall").addEventListener("click", () => (instQueue.on ? stopQueue() : playCards([...cards.querySelectorAll("article:not([hidden])")].filter((a) => !a.closest("details[hidden]")))));
   root.querySelector(".find").addEventListener("input", filter);
   // A S D F G H J K play the scale of the last instrument touched.
   document.addEventListener("keydown", (ev) => {
     if (!document.body.classList.contains("instruments-mode")) return;
-    if (ev.key === "Escape") { stopAudition(); return; }
+    if (ev.key === "Escape") { stopQueue(); stopAudition(); return; }
     if (ev.target.matches("input, textarea") || ev.repeat || !last) return;
     const i = "asdfghjk".indexOf(ev.key.toLowerCase()); if (i < 0) return;
     const hs = homeScale(last); if (hs.notes[i]) auditionNote(last, hs.notes[i], 0.7, 0, hs.civ.key);

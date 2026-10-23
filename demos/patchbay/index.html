@@ -224,6 +224,9 @@ body.instruments-mode #instruments { display: block; }
 #instruments .find { font: inherit; padding: 4px 10px; border: 1px solid var(--line); border-radius: 6px; background: var(--screen); color: var(--ink); min-width: 220px; }
 #instruments .legend { font-size: 13px; color: var(--muted); }
 #instruments .stop { font: inherit; padding: 2px 12px; cursor: pointer; }
+#instruments .playall { font: inherit; padding: 2px 12px; cursor: pointer; }
+#instruments .secplay { font: inherit; font-size: 12px; padding: 0 8px; margin-left: 6px; cursor: pointer; border-radius: 6px; border: 1px solid var(--line); background: var(--screen); color: var(--ink); }
+#instruments article.now-playing { outline: 2px solid var(--signal); box-shadow: 0 0 0 4px var(--signal-soft); }
 #instruments .fams { display: flex; flex-wrap: wrap; gap: 6px 14px; margin: 6px 0 12px; font-size: 14px; }
 #instruments .fams a { color: var(--focus); }
 #instruments h2 { font-size: 17px; margin: 18px 0 8px; border-bottom: 1px solid var(--line); padding-bottom: 4px; }
@@ -300,6 +303,13 @@ body.player-mode #explainCard, body.instruments-mode #explainCard { display: non
 .rec-opt input[type=number] { width: 3.2em; font: inherit; }
 .reload-toast { position: fixed; left: 16px; bottom: 16px; z-index: 50; padding: 8px 12px; border-radius: 8px; background: var(--screen); color: var(--ink); border: 1px solid var(--line); border-left: 3px solid var(--feature); font-size: 13px; box-shadow: 0 2px 10px rgba(0,0,0,.15); }
 .reload-toast button { font: inherit; margin-left: 6px; cursor: pointer; }
+#player .batch { display: flex; flex-wrap: wrap; gap: 6px 12px; align-items: center; margin: 8px 0; font-size: 13px; }
+#player .batch .pfind { font: inherit; padding: 4px 10px; border: 1px solid var(--line); border-radius: 6px; background: var(--screen); color: var(--ink); min-width: min(320px, 100%); flex: 1 1 260px; }
+#player .batch .pall, #player .batch select { font: inherit; padding: 2px 10px; cursor: pointer; }
+#player .pcount { color: var(--muted); }
+#player .rowplay, #player .colplay { font: inherit; font-size: 10px; padding: 0 5px; line-height: 1.5; cursor: pointer; border-radius: 5px; border: 1px solid var(--line); background: transparent; color: var(--muted); }
+#player .rowplay:hover, #player .colplay:hover { color: var(--ink); border-color: var(--ink); }
+#player td button.dim { opacity: 0.18; }
 #player td button.shared { outline: 3px solid var(--focus); outline-offset: 2px; animation: shared-pulse 1.2s ease-in-out 3; }
 @keyframes shared-pulse { 50% { outline-color: transparent; } }
 @media (prefers-reduced-motion: reduce) { #player td button.shared { animation: none; } }

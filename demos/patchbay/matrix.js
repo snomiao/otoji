@@ -723,7 +723,11 @@ function renderPlayer() {
   root.innerHTML = `<header><h1>${tr("otoji · music of the world's peoples")}</h1><a class="to-player" href="?lang=${LANG}">${tr("✎ open the editor")}</a> <a class="to-player" href="?instruments&lang=${LANG}">${tr("🪕 instruments")}</a>
     <span class="legend">${legend} · <b>${tr("violet")}</b> = ${tr("featured")} · <i>${tr("teal")}</i> = ${tr("from recorded history (the rest are imagined scenes)")} · <span class="pc">♫</span> = ${tr("a named piece of music")}</span>
     <select class="lang" aria-label="Language">${Object.entries(LANGS).map(([k, v]) => `<option value="${k}"${k === LANG ? " selected" : ""}>${v}</option>`).join("")}</select></header>
-    <div class="now" aria-live="polite"><span class="title">${tr("Pick a piece below.")}</span><div class="story"></div></div>`;
+    <div class="now" aria-live="polite"><span class="title">${tr("Pick a piece below.")}</span><div class="story"></div></div>
+    <div class="batch"><input type="search" class="pfind" placeholder="${tr("filter: a people, a scene, a word from the stories…")}" aria-label="${tr("filter")}">
+      <button type="button" class="pall" title="${tr("Play every piece shown, one after another")}">▶ ${tr("Play all shown")}</button>
+      <label>${tr("each")} <select class="peach"><option value="loop">${tr("one loop")}</option><option value="15">15 s</option><option value="30">30 s</option><option value="60">60 s</option></select></label>
+      <span class="pcount"></span></div>`;
   root.querySelector(".lang").addEventListener("change", (e) => {
     LANG = e.target.value; try { localStorage.setItem("otoji-lang", LANG); } catch (err) { /* storage unavailable */ }
     const u = new URL(location.href); u.searchParams.set("lang", LANG); history.replaceState(null, "", u);
@@ -734,7 +738,11 @@ function renderPlayer() {
   document.body.append(root);
   const head = root.querySelector("thead"), body = root.querySelector("tbody"), now = root.querySelector(".now");
   const hr = document.createElement("tr"); hr.append(document.createElement("th"), Object.assign(document.createElement("th"), { textContent: tr("the people and their instruments"), className: "sig" }));
-  for (const a of ACTIVITY_IDS) hr.append(Object.assign(document.createElement("th"), { textContent: ACTIVITIES[a].glyph, title: `${ACTIVITIES[a].zh} ${LANG === "zh-CN" ? "" : ACTIVITIES[a].en}: ${tr(ACTIVITIES[a].about)}`, scope: "col" }));
+  for (const a of ACTIVITY_IDS) {
+    const th = Object.assign(document.createElement("th"), { textContent: ACTIVITIES[a].glyph, title: `${ACTIVITIES[a].zh} ${LANG === "zh-CN" ? "" : ACTIVITIES[a].en}: ${tr(ACTIVITIES[a].about)}`, scope: "col" });
+    const pb = Object.assign(document.createElement("button"), { type: "button", className: "colplay", textContent: "▶", title: `${tr("Play this scene across the peoples shown")}: ${ACTIVITIES[a].zh}` });
+    pb.addEventListener("click", () => playBatch(shownButtons().filter((b) => b._a === a))); th.append(document.createElement("br"), pb); hr.append(th);
+  }
   head.append(hr);
   let current = null, switching = 0;
   // Fades on the master gain: out before switching or stopping, in after starting.
@@ -745,9 +753,31 @@ function renderPlayer() {
   });
   const fadeIn = (secs) => { const g = master.gain, t = ctx.currentTime; g.cancelScheduledValues(t); g.setValueAtTime(0.0001, t); g.linearRampToValueAtTime(volume(), t + secs); };
   const stopSoftly = async () => { const my = ++switching; await fadeOut(0.6); if (my === switching) stop(); };
-  const play = async (civ, a, btn) => {
+  // Batch: play pieces one after another (each for a loop of its arrangement, or N seconds).
+  const pq = { list: [], i: 0, on: false, timer: 0, gen: 0 };
+  const shownButtons = () => [...body.querySelectorAll("td button[data-ex]")].filter((b) => !b.classList.contains("dim") && !b.closest("tr").hidden);
+  const batchLabel = () => { const b = root.querySelector(".pall"); b.textContent = pq.on ? `■ ${pq.i} / ${pq.list.length}` : `▶ ${tr("Play all shown")}`; };
+  const stopBatch = () => { pq.on = false; pq.gen++; clearTimeout(pq.timer); batchLabel(); };
+  const playBatch = (btns) => { stopBatch(); if (!btns.length) return; Object.assign(pq, { list: btns, i: 0, on: true }); nextInBatch(); };
+  const nextInBatch = async () => {
+    if (!pq.on || pq.i >= pq.list.length) { stopBatch(); return; }
+    const btn = pq.list[pq.i++], my = pq.gen; batchLabel();
+    btn.scrollIntoView({ block: "center", inline: "center", behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth" });
+    await play(btn._civ, btn._a, btn, true); if (my !== pq.gen) return;
+    const each = root.querySelector(".peach").value;
+    if (each !== "loop") { pq.timer = setTimeout(() => my === pq.gen && running && current === btn && nextInBatch(), Number(each) * 1000); return; }
+    const watch = () => { // one pass through the arrangement
+      if (my !== pq.gen) return; if (!running || current !== btn) { stopBatch(); return; }
+      const fc = firstClock(), arr = [...live.values()].find((r) => r.node.kind === "arrange" && !r.error);
+      if (fc && fc.c && arr && stepAtTime(ctx.currentTime) >= arr.cfg.total * 4 * fc.c.sig) return nextInBatch();
+      pq.timer = setTimeout(watch, 250);
+    };
+    pq.timer = setTimeout(watch, 500);
+  };
+  const play = async (civ, a, btn, fromBatch = false) => {
+    if (!fromBatch && pq.on) stopBatch(); // a click of your own ends the batch
     const key = civKey(civ, a);
-    if (current === btn && running) { btn.setAttribute("aria-pressed", "false"); current = null; return stopSoftly(); }
+    if (current === btn && running && !fromBatch) { btn.setAttribute("aria-pressed", "false"); current = null; return stopSoftly(); }
     if (current) current.setAttribute("aria-pressed", "false");
     current = btn; btn.setAttribute("aria-pressed", "true");
     const my = ++switching;
@@ -778,6 +808,8 @@ function renderPlayer() {
         if (why) sm.append(Object.assign(document.createElement("span"), { className: "info", textContent: " ⓘ", title: tr(why), tabIndex: 0, role: "note" }));
         nameCell.append(sm);
       }
+      const rp = Object.assign(document.createElement("button"), { type: "button", className: "rowplay", textContent: "▶", title: `${tr("Play this people's pieces shown")}: ${civLabel(civ)}` });
+      rp.addEventListener("click", () => playBatch(shownButtons().filter((b) => b._civ === civ))); nameCell.append(" ", rp);
       row.append(nameCell);
       const intro = document.createElement("td"); intro.className = "sig"; intro.title = civ.note || "";
       if (civ.signature) intro.append(Object.assign(document.createElement("b"), { textContent: civ.signature }));
@@ -794,7 +826,9 @@ function renderPlayer() {
           if (f) btn.classList.add("featured");
           if (isHistory(civ, a)) { btn.classList.add("history"); btn.title += " · from recorded history"; }
           const pk = civKey(civ, a).slice(2), pc = (PIECES[pk] && PIECES[pk].melody ? PIECES[pk] : FAMOUS[pk]) || PIECES[pk]; if (pc) { btn.classList.add("piece"); btn.title += ` · ♫ ${pc.title}`; }
-          btn.addEventListener("click", () => play(civ, a, btn)); btn.dataset.ex = civKey(civ, a);
+          btn.addEventListener("click", () => play(civ, a, btn)); btn.dataset.ex = civKey(civ, a); btn._civ = civ; btn._a = a;
+          btn.dataset.find = [civ.name, civ.zh, civ.endonym, civ.region, tr(civ.region), civ.signature, civ.intro, tr(civ.intro), ACTIVITIES[a].en, ACTIVITIES[a].zh, ACTIVITIES[a].about,
+            storyOf(civ, a), storyText(`${civ.id}:${a}`), pc && pc.title, pc && pc.native, f && f[2]].filter(Boolean).join(" ").toLowerCase();
           td.append(btn);
         }
         row.append(td);
@@ -802,6 +836,21 @@ function renderPlayer() {
       body.append(row);
     }
   }
+  // The filter: every word must appear in the piece's people, scene, story or music.
+  const filterPieces = () => {
+    const terms = root.querySelector(".pfind").value.trim().toLowerCase().split(/\s+/).filter(Boolean);
+    let shown = 0;
+    for (const row of body.querySelectorAll("tr:not(.region)")) {
+      let any = false;
+      for (const b of row.querySelectorAll("td button[data-ex]")) { const ok = terms.every((t) => b.dataset.find.includes(t)); b.classList.toggle("dim", !ok); if (ok) { any = true; shown++; } }
+      row.hidden = !!terms.length && !any;
+    }
+    for (const rr of body.querySelectorAll("tr.region")) { let n = rr.nextElementSibling, any = false; while (n && !n.classList.contains("region")) { if (!n.hidden) any = true; n = n.nextElementSibling; } rr.hidden = !any; }
+    root.querySelector(".pcount").textContent = terms.length ? `${shown} ${tr("pieces")}` : "";
+  };
+  root.querySelector(".pfind").addEventListener("input", filterPieces);
+  root.querySelector(".pall").addEventListener("click", () => (pq.on ? (stopBatch(), stopSoftly()) : playBatch(shownButtons())));
+  document.addEventListener("keydown", (e) => { if (e.key === "Escape" && pq.on) stopBatch(); });
   if (/[?&]player\b/.test(location.search)) document.body.classList.add("player-mode");
   // ?player&ex=m:<people>:<scene> (the address while a piece plays) points at that piece;
   // browsers only let sound start on a click, so it waits there, marked, for one.
