@@ -437,7 +437,7 @@ INSTRUMENT_CATALOG.push(
   },
   {
     id: "qarnu", name: "animal horn (qarnu)", native: "qarnu (Akkadian) · si (Sumerian)", zh: "号角",
-    aliases: ["qarnu", "si-horn", "horn", "war-horn"], family: "brass", kind: "brass",
+    aliases: ["qarnu", "si-horn", "war-horn"], family: "brass", kind: "brass",
     peoples: ["babylonians", "assyrians", "sumerians", "palmyrans", "carthaginians"],
     svg: '<svg viewBox="0 0 64 64" stroke="currentColor" fill="none" stroke-width="2" stroke-linecap="round"><path d="M8 20 C 24 22 40 30 50 50"/><path d="M8 24 C 22 26 34 34 42 54"/><path d="M42 54 C 46 58 54 54 50 50"/><line x1="8" y1="20" x2="8" y2="24"/></svg>',
     origin: "The ancient Near East: the Sumerian si and Akkadian qarnu both mean 'horn'.",
@@ -2217,7 +2217,7 @@ INSTRUMENT_CATALOG.push(
   },
   {
     id: "bombo", name: "bombo (bass drum)", native: "bombo · wankara", zh: "邦博大鼓",
-    aliases: ["bombo"], family: "drum", kind: "timpani", peoples: ["incas-late"],
+    aliases: ["wankara", "bombo-andino"], family: "drum", kind: "timpani", peoples: ["incas-late"],
     svg: '<svg viewBox="0 0 64 64" stroke="currentColor" fill="none" stroke-width="2" stroke-linecap="round"><ellipse cx="32" cy="16" rx="20" ry="6"/><line x1="12" y1="16" x2="12" y2="48"/><line x1="52" y1="16" x2="52" y2="48"/><path d="M12 48 C 12 56 52 56 52 48"/><path d="M12 20 L 22 50 L 32 22 L 42 50 L 52 20"/></svg>',
     origin: "The Andes, a creole drum from Spanish military drums and local drum traditions.",
     history: "A large double-headed drum with rope tension that keeps the beat for huayno and Andean bands.",

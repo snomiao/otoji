@@ -943,7 +943,7 @@ let pmReady = false;
 function pmFor(kind, id) {
   const n = id.toLowerCase(), has = (re) => re.test(n);
   if (kind === "pluck") {
-    if (has(/sitar|veena|vina|tanpura|tambura|rudra|been|ektara|dotara/)) return { model: "pluck", params: { t60: 4, bright: 0.55, pos: 0.12, buzz: true, body: [[160, 2], [700, 3]] } };
+    if (has(/sitar|veena|vina|tanpura|tandura|rudra|been|ektara|dotara/)) return { model: "pluck", params: { t60: 4, bright: 0.55, pos: 0.12, buzz: true, body: [[160, 2], [700, 3]] } };
     if (has(/pipa|biwa|koto|zheng|guzheng|qin|gayageum|geomungo|ajaeng|dan-tranh|kanklės|kankles|kantele|gusli|psalter|santur|qanun|kanun|cimbalom|hackbrett|yangqin/)) return { model: "pluck", params: { t60: 3.2, bright: 0.6, pos: 0.1, body: [[220, 2], [900, 3]] } };
     if (has(/harp|kora|chang|konghou|telyn|clarsach|arpa|lyre|lyra|kithara|kinnor|benet|saung|krar|begena|barbitos|phorminx/)) return { model: "pluck", params: { t60: 3.5, bright: 0.45, pos: 0.3, body: [[150, 1.5], [450, 2]] } };
     if (has(/charango|mandolin|bandurria|cavaquinho|balalaika|ukulele|jarana|bandolim|domra|tiple/)) return { model: "pluck", params: { t60: 1.3, bright: 0.75, pos: 0.15, mute: true, body: [[300, 2], [1100, 3]] } };

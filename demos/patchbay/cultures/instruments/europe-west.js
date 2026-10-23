@@ -358,7 +358,7 @@ INSTRUMENT_CATALOG.push({
 });
 INSTRUMENT_CATALOG.push({
   id: "violin", name: "violin (and fiddle)", native: "violino · violon · fidil", zh: "小提琴",
-  aliases: ["violin", "violons-du-roy", "violons-tremolo", "concitato", "fiddle"], family: "bowed", kind: "strings", peoples: ["italians", "french", "celts"],
+  aliases: ["violin", "violons-du-roy", "violons-tremolo", "concitato", "fiddle", "violin-drone", "fiddle-drone", "violines"], family: "bowed", kind: "strings", peoples: ["italians", "french", "celts", "incas-late", "americans", "mexicans"],
   svg: '<svg viewBox="0 0 64 64" stroke="currentColor" fill="none" stroke-width="2" stroke-linecap="round"><line x1="32" y1="4" x2="32" y2="26"/><path d="M30 4 Q32 1 34 4"/><path d="M28 26 Q20 24 21 32 Q25 36 21 40 Q20 58 32 58 Q44 58 43 40 Q39 36 43 32 Q44 24 36 26"/><path d="M27 36 Q26 40 28 44"/><path d="M37 36 Q38 40 36 44"/><line x1="27" y1="48" x2="37" y2="48"/></svg>',
   origin: "Northern Italy in the early 16th century, among the instrument makers of Lombardy and the Po valley, with Cremona its most famous home.",
   history: "The Amati, Stradivari and Guarneri families of Cremona perfected it; Monteverdi's stile concitato (1624) gave it dramatic tremolo, Lully's Vingt-quatre Violons du Roy made it the voice of the French court, and as the fiddle it became the heart of Irish and Scottish dance music.",
@@ -832,7 +832,7 @@ INSTRUMENT_CATALOG.push({
 });
 INSTRUMENT_CATALOG.push({
   id: "vihuela", name: "vihuela", native: "vihuela de mano", zh: "比韦拉琴",
-  aliases: ["vihuela"], family: "plucked", kind: "pluck", peoples: ["spanish"],
+  aliases: ["vihuela", "vihuela-rasgueo"], family: "plucked", kind: "pluck", peoples: ["spanish", "mexicans"],
   svg: '<svg viewBox="0 0 64 64" stroke="currentColor" fill="none" stroke-width="2" stroke-linecap="round"><path d="M32 22 Q20 22 20 31 Q25 38 19 46 Q19 60 32 60 Q45 60 45 46 Q39 38 44 31 Q44 22 32 22"/><circle cx="32" cy="38" r="3"/><circle cx="26" cy="44" r="1.5"/><circle cx="38" cy="44" r="1.5"/><line x1="29" y1="22" x2="29" y2="6"/><line x1="35" y1="22" x2="35" y2="6"/><path d="M29 6 L35 6 L36 1 L28 1 Z"/></svg>',
   origin: "The guitar-shaped plucked instrument of 15th- and 16th-century Spain and Portugal, tuned like the lute.",
   history: "Castilian vihuelists such as Luis de Milán (El Maestro, 1536), Luis de Narváez and Alonso Mudarra published sophisticated music for it; by the late 16th century the guitar replaced it.",
@@ -1411,7 +1411,7 @@ INSTRUMENT_CATALOG.push({
   variants: "Busine, clarion, natural trumpet; the slide trumpet and later valve trumpet.",
   today: "Revived in historical performance; the valve trumpet is its modern descendant.",
   hs: "423.121.12",
-  relatives: ["busine", "valve-trumpet", "nafir", "sackbut", "tromboni", "cor-de-chasse", "salpinx"],
+  relatives: ["busine", "valve-trumpet", "nafir", "sackbut", "cor-de-chasse", "salpinx"],
 });
 INSTRUMENT_CATALOG.push({
   id: "signal-horn", name: "signal horn (cow horn)", native: "corn · cor · corno", zh: "牛角号",
@@ -1559,66 +1559,8 @@ INSTRUMENT_CATALOG.push({
   relatives: ["carnyx", "lur", "animal-horn"],
   uncertain: "'Dord' is a modern application of an Old Irish word, and how the horns were actually played is reconstructed.",
 });
-INSTRUMENT_CATALOG.push({
-  id: "tromboni", name: "trombone (Venetian tromboni)", native: "trombone · tromboni", zh: "文艺复兴长号",
-  aliases: ["tromboni"], family: "brass", kind: "brass", peoples: ["italians"],
-  svg: '<svg viewBox="0 0 64 64" stroke="currentColor" fill="none" stroke-width="2" stroke-linecap="round"><line x1="8" y1="28" x2="46" y2="28"/><line x1="8" y1="36" x2="46" y2="36"/><path d="M46 28 Q50 28 54 20 L58 16 L58 48 L54 44 Q50 36 46 36"/><line x1="20" y1="28" x2="20" y2="44"/><line x1="20" y1="44" x2="40" y2="44"/><line x1="40" y1="44" x2="40" y2="36"/></svg>',
-  origin: "The trombone (English sackbut) of Renaissance and early Baroque Italy, played by the piffari of Venice and other cities.",
-  history: "Giovanni Gabrieli at St Mark's in Venice wrote for cornetti and tromboni in the polychoral style of cori spezzati around 1600; the narrow-bored instrument evolved into the modern trombone.",
-  materials: "Brass tubing with a narrow bore, a telescopic slide and a modest bell.",
-  usage: "Held over the shoulder; the slide lengthens the tube to change pitch.",
-  skills: "Smooth slide legato, doubling voices in church music, and agile divisions in canzonas.",
-  scenes: "St Mark's Basilica and other churches, civic processions and ceremonies.",
-  partners: ["cornett", "church-organ", "violin"],
-  techniques: [
-    { name: "Soft tonguing", how: "Gentle, smooth tonguing and slide changes let the instrument blend with voices and cornetts.", play: "normal" },
-  ],
-  sound: "A warm, mellow and noble brass tone, softer and rounder than the modern trombone; it blends with voices and cornetts and can sing smoothly or speak crisply.",
-  range: "Tenor from about E2 to D5; alto and bass extend higher and lower.",
-  tuning: "Fully chromatic using the slide; tenor in A (at high Venetian pitch, sounding like B♭ today).",
-  acoustics: "Buzzing lips in a cup mouthpiece → narrow cylindrical slide tubing → small, gently flared bell.",
-  making: "Made by brass makers, especially in Nuremberg (Neuschel, Schnitzer, Ehe families), with narrow bores and small bells.",
-  role: "Inner and bass voices in ensembles, doubling choirs.",
-  players: "Professional piffari and church musicians at San Marco in Venice.",
-  repertoire: "Giovanni Gabrieli's Sonata pian' e forte (1597), Monteverdi's Vespers (1610), music for San Marco.",
-  notation: "Staff notation in vocal clefs.",
-  finds: "The oldest surviving trombone was made by Erasmus Schnitzer in Nuremberg in 1551.",
-  variants: "Alto, tenor and bass sackbuts.",
-  today: "Revived in historical performance.",
-  hs: "423.22",
-  relatives: ["sackbut", "trumpet", "cornett", "busine"],
-});
-INSTRUMENT_CATALOG.push({
-  id: "flauto-dolce", name: "flauto (Italian recorder)", native: "flauto · flauto dolce", zh: "意大利竖笛",
-  aliases: ["flauto"], family: "flute", kind: "flute", peoples: ["italians"],
-  svg: '<svg viewBox="0 0 64 64" stroke="currentColor" fill="none" stroke-width="2" stroke-linecap="round"><line x1="30" y1="4" x2="30" y2="54"/><line x1="36" y1="4" x2="36" y2="54"/><path d="M30 4 Q33 0 36 4"/><rect x="31" y="10" width="4" height="3"/><path d="M30 54 Q26 60 33 60 Q40 60 36 54"/><circle cx="33" cy="22" r="1.3"/><circle cx="33" cy="28" r="1.3"/><circle cx="33" cy="34" r="1.3"/><circle cx="33" cy="40" r="1.3"/><circle cx="33" cy="46" r="1.3"/></svg>',
-  origin: "In Italy until the mid-18th century 'flauto' meant the recorder (flauto dolce), the duct flute of Renaissance and Baroque ensembles.",
-  history: "Italian composers such as Monteverdi, Vivaldi and Alessandro Scarlatti wrote for the flauto; the transverse flute (flauto traverso) gradually took its place in the 18th century.",
-  materials: "Boxwood or other hardwood, made in jointed sections in the Baroque period, with a duct mouthpiece, seven finger holes and a thumb hole.",
-  usage: "Held vertically and blown gently through the duct, the thumb half-covering its hole for the upper octave.",
-  skills: "Articulation syllables, fast divisions, trills and ornaments, and 'pinching' the thumb hole for the high register.",
-  scenes: "Opera and church sinfonias, chamber music and pastoral scenes.",
-  partners: ["violin", "theorbo", "harpsichord"],
-  techniques: [
-    { name: "Articulation syllables", native: "lingua", how: "The tongue shapes syllables such as 'te-re' or 'de-re' (as in Ganassi's Fontegara) to articulate fast passages smoothly.", play: "normal" },
-    { name: "Trills", native: "tremoli", how: "A finger shakes rapidly over a hole, trilling the note.", play: "flutter" },
-    { name: "Thumbhole pinching", how: "The back thumb half-opens its hole so the breath jumps into the upper register.", play: "overblow" },
-  ],
-  sound: "A sweet, pure and gentle whistle tone with little breath noise, easy to blend; the alto has a bright, clear high register and a softer, rounder low register.",
-  range: "About two octaves and a little more; the alto in F from F4 to G6.",
-  tuning: "Seven fingerholes and a thumbhole with cross-fingerings give a chromatic scale; Baroque instruments often tuned at A = 415.",
-  acoustics: "Breath → windway → air jet against the labium → conical bore (in the Baroque form).",
-  making: "Turned from boxwood or other hardwoods by woodwind makers such as Bressan, Denner and the Hotteterre family.",
-  role: "Melody, solo or in pairs.",
-  players: "Professional musicians and amateurs.",
-  repertoire: "Vivaldi's flautino concertos, Bach's Brandenburg Concerto No. 4, Handel and Telemann sonatas; Ganassi's Fontegara (1535).",
-  notation: "Staff notation.",
-  finds: "Medieval recorders were found in Dordrecht (14th century) and Göttingen; Ganassi's Venetian treatise of 1535 describes the instrument.",
-  variants: "Sopranino, soprano, alto, tenor and bass recorders.",
-  today: "Living in education and early music.",
-  hs: "421.221.12",
-  relatives: ["recorder", "pipe", "tin-whistle", "txistu"],
-});
+INSTRUMENT_CATALOG.push();
+INSTRUMENT_CATALOG.push();
 INSTRUMENT_CATALOG.push({
   id: "organo-di-legno", name: "organo di legno (wooden chamber organ)", native: "organo di legno", zh: "木管室内风琴",
   aliases: ["organo"], family: "flute", kind: "organ", peoples: ["italians"],
@@ -1707,8 +1649,8 @@ INSTRUMENT_CATALOG.push({
   relatives: ["organo-di-legno", "cathedral-organ", "positive-organ", "harmonium"],
 });
 INSTRUMENT_CATALOG.push({
-  id: "church-bells", name: "church bells", native: "cloche · campana · qanpiena · bell", zh: "教堂钟",
-  aliases: ["churchbell", "campana", "campane", "campanile", "knisja", "orleans", "temple"], family: "idiophone", kind: "bell", peoples: ["english", "house-of-lancaster", "franks", "jeanne-darc", "knights-templar", "spanish", "italians", "sicilians", "maltese"],
+  id: "church-bells", name: "church bells", native: "cloche · campana · qanpiena · bell · Glocke · kyrkklocka · dzwon · kostelní zvon", zh: "教堂钟",
+  aliases: ["churchbell", "campana", "campane", "campanile", "knisja", "orleans", "temple", "church-bell", "kirchenglocke", "glocke", "cathedral", "tolling", "kyrkklocka", "dzwon", "kostelni"], family: "idiophone", kind: "bell", peoples: ["english", "house-of-lancaster", "franks", "jeanne-darc", "knights-templar", "spanish", "italians", "sicilians", "maltese", "americans", "mayans-late", "teutons", "germans", "holy-roman-empire", "order-of-the-dragon", "swedes", "poles", "bohemians"],
   svg: '<svg viewBox="0 0 64 64" stroke="currentColor" fill="none" stroke-width="2" stroke-linecap="round"><path d="M32 8 Q18 10 18 30 L16 46 L48 46 L46 30 Q46 10 32 8"/><line x1="12" y1="46" x2="52" y2="46"/><circle cx="32" cy="52" r="3"/><line x1="32" y1="4" x2="32" y2="8"/></svg>',
   origin: "Large cast bronze bells hung in church towers spread through Latin Christendom from the early Middle Ages; Campania in Italy gave the Latin name campana.",
   history: "By the Carolingian era bells called monks and parishes to prayer; casting techniques grew to produce great tower bells, rung by rope and wheel, and in Italy and Malta tall campanili carry peals rung for festas.",
@@ -1736,7 +1678,7 @@ INSTRUMENT_CATALOG.push({
   variants: "Swinging bells, chimes and full-circle bells.",
   today: "Living across Europe.",
   hs: "111.242.122",
-  relatives: ["carillon", "chime-bells", "glocke", "russian-bells", "bronze-bell", "bonsho"],
+  relatives: ["carillon", "chime-bells", "russian-bells", "bronze-bell", "bonsho"],
 });
 INSTRUMENT_CATALOG.push({
   id: "carillon", name: "carillon", native: "beiaard · carillon", zh: "排钟",

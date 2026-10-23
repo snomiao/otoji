@@ -89,7 +89,7 @@ function playTune(entry) {
 // ── a demo patch for an instrument, written from its data (no network, no model) ──
 const TECH_LETTER = { knock: "x", harmonic: "h", mute: "m", pizz: "p", spiccato: "s", "col-legno": "c", tremolo: "r", overblow: "o", flutter: "f", roll: "r" };
 function demoPatch(entry) {
-  const civ = CIVS.find((c) => c.id === entry.peoples[0]) || CIVS[0], sc = civ.scale, key = civ.key;
+  const civ = CIVS.find((c) => c.id === entry.peoples[0]) || { id: entry.peoples[0], scale: "major", key: "C" }, sc = civ.scale, key = civ.key; // never borrow another people
   const motif = `${civ.motifs?.[0] || "1 2 3 5 6 5 3 2"} ${civ.motifs?.[1] || "1 2 3 5 3 2 1 -"}`.trim().split(/\s+/);
   const notes = motif.map((t, i) => [t, i]).filter(([t]) => /^[#b]?[1-7]/.test(t));
   // the tune again, each technique on the next note in turn
@@ -103,7 +103,7 @@ function demoPatch(entry) {
     else if (TECH_LETTER[p]) withTech[i] = t + TECH_LETTER[p];
   }
   const name = entry.aliases[0] === sc ? `${entry.aliases[0]}-${entry.family}` : entry.aliases[0], esc = (x) => (x || "").replace(/"""/g, "”””");
-  const lines = [`# ${entry.name}${entry.native ? ` (${entry.native})` : ""} — ${civLabel(civ)}`,
+  const lines = [`# ${entry.name}${entry.native ? ` (${entry.native})` : ""} — ${civ.name ? civLabel(civ) : entry.peoples.join(", ")}`,
     `# bars 1–2 the tune · bars 3–4 its techniques: ${(entry.techniques || []).map((t) => t.name).join(", ") || "—"} · bars 5–6 with a drone`,
     '"""', ...[entry.sound, entry.origin, entry.usage].filter(Boolean).map(esc), '"""',
     ". clock 84 4/4", ". arrange@song tune:2bars techniques:2bars together:2bars",
