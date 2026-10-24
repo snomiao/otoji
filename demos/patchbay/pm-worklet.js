@@ -136,20 +136,34 @@ class Flute {
     return out * 0.3 * this.peak * 2;
   }
 }
-// Reed (after STK Clarinet): the reed is a pressure valve at the end of a bore.
-// conical (double reeds: shawm, suona, zurna) uses the whole period, so all
-// harmonics sound; a cylinder (clarinet-like) only the odd ones.
+// Reed. A cylinder (clarinet-like, after STK Clarinet): the reed is a pressure valve at the end of
+// one bore, which sounds the odd harmonics. A cone (double reeds: shawm, suona, zurna, oboe; after
+// STK Saxofony): the reed sits a little way along a bore folded in two, so all harmonics sound.
 class Reed {
-  constructor(sr, p) { this.sr = sr; this.p = p; this.bore = new Delay(Math.ceil(sr / 40) + 4); this.lp = new OnePole(p.bright || 0.5); this.dc = new DCBlock(); this.breath = new Breath(sr, { noise: 0.08, vibDepth: 0.02, ...p }); this.on = false; }
-  start(f, peak, dur) { const L = this.sr / f; this.bore.setLen(this.p.conical ? L : L * 0.5 - 1); this.peak = peak; this.release = Math.floor(this.sr * dur); this.t = 0; this.on = true; }
+  constructor(sr, p) { this.sr = sr; this.p = p; const m = Math.ceil(sr / 40) + 4; this.bore = new Delay(m); this.bore2 = new Delay(m); this.lp = new OnePole(p.bright || 0.5); this.dc = new DCBlock(); this.breath = new Breath(sr, { noise: 0.08, vibDepth: 0.02, ...p }); this.on = false; }
+  start(f, peak, dur) {
+    const L = this.sr / f;
+    if (this.p.conical) { const d = L - 3, pos = this.p.blowPos || 0.2; this.bore.setLen((1 - pos) * d); this.bore2.setLen(pos * d); }
+    else this.bore.setLen(L * 0.5 - 1);
+    this.peak = peak; this.release = Math.floor(this.sr * dur); this.t = 0; this.on = true;
+  }
   tick() {
     if (!this.on) return 0;
     const b = this.breath.tick(this.t < this.release ? (this.p.pressure || 0.8) : 0, this.t < this.release ? 0.006 : 0.003);
-    const refl = (this.p.conical ? 0.95 : -0.95) * this.lp.tick(this.bore.read());
-    const pd = refl - b; let reed = 0.7 - 0.3 * pd; reed = Math.max(-1, Math.min(1, reed));
-    const out = b + pd * reed; this.bore.write(out);
+    let out;
+    if (this.p.conical) {
+      const temp = -0.95 * this.lp.tick(this.bore.read());
+      out = temp - this.bore2.read();
+      const pd = b - out; let reed = 0.7 + 0.3 * pd; reed = Math.max(-1, Math.min(1, reed));
+      this.bore2.write(temp); this.bore.write(b - pd * reed - temp);
+      out *= 0.6;
+    } else {
+      const refl = -0.95 * this.lp.tick(this.bore.read());
+      const pd = refl - b; let reed = 0.7 - 0.3 * pd; reed = Math.max(-1, Math.min(1, reed));
+      out = b + pd * reed; this.bore.write(out); out *= 0.6;
+    }
     this.t++; if (this.t > this.release + this.sr * 0.4) this.on = false;
-    return this.dc.tick(out) * (this.p.conical ? 2.4 : 0.6) * this.peak * 2;
+    return this.dc.tick(out) * this.peak * 2;
   }
 }
 // Brass (STK Brass): buzzing lips (a resonant filter tuned to the note) against the bore.

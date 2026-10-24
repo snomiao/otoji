@@ -54,6 +54,11 @@ await ev(`(()=>{ ui.setText(${JSON.stringify(text)}); applyText(${JSON.stringify
 const lineErrs: string[] = await ev(`[...[...live.values()].filter(r=>r.error).map(r=>r.node.id+': '+r.error), ...patch.lines.filter(l=>l.type==='invalid').map(l=>'line: '+l.error)]`);
 console.log(`${key}${scoreFile ? " (score " + scoreFile + ")" : ""}`);
 if (lineErrs.length) { console.log("LINE ERRORS:\n  " + lineErrs.join("\n  ")); }
+// sources whose sound never reaches a speaker (e.g. a blank line ended their *> group)
+const deaf: string[] = await ev(`(()=>{ const eff=effectiveInputs(patch), ok=new Set(), q=[...live.values()].filter(r=>r.node.kind==='speaker').map(r=>r.node.id);
+  while(q.length){ const id=q.pop(); if(ok.has(id)) continue; ok.add(id); for(const x of (eff.get(id)||[])) q.push(x.node); }
+  return [...live.values()].filter(r=>KINDS[r.node.kind]?.source && !KINDS[r.node.kind].control && !['clock','arrange','scale','key','caption','mic','midi-in'].includes(r.node.kind) && !ok.has(r.node.id)).map(r=>r.node.id) })()`);
+if (deaf.length) console.log("NOT REACHING A SPEAKER (silent in the mix): " + deaf.join(" "));
 
 if (mode === "check") {
   // per-section presence (which sources sound in each section), then levels over the whole run
