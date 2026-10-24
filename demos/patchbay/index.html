@@ -2473,7 +2473,47 @@ CATALOG.chant = { doc: "Chant 吟唱: a sung voice from IPA, one syllable per no
   ["ipa", '"tɕʰin ʂən _ ʂɿ"', "the words in IPA, a syllable per note; _ holds the vowel (a melisma)"], ["voice", "men", "men, women or boy", ["men", "women", "boy"], { re: /^(men|women|boy)$/ }],
   ["voices", "1", "how many sing together, 1–12 (a choir)"], ["vib", "0.012", "vibrato depth, 0–0.05"], ["breath", "0.08", "breathiness, 0–1"],
   ["bright", "0.3", "0–1: the singer's ring (a formant near 3 kHz): 0 soft and covered, 1 an open, carrying folk or psaltic voice"], ...MELODIC_ARGS] };
-CATALOG.drums.args.push(["kit", "rock", "rock, darbuka, taiko, opera (京剧), aztec, african, tabla, gamelan, celtic, flamenco, orch (orchestra), zhangu (战鼓), sky (thunder), temple (木魚 りん), work (hammer, chisel), daf (frame drum), horses, elephants, guns; battle: clash (steel, metal shields), woodshield, rattan (藤牌), hide", Object.keys(KITS), { re: new RegExp(`^(${Object.keys(KITS).join("|")})$`) }]);
+// Kits the scores asked for, each after recordings of the real drums.
+Object.assign(KITS, {
+  janggu: ["kung", "tta", "bak"],        // Korean hourglass drum: the hand on the low head, the stick on the high one; the bak clapper
+  thavil: ["thom", "tha", "talam"],      // Tamil temple drum: the stick on the left head, the thimbled fingers' crack; small cymbals
+  khol: ["dhin", "ta", "kartal"],        // Bengali clay drum of kirtan: the low head's gliding boom, the treble; hand cymbals
+  davul: ["davul", "cubuk", "zil"],      // Anatolian/Balkan bass drum (also dhol, tapan): the mallet, the thin switch; finger cymbals
+  noh: ["otsuzumi", "kotsuzumi", "kakko"], // hip drum's dry crack, shoulder drum's ringing pon, the small kakko
+  mande: ["dunun", "djembe", "karinyan"],  // West African: bass drum, djembe, the iron scraper
+  orthodox: ["semantron", "semantron2", "censer"], // the wooden board struck to call to prayer (two places), the censer's chains
+});
+{
+  const before = kitHit;
+  kitHit = function (out, lane, t, accent) {
+    const a = accent ? 1.3 : 1, jit = 0.95 + Math.random() * 0.1;
+    switch (lane) {
+      case "kung": voice(out, t, { freq: 105 * jit, endFreq: 82, dur: 0.55, peak: 0.6 * a }); voice(out, t, { freq: 210 * jit, dur: 0.2, peak: 0.12 * a, type: "triangle" }); noise(out, t, 0.03, 0.05 * a, 400); break;
+      case "tta": noise(out, t, 0.035, 0.42 * a, 2200); voice(out, t, { freq: 640 * jit, endFreq: 560, dur: 0.09, peak: 0.22 * a, type: "triangle" }); break;
+      case "bak": for (let k = 0; k < 3; k++) noise(out, t + k * 0.004, 0.03, 0.35 * a, 1500 + k * 700); voice(out, t, { freq: 980 * jit, dur: 0.05, peak: 0.12 * a, type: "square" }); break;
+      case "thom": voice(out, t, { freq: 88 * jit, endFreq: 62, dur: 0.4, peak: 0.75 * a }); noise(out, t, 0.04, 0.12 * a, 700); break;
+      case "tha": noise(out, t, 0.02, 0.6 * a, 4200); voice(out, t, { freq: 820 * jit, dur: 0.06, peak: 0.3 * a, type: "triangle" }); voice(out, t, { freq: 1640 * jit, dur: 0.03, peak: 0.1 * a }); break;
+      case "talam": for (const [f, l, d] of [[2380, 0.1, 0.6], [3570, 0.06, 0.45], [5200, 0.04, 0.3]]) voice(out, t, { freq: f * jit, dur: d, peak: l * a, attack: 0.001 }); noise(out, t, 0.08, 0.06 * a, 6000); break;
+      case "dhin": voice(out, t, { freq: 92 * jit, endFreq: 128, dur: 0.6, peak: 0.6 * a }); voice(out, t, { freq: 290 * jit, dur: 0.15, peak: 0.1 * a, type: "triangle" }); break;
+      case "ta": voice(out, t, { freq: 520 * jit, dur: 0.22, peak: 0.28 * a }); voice(out, t, { freq: 1050 * jit, dur: 0.12, peak: 0.08 * a }); noise(out, t, 0.02, 0.12 * a, 2600); break;
+      case "kartal": for (const [f, l, d] of [[1850, 0.09, 0.5], [2930, 0.07, 0.4], [4410, 0.04, 0.3]]) voice(out, t, { freq: f * jit, dur: d, peak: l * a, attack: 0.001 }); noise(out, t, 0.05, 0.05 * a, 5000); break;
+      case "davul": voice(out, t, { freq: 62 * jit, endFreq: 42, dur: 0.75, peak: 0.95 * a }); voice(out, t, { freq: 130 * jit, endFreq: 95, dur: 0.25, peak: 0.25 * a }); noise(out, t, 0.06, 0.15 * a, 300); break;
+      case "cubuk": noise(out, t, 0.03, 0.35 * a, 2000); voice(out, t, { freq: 360 * jit, endFreq: 300, dur: 0.06, peak: 0.15 * a, type: "triangle" }); break;
+      case "zil": for (const [f, l, d] of [[3120, 0.08, 0.7], [4680, 0.05, 0.5], [6530, 0.03, 0.35]]) voice(out, t, { freq: f * jit, dur: d, peak: l * a, attack: 0.001 }); break;
+      case "otsuzumi": noise(out, t, 0.025, 0.55 * a, 3000); voice(out, t, { freq: 1150 * jit, dur: 0.05, peak: 0.25 * a, type: "triangle" }); break;
+      case "kotsuzumi": voice(out, t, { freq: 330 * jit, endFreq: 250, dur: 0.45, peak: 0.45 * a }); voice(out, t, { freq: 660 * jit, endFreq: 520, dur: 0.2, peak: 0.1 * a }); noise(out, t, 0.02, 0.06 * a, 1500); break;
+      case "kakko": voice(out, t, { freq: 480 * jit, dur: 0.08, peak: 0.3 * a, type: "triangle" }); noise(out, t, 0.03, 0.15 * a, 2500); break;
+      case "dunun": voice(out, t, { freq: 78 * jit, endFreq: 58, dur: 0.5, peak: 0.8 * a }); voice(out, t, { freq: 1260 * jit, dur: 0.15, peak: 0.06 * a, type: "triangle" }); break; // (its bell on top)
+      case "djembe": voice(out, t, { freq: 250 * jit, endFreq: 210, dur: 0.16, peak: 0.42 * a, type: "triangle" }); noise(out, t, 0.04, 0.22 * a, 2000); break;
+      case "karinyan": for (let k = 0; k < 9; k++) noise(out, t + k * 0.011, 0.012, 0.12 * a * (1 - k / 12), 3500); break; // iron rasped along its ridges
+      case "semantron": voice(out, t, { freq: 410 * jit, endFreq: 380, dur: 0.18, peak: 0.45 * a, type: "triangle" }); voice(out, t, { freq: 1130 * jit, dur: 0.07, peak: 0.12 * a, type: "triangle" }); noise(out, t, 0.03, 0.2 * a, 1200); break;
+      case "semantron2": voice(out, t, { freq: 560 * jit, endFreq: 520, dur: 0.15, peak: 0.42 * a, type: "triangle" }); voice(out, t, { freq: 1490 * jit, dur: 0.06, peak: 0.1 * a, type: "triangle" }); noise(out, t, 0.03, 0.2 * a, 1500); break;
+      case "censer": for (let k = 0; k < 6; k++) voice(out, t + k * 0.03 * jit, { freq: (3200 + Math.random() * 2600), dur: 0.12, peak: 0.04 * a, attack: 0.001 }); break;
+      default: before(out, lane, t, accent);
+    }
+  };
+}
+CATALOG.drums.args.push(["kit", "rock", "rock, darbuka, taiko, opera (京剧), aztec, african, tabla, gamelan, celtic, flamenco, orch (orchestra), zhangu (战鼓), sky (thunder), temple (木魚 りん), work (hammer, chisel), daf (frame drum), janggu (장구, bak), thavil (தவில், talam), khol (খোল, kartal), davul (dhol, tapan, zil), noh (大鼓 小鼓 鞨鼓), mande (dunun, djembe, karinyan), orthodox (semantron, censer), horses, elephants, guns; battle: clash (steel, metal shields), woodshield, rattan (藤牌), hide", Object.keys(KITS), { re: new RegExp(`^(${Object.keys(KITS).join("|")})$`) }]);
 CATALOG.drums.args[1][3] = [...new Set(Object.values(KITS).flat())];
 CATALOG.drums.args[1][4] = { re: new RegExp(`^(${[...new Set(Object.values(KITS).flat())].join("|")})$`) };
 
