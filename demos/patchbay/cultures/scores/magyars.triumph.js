@@ -1,0 +1,32 @@
+// Te Deum after the relief of Nándorfehérvár (1456): the noon bell that the Pope had ordered for the defenders rings out as a bell of thanksgiving, then a town church sings the Te Deum, the clergy and the people taking the verses in turn. Notes from the Antiphonale Monasticum via GregoBase, sung at the pitch and slow pace of Schola Hungarica, in the Hungarian way of pronouncing Latin (s as sh).
+SCORES["magyars:triumph"] = {
+  about: "Te Deum laudamus: the noon bell rings for the victory, then the hymn of thanksgiving in a Magyar town church, a cantor intoning, the friars and priests and the townspeople answering verse by verse",
+  heard: "midday in a town church in Hungary in late summer 1456: the great bell in the tower tolling at noon, as it had every day to call for prayer and now for thanks; the nave fills with townspeople still talking; the cantor intones and the clergy in the choir take it up, the people answer from the nave, men and women together, slower and rougher; the stone church holds every phrase",
+  refs: [
+    { title: "Te Deum laudamus", who: "Schola Hungarica (László Dobszay, Janka Szendrei)", url: "https://www.youtube.com/watch?v=ZsBURJOYOaE" },
+    { title: "Te Deum (Antiphonale Monasticum, 1934), gabc", who: "GregoBase", url: "https://gregobase.selapa.net/chant.php?id=9696" },
+  ],
+  measured: "Schola Hungarica (first 90 s): men in unison reciting on a note near G#3 (sung ~45 c above G), the half-verse cadences a tone and a third below, range D3–A#3, very broad (0.8 clear onsets a second, the reciting notes ~0.3–0.5 s and the cadences held 1–2 s), vibrato ~4 c, energy at 250–1000 Hz (brightness ~1430 Hz), a church tail of ~7 s. Ours: the first four verses from the 1934 book, recited on G#3 (key B), eighths at 66 with rubato, cantor / clergy / people alternating, with the noon bell before and after; the Hungarian 'sh' for Latin s. It differs in that we do not know whether a 15th-century Hungarian town used exactly this monastic form of the tone (Schola Hungarica follows medieval Hungarian sources, close to it), and our people sing more evenly than a town congregation. Our render: range D3–A#3 with the reciting note G#3 and cadences on F# and D#, exactly the record's frame; scale steps 0 200 290 700 1000 c like the record's 0 200 290 710 1000; brightness ~1270 Hz (record ~1430); the women double the people's verses an octave up, which the all-male record has not",
+  text: `
+. clock        66 4/4
+. arrange@song harang:4bars v1:4bars v2:3bars v3:4bars v4:4bars delharang:4bars
+. key          major B
+
+. caption@c1   "Te Deum laudamus: te Dominum confitemur." ?song.2
+. caption@c2   "Te æternum Patrem omnis terra veneratur." ?song.3
+. caption@c3   "Tibi omnes Angeli, tibi cæli et universæ potestates:" ?song.4
+. caption@c4   "Tibi Cherubim et Seraphim incessabili voce proclamant:" ?song.5
+. bell@harang  oct=2 grid=4 vol=0.8 human=0.3 "1 - - - - -" ?song.1
+. bell@harang2 oct=2 grid=4 vol=0.8 human=0.3 dyn="f f f mf" "1 - - - - -" ?song.6
+. bell@kisharang oct=3 grid=4 vol=0.35 human=0.5 "0 0 0 5 - - - 0 3 - - -" ?song.6
+. crowd@nep    murmur "is-ten a-zon ha-rang go-zik a hi-rek gyoz-tunk" voices=24 voice=mixed vol=0.8 dyn="mp mf mf p" ?song.1
+. chant@kantor voice=men voices=1 oct=3 grid=8 human=0.3 rubato=0.35 vib=0.012 breath=0.07 dyn="f" ipa="te de _ um lau _ da _ muʃ" "3, 5, 6, 6, 6, 5, 6, 7, 6, - 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0" ?song.2-5
+. chant@papok  voice=men voices=8 oct=3 grid=8 human=0.4 rubato=0.35 vib=0.01 breath=0.07 dyn="mf" ipa="te do mi num kon fi _ te _ _ mur ti _ bi om neʃ _ an ge _ li ti bi tse li et u ni ver ʃe po te _ ʃta _ _ teʃ" "0 0 0 0 0 0 0 0 0 0 0 3, 5, 6, 6, 5, 6, 7, 7, 6, 5, 5, - 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 5, 7, 7, 1 7, 6, 7, 6, 5, 6, - 0 3, 5, 6, 6, 6, 6, 6, 6, 6, 5, 6, 7, 7, 6, 5, 5, - 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0" ?song.2-5
+. chant@ferfiak voice=men voices=12 oct=3 grid=8 human=0.8 rubato=0.4 drift=-10 vib=0.014 breath=0.12 dyn="f" ipa="te _ e ter num pa _ trem om niʃ ter ra ve ne _ ra _ _ tur ti _ bi ke ru bim et ʃe ra _ fim in tseʃ ʃa bi li vo tse pro _ kla _ _ mant" "0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 5, 7, 7, 1 7, 6, 7, 6, - 0 3, 5, 6, 6, 5, 6, 7, 7, 6, 5, 5, - 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 5, 7, 7, 1 7, 6, 6, 7, 6, 5, 6, - 0 3, 5, 6, 6, 6, 6, 5, 6, 7, 7, 6, 5, 5, - 0 0 0 0 0" ?song.2-5
+. chant@asszonyok voice=women voices=10 oct=4 grid=8 human=0.8 rubato=0.4 drift=-10 vib=0.016 breath=0.12 vol=0.6 dyn="mf" ipa="te _ e ter num pa _ trem om niʃ ter ra ve ne _ ra _ _ tur ti _ bi ke ru bim et ʃe ra _ fim in tseʃ ʃa bi li vo tse pro _ kla _ _ mant" "0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 5, 7, 7, 1 7, 6, 7, 6, - 0 3, 5, 6, 6, 5, 6, 7, 7, 6, 5, 5, - 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 5, 7, 7, 1 7, 6, 6, 7, 6, 5, 6, - 0 3, 5, 6, 6, 6, 6, 5, 6, 7, 7, 6, 5, 5, - 0 0 0 0 0" ?song.2-5
+
+*> space       church size=1.4 wet=0.42
+>  eq          low=0 mid=6 high=-6
+>  speaker     0.5
+`,
+};

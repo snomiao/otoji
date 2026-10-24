@@ -143,7 +143,7 @@ class Reed {
   constructor(sr, p) { this.sr = sr; this.p = p; const m = Math.ceil(sr / 40) + 4; this.bore = new Delay(m); this.bore2 = new Delay(m); this.lp = new OnePole(p.bright || 0.5); this.dc = new DCBlock(); this.breath = new Breath(sr, { noise: 0.08, vibDepth: 0.02, ...p }); this.on = false; }
   start(f, peak, dur) {
     const L = this.sr / f;
-    if (this.p.conical) { const d = L - 3, pos = this.p.blowPos || 0.2; this.bore.setLen((1 - pos) * d); this.bore2.setLen(pos * d); }
+    if (this.p.conical) { const d = L - 0.8, pos = this.p.blowPos || 0.2; this.bore.setLen((1 - pos) * d); this.bore2.setLen(pos * d); }
     else this.bore.setLen(L * 0.5 - 1);
     this.peak = peak; this.release = Math.floor(this.sr * dur); this.t = 0; this.on = true;
   }

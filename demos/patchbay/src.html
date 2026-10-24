@@ -852,7 +852,7 @@ const KINDS = {
       if (!KITS[kit].includes(hit)) throw new Error(`hit= is ${KITS[kit].join(", ")} for kit=${kit}`);
       const q = o.quantize || "16";
       if (!["4", "8", "16", "off"].includes(q)) throw new Error("quantize= is 4, 8, 16 or off");
-      return { lanes, hit, kit, quantize: q === "off" ? 0 : 16 / Number(q), vol: num(o, "vol", 1, 0, 2) };
+      return { lanes, hit, kit, quantize: q === "off" ? 0 : 16 / Number(q), vol: num(o, "vol", 1, 0, 2), human: num(o, "human", 0, 0, 1) };
     },
   },
   // Records N bars of the mic from the next bar, then rewrites a drums
@@ -935,7 +935,7 @@ const CATALOG = {
     args: [["pattern", '"x...x...x...x...|....x.......x...|..x...x...x...x."', "lanes kick|snare|hat; x hit, X accent, . rest", null, { re: /^"?[xX.|]+"?$/ }],
       ["hit", "kick", "with ^vad: which drum", ["kick", "snare", "hat"], { re: /^(kick|snare|hat)$/ }],
       ["quantize", "16", "with ^vad: snap to 1/16, 1/8, 1/4 or off", ["16", "8", "4", "off"], { re: /^(off|1\/(4|8|16))$/, to: (v) => v === "off" ? v : v.split("/")[1] }],
-      ["vol", "1", "level 0–2"]],
+      ["vol", "1", "level 0–2"], ["human", "0.5", "0–1: players, not a machine: timing leans and loudness varies"]],
   },
   vad: { doc: "Speech detector on a mic. Other nodes react with ^vad, ?vad or !vad.", args: [
     ["threshold", "0.02", "energy that counts as speech", null, { re: /^0?\.\d+$/ }],
@@ -1698,12 +1698,13 @@ function keyEnv() {
   if (!n) return {};
   const a = n.args.map(unquote);
   return { scale: a.find((x) => !/=/.test(x) && scaleNamed(x)) || (a.find((x) => x.startsWith("scale=")) || "").slice(6) || undefined,
-    key: a.find((x) => /^[A-G][#b]?$/.test(x)) || (a.find((x) => x.startsWith("key=")) || "").slice(4) || undefined };
+    key: a.find((x) => /^[A-G][#b]?$/.test(x)) || (a.find((x) => x.startsWith("key=")) || "").slice(4) || undefined,
+    tune: Number((a.find((x) => x.startsWith("tune=")) || "").slice(5)) || undefined };
 }
 KINDS.key = { control: true, build: (o) => {
   if (o.scale && !scaleNamed(o.scale)) throw new Error(`scale= is one of ${SCALE_NAMES.slice(0, 8).join(", ")}… or one defined with \`. scale@name 1 2 3 5 6\``);
   if (o.key && !/^[A-G][#b]?$/.test(o.key)) throw new Error("key= is a note name like D or Bb");
-  return { scale: o.scale || "major", key: o.key || "C" };
+  return { scale: o.scale || "major", key: o.key || "C", tune: num(o, "tune", 0, -100, 100) };
 } };
 // Options shared by every melodic kind.
 function buildMelodic(kind, o) {
@@ -1731,6 +1732,7 @@ function buildMelodic(kind, o) {
     dyn: parseDyn(o.dyn),
     human: num(o, "human", 0, 0, 1),
     rubato: num(o, "rubato", 0, 0, 1), drift: num(o, "drift", 0, -200, 200),
+    tune: o.tune !== undefined ? num(o, "tune", 0, -100, 100) : env.tune || 0,
     body: o.body === undefined ? null : o.body === "auto" || o.body === "none" || BODIES[o.body] ? o.body : (() => { throw new Error(`body= is auto, none or one of ${Object.keys(BODIES).join(", ")}`); })(),
     tech: o.tech ? (Object.values(TECH_LETTERS).includes(o.tech) ? o.tech : (() => { throw new Error(`tech= is one of ${Object.values(TECH_LETTERS).join(", ")}`); })()) : null,
     chords: (o.chords || "Am F C G").split(/\s+/).map(parseChord),
@@ -1755,6 +1757,7 @@ function playMelodic(r, c, step, t) {
   const cfg = r.cfg, out = r.voiceIn || r.out, stepDur = 60 / c.bpm / 4, bar = Math.floor(step / (4 * c.sig)), barSteps = 4 * c.sig;
   let peak = 0.22 * cfg.vol;
   if (cfg.dyn) peak *= dynAt(cfg.dyn, step, barSteps);
+  if (peak < 1e-4) return; // dyn= 0: silent here
   if (cfg.human) { // a player, not a sequencer: beats lean, nothing is exactly even
     peak *= 1 + cfg.human * ((step % barSteps === 0 ? 0.16 : step % 4 === 0 ? 0.07 : -0.04) + (Math.random() - 0.5) * 0.3);
     t += cfg.human * Math.random() * 0.018;
@@ -1765,7 +1768,7 @@ function playMelodic(r, c, step, t) {
   // One sound: on the line's physical model when it has one (a bowed line
   // borrows a plucked string for pizzicato and col legno), else the oscillator voice.
   const pmNode = (spec, slot) => { r.pms = r.pms || {}; if (!r.pms[slot]) { r.pms[slot] = new AudioWorkletNode(ctx, "pm", { numberOfInputs: 0, outputChannelCount: [1], processorOptions: spec }); r.pms[slot].connect(out); if (slot === "main") r.pm = r.pms[slot]; } return r.pms[slot]; };
-  const emit = (f, dur, p, idx, ev = {}) => {
+  const emit0 = (f, dur, p, idx, ev = {}) => {
     const pm = pmReady && (r.pmSpec !== undefined ? r.pmSpec : (r.pmSpec = withBody(r, pmFor(r.node.kind, r.node.id))));
     const at = t + (ev.at || 0), plucky = ["pizz", "col-legno", "knock"].includes(ev.tech) && pm && pm.model === "bowed";
     if (pm && !plucky) { pmNode(pm, "main").port.postMessage({ t: at, f, dur, peak: p * 1.6, idx, tech: ev.tech, bend: ev.bend, legato: ev.legato }); return; }
@@ -1773,6 +1776,7 @@ function playMelodic(r, c, step, t) {
     if (ev.tech === "knock" || ev.tech === "col-legno") { kitHit(out, "rim", at, false); return; }
     cfg.inst.play(out, at, ev.tech === "harmonic" ? f * 2 : f, ev.tech === "mute" ? dur * 0.25 : dur, cfg.adsr, p, cfg);
   };
+  const emit = (f, dur, p, idx, ev = {}) => emit0(cfg.tune ? f * Math.pow(2, cfg.tune / 1200) : f, dur, p, idx, ev); // tune=: cents off the key
   // A note with its technique: grace, slide, tremolo, flutter, overblow, short strokes.
   const note = (f, dur, p = peak, idx = 0, x = {}) => {
     const tech = x.tech || cfg.tech;
@@ -1801,8 +1805,9 @@ function playMelodic(r, c, step, t) {
       const perCycle = cfg.phrase.filter((y) => !y.rest && !y.hold).length, nth = Math.floor(step / per / cfg.phrase.length) * perCycle + notesIn[i];
       const syl = cfg.sylls[nth % cfg.sylls.length];
       let prev = null; for (let b = 1; b <= cfg.sylls.length && !prev; b++) { const x = cfg.sylls[(nth - b + cfg.sylls.length * 64) % cfg.sylls.length]; if (!x.hold) prev = x; }
-      chantNote(out, t, hzOf(tok), stepDur * per * hold * 1.02, peak, syl, prev, cfg,
-        { grace: tok.grace && hzOf(tok.grace), slide: tok.slide && hzOf(tok.slide), tech: tok.tech || cfg.tech });
+      const tr = cfg.tune ? Math.pow(2, cfg.tune / 1200) : 1;
+      chantNote(out, t, hzOf(tok) * tr, stepDur * per * hold * 1.02, peak, syl, prev, cfg,
+        { grace: tok.grace && hzOf(tok.grace) * tr, slide: tok.slide && hzOf(tok.slide) * tr, tech: tok.tech || cfg.tech });
       r.detail = `${syl.hold ? "~" : syl.text} on ${name(tok)} · ${cfg.scaleName} on ${cfg.key}`; mark(r, t, stepDur * per * hold);
       return;
     }
@@ -2039,18 +2044,19 @@ const IPA_CONS = {
   m: { k: "n", F: [250, 1000, 2300, 3300] }, n: { k: "n", F: [250, 1500, 2500, 3400] }, ɲ: { k: "n", F: [250, 2100, 2800, 3500] }, ŋ: { k: "n", F: [250, 2000, 2600, 3400] }, ɳ: { k: "n", F: [250, 1400, 1900, 3200] },
   l: { k: "l", F: [360, 1300, 2700, 3500] }, ɫ: { k: "l", F: [400, 900, 2600, 3400] }, ɭ: { k: "l", F: [380, 1300, 1900, 3200] }, ʎ: { k: "l", F: [300, 2000, 2800, 3500] },
   ɹ: { k: "l", F: [400, 1200, 1600, 3200] }, ɻ: { k: "l", F: [400, 1300, 1700, 3200] }, j: { k: "l", F: [270, 2200, 3000, 3700] }, w: { k: "l", F: [300, 700, 2200, 3300] }, ɥ: { k: "l", F: [280, 1900, 2400, 3400] },
-  r: { k: "r", F: [450, 1300, 2500, 3400] }, ɾ: { k: "r", F: [450, 1400, 2500, 3400], tap: 1 }, ʀ: { k: "r", F: [500, 1200, 2400, 3300] },
+  r: { k: "r", F: [450, 1300, 2500, 3400] }, ɾ: { k: "r", F: [450, 1400, 2500, 3400], tap: 1 }, ɽ: { k: "r", F: [450, 1300, 1700, 3200], tap: 1 }, ʀ: { k: "r", F: [500, 1200, 2400, 3300] },
 };
 const IPA_AFFRICATES = { ts: "s", dz: "z", tʃ: "ʃ", dʒ: "ʒ", tɕ: "ɕ", dʑ: "ʑ", tʂ: "ʂ", ʈʂ: "ʂ", dʐ: "ʐ", ɖʐ: "ʐ", pf: "f", tθ: "θ" };
 // Read one IPA syllable (or "_", a held vowel) into { onset, vowels, coda }.
 function parseIpaSyllable(text) {
   if (text === "_") return { hold: true };
-  const t = text.normalize("NFD").replace(/[ˈˌ.‿˥˦˧˨˩0-9̩̯̥̃̊ʲʷ̚͡]/g, (c) => (c === "͡" ? "" : "")); // marks the melody makes moot
+  const t = text.normalize("NFD").replace(/c\u0327/g, "ç").replace(/[ˈˌ.‿˥˦˧˨˩0-9̩̯̥̃̊ʲʷ͈ˀ̚͡]/g, (c) => (c === "͡" ? "" : "")); // marks the melody makes moot
   const segs = []; let i = 0;
   while (i < t.length) {
     const two = t.slice(i, i + 2), ch = t[i];
     if (IPA_AFFRICATES[two]) { segs.push({ c: two, ...IPA_CONS[IPA_AFFRICATES[two]], k: "a", stopFr: IPA_CONS[two[0]] ? IPA_CONS[two[0]].fr : 3800 }); i += 2; }
     else if (ch === "ʰ") { segs.push({ c: "ʰ", k: "h" }); i++; }
+    else if (ch === "ʱ") { segs.push({ c: "ʱ", k: "h", v: 1 }); i++; } // breathy (murmured) release: bʱ dʱ
     else if (ch === "ː") { if (segs.length) segs[segs.length - 1].long = true; i++; }
     else if (IPA_VOWELS[ch]) { segs.push({ c: ch, vowel: true, F: IPA_VOWELS[ch] }); i++; }
     else if (IPA_CONS[ch]) { segs.push({ c: ch, ...IPA_CONS[ch] }); i++; }
@@ -2411,6 +2417,7 @@ const MELODIC_ARGS = [
   ["human", "0.4", "0–1: a player's unevenness: beats lean, timing and loudness vary a little"],
   ["rubato", "0.5", "0–1: free time, notes come early or late on a slow wander, off the grid (chant, laments, a singer's own breath)"],
   ["drift", "30", "cents a minute the pitch creeps (up, or down if negative), as unaccompanied singers do"],
+  ["tune", "-40", "cents off the key, −100 to 100: an ensemble or instrument tuned between our semitones (gagaku, old bells, a record's pitch); key tune= sets it for all"],
   ["body", "guitar", "the instrument's own resonating box, chosen from its name (auto); body=none for a bare string, or another: guitar, lute, pipa, zither, qin, gourd, skin, violin, huqin…", ["auto", "none", "guitar", "lute", "small", "pipa", "moon", "zither", "qin", "dulcimer", "gourd", "calabash", "skin", "harp", "harpsichord", "violin", "viol", "cello", "doublebass", "huqin", "skinbowl", "piano"]],
   ["tech", "pizz", "a playing technique for every note: knock, harmonic, mute, pizz, spiccato, col-legno, tremolo, overblow, flutter", ["knock", "harmonic", "mute", "pizz", "spiccato", "col-legno", "tremolo", "overblow", "flutter"]],
 ];
@@ -2438,7 +2445,7 @@ KINDS.space = { build: (o) => {
   if (!SPACES[room]) throw new Error(`a space is one of ${Object.keys(SPACES).join(", ")}`);
   return { room, size: num(o, "size", 1, 0.3, 3), mix: num(o, "wet", SPACES[room].wet, 0, 1), dry: num(o, "dry", 1, 0, 1) };
 } };
-CATALOG.key = { doc: "Key: the scale and tonic for every melodic line that names none: . key yanyue D (an environment, like clock; a line can still say its own).", args: [["scale", "major", "a scale name or one defined with scale@", null, { re: { test: (v) => !!scaleNamed(v) } }], ["key", "C", "tonic", null, { re: /^[A-G][#b]?$/ }]] };
+CATALOG.key = { doc: "Key: the scale and tonic for every melodic line that names none: . key yanyue D (an environment, like clock; a line can still say its own). tune=-40 tunes everything that many cents off.", args: [["scale", "major", "a scale name or one defined with scale@", null, { re: { test: (v) => !!scaleNamed(v) } }], ["key", "C", "tonic", null, { re: /^[A-G][#b]?$/ }], ["tune", "-40", "cents off, −100 to 100"]] };
 CATALOG.caption = { doc: "Caption: words shown in the floating subtitle while this line plays (\" / \" breaks a line), e.g. a poem's lines, one per section: . caption \"大弦嘈嘈如急雨\" ?song.4", args: [["text", '"…"', "the words", null, { re: /^".*"$/ }]] };
 CATALOG.wind = { doc: "Wind: a howling gale (bands of noise that rise and fall), the background of a storm.", args: [["level", "0.5", "0–1", null, { re: /^(0|1|0?\.\d+)$/ }], ["gust", "0.12Hz", "how fast the gusts come", null, { re: /^\d+(\.\d+)?hz$/i }]] };
 CATALOG.rain = { doc: "Rain: soft noise and droplets, for a quiet ending.", args: [["level", "0.5", "0–1", null, { re: /^(0|1|0?\.\d+)$/ }], ["drops", "0.35", "droplets per step, 0–1"]] };
@@ -2473,6 +2480,7 @@ const VOWELS = { // F1 F2 F3 (Hz, adult male); women scale up ~1.17
 // Syllable → onset consonant, vowel sequence (diphthongs glide), coda nasal.
 function parseSyllable(s) {
   const t = s.toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "");
+  if (/^(m+|n+|ng)$/.test(t)) return { onset: "", vowels: ["ə"], coda: t.startsWith("m") ? "m" : t === "ng" ? "ng" : "n", accent: s !== s.toLowerCase() }; // a hummed m, n
   // clusters (sta, drum, dəʒd) are sung as their nearest simple syllable: the consonant next to the vowel
   const m = /^[bcdfghjklmnpqrstvwxyz]*?(sh|ch|ts|zh|[bcdfghjklmnprstvwyz]?)([aeiouə]+)(ng|n|m|h|l|r|s|k|t)?[bcdfghjklmnpqrstvwxyz]*$/.exec(t);
   if (!m) throw new Error(`\`${s}\`: a syllable is like ka, sa, ya, sha, lai, ō, un`);
@@ -2619,7 +2627,13 @@ function playStep(r, c, step, t) {
     const len = Math.max(...cfg.lanes.map((l) => l.length)), i = step % len; let hit = false;
     cfg.lanes.forEach((lane, li) => {
       const ch = lane[step % lane.length];
-      if (ch !== ".") { kitHit(out, KITS[cfg.kit][li], t, ch === "X"); midiNote(r, GM_DRUMS[li], ch === "X" ? 120 : 90, t, 0.1, true); hit = true; }
+      if (ch !== ".") {
+        let at = t, dst = out;
+        if (cfg.human) { // players, not a machine: hits lean, offbeats sit a little late, loudness varies
+          at += cfg.human * (Math.random() * 0.022 + (step % 2 ? 0.01 : 0));
+          dst = ctx.createGain(); dst.gain.value = 1 + cfg.human * (Math.random() - 0.55) * 0.7; dst.connect(out);
+        }
+        kitHit(dst, KITS[cfg.kit][li], at, ch === "X"); midiNote(r, GM_DRUMS[li], ch === "X" ? 120 : 90, t, 0.1, true); hit = true; }
     });
     if (hit) mark(r, t, 0.1);
     r.detail = `step ${String(i + 1).padStart(2)}/${len}`;
