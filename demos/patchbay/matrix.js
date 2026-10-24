@@ -431,7 +431,21 @@ function composeShowcase(civ) {
   const text = [...head, ...L, "", "*> reverb 2.5s wet=0.3", "> speaker 0.5", ""].join("\n");
   try { return formatPatch(parsePatch(text.replace(/\n$/, ""))) + "\n"; } catch (e) { return text; }
 }
+// A piece written by hand from recordings of the people's own music (cultures/scores/): its header, the story, then the patch.
+function composeScore(civ, actId, sc) {
+  const A = ACTIVITIES[actId];
+  const head = [
+    `# ${civLabel(civ)} × ${A.zh} ${A.en} — ${sc.about}`,
+    sc.heard ? `# heard: ${sc.heard}` : null,
+    ...(sc.refs || []).map((r) => `# after: ${r.title}${r.who ? `, ${r.who}` : ""} — ${r.url}`),
+    ...storyBlock(storyText(`${civ.id}:${actId}`), LANG),
+  ].filter((x) => x !== null);
+  const text = [...head, sc.text.trim(), ""].join("\n");
+  try { return formatPatch(parsePatch(text.replace(/\n$/, ""))) + "\n"; } catch (e) { return text; }
+}
 function compose(civ, actId) {
+  const score = SCORES[`${civ.id}:${actId}`];
+  if (score) return composeScore(civ, actId, score);
   if (actId === "showcase") return composeShowcase(civ);
   const fun = actId === "death" ? funeralOf(civ) : null;
   const mood = moodOf(civ, actId), gatherAs = actId === "gather" ? GATHER_AS.find(([ids]) => named(ids, civ)) : null;
@@ -753,7 +767,7 @@ function renderPlayer() {
     <div class="batch"><input type="search" class="pfind" placeholder="${tr("filter: a people, a scene, a word from the stories…")}" aria-label="${tr("filter")}">
       <button type="button" class="pall" title="${tr("Play every piece shown, one after another")}">▶ ${tr("Play all shown")}</button>
       <label>${tr("each")} <select class="peach"><option value="loop">${tr("one loop")}</option><option value="15">15 s</option><option value="30">30 s</option><option value="60">60 s</option></select></label>
-      <span class="pcount"></span></div>`;
+      <span class="hint">${tr("or drag across the grid to play an area")}</span> <span class="pcount"></span></div>`;
   root.querySelector(".lang").addEventListener("change", (e) => {
     LANG = e.target.value; try { localStorage.setItem("otoji-lang", LANG); } catch (err) { /* storage unavailable */ }
     const u = new URL(location.href); u.searchParams.set("lang", LANG); history.replaceState(null, "", u);
@@ -783,7 +797,7 @@ function renderPlayer() {
   const pq = { list: [], i: 0, on: false, timer: 0, gen: 0 };
   const shownButtons = () => [...body.querySelectorAll("td button[data-ex]")].filter((b) => !b.classList.contains("dim") && !b.closest("tr").hidden);
   const batchLabel = () => { const b = root.querySelector(".pall"); b.textContent = pq.on ? `■ ${pq.i} / ${pq.list.length}` : `▶ ${tr("Play all shown")}`; };
-  const stopBatch = () => { pq.on = false; pq.gen++; clearTimeout(pq.timer); batchLabel(); };
+  const stopBatch = () => { pq.on = false; pq.gen++; clearTimeout(pq.timer); batchLabel(); for (const b of body.querySelectorAll("button.picked")) b.classList.remove("picked"); };
   const playBatch = (btns) => { stopBatch(); if (!btns.length) return; Object.assign(pq, { list: btns, i: 0, on: true }); nextInBatch(); };
   const nextInBatch = async () => {
     if (!pq.on || pq.i >= pq.list.length) { stopBatch(); return; }
@@ -862,6 +876,30 @@ function renderPlayer() {
       body.append(row);
     }
   }
+  // Drag across the grid (mouse or pen) to pick a rectangle of pieces: they play one after another, row by row.
+  const cellPos = (b) => [b.closest("tr").rowIndex, b.closest("td").cellIndex];
+  let drag = null, dragged = false;
+  const inRect = (b) => { const [r, c] = cellPos(b), [r0, c0] = drag.from, [r1, c1] = drag.to; return r >= Math.min(r0, r1) && r <= Math.max(r0, r1) && c >= Math.min(c0, c1) && c <= Math.max(c0, c1); };
+  body.addEventListener("pointerdown", (e) => {
+    const b = e.target.closest("td button[data-ex]");
+    if (!b || e.button !== 0 || e.pointerType === "touch") return; // (touch keeps scrolling the grid)
+    drag = { from: cellPos(b), to: cellPos(b), moved: false };
+  });
+  addEventListener("pointermove", (e) => {
+    if (!drag || !root.isConnected) return;
+    const el = document.elementFromPoint(e.clientX, e.clientY), b = el && el.closest && el.closest("#player td button[data-ex]");
+    if (!b) return;
+    const p = cellPos(b); if (p[0] === drag.to[0] && p[1] === drag.to[1]) return;
+    drag.to = p; drag.moved = true; body.classList.add("picking");
+    for (const x of shownButtons()) x.classList.toggle("picked", inRect(x));
+  });
+  addEventListener("pointerup", () => {
+    if (!drag || !root.isConnected) return;
+    const d = drag; body.classList.remove("picking");
+    if (d.moved) { const picked = shownButtons().filter(inRect); dragged = true; drag = null; playBatch(picked); for (const b of picked) b.classList.add("picked"); }
+    drag = null;
+  });
+  body.addEventListener("click", (e) => { if (dragged) { dragged = false; e.stopPropagation(); e.preventDefault(); } }, true); // the drag was the choice, not a click
   // The filter: every word must appear in the piece's people, scene, story or music.
   const filterPieces = () => {
     const terms = root.querySelector(".pfind").value.trim().toLowerCase().split(/\s+/).filter(Boolean);

@@ -214,6 +214,7 @@ Object.assign(I18N["zh-CN"].text, {
   "press the marked button to play": "按下标出的按钮即可播放",
   "link to this instrument": "此乐器的链接",
   "Play all shown": "全部播放（当前显示的）",
+  "or drag across the grid to play an area": "或在格子上拖选一块区域，依次播放",
   "Play every instrument shown (the search box filters them), one after another": "依次播放当前显示的每件乐器（可用搜索框筛选）",
   "Play this group, one after another": "依次播放这一组",
   "Play every piece shown, one after another": "依次播放当前显示的每首曲子",
