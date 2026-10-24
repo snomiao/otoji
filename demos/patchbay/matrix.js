@@ -464,7 +464,10 @@ function composeScore(civ, actId, sc) {
     ...(sc.refs || []).map((r) => `# after: ${r.title}${r.who ? `, ${r.who}` : ""} — ${r.url}`),
     ...storyBlock(storyText(`${civ.id}:${actId}`), LANG),
   ].filter((x) => x !== null);
-  const text = [...head, sc.text.trim(), ""].join("\n");
+  // players breathe: a score that sets no sway gets a gentle one (marches and work songs keep their step)
+  const sway = ["battle", "siege", "triumph", "build"].includes(actId) ? 0.12 : 0.3;
+  const body = sc.text.trim().replace(/^(\.\s*clock\b[^\n]*)$/m, (l) => (/\bsway=/.test(l) ? l : `${l} sway=${sway}`));
+  const text = [...head, body, ""].join("\n");
   try { return formatPatch(parsePatch(text.replace(/\n$/, ""))) + "\n"; } catch (e) { return text; }
 }
 function compose(civ, actId) {
