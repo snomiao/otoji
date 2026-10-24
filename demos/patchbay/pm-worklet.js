@@ -14,6 +14,9 @@ class Delay {
     return a + (b - a) * frac;
   }
   write(x) { this.buf[this.w % this.buf.length] = x; this.w++; }
+  // a bore at rest holds a whisper of noise, as a real one does, so a wind speaks at once instead of
+  // growing its tone out of nothing over a second
+  stir(a) { let e = 0; for (const x of this.buf) e += x * x; if (e < 1e-6) for (let i = 0; i < this.buf.length; i++) this.buf[i] = (Math.random() * 2 - 1) * a; }
 }
 // One-pole lowpass.
 class OnePole { constructor(c) { this.c = c; this.y = 0; } tick(x) { this.y += this.c * (x - this.y); return this.y; } }
@@ -124,7 +127,7 @@ class Breath {
 // Flute (STK Flute): the breath jet strikes the edge; a cubic jet table drives the bore.
 class Flute {
   constructor(sr, p) { this.sr = sr; this.p = p; this.bore = new Delay(Math.ceil(sr / 40) + 4); this.jet = new Delay(Math.ceil(sr / 40) + 4); this.lp = new OnePole(0.6); this.dc = new DCBlock(); this.breath = new Breath(sr, p); this.on = false; }
-  start(f, peak, dur, legato) { const jr = this.p.jetRatio || 0.32, bore = (this.sr / f) / (1 + jr); this.bore.setLen(bore + 0.1); this.jet.setLen(bore * jr); /* the jet is inside the loop */ this.peak = peak; this.release = Math.floor(this.sr * dur); this.t = 0; this.on = true; }
+  start(f, peak, dur, legato) { this.bore.stir(0.02); const jr = this.p.jetRatio || 0.32, bore = (this.sr / f) / (1 + jr); this.bore.setLen(bore + 0.1); this.jet.setLen(bore * jr); /* the jet is inside the loop */ this.peak = peak; this.release = Math.floor(this.sr * dur); this.t = 0; this.on = true; }
   tick() {
     if (!this.on) return 0;
     const b = this.breath.tick(this.t < this.release ? (this.p.pressure || 0.9) : 0, this.t < this.release ? 0.004 : 0.002);
@@ -136,41 +139,33 @@ class Flute {
     return out * 0.3 * this.peak * 2;
   }
 }
-// Reed. A cylinder (clarinet-like, after STK Clarinet): the reed is a pressure valve at the end of
-// one bore, which sounds the odd harmonics. A cone (double reeds: shawm, suona, zurna, oboe; after
-// STK Saxofony): the reed sits a little way along a bore folded in two, so all harmonics sound.
+// Reed (after STK Clarinet): the reed is a pressure valve at the end of a bore, which holds its register
+// steadily. A cylinder (clarinet-like) sounds the odd harmonics; a cone (double reeds: shawm, suona, zurna,
+// oboe) sounds all of them, so for a cone the same loop's output is shaped to give the even ones and
+// the nasal edge of a double reed. (A bore folded at the reed, as in STK Saxofony, jumps register.)
 class Reed {
-  constructor(sr, p) { this.sr = sr; this.p = p; const m = Math.ceil(sr / 40) + 4; this.bore = new Delay(m); this.bore2 = new Delay(m); this.lp = new OnePole(p.bright || 0.5); this.dc = new DCBlock(); this.breath = new Breath(sr, { noise: 0.08, vibDepth: 0.02, ...p }); this.on = false; }
-  start(f, peak, dur) {
-    const L = this.sr / f;
-    if (this.p.conical) { const d = L - 0.8, pos = this.p.blowPos || 0.2; this.bore.setLen((1 - pos) * d); this.bore2.setLen(pos * d); }
-    else this.bore.setLen(L * 0.5 - 1);
-    this.peak = peak; this.release = Math.floor(this.sr * dur); this.t = 0; this.on = true;
-  }
+  constructor(sr, p) { this.sr = sr; this.p = p; this.bore = new Delay(Math.ceil(sr / 40) + 4); this.lp = new OnePole(p.bright || 0.5); this.dc = new DCBlock(); this.dc2 = new DCBlock(); this.breath = new Breath(sr, { noise: 0.08, vibDepth: 0.02, ...p }); this.edge = new OnePole(0.5); this.on = false; }
+  start(f, peak, dur) { this.bore.stir(0.02); this.bore.setLen(this.sr / f * 0.5 - 1); this.peak = peak; this.release = Math.floor(this.sr * dur); this.t = 0; this.on = true; }
   tick() {
     if (!this.on) return 0;
     const b = this.breath.tick(this.t < this.release ? (this.p.pressure || 0.8) : 0, this.t < this.release ? 0.006 : 0.003);
-    let out;
-    if (this.p.conical) {
-      const temp = -0.95 * this.lp.tick(this.bore.read());
-      out = temp - this.bore2.read();
-      const pd = b - out; let reed = 0.7 + 0.3 * pd; reed = Math.max(-1, Math.min(1, reed));
-      this.bore2.write(temp); this.bore.write(b - pd * reed - temp);
-      out *= 0.6;
-    } else {
-      const refl = -0.95 * this.lp.tick(this.bore.read());
-      const pd = refl - b; let reed = 0.7 - 0.3 * pd; reed = Math.max(-1, Math.min(1, reed));
-      out = b + pd * reed; this.bore.write(out); out *= 0.6;
+    const refl = -0.95 * this.lp.tick(this.bore.read());
+    const pd = refl - b; let reed = 0.7 - 0.3 * pd; reed = Math.max(-1, Math.min(1, reed));
+    let out = b + pd * reed; this.bore.write(out);
+    out = this.dc.tick(out);
+    if (this.p.conical) { // rectify part of the wave (even harmonics), then lift the edge above the lowest partials
+      const shaped = out + 1.6 * Math.abs(out) - 0.4 * out * out * out, hi = shaped - this.edge.tick(shaped);
+      out = this.dc2.tick(shaped * 1.1 + hi * 1.8); // (a double reed is loud: a little above the clarinet)
     }
     this.t++; if (this.t > this.release + this.sr * 0.4) this.on = false;
-    return this.dc.tick(out) * this.peak * 2;
+    return out * 0.6 * this.peak * 2;
   }
 }
 // Brass (STK Brass): buzzing lips (a resonant filter tuned to the note) against the bore.
 class Brass {
   constructor(sr, p) { this.sr = sr; this.p = p; this.bore = new Delay(Math.ceil(sr / 20) + 8); this.dc = new DCBlock(); this.breath = new Breath(sr, { noise: 0.02, vibDepth: 0.01, ...p }); this.on = false; }
   start(f, peak, dur) {
-    const sr = this.sr; this.bore.setLen(sr / f * 2 + 3);
+    const sr = this.sr; this.bore.setLen(sr / f * 2 + 3); this.bore.stir(0.02);
     const w = 2 * Math.PI * f / sr, r = 0.997; this.a1 = -2 * r * Math.cos(w); this.a2 = r * r; this.y1 = this.y2 = 0; this.g = 0.03;
     this.peak = peak; this.release = Math.floor(sr * dur); this.t = 0; this.on = true;
   }

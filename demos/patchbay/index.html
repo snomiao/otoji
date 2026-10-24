@@ -4381,11 +4381,12 @@ function applyPendingAtBar(cid, c) {
 const startBtn = document.getElementById("startBtn");
 async function start() {
   ensureAudio(); await ctx.resume();
-  if (!running) { rebuild(); await Promise.race([Promise.all(bodyCal.values()), new Promise((r) => setTimeout(r, 800))]); } // the bodies' levels (once, a few hundred ms)
+  if (!running) { rebuild(); await Promise.race([Promise.all([pmLoading, ...bodyCal.values()]), new Promise((r) => setTimeout(r, 800))]); } // the instrument models load and the bodies' levels settle (once, a few hundred ms) before the first note
   master.gain.setTargetAtTime(volume(), ctx.currentTime, 0.02);
-  running = true; mic.error = null; midi.error = null; startedAt = ctx.currentTime + 0.06; rebuild();
+  const lead = ctx.currentTime < 0.5 ? 0.35 : 0.06; // a context that has only just started gets a moment before the first note
+  running = true; mic.error = null; midi.error = null; startedAt = ctx.currentTime + lead; rebuild();
   if (nodes(patch).some((n) => n.kind === "screen" && n.enabled)) ensureScreen();
-  for (const c of clocks.values()) { c.nextTime = ctx.currentTime + 0.06; c.step = 0; }
+  for (const c of clocks.values()) { c.nextTime = ctx.currentTime + lead; c.step = 0; }
   startBtn.setAttribute("aria-pressed", "true"); startBtn.textContent = "● Playing";
 }
 function stop() {
