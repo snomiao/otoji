@@ -55,6 +55,233 @@ SCORES["achaemenids:showcase"] = {
 `,
 };
 
+// ── americans.death.js
+// A New Orleans jazz funeral: a hymn dirge to the grave, then "When the Saints" for the second line, after Eureka Brass Band (1951) and Bunk Johnson's Brass Band (1945).
+SCORES["americans:death"] = {
+  about: "a jazz funeral: the brass band walks to the cemetery playing the hymn Nearer, My God, to Thee as a dirge, the snare rolls the body away, and the band and the second line come back dancing to When the Saints Go Marching In",
+  heard: "out in a narrow New Orleans street between wooden houses: mourners walk slowly behind the band, murmuring; after the burial the bass drum kicks off, umbrellas go up, the second line claps on 2 and 4, sings the chorus with the horns and shouts",
+  refs: [
+    { title: "When the Saints Go Marching In (1945)", who: "Bunk Johnson's Brass Band, New Orleans, American Music label", url: "https://www.youtube.com/watch?v=I1qFMZQrGbs" },
+    { title: "Just a Closer Walk with Thee (dirge, 1951)", who: "Eureka Brass Band, recorded in New Orleans by Folkways", url: "https://www.youtube.com/watch?v=aMnhdaWafIY" },
+  ],
+  measured: "Bunk's Saints: 117 beats a minute in two (bass drum on every beat, 8th-note snare), major, the band filling 250 Hz–4 kHz, only 5 dB of dynamics (a street band never lets up); the 78 transfer sits a quarter-tone sharp of A♭, so A♭. Eureka's dirge: no pulse the tracker can lock to, so the bass drum's slow four at about 58 is used; long swelling notes (0.5–2.5 s, ~6 cents vibrato), 22 dB of dynamics, nothing above 4 kHz. Our render: Saints at 117.5 in two, 4.7 dB range, spectrum peaking 500 Hz–1 kHz; the dirge in a slow four with an 8 dB swell. Still differs: the synth brass is rounder than the old cornets (2–4 kHz sits 13 dB under the 78 even with the eq lift), and there is no growl, rip or shake on the trumpet. The hymn is Nearer, My God, to Thee (Bethany, Lowell Mason 1856), a dirge the bands also play, since Closer Walk's printed arrangement is newer",
+  text: `
+. clock        58 4/4
+. arrange@song dirge:12bars@58 roll:4bars@117 saints:16bars sing:16bars hot:16bars
+. key          major Ab
+
+. caption@hymn   "Nearer, my God, to Thee, nearer to Thee" ?song.1
+. caption@chorus "Oh when the saints go marching in" ?song.4
+
+. crowd@mourners murmur "o lor yes lor ha mer si um hum" voices=10 voice=mixed vol=1.3 pitch=0.9 dyn="mp p mp" ?song.1
+. brass@cornet  key=Eb oct=4 vol=1.4 grid=8 human=0.5 dyn="p mf f mp p mf ff p mp f mf pp" "3 - - 2 1 - - 1 6, - - - 5, - - - 5, - - 1 3 - - - 2 - - - - - - - 3 - - 2 1 - - 1 6, - - - 5, - - - 5, - - 1 2 - - - 1 - - - - - - - 3 - - 2 1 - - 1 6, - - - 5, - - - 5, - - 1 2 - - - 1 - - - - - - - 0 - - - - - - - 0 - - - - - - - 0 - - - - - - - 0 - - - - - - -" ?song.1
+. reed@clarinet key=Eb oct=5 grid=8 human=0.4 vol=0.45 dyn="p" "5 - - - 6 - 5 - 6 - - - 5 - - - 5 - - - 6 - 5 - 5 - - - 4 - - - 5 - - - 6 - 5 - 6 - - - 5 - - - 5 - 6 - 5 - 4 - 3 - - - - - - - 5 - - - 6 - 5 - 6 - - - 5 - - - 5 - 6 - 5 - 4 - 3 - - - - - - - 0 - - - - - - - 0 - - - - - - - 0 - - - - - - - 0 - - - - - - -" ?song.1
+. brass@alto-horns key=Eb oct=3 grid=4 human=0.4 vol=0.55 dyn="p mp mf mp p mp mf p" "1+3+5 - - - 1+4+6 - 1+3+5 - 1+3+5 - - - 7,+2+5 - - - 1+3+5 - - - 1+4+6 - 1+3+5 - 1+3+5 - 7,+2+4 - 1+3+5 - - - 1+3+5 - - - 1+4+6 - 1+3+5 - 1+3+5 - 7,+2+4 - 1+3+5 - - - 0 - - - 0 - - - 0 - - - 0 - - -" ?song.1
+. brass@tuba    key=Eb oct=2 grid=4 human=0.3 vol=0.4 "1 - 5, - 4, - 1 - 1 - 5, - 5, - 2 - 1 - 5, - 4, - 1 - 1 - 5, - 1 - 5, - 1 - 5, - 4, - 1 - 1 - 5, - 1 - 5, - 0 - - - 0 - - - 0 - - - 0 - - -" ?song.1
+. drums@dirge-drums kit=orch vol=0.3 human=0.3 "X.......X.......|....x.x.....x.x.|................" ?song.1
+. drums@roll    kit=orch vol=0.7 "x...............................................X...X...X.X.X...|xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx....X...X.X.X.X.|................................................................" ?song.2
+. crowd@cheer   shout "o-YE" "........................................................x---...." voices=16 voice=mixed vol=0.6 ?song.2
+. brass@trumpet oct=4 grid=4 human=0.5 vol=1.5 dyn="f" "0 1 3 4 5 - - - 0 1 3 4 5 - - - 0 1 3 4 5 - 3 - 1 - 3 - 2 - - - 0 3 3 2 1 - - 1 3 5 - 5 4 4 3 4 5 - 3 - 1 - 2 - 1 - - - - - - -" ?song.3-4
+. brass@trumpet-hot oct=4 grid=8 human=0.6 vol=1.5 dyn="ff" "0 - 1 - 3 - 4 - 5' - - 4' 5' - 6' 5' 0 - 1 - 3 - 4 - 5 - 6 5 1' - - - 0 - 1 - 3 - 4 - 5 - - - 3 - 1' - 1 - - 2 3 - 5 - 2 - - - (3)2 - 1 - 0 - 3 - 3 - 2 - 1 - - - 5 - 1' - 3 - 5 - - - 5 - 4 - 4 - 3 - 4 - 5' - - - 3' - - - 1' - - - 2' - - - 1' - - - - - - - 5 - 6 - 1' - 3' -" ?song.5
+. reed@clarinet-obbligato oct=4 grid=8 human=0.6 vol=0.4 dyn="mf" "1' - 3' 5' - 3' 1' 5 6 1' 3' - 2' 1' 6 5 5 - 1' 3' 5' 3' 2' 1' 1' - 3' 5' - 3' 1' 5 6 1' 3' - 2' 1' 6 5 5 - 1' 3' 5' 3' 2' 1' 1' - 3' 5' - 3' 1' 5 7 2' 5' - 4' 2' 7 5 5 - 1' 3' 5' 3' 2' 1' b7 1' 3' 5' b7' - 5' 3' 6 1' 3' - 2' 1' 6 5 6 1' 4' - 6' 4' 1' 6 1' - 3' 5' - 3' 1' 5 7 2' 5' - 4' 2' 7 5 5 - 1' 3' 5' 3' 2' 1' 1' - 3' 5' - 3' 1' 5" ?song.3-5
+. brass@trombone oct=3 grid=8 human=0.6 vol=0.75 dyn="mf" "1 - - - 5,~1 - - - 3 - 2 - 1 - 5, - 1 - - - 5,~1 - - - 3 - 2 - 1 - 5, - 1 - - - 5,~1 - - - 3 - 2 - 1 - 5, - 1 - - - 5,~1 - - - 5, - - 2 - - 5,~7, - 1 - - - 5,~1 - - - b7, - - 1 3 - 5, - 1 - - - 5,~1 - - - 4, - - 6, 1 - 4,~6, - 1 - - - 5,~1 - - - 5, - - 2 - - 5,~7, - 1 - - - 5,~1 - - - 3 - 2 - 1 - 5, -" ?song.3-5
+. brass@peck-horns oct=4 grid=4 human=0.5 vol=0.4 "0 1+3+5 0 1+3+5 0 1+3+5 0 1+3+5 0 1+3+5 0 1+3+5 0 1+3+5 0 1+3+5 0 1+3+5 0 1+3+5 0 1+3+5 0 1+3+5 0 1+3+5 0 1+3+5 0 7,+2+5 0 7,+2+5 0 1+3+5 0 1+3+5 0 b7,+3+5 0 b7,+3+5 0 1+3+5 0 1+3+5 0 1+4+6 0 1+4+6 0 1+3+5 0 1+3+5 0 7,+2+5 0 7,+2+5 0 1+3+5 0 1+3+5 0 1+3+5 0 1+3+5" ?song.3-5
+. brass@sousaphone oct=2 grid=4 human=0.4 vol=0.4 "1 - 5, - 1 - 3 - 1 - 5, - 1 - 3 - 1 - 5, - 1 - 3 - 1 - 5, - 5, - 7, - 1 - 5, - 1 - b7, - 1 - 5, - 4, - 6, - 1 - 5, - 5, - 7, - 1 - 5, - 1 - 3 -" ?song.3-5
+. drums@street-beat kit=orch vol=0.35 human=0.4 "X.....x.X.......|..x.x..xx.x.x.xx|....x.......x..." ?song.3-5
+. drums@clapping kit=flamenco vol=0.5 human=0.6 "................|................|....x.......x..." ?song.4-5
+. chant@second-line voice=women voices=8 oct=4 grid=4 human=0.6 vol=0.7 vib=0.02 breath=0.15 ipa="oʊ wɛn ðə seɪnts goʊ mɑɹ tʃɪŋ ɪn oʊ wɛn ðə seɪnts goʊ mɑɹ tʃɪŋ ɪn oʊ lɔɹd aɪ wɑnt tə bi ɪn ðæt nʌm bəɹ wɛn ðə seɪnts goʊ mɑɹ tʃɪŋ ɪn" "0 1 3 4 5 - - - 0 1 3 4 5 - - - 0 1 3 4 5 - 3 - 1 - 3 - 2 - - - 0 3 3 2 1 - - 1 3 5 - 5 4 4 3 4 5 - 3 - 1 - 2 - 1 - - - - - - -" ?song.4-5
+. chant@second-line-men voice=men voices=6 oct=3 grid=4 human=0.6 vol=0.6 breath=0.15 ipa="oʊ wɛn ðə seɪnts goʊ mɑɹ tʃɪŋ ɪn oʊ wɛn ðə seɪnts goʊ mɑɹ tʃɪŋ ɪn oʊ lɔɹd aɪ wɑnt tə bi ɪn ðæt nʌm bəɹ wɛn ðə seɪnts goʊ mɑɹ tʃɪŋ ɪn" "0 1 3 4 5 - - - 0 1 3 4 5 - - - 0 1 3 4 5 - 3 - 1 - 3 - 2 - - - 0 3 3 2 1 - - 1 3 5 - 5 4 4 3 4 5 - 3 - 1 - 2 - 1 - - - - - - -" ?song.4-5
+. crowd@street  murmur "hei ya ye go on nau bei bi" voices=14 voice=mixed vol=0.45 ?song.3-5
+. crowd@shouts  shout "YE o-YE" "x-..............................................x---............" voices=14 voice=mixed vol=1.2 ?song.5
+
+*> space       courtyard size=1.6 wet=0.25
+>  eq          low=-3 mid=1 high=7
+>  speaker     0.5
+`,
+};
+
+// ── americans.drought.js
+// Black Sunday, 14 April 1935: the dust storm and a ballad of it sung to the guitar, in the minor mode and two-beat of the songs the Dust Bowl migrants made, after the Todd–Sonkin field recordings (1940). Guthrie's own song is still in copyright and is not reproduced; the words here are new.
+SCORES["americans:drought"] = {
+  about: "the black blizzard: wind and dust roaring against the farmhouse, then a man sings a ballad of that day to his guitar in the Aeolian mode, boom-chick, like the songs sung in the migrant camps",
+  heard: "inside a shut farmhouse on the plains at noon gone dark: the dust storm howling and hissing at the windows stuffed with wet rags, the family close together; the singer quiet and plain, the guitar beside him",
+  refs: [
+    { title: "Sunny Cal (Firebaugh FSA Camp, 17 August 1940)", who: "Jack Bryant, voice and guitar; recorded by Charles Todd and Robert Sonkin (Library of Congress, Voices from the Dust Bowl)", url: "https://www.youtube.com/watch?v=EmK6dAl3F0M" },
+  ],
+  measured: "Sunny Cal (a migrant's own song, Firebaugh camp 1940): 123 in two, boom-chick guitar, a man's plain voice A2–D4 with little vibrato (~6 c), in the minor mode on B (0, 320, 780, 1010 c: Aeolian), 125 Hz–4 kHz. Ours: rendered 123 in two, voice G♯2–F♯4, B Aeolian, guitar bass on 1 and 3 and chords between; the tune and words are new (the camp song and Guthrie's are not copied), sung inside the house as the dust storm roars. Still differs: the wind is a generic gale, not the hiss and rattle of grit on glass; the singer is formant-synthesized and steadier than the real voice",
+  text: `
+. clock        123 4/4
+. arrange@song storm:4bars ballad:9bars ballad2:9bars
+. scale@aeolian 1 2 b3 4 5 b6 b7
+. key          aeolian B
+
+. caption@words "The sky turned black at Sunday noon, / the wind come down the plain" ?song.2-3
+. wind@dust    0.6 gust=0.2Hz
+. wind@hiss    0.25 gust=0.5Hz
+. crowd@family murmur "sa nau ma ma" voices=3 voice=mixed vol=0.5 dyn="p" ?song.1
+. chant@singer voice=men oct=3 grid=8 human=0.5 rubato=0.15 vib=0.012 breath=0.15 bright=0.45 ipa="ðə skaɪ tɜɹnd blæk ət sʌn deɪ nuːn ðə wɪnd kʌm daʊn ðə pleɪn wi hʌŋ wɛt ɹæɡz ə kɹɔs ðə dɔɹ ænd pɹeɪd ə ɡɛn fɔɹ ɹeɪn" "0 0 0 0 0 0 5, - 1 - 1 - b3 - 4 - 5 - 4 - b3 - 1 - b7, - 1 - b3 - 1 - 5, - - - 0 0 5, - 1 - b3 - 4 - 5 - b7 - 5 - 4 - b3 - 4 - b3 - 1 - b7, - 1 - - - 0 0 0 0" ?song.2-3
+. pluck@guitar-bass oct=3 grid=8 human=0.4 vol=0.9 "1 - 0 - 5, - 0 - 1 - 0 - 5, - 0 - 1 - 0 - 5, - 0 - b7,, - 0 - 4, - 0 - b7,, - 0 - 4, - 0 - 1 - 0 - 5, - 0 - b7,, - 0 - 4, - 0 - b7,, - 0 - 4, - 0 - 1 - 0 - 5, - 0 -" ?song.2-3
+. pluck@guitar oct=4 grid=8 human=0.5 vol=0.9 "0 1+b3+5 0 1+b3+5 0 1+b3+5 0 1+b3+5 0 1+b3+5 0 1+b3+5 0 1+b3+5 0 1+b3+5 0 1+b3+5 0 1+b3+5 0 1+b3+5 0 1+b3+5 0 b7,+2+4 0 b7,+2+4 0 b7,+2+4 0 b7,+2+4 0 b7,+2+4 0 b7,+2+4 0 b7,+2+4 0 b7,+2+4 0 1+b3+5 0 1+b3+5 0 1+b3+5 0 1+b3+5 0 b7,+2+4 0 b7,+2+4 0 b7,+2+4 0 b7,+2+4 0 b7,+2+4 0 b7,+2+4 0 b7,+2+4 0 b7,+2+4 0 1+b3+5 0 1+b3+5 0 1+b3+5 0 1+b3+5" ?song.2-3
+
+*> space       room size=0.7 wet=0.15
+>  speaker     0.5
+`,
+};
+
+// ── americans.festival.js
+// Auld Lang Syne at midnight on New Year's Eve, after the Edison Quartette's 1902 cylinder: the quartet sings it in close harmony, then the whole room joins in.
+SCORES["americans:festival"] = {
+  about: "New Year's Eve: at midnight the bells ring in the year and the room cheers; a male quartet sings Auld Lang Syne (Burns 1788, the Scots tune) in close harmony, then everyone joins hands and sings it again together",
+  heard: "a crowded parlour or hall at midnight: talk and laughter, church bells and ship whistles from outside the windows, a cheer of Happy New Year; the quartet stands together and sings slowly, then the whole party sings along, men and women, not quite together",
+  refs: [
+    { title: "Auld Lang Syne (1902 cylinder)", who: "Edison Quartette (Edison 2-minute record)", url: "https://www.youtube.com/watch?v=Yr98659UO10" },
+  ],
+  measured: "1902 cylinder: four men a cappella, slow and legato, resting on C/C♯ (the cylinder's speed is uncertain by a semitone), A2–F4, wide vibrato ~15 c and scoops into notes (glide ratio 0.18), about 1.8 notes a second; the horn recording rings at 1–2 kHz and the lows are gone. Ours: the same verse and chorus melody (the Scots tune), harmonized close on the chord of each bar (lead, tenor above, baritone and bass below), 84 to the beat; rendered about 0.9 syllables a second in the quartet (the long held notes), 250–500 Hz peak. Still differs: no horn colouring is copied, so ours is warmer and darker than the cylinder (1–2 kHz 14 dB lower); the chorus words are laid on the tune roughly, syllable for note; the room's singing-along is a two-part crowd in unison, not the ragged many-voiced singing of a real party",
+  text: `
+. clock        84 4/4
+. arrange@song midnight:4bars quartet:17bars everyone:17bars
+. key          major C#
+
+. caption@words "Should auld acquaintance be forgot, / And never brought to mind?" ?song.2-3
+. crowd@party  murmur "ha ha ye so wel hai nau ya" voices=20 voice=mixed vol=0.8 dyn="mf mf p" ?song.1
+. bell@church-bells oct=3 grid=4 human=0.3 vol=0.5 "1 - 1 - 1 - 1 - 1 - 1 - 1 - 1 - 1 - 1 - 1 - 1 -" ?song.1
+. brass@ship-whistle oct=3 grid=4 human=0.2 vol=0.3 "0 0 0 0 0 0 5 - - - - - 0 0 0 0" ?song.1
+. crowd@cheer  shout "ha-pi nu YIR" "........................................x-x-x---..............................................................................." voices=24 voice=mixed vol=1.2 ?song.1
+. chant@lead   voice=men oct=3 grid=8 human=0.4 rubato=0.2 vib=0.016 breath=0.08 bright=0.5 dyn="mf" ipa="ʃʊd ɔːld ə kweɪn təns biː fɔɹ ɡɒt ænd nɛ vəɹ bɹɔːt tə maɪnd ʃʊd ɔːld ə kweɪn təns biː fɔɹ ɡɒt ænd ɔːld læŋ saɪn _ _ fɔɹ ɔːld læŋ saɪn maɪ diːɹ _ fɔɹ ɔːld læŋ saɪn _ wiːl tɑːk ə kʌp ə kaɪnd nəs jɛt fɔɹ ɔːld læŋ saɪn _ _ _ _" "0 0 0 0 0 0 5, - 1 - - 1 1 - 3 - 2 - - 1 2 - 3 - 1 - - 1 3 - 5 - 6 - - - - - 6 - 5 - - 3 3 - 1 - 2 - - 1 2 - 3 - 1 - - 6, 6, - 5, - 1 - - - - - 5 - 6 - - 5 3 - 1 - 2 - - 1 2 - 3 - 1 - - 1 3 - 5 - 6 - - - - - 6 - 5 - - 3 3 - 1 - 2 - - 1 2 - 3 - 1 - - 6, 6, - 5, - 1 - - - - - - -" ?song.2
+. chant@tenor  voice=men oct=3 grid=8 human=0.4 rubato=0.2 vib=0.016 breath=0.08 bright=0.5 vol=0.55 ipa="ʃʊd ɔːld ə kweɪn təns biː fɔɹ ɡɒt ænd nɛ vəɹ bɹɔːt tə maɪnd ʃʊd ɔːld ə kweɪn təns biː fɔɹ ɡɒt ænd ɔːld læŋ saɪn _ _ fɔɹ ɔːld læŋ saɪn maɪ diːɹ _ fɔɹ ɔːld læŋ saɪn _ wiːl tɑːk ə kʌp ə kaɪnd nəs jɛt fɔɹ ɔːld læŋ saɪn _ _ _ _" "0 0 0 0 0 0 1 - 3 - - 3 3 - 5 - 5 - - 2 5 - 5 - 3 - - 3 5 - 1' - 1' - - - - - 1' - 1' - - 5 5 - 3 - 5 - - 2 5 - 5 - 4 - - 1 1 - 6, - 3 - - - - - 1' - 1' - - 6 4 - 4 - 5 - - 2 5 - 5 - 3 - - 3 5 - 1' - 1' - - - - - 1' - 1' - - 5 5 - 3 - 5 - - 2 5 - 5 - 4 - - 1 1 - 6, - 3 - - - - - - -" ?song.2-3
+. chant@baritone voice=men oct=3 grid=8 human=0.4 rubato=0.2 vib=0.014 breath=0.08 bright=0.5 vol=0.6 ipa="ʃʊd ɔːld ə kweɪn təns biː fɔɹ ɡɒt ænd nɛ vəɹ bɹɔːt tə maɪnd ʃʊd ɔːld ə kweɪn təns biː fɔɹ ɡɒt ænd ɔːld læŋ saɪn _ _ fɔɹ ɔːld læŋ saɪn maɪ diːɹ _ fɔɹ ɔːld læŋ saɪn _ wiːl tɑːk ə kʌp ə kaɪnd nəs jɛt fɔɹ ɔːld læŋ saɪn _ _ _ _" "0 0 0 0 0 0 3, - 5, - - 5, 5, - 1 - 7, - - 7, 7, - 2 - 5, - - 5, 1 - 3 - 4 - - - - - 4 - 3 - - 1 1 - 5, - 7, - - 7, 7, - 2 - 6, - - 4, 4, - 4, - 5, - - - - - 3 - 4 - - 4 1 - 6, - 7, - - 7, 7, - 2 - 5, - - 5, 1 - 3 - 4 - - - - - 4 - 3 - - 1 1 - 5, - 7, - - 7, 7, - 2 - 6, - - 4, 4, - 4, - 5, - - - - - - -" ?song.2-3
+. chant@bass   voice=men oct=3 grid=8 human=0.4 rubato=0.2 vib=0.012 breath=0.08 bright=0.5 vol=0.5 ipa="ʃʊd ɔːld ə kweɪn təns biː fɔɹ ɡɒt ænd nɛ vəɹ bɹɔːt tə maɪnd ʃʊd ɔːld ə kweɪn təns biː fɔɹ ɡɒt ænd ɔːld læŋ saɪn _ _ fɔɹ ɔːld læŋ saɪn maɪ diːɹ _ fɔɹ ɔːld læŋ saɪn _ wiːl tɑːk ə kʌp ə kaɪnd nəs jɛt fɔɹ ɔːld læŋ saɪn _ _ _ _" "0 0 0 0 0 0 1, - 1, - - 1, 1, - 1, - 5, - - 5, 5, - 5, - 1, - - 1, 1, - 1, - 4, - - - - - 4, - 1, - - 1, 1, - 1, - 5, - - 5, 5, - 5, - 4, - - 4, 4, - 4, - 1, - - - - - 1, - 4, - - 4, 4, - 4, - 5, - - 5, 5, - 5, - 1, - - 1, 1, - 1, - 4, - - - - - 4, - 1, - - 1, 1, - 1, - 5, - - 5, 5, - 5, - 4, - - 4, 4, - 4, - 1, - - - - - - -" ?song.2-3
+. chant@everyone-men voice=men voices=10 oct=3 grid=8 human=0.7 rubato=0.2 vib=0.02 breath=0.15 vol=0.8 ipa="ʃʊd ɔːld ə kweɪn təns biː fɔɹ ɡɒt ænd nɛ vəɹ bɹɔːt tə maɪnd ʃʊd ɔːld ə kweɪn təns biː fɔɹ ɡɒt ænd ɔːld læŋ saɪn _ _ fɔɹ ɔːld læŋ saɪn maɪ diːɹ _ fɔɹ ɔːld læŋ saɪn _ wiːl tɑːk ə kʌp ə kaɪnd nəs jɛt fɔɹ ɔːld læŋ saɪn _ _ _ _" "0 0 0 0 0 0 5, - 1 - - 1 1 - 3 - 2 - - 1 2 - 3 - 1 - - 1 3 - 5 - 6 - - - - - 6 - 5 - - 3 3 - 1 - 2 - - 1 2 - 3 - 1 - - 6, 6, - 5, - 1 - - - - - 5 - 6 - - 5 3 - 1 - 2 - - 1 2 - 3 - 1 - - 1 3 - 5 - 6 - - - - - 6 - 5 - - 3 3 - 1 - 2 - - 1 2 - 3 - 1 - - 6, 6, - 5, - 1 - - - - - - -" ?song.3
+. chant@everyone-women voice=women voices=10 oct=4 grid=8 human=0.7 rubato=0.2 vib=0.02 breath=0.15 vol=0.7 ipa="ʃʊd ɔːld ə kweɪn təns biː fɔɹ ɡɒt ænd nɛ vəɹ bɹɔːt tə maɪnd ʃʊd ɔːld ə kweɪn təns biː fɔɹ ɡɒt ænd ɔːld læŋ saɪn _ _ fɔɹ ɔːld læŋ saɪn maɪ diːɹ _ fɔɹ ɔːld læŋ saɪn _ wiːl tɑːk ə kʌp ə kaɪnd nəs jɛt fɔɹ ɔːld læŋ saɪn _ _ _ _" "0 0 0 0 0 0 5, - 1 - - 1 1 - 3 - 2 - - 1 2 - 3 - 1 - - 1 3 - 5 - 6 - - - - - 6 - 5 - - 3 3 - 1 - 2 - - 1 2 - 3 - 1 - - 6, 6, - 5, - 1 - - - - - 5 - 6 - - 5 3 - 1 - 2 - - 1 2 - 3 - 1 - - 1 3 - 5 - 6 - - - - - 6 - 5 - - 3 3 - 1 - 2 - - 1 2 - 3 - 1 - - 6, 6, - 5, - 1 - - - - - - -" ?song.3
+
+*> space       hall size=0.6 wet=0.2
+>  speaker     0.5
+`,
+};
+
+// ── americans.plague.js
+// A jump-rope rhyme of the 1918 influenza, chanted by girls in an emptied street, after the voices and rhythm of children's game songs in the Library of Congress field recordings (Christine and Katherine Shipp, 1939). The rhyme's own tune is not recorded; it is chanted here on the playground's falling third.
+SCORES["americans:plague"] = {
+  about: "autumn 1918: schools are shut, and a few girls skip rope in the street chanting I had a little bird, its name was Enza; I opened the window, and in-flu-enza, the rope slapping the pavement; between rounds a church bell tolls for a funeral",
+  heard: "a quiet city street of row houses in the open air, few people about, a horse cart passing; the girls close by, the rope hitting the ground on the beat, their feet hopping; far off a single church bell",
+  refs: [
+    { title: "Sea Lion Woman (1939)", who: "Christine and Katherine Shipp, girls' game song recorded in Byhalia, Mississippi by Herbert Halpert (Library of Congress)", url: "https://www.youtube.com/watch?v=XFwktuQt6DQ" },
+  ],
+  measured: "Sea Lion Woman (two girls, 1939): about 103 to the beat, quick syllables of 0.16–0.4 s, a narrow range G♯3–F4 sung around A♯3–D♯4, wide vibrato (~19 c) and much sliding between notes (glide ratio 0.37), 250 Hz–2 kHz. Ours: rendered 103.4 in two, the rhyme on a falling-third playground chant (sol, mi, la) set in the same register (A♯3–D♯4), the rope slapping on every beat; between rounds a funeral bell. Uncertain: the 1918 rhyme survives as words only; the chant tune is the common one for such rhymes, not documented for this one. Still differs: the girls' voices are synthesized (boy voices, oct 3) and slide less than the real ones; no street sounds beyond a passing cart",
+  text: `
+. clock        104 4/4
+. arrange@song street:2bars rope:8bars toll:3bars rope2:8bars
+. key          major F#
+
+. caption@rhyme "I had a little bird, its name was Enza; / I opened the window, and in-flu-enza." ?song.2
+. wind@autumn  0.06 gust=0.05Hz
+. drums@cart   kit=horses vol=0.25 "x.....x.x.....x.|................|................" ?song.1
+. bell@church-bell oct=3 grid=4 human=0.2 vol=0.5 "1 - - - - - 1 - - - - -" ?song.3
+. drums@rope   kit=flamenco vol=1.4 "................|x...x...x...x...|................" ?song.2
+. drums@feet   kit=celtic vol=0.4 "..x...x...x...x.|................|................" ?song.2
+. chant@girls  voice=boy voices=3 oct=3 grid=8 human=0.5 rubato=0.15 vib=0.05 breath=0.2 bright=0.4 ipa="aɪ hæd ə lɪ təl bɜɹd ɪts neɪm wəz ɛn zə aɪ oʊ pənd ðə wɪn doʊ ænd ɪn flu ɛn zə" "5 5 3 6 5 - 3 - 5 5 3 - 6 - 5 - 5 5 3 3 6 - 5 - 3 5 6 - 5 - 3 -" ?song.2
+. drums@rope-2 kit=flamenco vol=1.4 "................|x...x...x...x...|................" ?song.4
+. drums@feet-2 kit=celtic vol=0.4 "..x...x...x...x.|................|................" ?song.4
+. chant@girls-2 voice=boy voices=4 oct=3 grid=8 human=0.5 rubato=0.15 vib=0.05 breath=0.2 bright=0.4 ipa="aɪ hæd ə lɪ təl bɜɹd ɪts neɪm wəz ɛn zə aɪ oʊ pənd ðə wɪn doʊ ænd ɪn flu ɛn zə" "5 5 3 6 5 - 3 - 5 5 3 - 6 - 5 - 5 5 3 3 6 - 5 - 3 5 6 - 5 - 3 -" ?song.4
+
+*> space       courtyard size=1.2 wet=0.15
+>  speaker     0.5
+`,
+};
+
+// ── americans.rain.js
+// Rain at last over a Dust Bowl family's camp, with a guitar tune in the Carter Family style the migrants played, after the Todd–Sonkin field recordings in the FSA camps (1940). Guthrie's own song is still in copyright and is not reproduced.
+SCORES["americans:rain"] = {
+  about: "after the dry years, rain: it starts on the canvas of a tent and the tin roof of a camp cabin, a man picks an old-time tune on the guitar in the Carter style, melody on the bass strings and brush strums between, and the family talks low and glad",
+  heard: "inside a tent in a government camp at dusk: rain drumming on the canvas, then harder, water running off; the guitar close, people on cots and crates talking softly, a child laughing",
+  refs: [
+    { title: "The Wildwood Flower (Arvin FSA Camp, 1 August 1940)", who: "Zelmer Ward, guitar; recorded by Charles Todd and Robert Sonkin (Library of Congress, Voices from the Dust Bowl)", url: "https://www.youtube.com/watch?v=MUI0yZFALuc" },
+  ],
+  measured: "The Arvin camp Wildwood Flower (learned from a Carter Family record): about 123 in two, the melody picked on the low strings with brush strokes between (groove XxXxXxXx in the low band), resting on B, plain major scale, no vibrato (a guitar), 250 Hz–2 kHz, a small room. Ours: rendered 123, resting on B, the melody on the guitar's bass strings and brush chords on the off-8ths; the tune is newly written in that style (Guthrie's song is not used, and the Wildwood Flower itself is not copied); rain on canvas over everything, growing heavier. Still differs: our guitar's thumb notes lack the steel strings' twang and the brush strokes are thinner; the rain fills 4–8 kHz where the recording has only room hiss",
+  text: `
+. clock        123 4/4
+. arrange@song dry:2bars tune:8bars tune2:8bars tune3:8bars
+. key          major B
+
+. rain@canvas  0.35 drops=0.5
+. rain@harder  0.4 drops=0.3 ?song.3-4
+. crowd@family murmur "wel nau hir it kams ja la" voices=5 voice=mixed vol=0.6 dyn="p mp"
+. pluck@guitar oct=3 grid=8 human=0.4 vol=1.2 dyn="mf" "5, - 1 - 1 2 3 - 5 - 3 - 2 - 1 - 6, - 1 - 1 2 3 - 2 - - - 0 0 0 0 5, - 1 - 1 2 3 - 5 - 6 - 5 - 3 - 2 - 3 - 2 - 1 - 1 - - - 0 0 0 0" ?song.2-4
+. pluck@guitar-brush oct=4 grid=8 human=0.5 vol=0.45 "0 1+3+5 0 1+3+5 0 1+3+5 0 1+3+5 0 1+3+5 0 1+3+5 0 1+3+5 0 1+3+5 0 1+4+6 0 1+4+6 0 1+4+6 0 1+4+6 0 7,+2+5 0 7,+2+5 0 7,+2+5 0 7,+2+5 0 1+3+5 0 1+3+5 0 1+3+5 0 1+3+5 0 1+4+6 0 1+4+6 0 1+4+6 0 1+4+6 0 7,+2+5 0 7,+2+5 0 7,+2+5 0 7,+2+5 0 1+3+5 0 1+3+5 0 1+3+5 0 1+3+5" ?song.2-4
+
+*> space       room size=0.8 wet=0.15
+>  speaker     0.5
+`,
+};
+
+// ── americans.ritual.js
+// Amazing Grace to the tune New Britain, as the Sacred Harp singers sing it: after the 1922 Original Sacred Harp Choir record, the first recording of the hymn.
+SCORES["americans:ritual"] = {
+  about: "Amazing Grace (John Newton, 1779) to the shape-note tune New Britain (Sacred Harp 45t): keyed, sung once through on the shapes fa-sol-la, then two verses in four parts, full voice",
+  heard: "a plain wooden country church in the South on a Sunday singing: the class sits in a hollow square facing the leader in the middle, who beats time; a keyer sounds the notes, everyone sings the shapes first, then the words, loud, nasal and unhurried, the tenor carrying the tune with men and women together an octave apart",
+  refs: [
+    { title: "New Britain (Amazing Grace), 1922", who: "Original Sacred Harp Choir, led by J. S. James, 78 rpm (the earliest recording of the hymn)", url: "https://www.youtube.com/watch?v=rznMFf1Ljz8" },
+  ],
+  measured: "1922 record (and its demucs vocal stem): three verses of about 35 s with a breath of ~1 s between, i.e. 16 bars of 3/4 at about 84 to the quarter; phrases rest on F (the transfer runs ~40 cents sharp), the tune pentatonic (1 2 3 5 6); voices fill 250 Hz–2 kHz, sustained notes up to 3 s, vibrato ~5 cents, 34 dB of dynamics on the stem (loud verses, silent breaths). Ours: tonic F, 84 in three, vibrato ~5 cents, the same 250 Hz–1 kHz peak. Still differs: the 78's bottom is gone below 250 Hz (the medium, not copied, so our bass is 20 dB fuller); the real class slides between notes and swells each long note, and its nasal edge is sharper than the formant voices; the harmony here is written in the open fifths-and-sixths style, not copied note for note from the book's 45t",
+  text: `
+. clock        84 3/4
+. arrange@song keying:2bars verse1:16bars verse2:16bars verse3:16bars
+. key          major F
+
+. caption@shapes "fa sol la · New Britain" ?song.2
+. caption@v2     "Amazing grace! how sweet the sound / That saved a wretch like me!" ?song.3
+. caption@v3     "'Twas grace that taught my heart to fear, / And grace my fears relieved" ?song.4
+
+. crowd@class  murmur "na fo ti fai wel le se ti" voices=8 voice=mixed vol=0.6 dyn="mp p" ?song.1
+. chant@keyer  voice=men oct=3 grid=8 human=0.3 vib=0.01 breath=0.1 ipa="fɑ lɑ sol fɑ" "1 - 3 - 5 - 1 - - - - -" ?song.1
+. chant@tenor  voice=men voices=8 oct=3 grid=8 human=0.5 vib=0.02 breath=0.12 bright=0.6 dyn="f" ipa="sol fɑ lɑ fɑ lɑ sol fɑ lɑ sol sol fɑ lɑ fɑ lɑ sol sol lɑ sol lɑ sol lɑ fɑ sol lɑ fɑ sol fɑ lɑ fɑ lɑ sol fɑ ə meɪ zɪŋ _ ɡɹeɪs haʊ swiːt ðə saʊnd ðæt seɪvd ə _ ɹɛtʃ laɪk miː aɪ wʌns wəz _ lɒst bʌt naʊ æm faʊnd wəz blaɪnd bʌt _ naʊ aɪ siː tweɪz ɡɹeɪs ðæt _ tɔːt maɪ hɑɹt tə fɪəɹ ænd ɡɹeɪs maɪ _ fɪəɹz ɹɪ liːvd haʊ pɹɛ ʃəs _ dɪd ðæt ɡɹeɪs ə pɪəɹ ðə aʊəɹ aɪ _ fɜɹst bɪ liːvd" "0 0 0 0 5, - 1 - - - 3 1 3 - - - 2 - 1 - - - 6, - 5, - - - 5, - 1 - - - 3 1 3 - - - 2 - 5 - - - - - - - - - 3 - 5 - - - 3 5 3 - - - 1 - 5, - - - 6, - 1 - - - 5, - 1 - - - 3 1 3 - - - 2 - 1 - - - - -" ?song.2-4
+. chant@tenor-women voice=women voices=6 oct=4 grid=8 human=0.5 vib=0.02 breath=0.12 bright=0.6 vol=0.75 ipa="sol fɑ lɑ fɑ lɑ sol fɑ lɑ sol sol fɑ lɑ fɑ lɑ sol sol lɑ sol lɑ sol lɑ fɑ sol lɑ fɑ sol fɑ lɑ fɑ lɑ sol fɑ ə meɪ zɪŋ _ ɡɹeɪs haʊ swiːt ðə saʊnd ðæt seɪvd ə _ ɹɛtʃ laɪk miː aɪ wʌns wəz _ lɒst bʌt naʊ æm faʊnd wəz blaɪnd bʌt _ naʊ aɪ siː tweɪz ɡɹeɪs ðæt _ tɔːt maɪ hɑɹt tə fɪəɹ ænd ɡɹeɪs maɪ _ fɪəɹz ɹɪ liːvd haʊ pɹɛ ʃəs _ dɪd ðæt ɡɹeɪs ə pɪəɹ ðə aʊəɹ aɪ _ fɜɹst bɪ liːvd" "0 0 0 0 5, - 1 - - - 3 1 3 - - - 2 - 1 - - - 6, - 5, - - - 5, - 1 - - - 3 1 3 - - - 2 - 5 - - - - - - - - - 3 - 5 - - - 3 5 3 - - - 1 - 5, - - - 6, - 1 - - - 5, - 1 - - - 3 1 3 - - - 2 - 1 - - - - -" ?song.2-4
+. chant@treble voice=women voices=6 oct=3 grid=8 human=0.5 vib=0.02 breath=0.12 bright=0.6 vol=0.7 ipa="lɑ sol sol sol sol lɑ sol lɑ lɑ lɑ sol sol sol sol lɑ fɑ sol fɑ sol fɑ sol sol lɑ lɑ sol lɑ sol sol sol sol lɑ sol ə meɪ zɪŋ _ ɡɹeɪs haʊ swiːt ðə saʊnd ðæt seɪvd ə _ ɹɛtʃ laɪk miː aɪ wʌns wəz _ lɒst bʌt naʊ æm faʊnd wəz blaɪnd bʌt _ naʊ aɪ siː tweɪz ɡɹeɪs ðæt _ tɔːt maɪ hɑɹt tə fɪəɹ ænd ɡɹeɪs maɪ _ fɪəɹz ɹɪ liːvd haʊ pɹɛ ʃəs _ dɪd ðæt ɡɹeɪs ə pɪəɹ ðə aʊəɹ aɪ _ fɜɹst bɪ liːvd" "0 0 0 0 3 - 5 - - - 5 5 5 - - - 6 - 5 - - - 3 - 3 - - - 3 - 5 - - - 5 5 5 - - - 6 - 1' - - - - - - - - - 5 - 1' - - - 5 1' 5 - - - 5 - 3 - - - 3 - 5 - - - 3 - 5 - - - 5 5 5 - - - 6 - 5 - - - - -" ?song.2-4
+. chant@bass   voice=men voices=6 oct=2 grid=8 human=0.5 vib=0.015 breath=0.1 vol=0.6 ipa="fɑ fɑ fɑ fɑ fɑ sol fɑ fɑ fɑ sol fɑ fɑ fɑ fɑ sol sol fɑ fɑ fɑ fɑ fɑ fɑ sol fɑ fɑ sol fɑ fɑ fɑ fɑ sol fɑ ə meɪ zɪŋ _ ɡɹeɪs haʊ swiːt ðə saʊnd ðæt seɪvd ə _ ɹɛtʃ laɪk miː aɪ wʌns wəz _ lɒst bʌt naʊ æm faʊnd wəz blaɪnd bʌt _ naʊ aɪ siː tweɪz ɡɹeɪs ðæt _ tɔːt maɪ hɑɹt tə fɪəɹ ænd ɡɹeɪs maɪ _ fɪəɹz ɹɪ liːvd haʊ pɹɛ ʃəs _ dɪd ðæt ɡɹeɪs ə pɪəɹ ðə aʊəɹ aɪ _ fɜɹst bɪ liːvd" "0 0 0 0 1 - 1 - - - 1 1 1 - - - 5 - 1 - - - 4 - 1 - - - 5 - 1 - - - 1 1 1 - - - 5 - 5 - - - - - - - - - 1 - 1 - - - 1 1 1 - - - 1 - 5 - - - 4 - 1 - - - 5 - 1 - - - 1 1 1 - - - 5 - 1 - - - - -" ?song.2-4
+
+*> space       hall size=0.7 wet=0.22
+>  speaker     0.5
+`,
+};
+
+// ── americans.winter.js
+// Jingle Bells (One Horse Open Sleigh, J. L. Pierpont 1857) as a "sleigh ride party": after the Edison Male Quartette's 1898 cylinder, the first recording of the song.
+SCORES["americans:winter"] = {
+  about: "Jingle Bells sung by a male quartet in close harmony on a sleigh ride: bells on the harness, the horse trotting, the party laughing and shouting hey",
+  heard: "out on a snowy road in the open air: a one-horse sleigh, its harness bells shaking on the beat, hooves on packed snow; four men sing the verse and chorus in close harmony, the others in the sleigh laugh, call giddy-up and whoa, and shout on the chorus; the snow swallows the echo",
+  refs: [
+    { title: "Jingle Bells (Sleigh Ride Party), 1898 cylinder", who: "Edison Male Quartette", url: "https://www.youtube.com/watch?v=pZoXLIrYru4" },
+  ],
+  measured: "cylinder and its demucs stems: about 125 to the quarter (123–129, it drifts), in two; tonic G, range D3–F5 for the four men, wide vibrato ~12 cents; the drum stem is loud at the start and end (bells, hooves and the party's noise around the song) and the other stem has a 2–4 kHz band through the choruses (the bells); voices sit in 500 Hz–4 kHz. Ours: 123 in two, tonic G, voices D3–F4 harmonized close (lead with the tune, tenor above, baritone and bass below on the chord of each bar), sleigh bells on every 8th, hooves in a trot. Still differs: the cylinder's horn makes the voices ring brighter (our 1–4 kHz is 7–10 dB lower), the singers scoop and slide into notes and laugh in the middle of lines, the party's talk is words in the record and only murmur here; the setting-off is quieter than the record's noisy start",
+  text: `
+. clock        126 4/4
+. arrange@song setoff:4bars verse:16bars chorus:16bars chorus2:16bars whoa:4bars
+. key          major G
+
+. caption@v    "Dashing through the snow / In a one-horse open sleigh" ?song.2
+. caption@c    "Jingle bells, jingle bells, / Jingle all the way!" ?song.3-4
+
+. crowd@party  murmur "ha ha he ho o la la ha ye" voices=8 voice=mixed vol=0.9 dyn="mf mp" ?song.1
+. crowd@giddyup shout "gi-di-YA" "................x---x---x-------................................" voices=2 voice=men vol=1.2 ?song.1
+. drums@whip   kit=flamenco vol=0.9 "................................................................|................X...............................................|................................................................" ?song.1
+. drums@horse  kit=horses vol=0.8 "X...x...X...x...|................................................................X...............................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................|................" ?song.1-5
+. drums@sleigh-bells kit=daf vol=1.1 "................|................|X.x.x.x.X.x.x.x." ?song.1-5
+. drums@sleigh-bells-shaken kit=daf vol=0.6 "................|................|x.xxx.xxx.xxx.xx" ?song.3-4
+. chant@lead   voice=men oct=3 grid=8 human=0.4 vib=0.014 breath=0.08 bright=0.5 dyn="f" ipa="dæ ʃɪŋ θɹu ðə snoʊ ɪn ə wʌn hɔɹs oʊ pən sleɪ oʊɹ ðə fiːldz wi ɡoʊ læ fɪŋ ɔːl ðə weɪ bɛlz ɑn bɑb teɪl ɹɪŋ meɪ kɪŋ spɪ ɹɪts bɹaɪt wʌt fʌn ɪt ɪz tə ɹaɪd ænd sɪŋ ə sleɪ ɪŋ sɔŋ tə naɪt oʊ dʒɪŋ ɡəl bɛlz dʒɪŋ ɡəl bɛlz dʒɪŋ ɡəl ɔːl ðə weɪ oʊ wʌt fʌn ɪt ɪz tə ɹaɪd ɪn ə wʌn hɔɹs oʊ pən sleɪ heɪ dʒɪŋ ɡəl bɛlz dʒɪŋ ɡəl bɛlz dʒɪŋ ɡəl ɔːl ðə weɪ oʊ wʌt fʌn ɪt ɪz tə ɹaɪd ɪn ə wʌn hɔɹs oʊ pən sleɪ dʒɪŋ ɡəl bɛlz dʒɪŋ ɡəl bɛlz dʒɪŋ ɡəl ɔːl ðə weɪ oʊ wʌt fʌn ɪt ɪz tə ɹaɪd ɪn ə wʌn hɔɹs oʊ pən sleɪ heɪ dʒɪŋ ɡəl bɛlz dʒɪŋ ɡəl bɛlz dʒɪŋ ɡəl ɔːl ðə weɪ oʊ wʌt fʌn ɪt ɪz tə ɹaɪd ɪn ə wʌn hɔɹs oʊ pən sleɪ" "5, - 3 - 2 - 1 - 5, - - - - - 5, 5, 5, - 3 - 2 - 1 - 6, - - - - - - - 6, - 4 - 3 - 2 - 7, - - - - - - - 5 - 5 - 4 - 2 - 3 - - - - - - - 5, - 3 - 2 - 1 - 5, - - - - - - - 5, - 3 - 2 - 1 - 6, - - - - - 6, - 6, - 4 - 3 - 2 - 5 - 5 - 5 - 5 - 6 - 5 - 4 - 2 - 1 - - - 5 - - - 3 - 3 - 3 - - - 3 - 3 - 3 - - - 3 - 5 - 1 - - 2 3 - - - - - - - 4 - 4 - 4 - - 4 4 - 3 - 3 - 3 3 3 - 2 - 2 - 3 - 2 - - - 5 - - - 3 - 3 - 3 - - - 3 - 3 - 3 - - - 3 - 5 - 1 - - 2 3 - - - - - - - 4 - 4 - 4 - - 4 4 - 3 - 3 - 3 3 5 - 5 - 4 - 2 - 1 - - - - - - - 3 - 3 - 3 - - - 3 - 3 - 3 - - - 3 - 5 - 1 - - 2 3 - - - - - - - 4 - 4 - 4 - - 4 4 - 3 - 3 - 3 3 3 - 2 - 2 - 3 - 2 - - - 5 - - - 3 - 3 - 3 - - - 3 - 3 - 3 - - - 3 - 5 - 1 - - 2 3 - - - - - - - 4 - 4 - 4 - - 4 4 - 3 - 3 - 3 3 5 - 5 - 4 - 2 - 1 - - - - - - -" ?song.2-4
+. chant@tenor  voice=men oct=3 grid=8 human=0.4 vib=0.014 breath=0.08 bright=0.5 vol=0.7 ipa="dæ ʃɪŋ θɹu ðə snoʊ ɪn ə wʌn hɔɹs oʊ pən sleɪ oʊɹ ðə fiːldz wi ɡoʊ læ fɪŋ ɔːl ðə weɪ bɛlz ɑn bɑb teɪl ɹɪŋ meɪ kɪŋ spɪ ɹɪts bɹaɪt wʌt fʌn ɪt ɪz tə ɹaɪd ænd sɪŋ ə sleɪ ɪŋ sɔŋ tə naɪt oʊ dʒɪŋ ɡəl bɛlz dʒɪŋ ɡəl bɛlz dʒɪŋ ɡəl ɔːl ðə weɪ oʊ wʌt fʌn ɪt ɪz tə ɹaɪd ɪn ə wʌn hɔɹs oʊ pən sleɪ heɪ dʒɪŋ ɡəl bɛlz dʒɪŋ ɡəl bɛlz dʒɪŋ ɡəl ɔːl ðə weɪ oʊ wʌt fʌn ɪt ɪz tə ɹaɪd ɪn ə wʌn hɔɹs oʊ pən sleɪ dʒɪŋ ɡəl bɛlz dʒɪŋ ɡəl bɛlz dʒɪŋ ɡəl ɔːl ðə weɪ oʊ wʌt fʌn ɪt ɪz tə ɹaɪd ɪn ə wʌn hɔɹs oʊ pən sleɪ heɪ dʒɪŋ ɡəl bɛlz dʒɪŋ ɡəl bɛlz dʒɪŋ ɡəl ɔːl ðə weɪ oʊ wʌt fʌn ɪt ɪz tə ɹaɪd ɪn ə wʌn hɔɹs oʊ pən sleɪ" "1 - 5 - 3 - 3 - 1 - - - - - 1 1 1 - 5 - 3 - 3 - 1 - - - - - - - 1 - 6 - 4 - 4 - 2 - - - - - - - 7 - 7 - 5 - 4 - 5 - - - - - - - 1 - 5 - 3 - 3 - 1 - - - - - - - 1 - 5 - 3 - 3 - 1 - - - - - 1 - 1 - 6 - 4 - 4 - 7 - 7 - 7 - 7 - 7 - 7 - 5 - 4 - 3 - - - 1' - - - 5 - 5 - 5 - - - 5 - 5 - 5 - - - 5 - 1' - 3 - - 3 5 - - - - - - - 6 - 6 - 6 - - 6 5 - 5 - 5 - 5 5 #4 - #4 - #4 - #4 - 4 - - - 7 - - - 5 - 5 - 5 - - - 5 - 5 - 5 - - - 5 - 1' - 3 - - 3 5 - - - - - - - 6 - 6 - 6 - - 6 5 - 5 - 5 - 5 5 7 - 7 - 5 - 4 - 3 - - - - - - - 5 - 5 - 5 - - - 5 - 5 - 5 - - - 5 - 1' - 3 - - 3 5 - - - - - - - 6 - 6 - 6 - - 6 5 - 5 - 5 - 5 5 #4 - #4 - #4 - #4 - 4 - - - 7 - - - 5 - 5 - 5 - - - 5 - 5 - 5 - - - 5 - 1' - 3 - - 3 5 - - - - - - - 6 - 6 - 6 - - 6 5 - 5 - 5 - 5 5 7 - 7 - 5 - 4 - 3 - - - - - - -" ?song.2-4
+. chant@baritone voice=men oct=3 grid=8 human=0.4 vib=0.012 breath=0.08 bright=0.5 vol=0.6 ipa="dæ ʃɪŋ θɹu ðə snoʊ ɪn ə wʌn hɔɹs oʊ pən sleɪ oʊɹ ðə fiːldz wi ɡoʊ læ fɪŋ ɔːl ðə weɪ bɛlz ɑn bɑb teɪl ɹɪŋ meɪ kɪŋ spɪ ɹɪts bɹaɪt wʌt fʌn ɪt ɪz tə ɹaɪd ænd sɪŋ ə sleɪ ɪŋ sɔŋ tə naɪt oʊ dʒɪŋ ɡəl bɛlz dʒɪŋ ɡəl bɛlz dʒɪŋ ɡəl ɔːl ðə weɪ oʊ wʌt fʌn ɪt ɪz tə ɹaɪd ɪn ə wʌn hɔɹs oʊ pən sleɪ heɪ dʒɪŋ ɡəl bɛlz dʒɪŋ ɡəl bɛlz dʒɪŋ ɡəl ɔːl ðə weɪ oʊ wʌt fʌn ɪt ɪz tə ɹaɪd ɪn ə wʌn hɔɹs oʊ pən sleɪ dʒɪŋ ɡəl bɛlz dʒɪŋ ɡəl bɛlz dʒɪŋ ɡəl ɔːl ðə weɪ oʊ wʌt fʌn ɪt ɪz tə ɹaɪd ɪn ə wʌn hɔɹs oʊ pən sleɪ heɪ dʒɪŋ ɡəl bɛlz dʒɪŋ ɡəl bɛlz dʒɪŋ ɡəl ɔːl ðə weɪ oʊ wʌt fʌn ɪt ɪz tə ɹaɪd ɪn ə wʌn hɔɹs oʊ pən sleɪ" "3, - 1 - 1 - 5, - 3, - - - - - 3, 3, 3, - 1 - 1 - 5, - 4, - - - - - - - 4, - 1 - 1 - 1 - 5, - - - - - - - 4 - 4 - 2 - 7, - 1 - - - - - - - 3, - 1 - 1 - 5, - 3, - - - - - - - 3, - 1 - 1 - 5, - 4, - - - - - 4, - 4, - 1 - 1 - 1 - 4 - 4 - 4 - 4 - 5 - 4 - 2 - 7, - 5, - - - 3 - - - 1 - 1 - 1 - - - 1 - 1 - 1 - - - 1 - 3 - 5, - - 1 1 - - - - - - - 1 - 1 - 1 - - 1 3 - 1 - 1 - 1 1 2 - 1 - 1 - 2 - 7, - - - 4 - - - 1 - 1 - 1 - - - 1 - 1 - 1 - - - 1 - 3 - 5, - - 1 1 - - - - - - - 1 - 1 - 1 - - 1 3 - 1 - 1 - 1 1 4 - 4 - 2 - 7, - 5, - - - - - - - 1 - 1 - 1 - - - 1 - 1 - 1 - - - 1 - 3 - 5, - - 1 1 - - - - - - - 1 - 1 - 1 - - 1 3 - 1 - 1 - 1 1 2 - 1 - 1 - 2 - 7, - - - 4 - - - 1 - 1 - 1 - - - 1 - 1 - 1 - - - 1 - 3 - 5, - - 1 1 - - - - - - - 1 - 1 - 1 - - 1 3 - 1 - 1 - 1 1 4 - 4 - 2 - 7, - 5, - - - - - - -" ?song.2-4
+. chant@bass   voice=men oct=3 grid=8 human=0.4 vib=0.01 breath=0.08 bright=0.5 vol=0.5 ipa="dæ ʃɪŋ θɹu ðə snoʊ ɪn ə wʌn hɔɹs oʊ pən sleɪ oʊɹ ðə fiːldz wi ɡoʊ læ fɪŋ ɔːl ðə weɪ bɛlz ɑn bɑb teɪl ɹɪŋ meɪ kɪŋ spɪ ɹɪts bɹaɪt wʌt fʌn ɪt ɪz tə ɹaɪd ænd sɪŋ ə sleɪ ɪŋ sɔŋ tə naɪt oʊ dʒɪŋ ɡəl bɛlz dʒɪŋ ɡəl bɛlz dʒɪŋ ɡəl ɔːl ðə weɪ oʊ wʌt fʌn ɪt ɪz tə ɹaɪd ɪn ə wʌn hɔɹs oʊ pən sleɪ heɪ dʒɪŋ ɡəl bɛlz dʒɪŋ ɡəl bɛlz dʒɪŋ ɡəl ɔːl ðə weɪ oʊ wʌt fʌn ɪt ɪz tə ɹaɪd ɪn ə wʌn hɔɹs oʊ pən sleɪ dʒɪŋ ɡəl bɛlz dʒɪŋ ɡəl bɛlz dʒɪŋ ɡəl ɔːl ðə weɪ oʊ wʌt fʌn ɪt ɪz tə ɹaɪd ɪn ə wʌn hɔɹs oʊ pən sleɪ heɪ dʒɪŋ ɡəl bɛlz dʒɪŋ ɡəl bɛlz dʒɪŋ ɡəl ɔːl ðə weɪ oʊ wʌt fʌn ɪt ɪz tə ɹaɪd ɪn ə wʌn hɔɹs oʊ pən sleɪ" "1, - 1, - 1, - 1, - 1, - - - - - 1, 1, 1, - 1, - 1, - 1, - 4, - - - - - - - 4, - 4, - 4, - 4, - 5, - - - - - - - 5, - 5, - 5, - 5, - 1, - - - - - - - 1, - 1, - 1, - 1, - 1, - - - - - - - 1, - 1, - 1, - 1, - 4, - - - - - 4, - 4, - 4, - 4, - 4, - 5, - 5, - 5, - 5, - 5, - 5, - 5, - 5, - 1, - - - 1, - - - 1, - 1, - 1, - - - 1, - 1, - 1, - - - 1, - 1, - 1, - - 1, 1, - - - - - - - 4, - 4, - 4, - - 4, 1, - 1, - 1, - 1, 1, 2, - 2, - 2, - 2, - 5, - - - 5, - - - 1, - 1, - 1, - - - 1, - 1, - 1, - - - 1, - 1, - 1, - - 1, 1, - - - - - - - 4, - 4, - 4, - - 4, 1, - 1, - 1, - 1, 1, 5, - 5, - 5, - 5, - 1, - - - - - - - 1, - 1, - 1, - - - 1, - 1, - 1, - - - 1, - 1, - 1, - - 1, 1, - - - - - - - 4, - 4, - 4, - - 4, 1, - 1, - 1, - 1, 1, 2, - 2, - 2, - 2, - 5, - - - 5, - - - 1, - 1, - 1, - - - 1, - 1, - 1, - - - 1, - 1, - 1, - - 1, 1, - - - - - - - 4, - 4, - 4, - - 4, 1, - 1, - 1, - 1, 1, 5, - 5, - 5, - 5, - 1, - - - - - - -" ?song.2-4
+. crowd@hey    shout "HEI" "........................................................................................................................x-......" voices=10 voice=mixed vol=1 ?song.3-4
+. crowd@laughing murmur "ha ha ha he he ho" voices=6 voice=mixed vol=0.6 dyn="p" ?song.4
+. crowd@whoa   shout "WO-o" "x-------........................................................" voices=2 voice=men vol=1.2 ?song.5
+. crowd@party-end murmur "ha ha he ho o la la ha ye" voices=8 voice=mixed vol=0.9 dyn="mf p" ?song.5
+. wind@cold    0.08 gust=0.05Hz
+
+*> space       field size=1.2 wet=0.12
+>  speaker     0.5
+`,
+};
+
 // ── armenians.birth.js
 // The Birth of Vahagn, the ancient song whose words Movses Khorenatsi preserved: sung to its own text in the manner of
 // Armenian monodic chant with a held drone, after Lusine Zakaryan's recording of medieval sharakans (mode, tonic, ornament
@@ -108,6 +335,34 @@ SCORES["armenians:wedding"] = {
 `,
 };
 
+// ── athenians.showcase.js
+// A choral song of Euripides' Orestes (408 BCE) in the enharmonic genus with the aulos, in the manner of the reconstructions of the Vienna papyrus (Armand D'Angour; Barnaby Brown on the Pydna aulos).
+SCORES["athenians:showcase"] = {
+  about: "the first stasimon of Orestes, κατολοφύρομαι: the chorus laments Orestes' madness in dochmiac rhythm on the enharmonic scale, with quarter-tone steps, led by a single aulos that preludes alone and then plays with the voices",
+  heard: "the theatre of Dionysus on the slope of the Acropolis in daylight: thousands on the stone seats, quiet; the chorus of fifteen sings in unison as it dances in the orchestra, the aulete beside them, the sound open to the sky with the hillside behind",
+  refs: [
+    { title: "Orestes chorus sung (Dec 2016)", who: "Armand D'Angour (University of Oxford), reconstruction from the Vienna papyrus", url: "https://www.youtube.com/watch?v=hbhV7TmZAmo" },
+    { title: "The Euripides Orestes Chorus", who: "European Music Archaeology Project, with a reconstruction of the Pydna aulos (Barnaby Brown)", url: "https://www.youtube.com/watch?v=_c2Ho9NvWY8" },
+  ],
+  measured: "Uncertain: the Vienna papyrus (c. 200 BCE) keeps only parts of seven lines, with gaps, plus instrumental notes; whether its music is Euripides' own is debated; this score does not copy the papyrus note by note but writes the opening words in its idiom: dochmiac rhythm (short-long-long-short-long, resolved into shorts on κατολοφύρομαι) and the enharmonic genus, lines coming to rest on the mese. Measured: the EMAP performance (voice and Pydna aulos) uses about 0, 90 | 520, 690, 770 cents over F♯ — two pykna a fourth apart with a quarter-tone filling — at about 1.5 notes a second, 250 Hz–2 kHz; D'Angour sings with a 60-cent step (700/760). Ours: scale@enharmonic (E, E+50, F, A, B, B+50, C); rendered it measures 30, 120 | 520, 730, 830 c, phrases resting on A, 1.85 notes a second, the same 250 Hz–2 kHz shape. Still differs: the aulos is the engine's double reed (one tone; the real instrument's two pipes beat against each other and the reed is louder and buzzier); the quarter-tones are heard more cleanly than a sung chorus would place them",
+  text: `
+. clock        84 4/4
+. arrange@song anakrousis:4bars stasimon:8bars antistrophe:8bars
+. scale@enharmonic 1 2:50 3:100 4:500 5:700 6:750 7:800
+. key          enharmonic E
+
+. caption@text "κατολοφύρομαι, κατολοφύρομαι· ματέρος αἷμα σᾶς, ὅ σ' ἀναβακχεύει· / ὁ μέγας ὄλβος οὐ μόνιμος ἐν βροτοῖς" ?song.2-3
+. crowd@theatre murmur "ka la po te mi no se" voices=20 voice=men vol=0.5 dyn="p pp" ?song.1
+. reed@aulos   oct=4 grid=8 human=0.4 rubato=0.3 vol=0.6 dyn="mf" "4 - - - 3 2 1 - 4 - - - 5 6 7 - 6 - 5 - 4 - - - 1 2 3 - 4 - - -" ?song.1
+. reed@aulos-tune oct=4 grid=8 human=0.4 rubato=0.15 vol=0.45 dyn="mf" "6 7 6 5 4 - 4 - 1' 7 6 5 6 - 5 - 4 5 - 6 - 5 4 - 3 4 - 2 - 1 4 - 5 7 - 6 - 5 4 - 4 6 - 7 - 6 5 - 6 - 5 - 3 - 4 - 0 0 0 0 0 0 0 0" ?song.2-3
+. reed@aulos-second-pipe oct=4 grid=8 human=0.3 vol=0.22 "4 - - - - - - - 4 - - - - - - - 4 - - - - - - - 4 - - - - - - - 4 - - - - - - - 4 - - - - - - - 4 - - - - - - - 4 - - - - - - -" ?song.2-3
+. chant@chorus voice=men voices=12 oct=3 grid=8 human=0.5 rubato=0.15 vib=0.015 breath=0.12 bright=0.4 dyn="mf f mf mf f f mf mp" ipa="ka to lo pʰy ro mai ka to lo pʰy ro mai ma te ros hai ma sɑːs hos a na bak kʰeu ei ho me ɡas ol bos uː mo ni mos en bro tois" "6 7 6 5 4 - 4 - 1' 7 6 5 6 - 5 - 4 5 - 6 - 5 4 - 3 4 - 2 - 1 4 - 5 7 - 6 - 5 4 - 4 6 - 7 - 6 5 - 6 - 5 - 3 - 4 - 0 0 0 0 0 0 0 0" ?song.2-3
+
+*> space       theatre size=2.5 wet=0.15
+>  speaker     0.5
+`,
+};
+
 // ── ayyubids.showcase.js
 // Hurrian hymn h.6 (to Nikkal): after Richard Dumbrill's reading of the Ugarit tablet, sung with a lyre (the voice's line
 // transcribed with pyin from the demucs voice stem of his recording; tonic and pace measured with refs/analyse.py).
@@ -130,6 +385,46 @@ SCORES["ayyubids:showcase"] = {
 . crowd@sanctuary murmur "na ki la ba sha ru" voices=4 vol=0.3 dyn="pp" ?song.1
 
 *> space       courtyard size=1.3 wet=0.3
+>  speaker     0.5
+`,
+};
+
+// ── aztecs.siege.js
+// The siege of Tenochtitlan, 1521: the great drum of the temple, conches, warriors' whistles and cries, then a song of sorrow on the clay flute. The music of the Mexica is lost; this is built from archaeological instruments as they sound today.
+SCORES["aztecs:siege"] = {
+  about: "the last nights of Tenochtitlan and Tlatelolco: the great skin drum on the temple pyramid and the teponaztli, conch shells calling, warriors' whistles and war cries, the city burning; then an icnocuīcatl, a song of sorrow, on a clay flute, with women keening",
+  heard: "in the open, over the lake city at night: the temple drum carries for leagues, conches answer from the causeways, fighting in the streets comes and goes, fires crackle; at the end only a flute and the women's wailing among the ruins",
+  refs: [
+    { title: "Flute, Pentaphonic Scale, Mirliton (Aztec)", who: "an archaeological Mexica clay flute, from a recorded survey of pre-Columbian instruments", url: "https://www.youtube.com/watch?v=Bj43nWqK-J4" },
+    { title: "Flute, Pentaphonic Scale, Mixquic (Aztec)", who: "the same survey, a flute from Mixquic", url: "https://www.youtube.com/watch?v=z9z_EFadsQ8" },
+    { title: "Tlatzotzonaliztli: huēhuētl, teponāztli y ayoyotes", who: "Tulio Torres, playing reconstructed instruments", url: "https://www.youtube.com/watch?v=bwI3-V-YYKA" },
+  ],
+  measured: "What is uncertain: no Mexica melody survives, and the song of sorrow's words survive without music; the instruments are real (clay flutes from excavations, huēhuētl, teponāztli, ayoyotes, conch), how they were played together is not known. Measured: the pentaphonic Mexica flute rests on its lowest hole and uses steps of about 0 190 400 640 cents with a note 110 cents under the tonic, long breathy notes of 1–4 s with ~15–18 cents of vibrato and frequent bends (glide ratio 0.42), 500 Hz–2 kHz; the Mixquic flute is similar (0 240 540 910). The drum demonstration runs at 89 in two, the teponāztli's two tongues about 360 cents apart, energy flat from 0 to 500 Hz. Ours: the same cents (scale@clayflute, checked: the flute holds 630 for 640), drums at 89.1 in four with the teponāztli's two tones at 360 cents, the lament gliding to 60 and resting on F. Still differs: the engine flute has almost no vibrato and no mirliton buzz (the Aztec flutes' paper-thin membrane), so it sounds smoother and steadier than the clay; the drums' low end is heavier than the demonstration (our 250 Hz–1 kHz is 15 dB lower); the war cries are generic shouts, not Nahuatl",
+  text: `
+. clock        89 4/4
+. arrange@song night:4bars drums:8bars battle:8bars lament:16bars@~60
+. scale@clayflute 1 2:190 3:400 4:640 7:1090
+. scale@twotongue 1 3:360
+. key          clayflute F
+
+. caption@title "icnocuīcatl · Tenōchtitlan, Tlatelōlco, 1521" ?song.4
+
+. wind@lake    0.1 gust=0.06Hz
+. drums@tlalpanhuehuetl kit=aztec vol=0.9 "X...............X.......x.......|................................|................................" ?song.1-3
+. brass@tecciztli oct=4 grid=8 human=0.3 vol=0.6 dyn="mp mf" "0 0 0 0 1 - - - - - - - - 0 0 0 1 - - - - - - - - - 1~7, - 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 - - - - - - - 1~7, - - - 0 0 0 0" ?song.1-3
+. drums@huehuetl kit=aztec vol=0.8 "X.....x.X...x...|................|..x...x...x...x." ?song.2-3
+. marimba@teponaztli scale=twotongue oct=3 grid=8 human=0.3 vol=1.5 "3 0 1 1 3 0 1 0 3 0 1 1 3 1 3 0" ?song.2-3
+. drums@ayoyotes kit=aztec vol=1.4 "................|................|x.x.x.x.x.x.x.x." ?song.3
+. flute@whistles oct=6 grid=8 human=0.6 vol=0.45 "0 0 4f - 0 0 0 0 0 0 0 0 4f - 2f - 0 0 0 0 0 0 0 0 0 4f 4f - 0 0 0 0 0 0 0 0 0 0 0 0 0 0 4f - 0 0 4f - 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0" ?song.3
+. crowd@warriors shout "i-YA-YA AU" "x-x-x---........................x---............................" voices=30 voice=men vol=1.5 dyn="mf f" ?song.3
+. drums@macuahuitl kit=hide vol=0.5 "x.....x...x.......x.....x...x...|..x.......x...........x.....x...|................................" ?song.3
+. drums@cannon kit=guns vol=0.35 "................................................................................................................................X...............................................................................................................................|................|................" ?song.3
+. fire@city    0.3 crackle=0.4 ?song.3-4
+. flute@tlapitzalli oct=5 grid=8 human=0.5 vol=0.9 dyn="mp mf mp p" "1 - - - - - - - 1 - - - 2 - - - 3 - - - 4 - - - - - 3 - - - 2~1 - 1 - - - - - - - - - - - 3 - 4 - 3 - - - 4 - 3 - - - 2 - 3~1 - 1 - - - - - - - 2 - 3 - 2 - 3 - 2 - - - 4 - - - - - - - 2 - - - 7, - - - - - - - 4 - 3 - 2~1 - - - 1 - - - - - - - - - - - - - - - - -" ?song.4
+. drums@huehuetl-slow kit=aztec vol=0.3 "X...............|................|................" ?song.4
+. chant@women  voice=women voices=5 oct=4 grid=8 human=0.6 vib=0.03 breath=0.3 vol=0.6 ipa="ɑ i ɑ o i ɑ o ɑ i o ɑ" "0 0 0 0 0 0 0 0 4 - - - 3~2 - - - 1 - - - - - - - 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 4 - - 3 - - 2~1 - 1 - - - - - - - 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 4 - - - 4~3 - - - 2 - - - 1 - - - - - - - 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0" ?song.4
+
+*> space       valley size=1.4 wet=0.25
 >  speaker     0.5
 `,
 };
@@ -1285,6 +1580,35 @@ SCORES["dravidians:wedding"] = {
 `,
 };
 
+// ── egyptians-late.build.js
+// Building the Khedivial Opera House in Cairo (1869): carpenters and plasterers working by lamplight to a hauling call, and then the hall's first music, the Grand March from Verdi's Aida (1871), as an Italian band of the time played it (Vessella's Italian Band, Victor 1912).
+SCORES["egyptians-late:build"] = {
+  about: "the opera house goes up in six months: hammers, chisels and hauling to the workers' call hela, hela, then in the finished hall the Grand March from Aida, the trumpets' tune on the dominant over a band in two",
+  heard: "first the building site at night, open to the sky, lamps on the scaffolding, men calling as they haul beams and the knock of many hammers; then inside the new wooden hall with its gilded tiers, a band playing the march, full and resonant",
+  refs: [
+    { title: "Verdi: Aida, Grand March (Victor 35265, 1912)", who: "Vessella's Italian Band, 78 rpm", url: "https://www.youtube.com/watch?v=CSdQnkpPOJo" },
+  ],
+  measured: "Vessella's band (1912): 123 in two, bass drum and cymbal on the beats, the melody in the brass resting on E♭ (the 78 runs about 20 c flat; Verdi's march sits in A♭ with the trumpets' tune in B; the band plays it in its own key), the tune holding the dominant in long repeated notes before climbing through the supertonic to the upper fifth and sixth (5 … 2' 1' … 5' 6' 5' 4'), 500 Hz–1 kHz, a steady loud band (dynamics 25 dB over the whole side, mostly f). Ours: the trumpet line rebuilt from that note sequence and its durations at 123, clarinets doubling an octave up, horns on the off-beats, tuba, drums; rendered 123 in two, resting on E♭, trumpets measured on 0/200/700/900 c. Still differs: the harmony under the tune is simplified to I–V, not Verdi's; the synth brass is smoother than the band's; the building site's work call (hela, hela) and hammers are scene sound, not from a recording",
+  text: `
+. clock        123 4/4
+. arrange@song building:8bars march:19bars
+. key          major D#
+
+. caption@aida "Aida · Marcia trionfale" ?song.2
+. crowd@haulers chant "HE-la HE-la he-LA" "x-x-x---x-x-x---" voices=12 voice=men vol=0.9 ?song.1
+. drums@site   kit=work vol=0.7 human=0.6 "x..x....x.x.....|....x.......x...|X...............X..............." ?song.1
+. crowd@workers murmur "ja al la ya ha bi bi ja rab" voices=10 voice=men vol=0.6 dyn="mp" ?song.1
+. brass@trumpets oct=4 grid=8 human=0.3 vol=1.3 dyn="f" "5 - 5 - - - - - - 5 - - - 5 - - 5 - - - - - 5 - - - - - - 5 - - 5 - - 5 - - 5 - - - - - - - - - - - - - - 2' 2' 5 - - - - - - - - - 5 2' 5 - - - - - 5 - - - - 1' - - - - - 2' 2' - - - - - - 2' 1' - - 1' - - 2' 2' 2' 5, - 2' 2' - 2' 5' - - - 5' - - - 6' - - 6' - - 5' - - 5' - - - 4' - 4 4 - 1 1 4 - - 4 - 4 - - 2' 1' - 1' - - 5 -" ?song.2
+. reed@clarinets oct=5 grid=8 human=0.4 vol=0.22 "5 - 5 - - - - - - 5 - - - 5 - - 5 - - - - - 5 - - - - - - 5 - - 5 - - 5 - - 5 - - - - - - - - - - - - - - 2' 2' 5 - - - - - - - - - 5 2' 5 - - - - - 5 - - - - 1' - - - - - 2' 2' - - - - - - 2' 1' - - 1' - - 2' 2' 2' 5, - 2' 2' - 2' 5' - - - 5' - - - 6' - - 6' - - 5' - - 5' - - - 4' - 4 4 - 1 1 4 - - 4 - 4 - - 2' 1' - 1' - - 5 -" ?song.2
+. brass@horns oct=3 grid=4 human=0.3 vol=0.5 "0 1+3+5 0 1+3+5 0 7,+2+5 0 1+3+5" ?song.2
+. brass@tuba   oct=2 grid=4 human=0.3 vol=0.35 "1 5, 1 5, 5, 2 1 5," ?song.2
+. drums@band-drums kit=orch vol=0.25 human=0.3 "X.......X.......|....x.......x...|X.......X......." ?song.2
+
+*> space       hall size=1.1 wet=0.28
+>  speaker     0.5
+`,
+};
+
 // ── english.gather.js
 // Scarborough Fair sung at a Harvest Home supper: rebuilt from Ewan MacColl's 1957 unaccompanied recording
 // (the Teesdale tune he had from Mark Anderson), tonic, range, scale and pace measured with refs/analyse.py.
@@ -1655,6 +1979,32 @@ SCORES["germans:triumph"] = {
 `,
 };
 
+// ── greeks.showcase.js
+// The Seikilos epitaph (Tralles, 1st c. CE), the oldest complete notated song: the melody as read from the stele's notation in modern scholarship, sung with a lyre, after the reconstructions of Ensemble Kérylos and Michael Levy.
+SCORES["greeks:showcase"] = {
+  about: "Ὅσον ζῇς φαίνου, the skolion carved on Seikilos' gravestone: first played on the lyre, then sung with the lyre following the voice note for note, then sung again with the aulos joining",
+  heard: "a small room at a banquet or by the grave in the open air of Asia Minor: one singer and one lyre, quiet and close, the guests silent; the aulos added in the last verse",
+  refs: [
+    { title: "Épitaphe de Seikilos", who: "Ensemble Kérylos (dir. Annie Bélis), Geneviève Bousquet, voice — Musique de l'Antiquité grecque", url: "https://www.youtube.com/watch?v=ycFQw_1gdFQ" },
+    { title: "Song of Seikilos — complete ancient Greek melody", who: "Michael Levy, reconstructed lyre", url: "https://www.youtube.com/watch?v=-r9gdO8EyNA" },
+  ],
+  measured: "What is certain and what is not: the pitches and the long/short rhythm signs are on the stone (here as read by Pöhlmann and West; the scale is the Iastian tonos, which sounds like E Dorian, a range of an octave E–E'); the tempo, ornament, pitch standard and accompaniment are guesses, and performers differ. Levy's lyre (the clearest line to measure): about 68 to the beat (0.88 s units, long notes of 2–3 units), the tune A E' E' C♯' D' E' | D' D' A D' E' C♯' B B B A | … ending on the low E, resting pitch E −20 c; Kérylos: the soprano with ~17 c vibrato and slides (glide ratio 0.3), lyre underneath, transposed to C♯. Ours: E Dorian, 12 beats a line in 3/4 at 72; rendered, the lyre plays exactly that note sequence (A E' E' C♯' D' E' D' D' A …) at about 0.94 s a beat, the voice measures ~12 c of vibrato, 250 Hz–1 kHz like the lyre recording. Still differs: the engine's lyre is a generic harp string, without the tortoise-shell box's knock and buzz; the syllable rhythm of the restored Greek pronunciation is only approximated",
+  text: `
+. clock        72 3/4
+. arrange@song lyre:16bars sung:16bars aulos:16bars
+. scale@iastian 1 2 b3 4 5 6 b7
+. key          iastian E
+
+. caption@l1   "Ὅσον ζῇς φαίνου, μηδὲν ὅλως σὺ λυποῦ· / πρὸς ὀλίγον ἐστὶ τὸ ζῆν, τὸ τέλος ὁ χρόνος ἀπαιτεῖ." ?song.2-3
+. pluck@lyra   oct=4 grid=4 human=0.5 rubato=0.3 vol=1.7 dyn="mf mp" "4 1'+1 - 1'+1 - - 6 7 1'+1 - - - 7 - 7 4 7 - 1' 6 5 5 5 4 6 1' 6 6+1 - 4 5 3 6 5 5+1 - 4 6 4 4 2 1 1 2 3 1 - -"
+. chant@singer voice=women oct=4 grid=4 human=0.5 rubato=0.3 vib=0.035 breath=0.12 bright=0.35 vol=0.7 dyn="mf mf mp mf" ipa="ho son zdɛːs pʰai _ nuː mɛː dɛn _ ho lɔːs _ sy ly puː _ prɔs o li ɡon es _ ti to zdɛːn _ to te los ho kʰro nos a pai _ tɛː" "4 1' - 1' - - 6 7 1' - - - 7 - 7 4 7 - 1' 6 5 5 5 4 6 1' 6 6 - 4 5 3 6 5 5 - 4 6 4 4 2 1 1 2 3 1 - -" ?song.2-3
+. reed@aulos   oct=4 grid=4 human=0.4 rubato=0.3 vol=0.4 dyn="mp" "4 1' - 1' - - 6 7 1' - - - 7 - 7 4 7 - 1' 6 5 5 5 4 6 1' 6 6 - 4 5 3 6 5 5 - 4 6 4 4 2 1 1 2 3 1 - -" ?song.3
+
+*> space       room size=1.4 wet=0.25
+>  speaker     0.5
+`,
+};
+
 // ── gurjaras.triumph.js
 // Kesariya balam, padharo mhare des: the Marwari welcome song in Maand, rebuilt from Allah Jilai Bai of Bikaner (her long opening cry and refrain measured on demucs stems).
 SCORES["gurjaras:triumph"] = {
@@ -1687,6 +2037,35 @@ SCORES["gurjaras:triumph"] = {
 . chant@gayika-ant bright=0.7 voice=women oct=3 grid=8 human=0.6 vib=0.02 breath=0.12 dyn="mf p" ipa="pə dɦaː ɾoː _ mɦaː ɾeː deːs _" "6 5 4 3 2 - 3 - 1 - - - - - - -" ?song.5
 
 *> space       field size=1.2
+>  speaker     0.5
+`,
+};
+
+// ── haudenosaunee.showcase.js
+// Haudenosaunee social dances in the longhouse: a Ladies' (women's shuffle) dance and a Smoke Dance, after the Folkways recording Seneca Social Dance Music (Allegany, 1980). Social songs only; the sacred ceremonies, such as the Great Feather Dance, are not reproduced.
+SCORES["haudenosaunee:showcase"] = {
+  about: "a social dance evening: men singers with a water drum and cow-horn rattles sing a Ladies' Dance song, the women shuffling in a circle around them; then a fast Smoke Dance, the drum and rattles driving",
+  heard: "inside a wooden longhouse at night, people on the benches along the walls, the singers seated on a bench in the middle; the women's feet shuffling on the plank floor, people talking softly between songs, a wood stove",
+  refs: [
+    { title: "7 Ladies' Dance Songs", who: "Allegany Singing Society (Seneca Social Dance Music, Folkways, recorded by Mary Riemer-Weller)", url: "https://www.youtube.com/watch?v=zriJOPDRI64" },
+    { title: "Smoke Dance", who: "Avery and Fidelia Jimerson (Seneca Social Dance Music, Folkways)", url: "https://www.youtube.com/watch?v=7CjN4J09LJU" },
+  ],
+  measured: "Ladies' Dance songs (Allegany Singing Society): 112 in two, the water drum on every 8th and the rattles filling the 16ths (high band X.XxX.Xx), resting on E with F♯, G♯ and a D about 140 c under the tonic, the leader opening high and long, then quick repeated syllables on the tonic, the singers answering; voices 125 Hz–1 kHz. Smoke Dance: faster and driving, almost all on one pitch. Ours: rendered 112.3 in two with the same high-band groove (X.XxX.Xx), resting on E with 0 200 400 1060 c; the Smoke Dance at 124. Still differs: the syllables sung here are generic vocables, not the songs' own words or vocables, and the tunes are rebuilt from the measured contour rather than transcribed song by song; the water drum's ringing, slightly bent tone is only approximated by a tuned drum; our voices are darker (500 Hz–1 kHz 13 dB lower)",
+  text: `
+. clock        112 4/4
+. arrange@song between:2bars ladies:11bars ladies2:11bars smoke:8bars@124
+. scale@ladies 1 2 3 7:1060
+. key          ladies E
+
+. crowd@benches murmur "o ne ka ta wa ni he" voices=10 voice=mixed vol=1.2 dyn="mp" ?song.1
+. timpani@water-drum oct=3 grid=8 human=0.3 vol=0.3 "1 1 1 1 1 1 1 1" ?song.2-4
+. drums@horn-rattles kit=aztec vol=1.5 "................|................|x.xxx.xxx.xxx.xx" ?song.2-4
+. drums@shuffle kit=celtic vol=0.8 "................|................|x...x.x.x...x.x." ?song.2-3
+. chant@leader voice=men oct=3 grid=16 human=0.4 vib=0.015 breath=0.12 bright=0.5 dyn="f" ipa="he ja o he ja we he ja he ja o he ja we he ja he ja o he ja we he ja he ja o he ja we he ja he ja o he ja we he ja he ja o he ja we he ja he" "2' - - - - - - - - - - - - - - - - - - 2 - - - - - - - 7 - 2 - 2 - - - 2 - - - - - - - 2 - - - 7, - 7, - - 3 - - - 1 - 1 - 7, - - 7, 7, 1 1 2 - 2 - - - 2 - - - 1 - 3 - 3 - 1 - 7, - 1 1 1 1 - 1 - - - - - - - - - - - - - - - - - - 1 - - - 2 - - - 2 - - 1 - - - 3 - 3 - - 1 1 1 1 1 1 - 1 - 2 - - - - 1 3 - - 1 1 - - 1 - - - - - - - - - - - - - - - - - - - - - -" ?song.2-3
+. chant@singers voice=men voices=5 oct=3 grid=16 human=0.5 vib=0.015 breath=0.12 bright=0.45 vol=0.7 ipa="he ja o he ja we he ja he ja o he ja we he ja he ja o he ja we he ja he ja o he ja we he ja he ja o he ja we he ja he ja o he ja we he ja he" "2' - - - - - - - - - - - - - - - - - - 2 - - - - - - - 7 - 2 - 2 - - - 2 - - - - - - - 2 - - - 7, - 7, - - 3 - - - 1 - 1 - 7, - - 7, 7, 1 1 2 - 2 - - - 2 - - - 1 - 3 - 3 - 1 - 7, - 1 1 1 1 - 1 - - - - - - - - - - - - - - - - - - 1 - - - 2 - - - 2 - - 1 - - - 3 - 3 - - 1 1 1 1 1 1 - 1 - 2 - - - - 1 3 - - 1 1 - - 1 - - - - - - - - - - - - - - - - - - - - - -" ?song.3
+. chant@smoke-singers voice=men voices=4 oct=3 grid=16 human=0.4 vib=0.01 breath=0.12 bright=0.5 ipa="we he ja he we he ja o we he ja he we he ja o we he ja he we he ja o we he ja he we he ja" "1 - 1 1 1 - 1 - 1 - 1 1 1 - - - 1 - 1 1 1 - 1 - 2 - 1 - 7, - - - 1 - 1 1 1 - 1 - 1 - 1 1 1 - - - 3 - 2 - 1 - 7, - 1 - - - - - - -" ?song.4
+
+*> space       hall size=0.5 wet=0.2
 >  speaker     0.5
 `,
 };
@@ -2523,6 +2902,35 @@ SCORES["koreans:voyage"] = {
 `,
 };
 
+// ── macedonians.showcase.js
+// The orthios nomos at the Macedonian court: the high, stirring aulos piece that, the story goes, made Alexander leap up for his weapons; salpinx signals and the army's paean. The nomos is lost; this is a reconstruction on the aulos after Stefan Hagel's reconstructed instruments.
+SCORES["macedonians:showcase"] = {
+  about: "a banquet in the palace at Pella: the aulete Timotheus plays the orthios nomos, long high calls climbing into running figures, faster and higher; the king leaps up, weapons clatter, the guests shout; outside the salpinx sounds and the soldiers sing the paean",
+  heard: "a lamp-lit banqueting hall of stone and plaster, couches along the walls, guests talking and laughing until the aulos starts and the room goes quiet; at the climax shouts and the clash of arms; then the courtyard outside, a trumpet signal and many men singing",
+  refs: [
+    { title: "Stefan Hagel plays the Hellenistic aulos", who: "European Music Archaeology Project, reconstructed aulos", url: "https://www.youtube.com/watch?v=OcHWvl16mpg" },
+  ],
+  measured: "Uncertain: the orthios nomos is lost; ancient writers say it was high-pitched and stirring and in the 'orthios' rhythm of long notes; the anecdote (Timotheus playing before Alexander) is told by later authors. This is a new reconstruction: long high calls in the Hypolydian (C D E F♯ G A B), climbing and speeding up (the section glides from 76 to 104), over a held lower pipe. Measured on Hagel's reconstructed aulos: sustained notes of up to 8 s alternating with quick figures, steady pitch, a soft 170 ms attack, harmonic 0.96. Ours: rendered, the aulos sits at 1–4 kHz and the dynamic arc rises steadily to the end (ff); the court's alalai war cry and clashing arms; salpinx signal and the soldiers' paean (ἰὴ παιάν). Still differs: the engine's reed holds the climbing line less clearly than written (a test scale showed octave slips on some notes in its middle register and about 10 c flat); there is no second pipe beating against the first",
+  text: `
+. clock        76 4/4
+. arrange@song banquet:2bars orthios:8bars@~104 alarm:2bars paean:4bars@88
+. scale@hypolydian 1 2 3 #4 5 6 7
+. key          hypolydian C
+
+. caption@nomos "ὄρθιος νόμος" ?song.2
+. crowd@guests murmur "ka la po te mi no se ha ha" voices=20 voice=men vol=0.8 dyn="mf p 0 0" ?song.1-2
+. reed@aulos   oct=5 grid=8 human=0.4 rubato=0.2 vol=0.9 dyn="mf mf f f f ff ff ff" "5 - - - - - - - 5 - 6 - 7 - 1' - 1' - - - - - - - 7 6 5 4 5 - - - 5 - - - 6 - 7 - 1' - 2' - 3' - - - 2' 1' 7 1' 2' - 1' - 7 - 5 - - - - - 1' - - - - - - - 1' 2' 3' 2' 1' - 7 - 1' - 5 - 1' - 5 - 3' - - - 2' - 1' - 5 - 6 - 7 - 1' - 2' - 3' - 4' - 5' - 5' - - - - - - - 0 0 0 0 0 0 0 0" ?song.2
+. reed@aulos-drone oct=4 grid=8 human=0.2 vol=0.3 dyn="p mp mf" "5 - - - - - - - - - - - - - - -" ?song.2
+. drums@weapons kit=clash vol=0.7 human=0.5 "X...x.x.X..x....|..x.....x.......|x.......x.x....." ?song.3
+. crowd@uproar shout "a-LA-LAI" "x-x-x---x-x-x---" voices=24 voice=men vol=1 ?song.3
+. brass@salpinx oct=4 grid=8 human=0.2 vol=0.8 dyn="f" "1 - - - 5 - - - 1' - - - - - - - 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0" ?song.4
+. chant@soldiers voice=men voices=12 oct=3 grid=8 human=0.6 vib=0.02 breath=0.2 bright=0.5 dyn="f" ipa="i eː pai aːn i eː pai aːn i eː pai aːn i" "1 - 1 - 3 - 4 - 5 - - - 4 - 3 - 1 - 1 - 3 - 4 - 3 - - - 1 - - -" ?song.4
+
+*> space       hall size=0.8 wet=0.25
+>  speaker     0.5
+`,
+};
+
 // ── magyars.triumph.js
 // Te Deum after the relief of Nándorfehérvár (1456): the noon bell that the Pope had ordered for the defenders rings out as a bell of thanksgiving, then a town church sings the Te Deum, the clergy and the people taking the verses in turn. Notes from the Antiphonale Monasticum via GregoBase, sung at the pitch and slow pace of Schola Hungarica, in the Hungarian way of pronouncing Latin (s as sh).
 SCORES["magyars:triumph"] = {
@@ -2654,6 +3062,191 @@ cavalieri,nies,nisa> eq@voices mid=4 high=-9
 `,
   };
 }
+
+// ── mayans-late.battle.js
+// Rabinal Achí (Xajoj Tun): the two warriors' sones on the long trumpets and the tun, after Henrietta Yurchenco's 1945 recording in Rabinal (Folkways).
+SCORES["mayans-late:battle"] = {
+  about: "the dance-drama Rabinal Achí: the Son of K'iche' Achi and the Son of Rabinal Achi, two long valveless trumpets wailing slightly apart in pitch over the slow strokes of the tun slit drum, as the two warriors circle each other",
+  heard: "in the plaza of Rabinal before the church at the January fiesta: masked dancers circle slowly on the packed earth, the townspeople stand around and talk softly, the trumpets and the tun are heard far across the open square",
+  refs: [
+    { title: "Rabinal Achí: Son del Quiché Achí / Son del Rabinal Achí", who: "Achi musicians of Rabinal, recorded by Henrietta Yurchenco in 1945 (Folkways, Music of the Maya-Quiches of Guatemala)", url: "https://www.youtube.com/watch?v=lcypEPBtOCc" },
+  ],
+  measured: "1945 record, demucs 'other' stem (the trumpets): rests on D♯ (+30 c), uses about 0 150 510 680/750 910 cents, the fifth heard both at 680 and at 750 (the two trumpets are not in tune with each other, which is the sound), notes 0.2–3 s with quick repeated tonguings on one note and long held calls, vibrato ~6 c, energy at 1–2 kHz; drum stem: the tun only about once every 2 s, no steady fast beat. Ours: the same cents in two scale@ lines (one trumpet each), the tune rebuilt from the stem's note sequence on a 16th grid at 60 with rubato and opposite pitch drift, the tun twice a bar on its two tongues; rests on D♯, spectrum 250 Hz–2 kHz. Still differs: the synth brass has no breathy, buzzing lip attack of the real long trumpets and cannot crack between partials; the drama's spoken K'iche' dialogue between the sones is not here",
+  text: `
+. clock        60 4/4
+. arrange@song quiche:8bars rabinal:8bars
+. scale@trumpet-a 1 2:150 4:510 5:680 6:910
+. scale@trumpet-b 1 2:150 4:510 5:750 6:910
+. key          trumpet-a D#
+
+. crowd@plaza  murmur "la ki xa ta wa ri ke cha" voices=14 voice=mixed vol=0.6 dyn="p"
+. marimba@tun  scale=trumpet-a oct=2 grid=16 human=0.3 vol=0.9 "1 - - - - - - - 2 - - - - - - -"
+. drums@tun-wood kit=aztec vol=0.6 "................|X.......x.......|................"
+. brass@trompeta oct=5 grid=16 human=0.4 rubato=0.3 drift=6 vol=1 dyn="mf f mf f mf f mp mf" "1, 1, 1, 1, - 5, - 6, 2 - 2 - - - 2 - - - 5, 5, 5, - 1 - - 1 - 1 - 2 - - - 2 - - 2 - - - - 6, - - - - - - - - - - - 0 - 1, - 5, 5, - 5, 6, - - 2 - 5, 5, - 5, - 1, - 5, - 5, 5, 1, - - - - - - - 0 - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -" ?song.1
+. brass@trompeta-2 scale=trumpet-b oct=5 grid=16 human=0.6 rubato=0.4 drift=-8 vol=0.8 dyn="mf" "0 1, 1, 1, 1, - 5, - 6, 2 - 2 - - - 2 - - - 5, 5, 5, - 1 - - 1 - 1 - 2 - - - 2 - - 2 - - - - 6, - - - - - - - - - - - 0 - 1, - 5, 5, - 5, 6, - - 2 - 5, 5, - 5, - 1, - 5, - 5, 5, 1, - - - - - - - 0 - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -" ?song.1
+. brass@trompeta-r oct=5 grid=16 human=0.4 rubato=0.3 drift=6 vol=1 dyn="mf f mf f mf f mp mf" "5, 5, - - - 5, 4, 4, - - - 1, - - 4, - - - 4, 4, 4, - - - 5, - 1 - - 1 - 6, - 5, - 4, - - - - - 5, 5, 6, - 2 - - - - - 1 - 6, - 5, - - 4, - 5, - 1, - - - - - - - - - 0 - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -" ?song.2
+. brass@trompeta-r2 scale=trumpet-b oct=5 grid=16 human=0.6 rubato=0.4 drift=-8 vol=0.8 dyn="mf" "0 5, 5, - - - 5, 4, 4, - - - 1, - - 4, - - - 4, 4, 4, - - - 5, - 1 - - 1 - 6, - 5, - 4, - - - - - 5, 5, 6, - 2 - - - - - 1 - 6, - 5, - - 4, - 5, - 1, - - - - - - - - - 0 - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -" ?song.2
+
+*> space       courtyard size=2.2 wet=0.2
+>  eq          low=-4 mid=2 high=3
+>  speaker     0.5
+`,
+};
+
+// ── mayans-late.festival.js
+// Santo Tomás in Chichicastenango: a cofradía procession with chirimía, tun, bells and firecrackers, the Dance of the Conquest, and a marimba in the plaza, after Folkways field recordings (1945–1973).
+SCORES["mayans-late:festival"] = {
+  about: "the fiesta of Santo Tomás: the cofradía carries the saint behind a chirimía and the tun, church bells and firecrackers; then a son of the Dance of the Conquest for the masked dancers; then a marimba in the plaza",
+  heard: "out of doors in the crowded plaza and on the church steps: copal smoke, the shawm and the slit drum coming through the crowd, bells ringing irregularly from the tower, bombas cracking overhead, people talking and calling, children; the dance son in the open square, the marimba under an awning",
+  refs: [
+    { title: "Baile de la Conquista: Son de Pedro Portocarrero / Son de Santa…", who: "L. and J. Ajanel, recorded by Henrietta Yurchenco, 1945 (Folkways, Music of the Maya-Quiches of Guatemala)", url: "https://www.youtube.com/watch?v=bwgLFkRS-AE" },
+    { title: "Drum and Chirimía", who: "Chuj musicians from San Mateo Ixtatán (Music of Guatemala Vol. 2, Folkways 1973)", url: "https://www.youtube.com/watch?v=_dm56yMuds0" },
+    { title: "Small Marimba", who: "Tz'utujil musicians (Music of Guatemala Vol. 1, Folkways 1969)", url: "https://www.youtube.com/watch?v=eh-0We3LiJc" },
+  ],
+  measured: "Conquista son, 1945 (demucs 'other' stem): the shawm holds A for long notes (up to 2.8 s) and turns on notes about 150/220, 460 and 680 cents above it (the second wavers between the two), 1–2 kHz, about 130–136; the drum stem enters after the first minute in three. Chuj chirimía (1973): B♭ with 570 / 900 / 1200 c, 99. Tz'utujil marimba (1969): 96, thirds at 360 and 430 c. Ours: the procession on the Chuj tune at 99 with the tun's two tongues, irregular bells and bombas; the conquista son rebuilt note by note from the stem at 132 in three (renders 129 with a two-beat drum pulse), its own scale@ in cents; the marimba as in the showcase; dynamics flat (4.8 dB) like the crowded plaza recordings. Still differs: our shawms are smoother than the real ones; the masked dancers' speeches and rattles and the palo volador are not here",
+  text: `
+. clock        99 3/4
+. arrange@song procession:18bars@99 conquista:21bars@132 plaza:16bars@96
+. scale@shawm     1 4:570 6:900
+. scale@conquista 1 2:150 3:220 4:460 5:680
+. scale@tzutujil  1 2:190 3:360 4:430 5:710
+. key          shawm A#
+
+. crowd@fiesta murmur "la ki xa ta wa ri ke cha ha ha" voices=24 voice=mixed vol=0.7 dyn="mp"
+. crowd@calls  shout "e-YA o-E" "................................................x---............................................................x-x-............" voices=4 voice=mixed vol=0.8
+. drums@bombas kit=guns vol=0.5 "................................................................................|................................................................................................x.......................................................X...........................|................" ?song.1-2
+. bell@church-bell oct=3 grid=8 human=0.6 vol=0.5 "1 - - - - - 5, - - - - - 1 - - 5, - - 0 - - - - -" ?song.1
+. reed@chirimia oct=3 grid=8 human=0.5 rubato=0.2 vol=0.7 dyn="f" "1 - 6, 1 1 1 1 - - 1 1 - 6 6 - 6 - - - 1' 6 6 6 6 - - - - - - - - 6 4 - 6 6 4 6 - 1 1 - - - - 1 1 4 6 6 6 - - 1' 6 6 - - - - - - - - - 4 6 6 6 6 1 4 4 1' - 6 6 6 1' - - - - - - - - - - - - - - - - - - - - - - - - - - - -" ?song.1
+. marimba@tun  oct=2 grid=8 human=0.3 vol=1 "1 - 2 - 2 -" ?song.1
+. reed@chirimia-son scale=conquista key=A oct=4 grid=8 human=0.5 rubato=0.2 vol=0.7 dyn="f" "4 - 1 1 - 1 - 1 3 3 - 1 1 - - - - - 1 - 1 - - 1 - - - - - 2 4 - - 4 - 1 4 4 - - 4 2 - 2 2 5 - - 4 4 - 4 - - 3 5 3 1 - - - - - 1 - - - 1 - - - - - - - - - - - 4 - 1 - 5 5 4 - 1 - - 5 - - 1 1 - - - - - 1 - - - - - 1 1 - - - 2 4 - 5 - 4 1 - - - - - - - -" ?song.2
+. drums@tambor kit=african vol=0.5 human=0.4 "X...x...x...|....X.......|............" ?song.2
+. marimba@k-ojom scale=tzutujil key=G# oct=3 grid=8 human=0.4 vol=1.1 "5 1' 4 5, 5, 5, 4 4 5 5 4 5 5 4 5 5 3 4 4 4 3 4 5 4 4 5 1' 1' 1' 1' 1' 1' 1' 1' 1' 1' 1' 4 5 5 5 4 4 4 5 4 5 5" ?song.3
+. marimba@k-ojom-bass scale=tzutujil key=G# oct=2 grid=8 human=0.3 vol=0.9 "1 - 5, - 1 - 5, - 4, - 1 - 5, - 1 -" ?song.3
+
+*> space       courtyard size=2.4 wet=0.2
+>  speaker     0.5
+`,
+};
+
+// ── mayans-late.hunt.js
+// Baile del Venado (Dance of the Deer): a son on chirimía and drum, after the 1945 field recording of K'iche' musicians (Folkways, Music of the Maya-Quiches of Guatemala).
+SCORES["mayans-late:hunt"] = {
+  about: "a son for the Dance of the Deer: the chirimía shawm circles its tonic with a note a quarter-tone above and the leading tone below, breaks off into high calls, while a drum keeps a three-beat step for the deer dancers, the hunters and their dogs",
+  heard: "out in the plaza at a patron-saint fiesta: dancers in deer masks and pelts, hunters and old men with whips stalk them in a ring; people stand around, children laugh at the clowning, somebody calls out; copal smoke and the church wall behind",
+  refs: [
+    { title: "Baile del Venado (Deer Dance): Sones para el Baile del Venado", who: "A. Sicaltos and F. Alvarado, recorded by Henrietta Yurchenco, 1945 (Folkways)", url: "https://www.youtube.com/watch?v=FpVqxpXUqOQ" },
+  ],
+  measured: "1945 record, demucs 'other' stem: the shawm circles C with a neighbour about 60 cents above (a quarter-tone wobble, not a semitone), B 110 c and A 290 c below, and leaps up to high calls on about E, F♯, G♯ two octaves up (430, 590, 780 c); quick tonguings of 0.2–0.4 s around long notes of 0.7–2.2 s; about 110 in three; 1–2 kHz. Ours: scale@venado holds those cents, the son is rebuilt note by note from the stem's sequence (15 bars of 3/4 at 110), a drum in three under it, the fiesta crowd around. Render: about 112 (the record measures 112), rests on C, the +60 c neighbour and the low 830–1100 c notes all come through, harmonic 0.93. Still differs: ours peaks at 500 Hz–1 kHz and the record at 1–2 kHz (the real shawm is brighter and more nasal, with a wider vibrato); the deer dancers' rattles and the clowns' voices are not modelled",
+  text: `
+. clock        110 3/4
+. arrange@song son:15bars son2:15bars
+. scale@venado 1 2:60 3:430 4:590 5:780 6:910 7:1090
+. key          venado C
+
+. crowd@fiesta murmur "la ki xa ta wa ri ke cha ha ha" voices=14 voice=mixed vol=0.6 dyn="p mp p"
+. crowd@calls  shout "e-YA" "................................................x---............................................................................................." voices=3 voice=men vol=0.9
+. reed@chirimia oct=4 grid=8 human=0.5 rubato=0.25 drift=5 vol=0.45 dyn="f" "1 - - 1 1 - 2 6, 1 1 1 2 1 - - 7, 1 2 - - 1 1 - 1 1 6, 3'' - - - - - - - 3'' 2'' 1'' 1 - - - - 1 - 7, 7, 1 3'' - - - - - - - 1'' 1 - - 7, 1'' 5' - 4' - 5' 6, 5' - - 1'' 4' - 2 6, 1 2 - - 1 2 6, 7, 1 - - - - - -"
+. drums@tambor kit=african vol=0.45 "X.......x...|....x.......|............"
+
+*> space       courtyard size=2 wet=0.2
+>  speaker     0.5
+`,
+};
+
+// ── mayans-late.showcase.js
+// Three Maya sounds of the highlands, after Folkways field recordings: the tun and long trumpets of the Rabinal Achí (1945), the chirimía and drum of a cofradía (Chuj, 1973), and a small marimba (Tz'utujil, 1969).
+SCORES["mayans-late:showcase"] = {
+  about: "the Xajoj Tun's long trumpets and tun slit drum; then the chirimía shawm and the drum that lead a saint's procession; then a small wooden marimba played by two men in steady eighths",
+  heard: "a highland town at fiesta time, out of doors: the Rabinal Achí in the church plaza, a cofradía procession coming down the street with its shawm and drum and the smell of copal, and a marimba under a roof at the edge of the market, people talking around it",
+  refs: [
+    { title: "Rabinal Achí: Son del Quiché Achí / Son del Rabinal Achí", who: "Achi musicians of Rabinal, recorded by Henrietta Yurchenco, 1945 (Folkways)", url: "https://www.youtube.com/watch?v=lcypEPBtOCc" },
+    { title: "Drum and Chirimía", who: "Chuj musicians from San Mateo Ixtatán (Music of Guatemala Vol. 2, Folkways 1973)", url: "https://www.youtube.com/watch?v=_dm56yMuds0" },
+    { title: "Small Marimba", who: "Tz'utujil musicians (Music of Guatemala Vol. 1, Folkways 1969)", url: "https://www.youtube.com/watch?v=eh-0We3LiJc" },
+  ],
+  measured: "Rabinal 1945 (trumpet stem): rests on D♯, 0 150 510 680/750 910 cents, the two trumpets ~70 c apart on the fifth, tun about once every 2 s. Chuj chirimía: a narrow tune on B♭ with notes about 570, 900 and 1200 cents above it, held notes up to 5 s between quick turns, 99 in two, 1–2 kHz. Tz'utujil marimba: steady eighths at 96 in two, a non-tempered scale with two thirds (360 and 430 c), 250–500 Hz. Ours: each section at its measured tempo (60, 99, 96; rendered, the chirimía section measures 99.4 resting on B♭ with 590 and 920 c, the marimba 95.7 in two) with its own scale@ in cents, and the melodies rebuilt from each stem's note sequence. Still differs: the shawm is smoother and less nasal than the Chuj player's; the marimba has no buzzing membranes on its resonators, and our marimba peaks at 250–500 Hz with a weaker upper octave",
+  text: `
+. clock        60 4/4
+. arrange@song xajoj-tun:8bars@60 chirimia:13bars@99 marimba:12bars@96
+. scale@trumpet-a 1 2:150 4:510 5:680 6:910
+. scale@trumpet-b 1 2:150 4:510 5:750 6:910
+. scale@shawm     1 4:570 6:900
+. scale@tzutujil    1 2:190 3:360 4:430 5:710
+. key          trumpet-a D#
+
+. crowd@town   murmur "la ki xa ta wa ri ke cha" voices=12 voice=mixed vol=0.6 dyn="p"
+. marimba@tun  oct=2 grid=16 human=0.3 vol=0.9 "1 - - - - - - - 2 - - - - - - -" ?song.1
+. brass@trompeta oct=5 grid=16 human=0.4 rubato=0.3 drift=6 dyn="mf f mf f mf f mp mf" "1, 1, 1, 1, - 5, - 6, 2 - 2 - - - 2 - - - 5, 5, 5, - 1 - - 1 - 1 - 2 - - - 2 - - 2 - - - - 6, - - - - - - - - - - - 0 - 1, - 5, 5, - 5, 6, - - 2 - 5, 5, - 5, - 1, - 5, - 5, 5, 1, - - - - - - - 0 - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -" ?song.1
+. brass@trompeta-2 scale=trumpet-b oct=5 grid=16 human=0.6 rubato=0.4 drift=-8 vol=0.8 "0 1, 1, 1, 1, - 5, - 6, 2 - 2 - - - 2 - - - 5, 5, 5, - 1 - - 1 - 1 - 2 - - - 2 - - 2 - - - - 6, - - - - - - - - - - - 0 - 1, - 5, 5, - 5, 6, - - 2 - 5, 5, - 5, - 1, - 5, - 5, 5, 1, - - - - - - - 0 - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -" ?song.1
+. reed@chirimia scale=shawm key=A# oct=3 grid=8 human=0.5 rubato=0.2 vol=0.55 dyn="f" "1 - 6, 1 1 1 1 - - 1 1 - 6 6 - 6 - - - 1' 6 6 6 6 - - - - - - - - 6 4 - 6 6 4 6 - 1 1 - - - - 1 1 4 6 6 6 - - 1' 6 6 - - - - - - - - - 4 6 6 6 6 1 4 4 1' - 6 6 6 1' - - - - - - - - - - - - - - - - - - - - - - - -" ?song.2
+. drums@tambor kit=african vol=0.45 "X.......X...x...|................|................" ?song.2
+. marimba@k-ojom scale=tzutujil key=G# oct=3 grid=8 human=0.4 vol=1.1 "5 1' 4 5, 5, 5, 4 4 5 5 4 5 5 4 5 5 3 4 4 4 3 4 5 4 4 5 1' 1' 1' 1' 1' 1' 1' 1' 1' 1' 1' 4 5 5 5 4 4 4 5 4 5 5" ?song.3
+. marimba@k-ojom-bass scale=tzutujil key=G# oct=2 grid=8 human=0.3 vol=0.9 "1 - 5, - 1 - 5, - 4, - 1 - 5, - 1 -" ?song.3
+
+*> space       courtyard size=2 wet=0.2
+>  eq          low=-3 mid=2 high=2
+>  speaker     0.5
+`,
+};
+
+// ── mexicans.ritual.js
+// A midnight serenade to the Virgin of Guadalupe (11–12 December) by an old-style mariachi of violins, vihuela, guitarra de golpe, guitarrón and harp, in the manner of the early Jalisco mariachi records (Mariachi Tapatío, 1920s–30s). Las Mañanitas itself is not reproduced; this is a serenade in its style.
+SCORES["mexicans:ritual"] = {
+  about: "midnight at the Basilica of Guadalupe: the bells ring, pilgrims crowd the atrium and concheros drum outside, then a mariachi sings a serenade to the Virgin in two voices a third apart, violins answering",
+  heard: "in the packed atrium of the basilica at night: thousands of pilgrims talking, praying and singing along, church bells at midnight, the concheros' drum and ayoyote rattles from the plaza, the mariachi close by, voices bright and high",
+  refs: [
+    { title: "Mañanitas Tapatías (Victor 75271-A)", who: "Mariachi Tapatío, 78 rpm (UCLA Frontera Collection)", url: "https://www.youtube.com/watch?v=9pSJSoJfrWU" },
+  ],
+  measured: "Mañanitas Tapatías (78 rpm): 108 in three with a sesquiáltera feel (low band X.xxX.X.X.X., the vihuela strumming every 8th), resting on A (the transfer reads G♯+10 c), violins, guitars, harp and voices filling 125 Hz–2 kHz evenly, little dynamic change (11 dB). Ours: rendered 107.7 in three, resting on A; two voices a third apart, then the violins on the same tune, vihuela strums, guitarrón on the bass, harp arpeggios; the tune and the Spanish words are newly written in the style (Las Mañanitas is not reproduced). Still differs: no trumpets (right for the early mariachi) but our violins are smoother than the 78's scratchy, wide-vibrato fiddles; the voices lack the Jalisco singers' falsetto breaks and grito; the crowd singing along is only murmur",
+  text: `
+. clock        108 3/4
+. arrange@song midnight:4bars serenata:16bars violines:16bars
+. key          major A
+
+. caption@c    "Ya llegan los peregrinos, Madre, / a cantarte en tu santo altar" ?song.2
+. crowd@pilgrims murmur "ma dre sa ki ta lu pe a ve ma ri a" voices=30 voice=mixed vol=0.7 dyn="mf mp p p"
+. bell@basilica oct=3 grid=4 human=0.3 vol=0.5 "1 - - 5, - - 1 - - 5, - -" ?song.1
+. drums@concheros kit=aztec vol=0.5 "X.....x.X...|..x...x...x.|x.x.x.x.x.x." ?song.1
+. chant@primera voice=men oct=4 grid=8 human=0.4 rubato=0.2 vib=0.03 breath=0.08 bright=0.6 dyn="f" ipa="ja ʎe ɣan los pe ɾe ɣɾi nos ma dɾe a kan taɾ te en tu san to al taɾ kon flo ɾes i kon kan ta ɾes ma dɾe te be ni mos a sa lu daɾ ai ai" "5, - 1 - 2 - 3 - - - 3 4 5 - 4 - 3 - 2 - - - 0 0 5, - 7, - 2 - 4 - - - 4 5 4 - 3 - 2 - 1 - - - 0 0 3 - 4 - 5 - 6 - - - 6 5 6 - 5 - 4 - 3 - - - 0 0 2 - 3 - 4 - 5 - - - 4 3 2 - 7, - 2 - 1 - - - 0 0" ?song.2
+. chant@segunda voice=men oct=4 grid=8 human=0.4 rubato=0.2 vib=0.03 breath=0.08 bright=0.6 vol=0.55 ipa="ja ʎe ɣan los pe ɾe ɣɾi nos ma dɾe a kan taɾ te en tu san to al taɾ kon flo ɾes i kon kan ta ɾes ma dɾe te be ni mos a sa lu daɾ ai ai" "3, - 6, - 7, - 1 - - - 1 2 3 - 2 - 1 - 7, - - - 0 0 3, - 5, - 7, - 2 - - - 2 3 2 - 1 - 7, - 6, - - - 0 0 1 - 2 - 3 - 4 - - - 4 3 4 - 3 - 2 - 1 - - - 0 0 7, - 1 - 2 - 3 - - - 2 1 7, - 5, - 7, - 6, - - - 0 0" ?song.2
+. strings@violin oct=5 grid=8 human=0.5 vol=0.7 dyn="mf" "5, - 1 - 2 - 3 - - - 3 4 5 - 4 - 3 - 2 - - - 0 0 5, - 7, - 2 - 4 - - - 4 5 4 - 3 - 2 - 1 - - - 0 0 3 - 4 - 5 - 6 - - - 6 5 6 - 5 - 4 - 3 - - - 0 0 2 - 3 - 4 - 5 - - - 4 3 2 - 7, - 2 - 1 - - - 0 0" ?song.3
+. strings@violin-2 oct=5 grid=8 human=0.5 vol=0.55 dyn="mf" "3, - 6, - 7, - 1 - - - 1 2 3 - 2 - 1 - 7, - - - 0 0 3, - 5, - 7, - 2 - - - 2 3 2 - 1 - 7, - 6, - - - 0 0 1 - 2 - 3 - 4 - - - 4 3 4 - 3 - 2 - 1 - - - 0 0 7, - 1 - 2 - 3 - - - 2 1 7, - 5, - 7, - 6, - - - 0 0" ?song.3
+. pluck@vihuela oct=4 grid=8 human=0.5 vol=0.6 "1+3+5/ - 1+3+5/ - 1+3+5/ - 1+3+5/ - 1+3+5/ - 1+3+5/ - 1+3+5/ - 1+3+5/ - 1+3+5/ - 7,+2+5/ - 7,+2+5/ - 7,+2+5/ - 7,+2+5/ - 7,+2+5/ - 7,+2+5/ - 7,+2+4/ - 7,+2+4/ - 7,+2+4/ - 7,+2+4/ - 7,+2+4/ - 7,+2+4/ - 1+3+5/ - 1+3+5/ - 1+3+5/ - 1+3+5/ - 1+3+5/ - 1+3+5/ - 1+4+6/ - 1+4+6/ - 1+4+6/ - 1+4+6/ - 1+4+6/ - 1+4+6/ - 1+3+5/ - 1+3+5/ - 1+3+5/ - 7,+2+5/ - 7,+2+5/ - 7,+2+5/ - 1+3+5/ - 1+3+5/ - 1+3+5/ - 7,+2+5/ - 7,+2+5/ - 7,+2+5/ - 1+3+5/ - 1+3+5/ - 1+3+5/ -" ?song.2-3
+. pluck@guitarron oct=2 grid=8 human=0.4 vol=0.9 "1 - - - 5, - 1 - - - 5, - 1 - - - 5, - 5, - - - 2 - 5, - - - 2 - 5, - - - 7,, - 5, - - - 7,, - 1 - - - 5, - 1 - - - 5, - 4, - - - 1 - 4, - - - 1 - 1 - - - 5, - 5, - - - 2 - 1 - - - 5, - 5, - - - 2 - 1 - - - 5, -" ?song.2-3
+. pluck@arpa oct=4 grid=8 human=0.4 vol=0.5 "1 3 5 1' 5 3 1 3 5 1' 5 3 1 3 5 1' 5 3 7, 2 5 7 5 2 7, 2 5 7 5 2 7, 2 4 5 4 2 7, 2 4 5 4 2 1 3 5 1' 5 3 1 3 5 1' 5 3 1 4 6 1' 6 4 1 4 6 1' 6 4 1 3 5 1' 5 3 7, 2 5 7 5 2 1 3 5 1' 5 3 7, 2 5 7 5 2 1 3 5 1' 5 3" ?song.2-3
+
+*> space       courtyard size=2.4 wet=0.2
+>  speaker     0.5
+`,
+};
+
+// ── mexicans.wedding.js
+// A wedding dance in Jalisco: a son on violins, vihuela, guitarra de golpe and harp in sesquiáltera, while the guests run in a chain under the couple's raised arms, after the first mariachi recordings, Cuarteto Coculense (1908–09). The game song La víbora de la mar itself is not reproduced.
+SCORES["mexicans:wedding"] = {
+  about: "the wedding party's chain game: the couple stand on chairs holding hands up, the guests run under in a long line, the last ones pulled off laughing, to a fast son that swings between two and three; then a zapateado on the wooden platform",
+  heard: "an open patio at night, strings of lights, the band at one side: guests laughing, shouting and cheering as the chain runs, stamping feet on the tarima, a grito now and then",
+  refs: [
+    { title: "El Arriero (1908–09)", who: "Cuarteto Coculense (Mexico's Pioneer Mariachis Vol. 4: The Very First Mariachi Recordings)", url: "https://www.youtube.com/watch?v=szBdMmwAYKU" },
+  ],
+  measured: "Cuarteto Coculense, 1908–09: 136 in three with every 8th strummed (sesquiáltera: the accents swing between two and three), resting on F, violin and voices over vihuela and guitar, 250 Hz–2 kHz, 12 dB of dynamics, quick 8th-note tunes. Ours: rendered 136 in three, resting on F, 500 Hz–2 kHz peak; the violins play a newly written son in that style (two violins a third apart), the strumming alternates 6/8 and 3/4 bar by bar, the guests' chain game, gritos and a zapateado on the tarima. Still differs: the 1908 violins are thin and scratchy with sliding shifts, ours are smooth; the strums lack the guitarra de golpe's percussive slap; La víbora de la mar's own tune and words are not used",
+  text: `
+. clock        136 3/4
+. arrange@song vibora:16bars vibora2:16bars zapateado:8bars
+. key          major F
+
+. crowd@guests murmur "ha ha ja ri a la bi bo ra" voices=24 voice=mixed vol=0.8 dyn="mf f mf"
+. crowd@gritos shout "a-JA-JAI" "..........................................................................................x-x---..........................................................................................................................x-x-x---..........." voices=3 voice=men vol=1 ?song.1-2
+. crowd@cheer  shout "E-E" "................................................................................................................................................................................x---............" voices=20 voice=mixed vol=0.8 ?song.2
+. strings@violin oct=5 grid=8 human=0.5 vol=0.8 dyn="f" "3 4 5 - 5 - 6 5 4 - 3 - 2 3 4 - 4 - 5 4 3 - 2 - 3 4 5 - 1' - 7 6 5 - 4 - 3 - 2 - 7, - 1 - - - 0 0 5 - 5 6 5 4 3 - 3 4 3 2 4 - 4 5 4 3 2 - 2 3 2 7, 5 - 5 6 5 4 3 - 3 4 5 - 4 3 2 - 7, - 1 - - - 0 0" ?song.1-2
+. strings@violin-2 oct=5 grid=8 human=0.5 vol=0.6 "1 2 3 - 3 - 4 3 2 - 1 - 7, 1 2 - 2 - 3 2 1 - 7, - 1 2 3 - 6 - 5 4 3 - 2 - 1 - 7, - 5, - 6, - - - 0 0 3 - 3 4 3 2 1 - 1 2 1 7, 2 - 2 3 2 1 7, - 7, 1 7, 5, 3 - 3 4 3 2 1 - 1 2 3 - 2 1 7, - 5, - 6, - - - 0 0" ?song.1-2
+. pluck@vihuela oct=4 grid=8 human=0.5 vol=0.7 "1+3+5/ - - 1+3+5/ - - 1+4+6/ - 1+4+6/ - 1+4+6/ - 7,+2+5/ - - 7,+2+5/ - - 7,+2+5/ - 7,+2+5/ - 7,+2+5/ - 1+3+5/ - - 1+3+5/ - - 7,+2+5/ - 7,+2+5/ - 7,+2+5/ - 7,+2+5/ - - 7,+2+5/ - - 1+3+5/ - 1+3+5/ - 1+3+5/ - 1+3+5/ - - 1+3+5/ - - 1+3+5/ - 1+3+5/ - 1+3+5/ - 7,+2+5/ - - 7,+2+5/ - - 7,+2+5/ - 7,+2+5/ - 7,+2+5/ - 1+3+5/ - - 1+3+5/ - - 1+3+5/ - 1+3+5/ - 1+3+5/ - 7,+2+5/ - - 7,+2+5/ - - 1+3+5/ - 1+3+5/ - 1+3+5/ -"
+. pluck@guitarra-de-golpe oct=3 grid=8 human=0.5 vol=0.6 "1+3+5/ - - 1+3+5/ - - 1+4+6/ - 1+4+6/ - 1+4+6/ - 7,+2+5/ - - 7,+2+5/ - - 7,+2+5/ - 7,+2+5/ - 7,+2+5/ - 1+3+5/ - - 1+3+5/ - - 7,+2+5/ - 7,+2+5/ - 7,+2+5/ - 7,+2+5/ - - 7,+2+5/ - - 1+3+5/ - 1+3+5/ - 1+3+5/ - 1+3+5/ - - 1+3+5/ - - 1+3+5/ - 1+3+5/ - 1+3+5/ - 7,+2+5/ - - 7,+2+5/ - - 7,+2+5/ - 7,+2+5/ - 7,+2+5/ - 1+3+5/ - - 1+3+5/ - - 1+3+5/ - 1+3+5/ - 1+3+5/ - 7,+2+5/ - - 7,+2+5/ - - 1+3+5/ - 1+3+5/ - 1+3+5/ -"
+. pluck@arpa oct=2 grid=8 human=0.4 vol=0.45 "1 - - 5, - - 4, - - 1 - - 5, - - 2 - - 5, - - 2 - - 1 - - 5, - - 5, - - 2 - - 5, - - 2 - - 1 - - 5, - - 1 - - 5, - - 1 - - 5, - - 5, - - 2 - - 5, - - 2 - - 1 - - 5, - - 1 - - 5, - - 5, - - 2 - - 1 - - 5, - -"
+. drums@tarima kit=flamenco vol=0.8 "X.x.x.X.x.x.|..x..x..x..x|............" ?song.3
+
+*> space       courtyard size=1.3 wet=0.18
+>  speaker     0.5
+`,
+};
 
 // ── ottomans.rain.js
 // Üsküdar'a gider iken: rebuilt from Safiye Ayla's 78 rpm record (the singer's phrases, tonic, scale and tempo measured with refs/analyse.py on demucs stems).
@@ -2827,6 +3420,36 @@ SCORES["poles:triumph"] = {
 
 *> space       courtyard size=3 wet=0.45 dry=0.7
 >  eq          low=-3 mid=3 high=4
+>  speaker     0.5
+`,
+};
+
+// ── romans.fire.js
+// Rome burning, July 64 CE, and the rumour that Nero sang the Sack of Troy to the kithara. His song is lost; here a kitharode sings Homer's own lines on the fall of Troy (Odyssey 8.514–515, the song of Demodocus) in the reconstructed manner of Homeric singing: a reciting tone, rising on the accents, in the long and short syllables of the hexameter.
+SCORES["romans:fire"] = {
+  about: "the Great Fire of Rome: the roar of the burning city, crowds fleeing, roofs falling; on a high stage a singer in a kitharode's robe plays an anabole on the kithara and sings of Troy's fall in Greek hexameters",
+  heard: "high above the city at night, the fire's roar coming up from the streets below with shouting and the crash of timber; the singer's voice and the kithara close and clear against it, in the open air",
+  refs: [
+    { title: "Ancient Phorminx — Homer's Odyssey sung", who: "Nikos Xanthoulis, reconstructed phorminx and voice", url: "https://www.youtube.com/watch?v=B35cNiud7No" },
+    { title: "The Epitaph of Seikilos performed with an ancient Greek kithara", who: "Michael Levy, reconstructed kithara", url: "https://www.youtube.com/watch?v=LyhdXPVEafA" },
+  ],
+  measured: "Uncertain: Nero's Halosis Ilii is lost (Suetonius and Dio tell the story, Tacitus calls it a rumour); the sung lines are Homer's, not Nero's, and the way of singing follows modern reconstructions of Homeric performance, not evidence from Nero's stage. Measured in Xanthoulis' sung Odyssey: a reciting tone (C over a final A) most of the time, rising a step or a third on accented syllables (D, E), long syllables about three times the short ones (0.86 vs 0.3 s), ~5 c vibrato, 250–500 Hz, the phorminx struck between phrases. Ours: scale@kitharodic on A with C as the reciting tone, each syllable's length from the hexameter's quantities (long = two 8ths, short = one) at 100, rising to E on the accents; rendered, most used note C with D and E above, ~6 c vibrato, 250–500 Hz peak, as in the reference. Still differs: the kithara is the engine's harp string (no big wooden box's boom); the fire's roar is constant, without the bursts and wind of a real firestorm",
+  text: `
+. clock        100 4/4
+. arrange@song fire:4bars anabole:4bars song:7bars song2:7bars
+. scale@kitharodic 1 b3:290 4:500 5:700 b6:770 7:1190
+. key          kitharodic A
+
+. caption@homer "ἤειδεν δ' ὡς ἄστυ διέπραθον υἷες Ἀχαιῶν / ἱππόθεν ἐκχύμενοι, κοῖλον λόχον ἐκπρολιπόντες" ?song.3-4
+. fire@rome    0.35 crackle=0.6
+. wind@updraft 0.2 gust=0.1Hz
+. crowd@fleeing shout "a-A o-E" "x---........x-x-................................x---............" voices=30 voice=mixed vol=1.3 dyn="mf mp p p" ?song.1-2
+. drums@collapse kit=work vol=0.5 human=0.6 "................................|................................|X...............................x..............................." ?song.1-4
+. pluck@kithara oct=3 grid=8 human=0.4 rubato=0.2 vol=1.4 "1 - 5 - 1' - - - 5 4 3 - 1 - - - 3 - 4 - 5 - 4 3 1 - - - 0 0 0 0" ?song.2
+. pluck@kithara-strikes oct=3 grid=8 human=0.4 vol=1.2 "1+5 - - - - - - - 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0" ?song.3-4
+. chant@kitharode voice=men oct=3 grid=8 human=0.4 rubato=0.25 vib=0.015 breath=0.12 bright=0.5 dyn="f" ipa="ɛː ei den dɔːs as ty di e pra tʰon hyi es a kʰai ɔːn hip po tʰen ek kʰy me noi koi lon lo kʰon ek pro li pon tes" "5 - 3 4 5 - 5 - 3 - 4 5 3 - 4 5 3 - 3 - 3 - 1 - 0 0 0 0 3 - 5 3 3 - 5 - 3 - 4 5 3 - 5 3 3 - 3 4 5 - 1 - 0 0 0 0" ?song.3-4
+
+*> space       field size=1.6 wet=0.15
 >  speaker     0.5
 `,
 };
@@ -3011,6 +3634,99 @@ SCORES["sengoku-daimyo:triumph"] = {
   };
 }
 
+// ── spartans.showcase.js
+// Spartan music, reconstructed: a maiden song of Alcman sung by a girls' chorus to the aulos and phorminx, then the army advancing in step to many auloi and the paean cry. The melodies are lost; the setting follows the Dorian harmonia and the aulos as played on reconstructed instruments (Stefan Hagel's Hellenistic aulos).
+SCORES["spartans:showcase"] = {
+  about: "a partheneion of Alcman: a chorus of girls sings ἔστι τις σιῶν τίσις, there is a vengeance of the gods, in the Dorian harmonia, the aulos holding the mese and following the tune, a phorminx struck between lines; then the phalanx moving slowly in step to many auloi in anapaests, shields knocking, and the paean",
+  heard: "first at a festival in the open sanctuary, the girls' chorus dancing in a line before the people; then out on the plain, the army's feet in time, the auloi shrill over the tramp of thousands",
+  refs: [
+    { title: "Stefan Hagel plays the Hellenistic aulos", who: "European Music Archaeology Project, reconstructed aulos", url: "https://www.youtube.com/watch?v=OcHWvl16mpg" },
+  ],
+  measured: "Uncertain: no Spartan melody survives; Alcman's words do (Louvre papyrus, lines 36–39 sung here in Doric), and writers describe the instruments, the Dorian harmonia, the slow march to auloi (Thucydides 5.70) and the paean cry. Everything melodic here is a new reconstruction in the diatonic Dorian (E F G A B C D E), resting on E with the aulos holding the mese A. Measured on Hagel's reconstructed aulos: very long sustained notes (up to 8 s) under running figures, steady pitch with no vibrato, a soft 170 ms attack, harmonic and reedy (125 Hz–2 kHz). Ours: girls' chorus at 84 with ~5 c vibrato, aulos and mese drone, 250 Hz–1 kHz; the embaterion in anapaests at 96 with feet and shields, the paean cry ἰὴ παιάν. Still differs: our aulos plays an octave above Hagel's low Hellenistic instrument (the archaic auloi for girls' choruses were higher, but this is a guess) and is one pipe, not two pipes beating together",
+  text: `
+. clock        84 4/4
+. arrange@song partheneion:8bars partheneion2:8bars embaterion:8bars@96
+. scale@doristi 1 b2 b3 4 5 b6 b7
+. key          doristi E
+
+. caption@alcman "ἔστι τις σιῶν τίσις· ὁ δ' ὄλβιος, ὅστις εὔφρων ἁμέραν διαπλέκει ἄκλαυτος" ?song.1-2
+. crowd@people murmur "ka la po te mi no se" voices=16 voice=mixed vol=0.4 dyn="p" ?song.1-2
+. chant@girls  voice=women voices=10 oct=4 grid=8 human=0.5 vib=0.02 breath=0.15 bright=0.4 dyn="mf f" ipa="es ti tis si ɔːn ti sis ho dol bi os hos tis eu pʰɾɔːn haː me ɾan di a ple keː a klau tos" "5 - 4 - 5 - 6 - 5 - 4 - 3 - - - 3 - 4 - 5 - 5 - 6 - 5 - 4 - 3 - 4 - 5 - 6 - 7 - 6 - 5 - 4 - - - 5 - 4 - - - 1 - - - - - - - - -" ?song.1-2
+. reed@aulos   oct=4 grid=8 human=0.4 vol=0.6 "5 - 4 - 5 - 6 - 5 - 4 - 3 - - - 3 - 4 - 5 - 5 - 6 - 5 - 4 - 3 - 4 - 5 - 6 - 7 - 6 - 5 - 4 - - - 5 - 4 - - - 1 - - - - - - - - -" ?song.2
+. reed@aulos-mese oct=4 grid=8 human=0.3 vol=0.25 "4 - - - - - - - - - - - - - - - 4 - - - - - - - - - - - - - - - 4 - - - - - - - - - - - - - - - 4 - - - - - - - - - - - - - - -" ?song.1-2
+. pluck@phorminx oct=3 grid=8 human=0.4 vol=1 "1+5 - - - - - - - 0 0 0 0 0 0 0 0 4 - - - - - - - 0 0 0 0 0 0 0 0" ?song.1-2
+. reed@auloi   oct=4 grid=8 human=0.4 vol=0.8 dyn="f" "1 1 4 - 1 1 5 - 4 4 5 - 6 5 4 - 1 1 4 - 1 1 5 - 6 5 4 - 1 - - - 1 1 4 - 1 1 5 - 4 4 5 - 6 5 4 - 1 1 4 - 1 1 5 - 6 5 4 - 1 - - -" ?song.3
+. reed@auloi-2 oct=4 grid=8 human=0.6 vol=0.6 dyn="f" "1 1 4 - 1 1 5 - 4 4 5 - 6 5 4 - 1 1 4 - 1 1 5 - 6 5 4 - 1 - - - 1 1 4 - 1 1 5 - 4 4 5 - 6 5 4 - 1 1 4 - 1 1 5 - 6 5 4 - 1 - - -" ?song.3
+. drums@phalanx kit=celtic vol=0.9 human=0.3 "X...x...X...x...|................|................" ?song.3
+. drums@shields kit=clash vol=0.35 "................|X.......X.......|................" ?song.3
+. crowd@paean  shout "i-E pai-AN" "................................................................................................................x-x-x---........" voices=40 voice=men vol=1 ?song.3
+
+*> space       field size=1.4 wet=0.15
+>  speaker     0.5
+`,
+};
+
+// ── sumerians.siege.js
+// The fall of Ur (c. 2004 BCE) and the Lament for Ur sung over it, with the lyre and the kettle drum. Its music is lost; the mode and singing follow Peter Pringle's reconstructed Sumerian laments on a replica of the Lyre of Ur.
+SCORES["sumerians:siege"] = {
+  about: "the siege and fall of Ur: the attackers' drums and cries outside the walls, the starving city wailing, the temple of Nanna burning; then the gala singer and the women lament alas, my city, alas, my house to the lyre and the kettle drum",
+  heard: "inside the walls of Ur: the enemy's drums and shouts from beyond the wall, people crying in the streets, the temple roof burning; afterwards in the burnt court a single lament singer with a lyre and the drum, and the women's voices answering",
+  refs: [
+    { title: "Lament for Gilgamesh, the Gold Lyre of Ur", who: "Peter Pringle, voice and a replica of the lyre of Ur, sung in Sumerian", url: "https://www.youtube.com/watch?v=dDRD3c-WAec" },
+    { title: "Hurrian Hymn no. 6 (c. 1400 BCE)", who: "Michael Levy, reconstructed lyre (the nearest notated music of the region)", url: "https://www.youtube.com/watch?v=64aouN2oohM" },
+  ],
+  measured: "The siege before the lament (attackers' frame drums and cries, the city wailing, the walls battered, the fire) is scene sound, not taken from any recording. Uncertain: no Sumerian melody survives; the Lament for Ur's words do (ETCSL), the sung words here are only lament refrain words (a, alas; uru₂-ĝu₁₀, my city; e₂-ĝu₁₀, my house; a-še-er, sighing), not a quotation. The instruments are real (lyres like the ones excavated at Ur, the lilis kettle drum and the balag of the gala lamenters); the mode follows Pringle's reconstruction rather than evidence. Measured in Pringle's lament: resting on C with a lowered second (80 c) and notes about 390, 480, 680, 780, 990 c, very long held notes (3–5 s) with ~12 c vibrato and slides (glides 0.17), half a note a second, C3–B4, 125–500 Hz. Ours: scale@lament with those cents; the melody rebuilt from his note sequence; rendered: most used note F as in the reference, ~14 c vibrato, 0.9 notes a second, 250–500 Hz peak, the same cents within 30 c. Still differs: the singer's slides between notes are smoother and wider in the reference; the lyre is the engine's generic harp string, not the bull-headed lyre's box",
+  text: `
+. clock        60 4/4
+. arrange@song siege:6bars fall:4bars lament:11bars ningal:11bars
+. scale@lament 1 2:80 3:390 4:480 5:680 6:780 7:990
+. key          lament C
+
+. caption@urim "𒋀𒀊𒆠 · 𒀭𒊩𒌆𒃲" ?song.3-4
+. wind@dust    0.2 gust=0.1Hz
+. drums@attackers kit=daf vol=0.7 "X.....x.X.....x.|..x...x...x...x.|................" ?song.1-2
+. crowd@outside shout "o-HA a-HA" "x-x-............................x---............................" voices=30 voice=men vol=1.4 dyn="mp mf f" ?song.1-2
+. crowd@city   ululate "a-a-a" "x-------........" voices=12 voice=women vol=0.9 ?song.1-2
+. drums@walls  kit=work vol=0.6 "................|X.......X.......|................" ?song.2
+. fire@temple  0.18 crackle=0.5 ?song.2-4
+. timpani@lilis oct=2 grid=8 human=0.4 vol=0.8 "1 - - - - - - - 0 0 0 0 1 - 1 -" ?song.3-4
+. pluck@lyre-of-ur oct=3 grid=8 human=0.5 rubato=0.3 vol=1.4 "1+5 - - - 4 - 3 - 1+5 - - - 2 - 1 -" ?song.3-4
+. chant@gala   voice=men oct=3 grid=8 human=0.5 rubato=0.4 vib=0.03 breath=0.2 bright=0.35 dyn="f mf f f mf f mf mf f mf mp" ipa="a u ɾu ŋu a e ŋu a ʃe eɾ ŋu a a u ɾu ŋu a e ŋu a ʃe eɾ ŋu a a u ɾu ŋu a e ŋu a ʃe eɾ ŋu a" "4 - - - - - - 3 4 4 - 3 4 3 - - 2 4 - - - - - - - 3 3 - - - 2 2 1 2 - - - - - - - - - 0 - 1 1 1 2 1 7, - 7 6 7 6 5 6, - - - 6, 5, - 6, - 4, 5, - - 5, - 5, - - - - 3, 4, - - - 0 - - - 0 0" ?song.3-4
+. chant@women  voice=women voices=8 oct=4 grid=8 human=0.6 rubato=0.4 vib=0.035 breath=0.3 vol=0.55 dyn="mp" ipa="a u ɾu ŋu a e ŋu a ʃe eɾ ŋu a a u ɾu ŋu a e ŋu a ʃe eɾ ŋu a a u ɾu ŋu a e ŋu a ʃe eɾ ŋu a" "4 - - - - - - 3 4 4 - 3 4 3 - - 2 4 - - - - - - - 3 3 - - - 2 2 1 2 - - - - - - - - - 0 - 1 1 1 2 1 7, - 7 6 7 6 5 6, - - - 6, 5, - 6, - 4, 5, - - 5, - 5, - - - - 3, 4, - - - 0 - - - 0 0" ?song.4
+
+*> space       courtyard size=1.6 wet=0.25
+>  speaker     0.5
+`,
+};
+
+// ── sumerians.wind.js
+// The Lament for Ur (c. 2000 BCE) as a gala priest's lament in the storm, with the lyre and the kettle drum. Its music is lost; the mode and singing follow Peter Pringle's reconstructed Sumerian laments on a replica of the Lyre of Ur.
+SCORES["sumerians:wind"] = {
+  about: "Enlil's storm over Ur: the wind howls, the lilis kettle drum and the balag beat slowly, and a lament singer, then a choir of women for Ningal, wail the refrain alas, my city, alas, my house to a lyre",
+  heard: "in the open court before the ruined temple of Nanna, the storm still blowing: a single gala singer, close and loud, a lyre player beside him, the drum's strokes rolling under the wind; later the women's voices answer from further off",
+  refs: [
+    { title: "Lament for Gilgamesh, the Gold Lyre of Ur", who: "Peter Pringle, voice and a replica of the lyre of Ur, sung in Sumerian", url: "https://www.youtube.com/watch?v=dDRD3c-WAec" },
+    { title: "Hurrian Hymn no. 6 (c. 1400 BCE)", who: "Michael Levy, reconstructed lyre (the nearest notated music of the region)", url: "https://www.youtube.com/watch?v=64aouN2oohM" },
+  ],
+  measured: "Uncertain: no Sumerian melody survives; the Lament for Ur's words do (ETCSL), the sung words here are only lament refrain words (a, alas; uru₂-ĝu₁₀, my city; e₂-ĝu₁₀, my house; a-še-er, sighing), not a quotation. The instruments are real (lyres like the ones excavated at Ur, the lilis kettle drum and the balag of the gala lamenters); the mode follows Pringle's reconstruction rather than evidence. Measured in Pringle's lament: resting on C with a lowered second (80 c) and notes about 390, 480, 680, 780, 990 c, very long held notes (3–5 s) with ~12 c vibrato and slides (glides 0.17), half a note a second, C3–B4, 125–500 Hz. Ours: scale@lament with those cents; the melody rebuilt from his note sequence; rendered: most used note F as in the reference, ~14 c vibrato, 0.9 notes a second, 250–500 Hz peak, the same cents within 30 c. Still differs: the singer's slides between notes are smoother and wider in the reference; the lyre is the engine's generic harp string, not the bull-headed lyre's box",
+  text: `
+. clock        60 4/4
+. arrange@song storm:4bars lament:11bars ningal:11bars
+. scale@lament 1 2:80 3:390 4:480 5:680 6:780 7:990
+. key          lament C
+
+. caption@urim "𒋀𒀊𒆠 · 𒀭𒊩𒌆𒃲" ?song.2-3
+. wind@storm   0.55 gust=0.15Hz
+. timpani@lilis oct=2 grid=8 human=0.4 vol=0.8 "1 - - - - - - - 0 0 0 0 1 - 1 -" 
+. pluck@lyre-of-ur oct=3 grid=8 human=0.5 rubato=0.3 vol=1.4 "1+5 - - - 4 - 3 - 1+5 - - - 2 - 1 -" ?song.2-3
+. chant@gala   voice=men oct=3 grid=8 human=0.5 rubato=0.4 vib=0.03 breath=0.2 bright=0.35 dyn="f mf f f mf f mf mf f mf mp" ipa="a u ɾu ŋu a e ŋu a ʃe eɾ ŋu a a u ɾu ŋu a e ŋu a ʃe eɾ ŋu a a u ɾu ŋu a e ŋu a ʃe eɾ ŋu a" "4 - - - - - - 3 4 4 - 3 4 3 - - 2 4 - - - - - - - 3 3 - - - 2 2 1 2 - - - - - - - - - 0 - 1 1 1 2 1 7, - 7 6 7 6 5 6, - - - 6, 5, - 6, - 4, 5, - - 5, - 5, - - - - 3, 4, - - - 0 - - - 0 0" ?song.2-3
+. chant@women  voice=women voices=8 oct=4 grid=8 human=0.6 rubato=0.4 vib=0.035 breath=0.3 vol=0.55 dyn="mp" ipa="a u ɾu ŋu a e ŋu a ʃe eɾ ŋu a a u ɾu ŋu a e ŋu a ʃe eɾ ŋu a a u ɾu ŋu a e ŋu a ʃe eɾ ŋu a" "4 - - - - - - 3 4 4 - 3 4 3 - - 2 4 - - - - - - - 3 3 - - - 2 2 1 2 - - - - - - - - - 0 - 1 1 1 2 1 7, - 7 6 7 6 5 6, - - - 6, 5, - 6, - 4, 5, - - 5, - 5, - - - - 3, 4, - - - 0 - - - 0 0" ?song.3
+
+*> space       courtyard size=1.6 wet=0.25
+>  speaker     0.5
+`,
+};
+
 // ── teutons.death.js
 // Dies irae at a brother-knight's Requiem: the sequence as the Benedictines of Solesmes sing it, the melody from the Liber Usualis (public domain), sung alternatim by two half-choirs in a vaulted brick church, a knell outside.
 SCORES["teutons:death"] = {
@@ -3093,6 +3809,33 @@ SCORES["teutons:voyage"] = {
 
 *> space       field size=1.2 wet=0.22
 >  eq          low=0 mid=0 high=-6
+>  speaker     0.5
+`,
+};
+
+// ── tupi.festival.js
+// The Tupinambá men's chorus Jean de Léry heard in 1557 (Heu, heuraure, heura … oueh), danced in a great house with mbaraká rattles. Léry printed the words with notes; the tune here is not copied from his print but built from the singing of today's Tupinambá (Olivença, Bahia) as recorded at a gathering, the nearest living voice.
+SCORES["tupi:festival"] = {
+  about: "night in a great house of the Tupinambá: the men dance in a ring, stamping and bent forward, singing Heu, heuraure, heura, heura, heura, oueh in chorus, answered by a leader; the shamans shake mbaraká rattles; cauim is passed round",
+  heard: "inside a long thatched house at night, a fire burning, the walls of palm absorbing the sound; the men's ring stamping on the earth floor, rattles hissing on every beat; women and children outside listening through the wall",
+  refs: [
+    { title: "Cantos do povo Tupinambá (Luta pela Vida, Brasília)", who: "Tupinambá singers of Olivença, Bahia, with maracás (recorded at a gathering)", url: "https://www.youtube.com/watch?v=zIZpx9Wp4PI" },
+  ],
+  measured: "Uncertain: Léry printed this chorus (1578/1585) with notes, but how far his notation reflects what he heard is debated, and the Tupinambá of the coast of 1557 are not the same community as today's; the tune here is not his, it is modelled on the living Tupinambá singing. Measured in the Olivença singers: 123 in two, the maracás on every 8th (low band solid), voices high (C4–A5), the tune narrow around F with a whole tone above, the E below and a third above, ~10 c vibrato, 500 Hz–1 kHz. Ours: rendered 123 in two, resting on F with 0 200 410 1090 c, ~11 c vibrato, the men an octave above where a formant voice sounds natural; the vocables are Léry's own (Heu, heuraure, heura … oueh). Still differs: the rattles are a generic shaker, not the mbaraká's seeds in a gourd; the dancers' stamping and breathing in the ring are thinner than a real house full of men",
+  text: `
+. clock        123 4/4
+. arrange@song fire:2bars ring:8bars ring2:8bars
+. key          major F
+
+. caption@leri "Heu, heuraure, heura, heura, heura, heura, heura, oueh" ?song.2-3
+. fire@hearth  0.25 crackle=0.5
+. drums@mbaraka kit=aztec vol=2 human=0.4 "................|................|x.x.x.x.x.x.x.x." ?song.1-3
+. drums@stamping kit=celtic vol=0.4 human=0.5 "X...x...X...x...|................|................" ?song.2-3
+. chant@leader voice=men oct=4 grid=8 human=0.5 rubato=0.1 vib=0.03 breath=0.2 bright=0.5 dyn="f" ipa="ɛu ɛu ɾa u ɾe ɛu ɾa ɛu ɾa ɛu ɾa ɛu ɾa ɛu ɾa we" "1 - 1 - 2 1 7, 1 1 - - - 3 - 2 - 1 - 2 - 1 - 2 - 1 - 7, - 1 - - - 3 - 3 - 2 1 2 1 3 - - - 2 - 1 - 2 - 1 - 2 - 1 - 1 - 7, - 1 - - -" ?song.2-3
+. chant@men    voice=men voices=12 oct=4 grid=8 human=0.6 vib=0.03 breath=0.25 bright=0.45 vol=0.8 dyn="mf f" ipa="ɛu ɛu ɾa u ɾe ɛu ɾa ɛu ɾa ɛu ɾa ɛu ɾa ɛu ɾa we" "1 - 1 - 2 1 7, 1 1 - - - 3 - 2 - 1 - 2 - 1 - 2 - 1 - 7, - 1 - - - 3 - 3 - 2 1 2 1 3 - - - 2 - 1 - 2 - 1 - 2 - 1 - 1 - 7, - 1 - - -" ?song.3
+. crowd@women-outside murmur "a ka ra i we pe" voices=8 voice=women vol=1 dyn="p"
+
+*> space       room size=1.6 wet=0.18
 >  speaker     0.5
 `,
 };

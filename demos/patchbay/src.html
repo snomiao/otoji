@@ -838,7 +838,7 @@ const KINDS = {
     control: true,
     build: (o) => ({ threshold: num(o, "threshold", 0.02, 0.001, 0.5), silence: ms(o.silence, 300), holdoff: ms(o.holdoff, 250) }),
   },
-  clock: { source: true, build: (o) => ({ bpm: num(o, "bpm", 92, 30, 260), sig: num(o, "sig", 4, 2, 12) }) },
+  clock: { source: true, build: (o) => ({ bpm: num(o, "bpm", 92, 30, 260), sig: num(o, "sig", 4, 2, 12), sway: num(o, "sway", 0, 0, 1), phrase: num(o, "phrase", 2, 1, 8) }) },
   metro: { source: true, build: (o) => ({ tone: num(o, "tone", 1000, 200, 4000) }) },
   drums: {
     source: true,
@@ -926,7 +926,9 @@ const NUM = /^\d+(\.\d+)?$/;
 const CATALOG = {
   clock: { doc: "Tempo source. Music nodes take the first clock automatically.", args: [
     ["bpm", "92", "beats per minute", null, { re: NUM }],
-    ["sig", "4", "beats per bar (shorthand 3/4; 6/8 = three beats)", null, { re: /^(\d+\/4|(6|12)\/8)$/, to: (v) => String(v.split("/")[0] * 4 / v.split("/")[1]) }]] },
+    ["sig", "4", "beats per bar (shorthand 3/4; 6/8 = three beats)", null, { re: /^(\d+\/4|(6|12)\/8)$/, to: (v) => String(v.split("/")[0] * 4 / v.split("/")[1]) }],
+    ["sway", "0.4", "0–1: the whole ensemble breathes: pressing on through a phrase, broadening into its end, never two bars alike (players, not a metronome)"],
+    ["phrase", "2", "bars a phrase, for sway (where it breathes)"]] },
   mic: { doc: "Microphone (asks on Start). Input only: feed it to a vad or learn. Pick a device by number, name, wildcard or alias.", args: [
     ["device", "default", "default · system (loopback audio) · tab (another tab's audio) · 2 (the 2nd input) · \"USB\" or \"*USB*\" (first match)", ["default", "system", "tab"], { re: /^(default|system|tab|\d+|".*")$/ }]] },
   metro: { doc: "节拍器: click on every beat, accent on beat 1.", args: [["tone", "1000", "click pitch in Hz", null, { re: NUM }]] },
@@ -2424,7 +2426,7 @@ const MELODIC_ARGS = [
 ];
 MELODIC_ARGS[1][3] = Object.keys(SCALES); MELODIC_ARGS[1][4] = { re: { test: (v) => !!scaleNamed(v) } };
 CATALOG.scale = { doc: "Defines a scale (调式) by its degrees in 简谱: `. scale@mygong 1 2 3 5 6`. #4 / b7 raise or lower a degree a semitone; 2:150 gives exact cents (quarter tones). Missing degrees snap to the nearest one. Named like a built-in scale, it replaces it in this patch.", args: [] };
-CATALOG.arrange = { doc: "Song form: sections in bars, looping. Lines play in them with ?song.2 or ?song.2-3 (or a section name). A section can set the tempo: slow:2bars@60 from its start, rit:2bars@~44 gliding there across it (accelerando or ritardando); later sections keep it.", args: [] };
+CATALOG.arrange = { doc: "Song form: sections in bars, looping. Lines play in them with ?song.2 or ?song.2-3 (or a section name). A section can set the tempo: slow:2bars@60 from its start, rit:2bars@~44 gliding there across it (accelerando or ritardando); later sections keep it. A * after it, free:2bars@50*, is free time (散板, a taksim, an alap): the tempo floats and cadences stretch.", args: [] };
 CATALOG.crowd = { doc: "Crowd of synthesized voices (no recordings): shout a war cry, chant on the beat, ululate, or murmur (chatter). Words are romanized syllables, UPPER = accented: `. crowd shout \"i-YA-SA-SA\"`.", args: [
   ["mode", "shout", "shout · chant · ululate · murmur", ["shout", "chant", "ululate", "murmur"], { re: /^(shout|chant|ululate|murmur)$/ }],
   ["text", '"a-la-la-LAI"', "syllables like i-ya-sa-sa, ei, u-RAA, sha; UPPER = accented", null, { re: /^(?!"[x.-]+"$)"[A-Za-zāēīōūəĀĒĪŌŪƏ\s-]*[A-Za-zāēīōūəĀĒĪŌŪƏ][A-Za-zāēīōūəĀĒĪŌŪƏ\s-]*"$/ }],
@@ -3222,10 +3224,11 @@ function gridTime(d, eff) {
 function arrangeSections(args) {
   const secs = args.map((a, i) => {
     // names may be 宫, lassú…; @96 sets the tempo from this section, @~60 glides to it across the section
-    const m = /^(?:([\p{L}_][\p{L}\p{N}_-]*):)?(\d+)bars?(?:@(~)?(\d+))?$/u.exec(a);
-    if (!m) throw new Error(`\`${a}\`: a section is like intro:4bars, 8bars, slow:2bars@60 or rit:2bars@~50`);
+    // a trailing * is free time (散板, a taksim, an alap): the tempo floats and phrases stretch
+    const m = /^(?:([\p{L}_][\p{L}\p{N}_-]*):)?(\d+)bars?(?:@(~)?(\d+))?(\*)?$/u.exec(a);
+    if (!m) throw new Error(`\`${a}\`: a section is like intro:4bars, 8bars, slow:2bars@60, rit:2bars@~50 or free:2bars@50* (free time)`);
     const bpm = m[4] ? Number(m[4]) : null; if (bpm !== null && (bpm < 20 || bpm > 300)) throw new Error(`\`${a}\`: tempo is 20–300 bpm`);
-    return { name: m[1] || String(i + 1), bars: Number(m[2]), bpm, glide: !!m[3] };
+    return { name: m[1] || String(i + 1), bars: Number(m[2]), bpm, glide: !!m[3], free: !!m[5] };
   });
   if (!secs.length) throw new Error("list the sections: `. arrange@song intro:4bars verse:8bars …`");
   let at = 0; for (const s of secs) { s.start = at; at += s.bars; }
@@ -3241,6 +3244,19 @@ function arrangeRange(cfg, port) {
 }
 // The tempo an arrangement asks for at a step: the last section tempo so far (else the
 // clock's own), gliding across a section marked @~.
+// The ensemble's breath (clock sway=, and free sections): a multiplier on the tempo at this step.
+// Within a phrase it presses a little, then broadens into the phrase's last beat; a slow wander on
+// top. In a free section (name:2bars@50*) all of it is much larger: tempo floats, cadences stretch.
+function swayAt(c, step, ccfg, acfg) {
+  const at = acfg && arrangeAt(acfg, step, c), free = at && at.idx >= 0 && acfg.sections[at.idx].free;
+  const k = free ? 1 : ccfg.sway || 0; if (!k) return 1;
+  const barSteps = 4 * c.sig, ph = (free ? 1 : ccfg.phrase || 2) * barSteps, pos = step % ph, toEnd = ph - pos;
+  if (step % 4 === 0) c.wander = (c.wander || 0) * 0.7 + (Math.random() - 0.5) * 0.3; // a beat at a time
+  let m = 1 + 0.05 * Math.sin(Math.PI * pos / ph) + (c.wander || 0) * 0.12;
+  if (toEnd <= 4) m -= 0.28 * Math.pow((5 - toEnd) / 4, 2); // the cadence broadens
+  if (free) m = 1 + (m - 1) * 3; // free time: a much wider breath
+  return Math.max(0.4, Math.min(1.6, 1 + (m - 1) * k));
+}
 function sectionTempo(cfg, step, c, base) {
   const at = arrangeAt(cfg, step, c); if (at.idx < 0) return base;
   let before = base; for (let i = 0; i < at.idx; i++) if (cfg.sections[i].bpm) before = cfg.sections[i].bpm;
@@ -3313,7 +3329,8 @@ function tick() {
     const fcl = firstClock(), arr = fcl && fcl.c === c && [...live.values()].find((r) => r.node.kind === "arrange" && !r.error && r.node.enabled && r.cfg.sections.some((x) => x.bpm));
     while (c.nextTime < ctx.currentTime + STEP_AHEAD) {
       applyPendingAtBar(cid, c);
-      if (arr) c.bpm = sectionTempo(arr.cfg, c.step, c, cr.cfg.bpm);
+      const base = arr ? sectionTempo(arr.cfg, c.step, c, cr.cfg.bpm) : cr.cfg.bpm;
+      c.bpm = base * swayAt(c, c.step, cr.cfg, arr && arr.cfg);
       (c.hist = c.hist || []).push([c.nextTime, c.step]); if (c.hist.length > 4096) c.hist.splice(0, 2048);
       for (const r of live.values()) {
         if (r.error || !r.node.enabled || !KINDS[r.node.kind]?.source || r.node.kind === "clock" || r.midiFed) continue;
@@ -3730,11 +3747,12 @@ function explainAt(model, lineNo, col) {
     return { title: kind, body: (spec ? esc(spec.doc) : `Unknown kind ${code(kind)}.`) + named + body + (spec && spec.args.length ? `<br>Options: ${spec.args.map((a) => code(a[0] + "=")).join(" ")}` : ""), help: `kind:${kind}` };
   }
   if (kind === "arrange" && !parseControl(tok.text)) {
-    const m = /^(?:([\p{L}_][\p{L}\p{N}_-]*):)?(\d+)bars?(?:@(~)?(\d+))?$/u.exec(tok.text);
+    const m = /^(?:([\p{L}_][\p{L}\p{N}_-]*):)?(\d+)bars?(?:@(~)?(\d+))?(\*)?$/u.exec(tok.text);
     if (!m) return { title: tok.text, body: `A section is written ${code("name:4bars")}, ${code("8bars")}, ${code("slow:2bars@60")} or ${code("rit:2bars@~44")}.`, help: "kind:arrange" };
     const i = toks.slice(1).filter((t) => !t.comment && !parseControl(t.text)).indexOf(tok) + 1;
     const tempo = m[4] ? (m[3] ? ` The tempo glides to ${m[4]} bpm across it.` : ` From here the tempo is ${m[4]} bpm.`) : "";
-    return { title: tok.text, body: `Section ${i}${m[1] ? ` ${code(m[1])}` : ""}: ${m[2]} bar${m[2] === "1" ? "" : "s"}.${tempo} Lines play in it with ${code(`?${l.id}.${i}`)}${m[1] ? ` or ${code(`?${l.id}.${m[1]}`)}` : ""}.`, help: "kind:arrange" };
+    const free = m[5] ? " Free time (散板): the tempo floats around it and the phrase ends stretch." : "";
+    return { title: tok.text, body: `Section ${i}${m[1] ? ` ${code(m[1])}` : ""}: ${m[2]} bar${m[2] === "1" ? "" : "s"}.${tempo}${free} Lines play in it with ${code(`?${l.id}.${i}`)}${m[1] ? ` or ${code(`?${l.id}.${m[1]}`)}` : ""}.`, help: "kind:arrange" };
   }
   const ctl = parseControl(tok.text);
   if (ctl) {

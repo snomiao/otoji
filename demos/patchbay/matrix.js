@@ -431,6 +431,30 @@ function composeShowcase(civ) {
   const text = [...head, ...L, "", "*> reverb 2.5s wet=0.3", "> speaker 0.5", ""].join("\n");
   try { return formatPatch(parsePatch(text.replace(/\n$/, ""))) + "\n"; } catch (e) { return text; }
 }
+// How a tradition moves in time over the 12 bars (lead alone, layers arrive, climax 9–10, ebb, end): tempo
+// multipliers (0 = keep), the bars in free time, and how much the ensemble breathes (clock sway=).
+// 散慢中快散 (China, Korea, Vietnam): free, slow, quickening, fast, free again. 序破急 (Japan): a slow
+// beginning that speeds up throughout. Alap–jor–jhala (South Asia): free, a pulse, ever faster. A taksim
+// before the usul (West Asia, the steppe). Elsewhere a folk tune's lift at the height and ritardando.
+const TEMPO_SHAPES = {
+  sanban: { shape: [0.72, 0.8, 0.85, 0.9, 0.95, 1, 1.08, 1.15, 1.22, 1.25, 0.88, 0.72], free: [0, 11], sway: 0.45 },
+  jhk: { shape: [0.65, 0.72, 0.78, 0.84, 0.9, 0.95, 1.02, 1.1, 1.2, 1.3, 0.9, 0.7], free: [0, 11], sway: 0.5 },
+  alap: { shape: [0.62, 0, 0.85, 0.9, 0.95, 1, 1.1, 1.2, 1.3, 1.4, 1, 0.7], free: [0, 1, 11], sway: 0.45 },
+  taksim: { shape: [0.75, 0.92, 0.95, 1, 0, 1.02, 1.06, 1.1, 1.14, 1.16, 0.9, 0.75], free: [0], sway: 0.45 },
+  folk: { shape: [0.92, 0.96, 1, 0, 0, 1, 1.03, 1.06, 1.1, 1.1, 0.9, 0.76], free: [0], sway: 0.3 },
+};
+const TEMPO_OF = { "East Asia": "sanban", "South & Southeast Asia": "alap", "Middle East": "taksim", "Steppe & Central Asia": "taksim" };
+function tempoShape(civ, actId, A, mood) {
+  if (A.fire && !mood) return { shape: [1, 0, 1.04, 1.08, 1.12, 1.16, 1.22, 1.26, 0, 0, 0.85, 0.72], free: [], sway: 0.35 }; // the blaze spreads
+  const fam = /^(japanese|yamato|sengoku)/.test(civ.id) ? "jhk" : TEMPO_OF[civ.region] || "folk", T = TEMPO_SHAPES[fam];
+  let shape = T.shape.slice(), sway = T.sway;
+  if (["death", "plague", "drought", "winter", "rain", "ritual"].includes(actId)) { // mourning and waiting never press on: slower, freer
+    shape = shape.map((k, i) => (!k ? 0 : i < 10 ? Math.min(k, 1) * (k < 1 ? 1 : 0.98) : k * 0.95)); sway = Math.min(0.7, sway + 0.15);
+  } else if (["battle", "siege", "triumph", "build"].includes(actId)) { // a march or a work rhythm keeps its step
+    shape = shape.map((k, i) => (!k ? 0 : i === 0 || i === 11 ? k : 1 + (k - 1) * 0.4)); sway *= 0.4;
+  }
+  return { shape, free: T.free, sway: Math.round(sway * 100) / 100 };
+}
 // A piece written by hand from recordings of the people's own music (cultures/scores/): its header, the story, then the patch.
 function composeScore(civ, actId, sc) {
   const A = ACTIVITIES[actId];
@@ -466,11 +490,12 @@ function compose(civ, actId) {
   const line = (r, extra, phrase, a, b, scaleArg = sc) => {
     let id = r.name; for (let k = 2; names[id]; k++) id = `${r.name}${k}`; names[id] = true;
     const kindAt = id === r.kind ? r.kind : `${r.kind}@${id}`;
-    L.push(`. ${kindAt} ${[scaleArg, r.opts, extra, phrase].filter(Boolean).join(" ")} ?song.${a === b ? a : `${a}-${b}`}`);
+    const feel = /\bhuman=/.test(`${r.opts} ${extra}`) ? "" : "human=0.4"; // players, not a sequencer
+    L.push(`. ${kindAt} ${[scaleArg, r.opts, extra, feel, phrase].filter(Boolean).join(" ")} ?song.${a === b ? a : `${a}-${b}`}`);
   };
   const drum = (nm, kitName, pattern, a, b, vol) => {
     let id = nm; for (let k = 2; names[id]; k++) id = `${nm}${k}`; names[id] = true;
-    L.push(`. drums@${id} kit=${kitName} "${pattern}"${vol ? "" : ""} ?song.${a === b ? a : `${a}-${b}`}`);
+    L.push(`. drums@${id} kit=${kitName} human=0.35 "${pattern}" ?song.${a === b ? a : `${a}-${b}`}`);
   };
   const g = A.grid, tuneLines = [];
   // The lead's 4-bar tune as ranks (null = hold/rest char kept in `chars`).
@@ -655,7 +680,8 @@ function compose(civ, actId) {
   }
   // Section names: what enters in that bar.
   const label = (k) => ({ woodfish: "mokugyo", muffled: "drum", melee: { metal: "steel", wood: "shields", rattan: "rattan", hide: "hide" }[shieldOf(civ)], second: second.name, perc: kit, drone: drone.name, horns: "horns", timp: "timpani", drive: "drive" })[k] || k;
-  const tempo = A.fire && !mood ? [1, 0, 1.04, 1.08, 1.12, 1.16, 1.22, 1.26, 0, 0, 0.85, 0.72].map((k, i) => (!k ? "" : i === 0 ? `@${bpm}` : `@~${Math.round(bpm * k)}`)) : [];
+  const tm = tempoShape(civ, actId, A, mood);
+  const tempo = tm.shape.map((k, i) => (!k ? "" : i === 0 ? `@${Math.round(bpm * k)}` : `@~${Math.round(bpm * k)}`) + (tm.free.includes(i) ? "*" : ""));
   const secs = [lead.name, ...adds.map(label), "climax", "peak", "ebb", "end"].map((x, i) => `${x.replace(/[^\p{L}\p{N}_-]/gu, "")}:1bars${tempo[i] || ""}`);
   const head = [
     `# ${civLabel(civ)} × ${A.zh} ${A.en}${fun ? ` (${fun})` : ""} — ${A.about}`,
@@ -663,7 +689,7 @@ function compose(civ, actId) {
     civ.note ? `# ${civ.note}` : null,
     ...(piece ? [`# ♫ ${piece.title}${piece.native ? ` (${piece.native})` : ""} — ${piece.about || ""}${tune ? " · its melody leads (" + (piece.source || "") + ")" : piece.source === "lost" ? " · the melody is lost" : ""}`] : []),
     ...storyBlock(storyText(`${civ.id}:${actId}`), LANG),
-    `. clock ${bpm} ${meter || "4/4"}`,
+    `. clock ${bpm} ${meter || "4/4"} sway=${tm.sway}`,
     `. arrange@song ${secs.join(" ")}`,
     ...[...new Set([scale, A.climax === "bright" || A.climax === "dance" || A.open ? scaleOf("bright") : scale, A.danger ? scaleOf("dark") : scale, tune ? piece.scale : scale])].map((n) => `. scale@${n} ${formatScaleDef(SCALES[n])}`),
     "",
