@@ -30,8 +30,8 @@ const ACTIVITIES = {
     tune: [["x---xxx-", "leap", 0, 4], ["xxxx-x--", "wave", 4, 1], ["x-x-xxxx", "leap", 2, 7], ["x-----x-", "step", 3, 0]], climb: true, prog: ["1", "2", "1", "7,"], second: "long", horn: "long", timp: "roll", perc: "calm", climax: "oct", wind: true,
     adds: ["trem", "low", "swirl", "perc", "horns", "timp", "choir"] },
   fire:   { zh: "火", glyph: "火", en: "Fire", about: "fire: a spark, the blaze spreads, everyone fights it, embers at dawn", bpm: 104, mode: "dark", grid: 8,
-    tune: [["x-xxx-x-", "wave", 0, 2], ["xxxx-x--", "wave", 2, 4], ["xxxxxxx-", "wave", 3, 7], ["x-x-x---", "step", 4, 0]], climb: true, prog: ["1", "6,", "7,", "1"], second: "third", horn: "long", timp: "roll", perc: "march", climax: "oct", fire: true,
-    adds: ["trem", "low", "perc", "swirl", "horns", "drive", "timp"] },
+    tune: [["x-xxx-x-", "wave", 0, 2], ["xxxx-x--", "wave", 2, 4], ["xxxxxxx-", "wave", 3, 7], ["x-x-x---", "step", 4, 0]], climb: true, prog: ["1", "6,", "7,", "1"], second: "third", horn: "long", timp: "roll", perc: "fire", climax: "oct", fire: true,
+    adds: ["trem", "flicker", "low", "perc", "horns", "drive", "timp"] },
   thunder: { zh: "雷", glyph: "雷", en: "Thunder", about: "thunder: the sky darkens, lightning, the gods speak, the storm passes", bpm: 80, mode: "dark", grid: 8,
     tune: [["x---x---", "leap", 0, 3], ["x-x-x---", "step", 3, 1], ["x---x-x-", "leap", 2, 6], ["x-x-x---", "step", 4, 0]], climb: false, prog: ["1", "1", "6,", "5,"], second: "long", horn: "long", timp: "roll", perc: "calm", climax: "oct", thunder: true,
     adds: ["low", "timp", "trem", "horns", "perc", "choir", "pad"] },
@@ -550,6 +550,7 @@ function compose(civ, actId) {
     perc: (a, until) => {
       if (A.perc === "procession") return drum(warDrumOf(civ) || kit, warDrumOf(civ) || kit, "x.......x.......|................|....x.......x...", a, until || 11);
       if (A.perc === "steady") return drum(kit, kit, "x...x...x...x...|................|..x...x...x...x.", a, until || 11);
+      if (A.perc === "fire") { const [, l2, l3] = (grooves.march || DEFAULT_GROOVES.march).split("|"); return drum(kit, kit, `x..x..x.x..x..x.|${l2}|${l3}`, a, until || 10); } // 3+3+2, like a fire dance
       const pat = A.perc === "heart" ? grooves.calm.split("|").map((l, i) => (i === 0 ? "x..x............" : ".".repeat(16))).join("|") : grooves[A.perc] || grooves.calm;
       drum(kit, kit, pat, a, until || 10);
       if (actId === "battle" && warDrumOf(civ)) drum(warDrumOf(civ), warDrumOf(civ), "X.......x...x...|..x...x...x...x.|................", a, until || 10);
@@ -574,6 +575,18 @@ function compose(civ, actId) {
     rin: (a) => drum("rin", "temple", "................|x...............|................", a, 12),
     muffled: (a) => drum("muffled", "orch", "x...............|x.......x..x.x..|................", a, 11),
     trem: (a) => line(pick("trem", civ.trem, "strings@tremolo vol=0.5"), "grid=16", q(roots.flatMap((r) => Array(16).fill(chordOf(jp.fmt(r), true)))), a, 11),
+    // Fire: flames licking upward, short rising runs at odd places, more of them as the blaze grows.
+    flicker: (a) => {
+      const fr = seeded(`${civ.id}:${actId}:flicker`), toks = [];
+      for (let bar = a; bar <= 10; bar++) for (let beat = 0; beat < 4; beat++) {
+        if (beat !== bar % 4 && fr() > 0.45 + 0.07 * (bar - a)) { toks.push(...rest(4)); continue; } // (one lick a bar at least)
+        const at = fr() < 0.5 ? 0 : 1, run = 3 + Math.floor(fr() * 2), r0 = Math.floor(fr() * P.length), step = fr() < 0.3 ? 2 : 1;
+        const lick = Array.from({ length: run }, (_, j) => r0 + j * step);
+        const beatToks = [...rest(at), ...lick].slice(0, 4);
+        toks.push(...render(beatToks, scale), ...rest(4 - beatToks.length));
+      }
+      line(role(civ.flute, "flute@flames oct=5 vol=0.6"), "grid=16", q(toks), a, 10);
+    },
     swirl: (a) => line(role(civ.flute, "flute@swirl oct=5 vol=0.6"), "grid=16",
       q([0, 1, 2, 3, 4, 5, 6, 7, 6, 5, 4, 3, 2, 1, 0, -1].map((k) => jp.fmt({ acc: "", i: k }))), a, 10),
   };
@@ -607,7 +620,18 @@ function compose(civ, actId) {
   if (actId === "drought") L.push(". wind@dry 0.2 gust=0.05Hz");
   if (actId === "winter") L.push(". wind@blizzard 0.4 gust=0.2Hz", ". wind@gale 0.6 gust=0.3Hz ?song.7-10");
   if (actId === "quake") L.push(`. drums@rumble kit=sky "X${".".repeat(63)}|${".".repeat(64)}|${".".repeat(64)}" ?song.3-10`, '. drums@crack kit=sky "................|x..x....x.......|....x.x........." ?song.3-4', '. drums@aftershock kit=sky "x...............|................|................" ?song.9');
-  if (A.fire) L.push(". fire@spark 0.25 crackle=0.2 ?song.1-6", ". fire@blaze 0.8 crackle=0.7 ?song.7-10", ". fire@embers 0.2 crackle=0.08 ?song.11-12");
+  if (A.fire) {
+    const quiet = (r) => ({ ...r, opts: r.opts.replace(/\s*\bvol=\S+/, "") }); // its own vol= is set here
+    L.push(". fire@spark 0.3 crackle=0.35 ?song.1-4", ". fire@spread 0.6 crackle=0.6 ?song.5-6", ". fire@blaze 1 crackle=0.9 ?song.7-10", ". fire@embers 0.25 crackle=0.15 ?song.11-12");
+    if (!mood) { // not a fire people set on purpose: they run to fight it
+      L.push(`. crowd@alarm murmur${lookup(MURMUR, civ) ? ` "${lookup(MURMUR, civ)}"` : ""} voices=10 vol=0.8 pitch=1.12 ?song.5-8`,
+        '. crowd@buckets chant "HEI" "x---x---x---x---" voices=14 pitch=0.92 vol=0.9 ?song.7-10'); // hand to hand, pail after pail
+      if (civ.bell) line(quiet(role(civ.bell)), "grid=8 vol=0.45", q(["5", "5", "5", "5", "5", "5", "5", "5"]), 7, 10); // the alarm, struck over and over
+    }
+    // the embers: a few sparks still rising
+    const sr = seeded(`${civ.id}:${actId}:sparks`), sparks = Array.from({ length: 32 }, (_, i) => (i % 16 === 5 || sr() < 0.15 ? Math.floor(P.length * (1 + sr())) : "0"));
+    line(quiet(role(civ.harp || civ.bell, "bell@sparks oct=5")), "grid=16 vol=0.25", q(render(sparks, scale)), 11, 12);
+  }
   if (A.thunder) L.push(`. drums@thunder kit=sky "${"X".padEnd(32, ".")}|${".".repeat(32)}|${".".repeat(32)}" ?song.3-10`,
     '. drums@lightning kit=sky "................|x.......x.......|................" ?song.7-10', ". rain@storm 0.5 drops=0.4 ?song.5-11");
   if (A.wind) { // the storm itself: wind throughout, rain that grows, thunder at the height
@@ -617,7 +641,8 @@ function compose(civ, actId) {
   }
   // Section names: what enters in that bar.
   const label = (k) => ({ woodfish: "mokugyo", muffled: "drum", melee: { metal: "steel", wood: "shields", rattan: "rattan", hide: "hide" }[shieldOf(civ)], second: second.name, perc: kit, drone: drone.name, horns: "horns", timp: "timpani", drive: "drive" })[k] || k;
-  const secs = [lead.name, ...adds.map(label), "climax", "peak", "ebb", "end"].map((x) => `${x.replace(/[^\p{L}\p{N}_-]/gu, "")}:1bars`);
+  const tempo = A.fire && !mood ? [1, 0, 1.04, 1.08, 1.12, 1.16, 1.22, 1.26, 0, 0, 0.85, 0.72].map((k, i) => (!k ? "" : i === 0 ? `@${bpm}` : `@~${Math.round(bpm * k)}`)) : [];
+  const secs = [lead.name, ...adds.map(label), "climax", "peak", "ebb", "end"].map((x, i) => `${x.replace(/[^\p{L}\p{N}_-]/gu, "")}:1bars${tempo[i] || ""}`);
   const head = [
     `# ${civLabel(civ)} × ${A.zh} ${A.en}${fun ? ` (${fun})` : ""} — ${A.about}`,
     `# ${scale} on ${key} · ${bpm} bpm · bar 1: ${lead.name} alone; each bar adds one layer: ${adds.map(label).join(", ")} · climax · ebb · it loops`,
