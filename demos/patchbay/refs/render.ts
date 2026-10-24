@@ -3,6 +3,7 @@
 //   bun refs/render.ts check <civ:activity> [--score cultures/scores/x.js] [--secs 20] [--port 9341]
 //       loads the scene (with the score file evaluated fresh, so no build is needed), reports
 //       line errors, page errors, each line's level (dB, L+R) and which lines sound in each section
+//   (instead of <civ:activity>, @file.otoji renders a patch file)
 //   bun refs/render.ts wav <civ:activity> <out.wav> [--secs 40] [--score …] [--port …]
 //       records the master to a mono 22.05 kHz WAV, for refs/analyse.py
 //
@@ -46,7 +47,7 @@ await Bun.sleep(500);
 // ── the scene, with the score file evaluated fresh ──
 const [civId, act] = key.split(":");
 const scoreSrc = scoreFile ? await Bun.file(scoreFile).text() : "";
-const text: string = await ev(`(()=>{ ${scoreSrc ? `eval(${JSON.stringify(scoreSrc)});` : ""}
+const text: string = key.startsWith("@") ? await Bun.file(key.slice(1)).text() : await ev(`(()=>{ ${scoreSrc ? `eval(${JSON.stringify(scoreSrc)});` : ""}
   const civ = CIVS.find(c => c.id === ${JSON.stringify(civId)}); if (!civ) throw new Error("no civ ${civId}");
   return compose(civ, ${JSON.stringify(act)}); })()`);
 await ev(`(()=>{ ui.setText(${JSON.stringify(text)}); applyText(${JSON.stringify(text)}); return 1 })()`);
@@ -65,7 +66,7 @@ if (mode === "check") {
     const arr=[...live.values()].find(r=>r.node.kind==='arrange'), c=clocks.get([...clocks.keys()][0]);
     const secs=[]; const nsec=arr?arr.cfg.sections.length:0;
     for(let s=0;s<nsec;s++){ const bs=4*c.sig, step=arr.cfg.sections[s].start*bs; c.step=step; c.nextTime=ctx.currentTime+0.05; startedAt=c.nextTime-step*60/c.bpm/4; for(const r of live.values()) r.busy=[];
-      await new Promise(r=>setTimeout(r, Math.max(600, Math.min(4000, 60/c.bpm*c.sig*1000*arr.cfg.sections[s].bars)) - 150));
+      await new Promise(r=>setTimeout(r, Math.max(600, Math.min(12000, 60/c.bpm*c.sig*1000*arr.cfg.sections[s].bars)) - 150));
       secs.push((arr.cfg.sections[s].name||('§'+(s+1)))+': '+[...live.values()].filter(r=>r.busy.length && KINDS[r.node.kind]?.source && r.node.kind!=='clock').map(r=>r.node.id).join(' ')); }
     ${secs ? `await new Promise(r=>setTimeout(r,${secs * 1000}));` : ""}
     clearInterval(iv); stop();

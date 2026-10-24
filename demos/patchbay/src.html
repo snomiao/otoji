@@ -916,7 +916,7 @@ for (const k of ["piano", "bass", "strings", "pluck", "flute", "organ", "choir",
 KINDS.chant = { source: true, build: (o) => {
   const c = buildMelodic("chant", o);
   const voice = o.voice || "men"; if (!["men", "women", "boy"].includes(voice)) throw new Error("voice is men, women or boy");
-  return { ...c, sylls: parseIpa(o.ipa), voice, voices: num(o, "voices", 1, 1, 12), vib: num(o, "vib", 0.012, 0, 0.05), breath: num(o, "breath", 0.08, 0, 1) };
+  return { ...c, sylls: parseIpa(o.ipa), voice, voices: num(o, "voices", 1, 1, 12), vib: num(o, "vib", 0.012, 0, 0.05), breath: num(o, "breath", 0.08, 0, 1), bright: num(o, "bright", 0.3, 0, 1) };
 } };
 
 // ── autocomplete catalog: what each kind is, takes and accepts ────────
@@ -1730,6 +1730,7 @@ function buildMelodic(kind, o) {
     phrase: o.phrase ? parsePhrase(o.phrase) : null,
     dyn: parseDyn(o.dyn),
     human: num(o, "human", 0, 0, 1),
+    rubato: num(o, "rubato", 0, 0, 1), drift: num(o, "drift", 0, -200, 200),
     body: o.body === undefined ? null : o.body === "auto" || o.body === "none" || BODIES[o.body] ? o.body : (() => { throw new Error(`body= is auto, none or one of ${Object.keys(BODIES).join(", ")}`); })(),
     tech: o.tech ? (Object.values(TECH_LETTERS).includes(o.tech) ? o.tech : (() => { throw new Error(`tech= is one of ${Object.values(TECH_LETTERS).join(", ")}`); })()) : null,
     chords: (o.chords || "Am F C G").split(/\s+/).map(parseChord),
@@ -1757,6 +1758,9 @@ function playMelodic(r, c, step, t) {
   if (cfg.human) { // a player, not a sequencer: beats lean, nothing is exactly even
     peak *= 1 + cfg.human * ((step % barSteps === 0 ? 0.16 : step % 4 === 0 ? 0.07 : -0.04) + (Math.random() - 0.5) * 0.3);
     t += cfg.human * Math.random() * 0.018;
+  }
+  if (cfg.rubato) { // free time: a slow wander late of the grid, so the line breathes on its own
+    r.rub = (r.rub || 0) * 0.75 + Math.random() * 0.25; t += cfg.rubato * r.rub * 0.6 * 60 / c.bpm;
   }
   // One sound: on the line's physical model when it has one (a bowed line
   // borrows a plucked string for pizzicato and col legno), else the oscillator voice.
@@ -1790,13 +1794,15 @@ function playMelodic(r, c, step, t) {
     if (tok.rest || tok.hold) return;
     let hold = 1; while (hold < cfg.phrase.length && cfg.phrase[(i + hold) % cfg.phrase.length].hold) hold++;
     const name = (x) => `${x.deg}${"'".repeat(Math.max(0, x.oct))}${",".repeat(Math.max(0, -x.oct))}`;
-    const hzOf = (x) => midiHz(keyMidi(cfg.key, cfg.oct)) * Math.pow(2, (degreeCents(cfg.scale, x.deg) + x.acc + 1200 * x.oct) / 1200);
+    const creep = cfg.drift ? cfg.drift * Math.max(0, t - startedAt) / 60 : 0; // drift=: cents a minute
+    const hzOf = (x) => midiHz(keyMidi(cfg.key, cfg.oct)) * Math.pow(2, (degreeCents(cfg.scale, x.deg) + x.acc + 1200 * x.oct + creep) / 1200);
     if (r.node.kind === "chant") { // one IPA syllable per sung note, in order, round and round
       const notesIn = cfg.noteAt || (cfg.noteAt = cfg.phrase.map((x, j) => cfg.phrase.slice(0, j).filter((y) => !y.rest && !y.hold).length));
       const perCycle = cfg.phrase.filter((y) => !y.rest && !y.hold).length, nth = Math.floor(step / per / cfg.phrase.length) * perCycle + notesIn[i];
       const syl = cfg.sylls[nth % cfg.sylls.length];
       let prev = null; for (let b = 1; b <= cfg.sylls.length && !prev; b++) { const x = cfg.sylls[(nth - b + cfg.sylls.length * 64) % cfg.sylls.length]; if (!x.hold) prev = x; }
-      chantNote(out, t, hzOf(tok), stepDur * per * hold * 1.02, peak, syl, prev, cfg);
+      chantNote(out, t, hzOf(tok), stepDur * per * hold * 1.02, peak, syl, prev, cfg,
+        { grace: tok.grace && hzOf(tok.grace), slide: tok.slide && hzOf(tok.slide), tech: tok.tech || cfg.tech });
       r.detail = `${syl.hold ? "~" : syl.text} on ${name(tok)} · ${cfg.scaleName} on ${cfg.key}`; mark(r, t, stepDur * per * hold);
       return;
     }
@@ -2067,16 +2073,18 @@ function parseIpa(text) {
 }
 let chantNoise = null;
 // Sing one syllable on one note, for each voice of the choir.
-function chantNote(out, t, f, dur, peak, syl, prev, cfg) {
+// orn: { grace, slide (Hz), tech }: a grace note sung into the note, a slide to another, tremolo (the Thracian
+// trembling: one pitch pulsed), flutter (a quick shake of the pitch on a held note, as psaltes do).
+function chantNote(out, t, f, dur, peak, syl, prev, cfg, orn = {}) {
   if (!chantNoise) { chantNoise = ctx.createBuffer(1, ctx.sampleRate * 2, ctx.sampleRate); const d = chantNoise.getChannelData(0); for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1; }
   const held = syl.hold, s = held ? { onset: [], vowels: prev ? [prev.vowels[prev.vowels.length - 1]] : [{ F: IPA_VOWELS.a }], coda: [] } : syl;
   const scale = { men: 1, women: 1.17, boy: 1.25 }[cfg.voice] || 1;
   for (let v = 0; v < cfg.voices; v++) {
     const det = cfg.voices > 1 ? (Math.random() - 0.5) * 0.012 : 0, lag = cfg.voices > 1 ? Math.random() * 0.025 : 0, fs = scale * (0.97 + Math.random() * 0.06);
-    singOne(out, t + lag, f * (1 + det), dur, peak / Math.sqrt(cfg.voices), s, held, fs, cfg);
+    singOne(out, t + lag, f * (1 + det), dur, peak / Math.sqrt(cfg.voices), s, held, fs, cfg, orn);
   }
 }
-function singOne(out, t, f, dur, peak, s, held, fs, cfg) {
+function singOne(out, t, f, dur, peak, s, held, fs, cfg, orn = {}) {
   const end = t + dur, F = (a) => a.map((x, i) => x * (i < 3 ? fs : fs * 0.98));
   // time for the consonants: onset before the vowel, coda after it
   const segT = (c) => (c.k === "s" ? 0.06 : c.k === "a" ? 0.1 : c.k === "f" ? 0.11 : c.k === "h" ? 0.07 : c.k === "r" ? (c.tap ? 0.03 : 0.08) : 0.07);
@@ -2084,10 +2092,13 @@ function singOne(out, t, f, dur, peak, s, held, fs, cfg) {
   const vStart = t + s.onset.reduce((a, c) => a + segT(c) * scaleT, 0), vEnd = end - s.coda.reduce((a, c) => a + segT(c) * scaleT, 0);
   // the glottal pulse: sawtooth with vibrato that comes in after the attack
   const o = ctx.createOscillator(), lfo = ctx.createOscillator(), vd = ctx.createGain(), voiceG = ctx.createGain();
-  o.type = "sawtooth"; o.frequency.setValueAtTime(f, t);
+  o.type = "sawtooth"; o.frequency.setValueAtTime(orn.grace || f, t);
+  if (orn.grace) { o.frequency.setValueAtTime(orn.grace, t + Math.min(0.07, dur * 0.25)); o.frequency.exponentialRampToValueAtTime(f, t + Math.min(0.11, dur * 0.35)); }
+  if (orn.slide) { const s0 = t + dur * 0.45; o.frequency.setValueAtTime(f, s0); o.frequency.exponentialRampToValueAtTime(orn.slide, Math.min(end - 0.02, s0 + Math.max(0.08, dur * 0.3))); }
   lfo.frequency.value = 5 + Math.random() * 1.2; vd.gain.setValueAtTime(0, t); vd.gain.linearRampToValueAtTime(f * cfg.vib, Math.min(end, vStart + 0.3));
   lfo.connect(vd).connect(o.frequency);
-  const tilt = ctx.createBiquadFilter(); tilt.type = "lowpass"; tilt.frequency.value = 2800; tilt.Q.value = 0.5; // the glottal source falls off with frequency
+  const tilt = ctx.createBiquadFilter(); tilt.type = "lowpass"; tilt.frequency.value = 2800 + 3200 * (cfg.bright ?? 0); tilt.Q.value = 0.5; // the glottal source falls off with frequency
+  if (orn.tech === "flutter") { const sh = ctx.createOscillator(), sd = ctx.createGain(); sh.frequency.value = 6.5; sd.gain.setValueAtTime(0, t); sd.gain.linearRampToValueAtTime(f * 0.017, t + Math.min(0.25, dur * 0.4)); sh.connect(sd).connect(o.frequency); sh.start(t); sh.stop(end + 0.1); }
   // breath noise through the same formants (aspiration, h), and a separate band for fricatives and bursts
   const nz = ctx.createBufferSource(); nz.buffer = chantNoise; nz.loop = true;
   const breathG = ctx.createGain(), fricBP = ctx.createBiquadFilter(), fricG = ctx.createGain();
@@ -2135,9 +2146,16 @@ function singOne(out, t, f, dur, peak, s, held, fs, cfg) {
     at = e;
   }
   // the whole note: a soft attack (none when the vowel is held on), a short release
+  // the singer's ring: a peak near 3 kHz (bright=)
+  const ring = ctx.createBiquadFilter(); ring.type = "peaking"; ring.frequency.value = 2900 * fs; ring.Q.value = 1.6; ring.gain.value = 14 * (cfg.bright ?? 0);
   const g = ctx.createGain(); g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(peak * 4, t + (held ? 0.03 : 0.012));
   g.gain.setValueAtTime(peak * 4, Math.max(t + 0.04, end - 0.05)); g.gain.exponentialRampToValueAtTime(0.0001, end + 0.08);
-  sum.connect(g).connect(out);
+  let head = sum.connect(ring);
+  if (orn.tech === "tremolo") { // one pitch pulsed, about seven times a second
+    const am = ctx.createGain(), lf = ctx.createOscillator(), ld = ctx.createGain(); am.gain.value = 0.6; lf.frequency.value = 7; ld.gain.value = 0.4;
+    lf.connect(ld).connect(am.gain); head = head.connect(am); lf.start(t); lf.stop(end + 0.1);
+  }
+  head.connect(g).connect(out);
   for (const n of [o, lfo, nz]) { n.start(t); n.stop(end + 0.1); }
 }
 INSTRUMENTS.chant = { adsr: [0.03, 0.1, 1, 0.08], play(out, t, f, dur, adsr, peak, cfg) { chantNote(out, t, f, dur, peak, parseIpaSyllable("a"), null, cfg || { voices: 1, voice: "men", vib: 0.012, breath: 0.08 }); } };
@@ -2391,6 +2409,8 @@ const MELODIC_ARGS = [
   ["vol", "1", "level 0–2"],
   ["dyn", '"p mf f"', "loudness per bar from where the line comes in, glided between (crescendo, diminuendo): ppp pp p mp mf f ff fff or 0–2"],
   ["human", "0.4", "0–1: a player's unevenness: beats lean, timing and loudness vary a little"],
+  ["rubato", "0.5", "0–1: free time, notes come early or late on a slow wander, off the grid (chant, laments, a singer's own breath)"],
+  ["drift", "30", "cents a minute the pitch creeps (up, or down if negative), as unaccompanied singers do"],
   ["body", "guitar", "the instrument's own resonating box, chosen from its name (auto); body=none for a bare string, or another: guitar, lute, pipa, zither, qin, gourd, skin, violin, huqin…", ["auto", "none", "guitar", "lute", "small", "pipa", "moon", "zither", "qin", "dulcimer", "gourd", "calabash", "skin", "harp", "harpsichord", "violin", "viol", "cello", "doublebass", "huqin", "skinbowl", "piano"]],
   ["tech", "pizz", "a playing technique for every note: knock, harmonic, mute, pizz, spiccato, col-legno, tremolo, overblow, flutter", ["knock", "harmonic", "mute", "pizz", "spiccato", "col-legno", "tremolo", "overblow", "flutter"]],
 ];
@@ -2399,7 +2419,7 @@ CATALOG.scale = { doc: "Defines a scale (调式) by its degrees in 简谱: `. sc
 CATALOG.arrange = { doc: "Song form: sections in bars, looping. Lines play in them with ?song.2 or ?song.2-3 (or a section name). A section can set the tempo: slow:2bars@60 from its start, rit:2bars@~44 gliding there across it (accelerando or ritardando); later sections keep it.", args: [] };
 CATALOG.crowd = { doc: "Crowd of synthesized voices (no recordings): shout a war cry, chant on the beat, ululate, or murmur (chatter). Words are romanized syllables, UPPER = accented: `. crowd shout \"i-YA-SA-SA\"`.", args: [
   ["mode", "shout", "shout · chant · ululate · murmur", ["shout", "chant", "ululate", "murmur"], { re: /^(shout|chant|ululate|murmur)$/ }],
-  ["text", '"a-la-la-LAI"', "syllables like i-ya-sa-sa, ei, u-RAA, sha; UPPER = accented", null, { re: /^(?!"[x.-]+"$)"[A-Za-zāēīōūəĀĒĪŌŪ\s-]*[A-Za-zāēīōūəĀĒĪŌŪ][A-Za-zāēīōūəĀĒĪŌŪ\s-]*"$/ }],
+  ["text", '"a-la-la-LAI"', "syllables like i-ya-sa-sa, ei, u-RAA, sha; UPPER = accented", null, { re: /^(?!"[x.-]+"$)"[A-Za-zāēīōūəĀĒĪŌŪƏ\s-]*[A-Za-zāēīōūəĀĒĪŌŪƏ][A-Za-zāēīōūəĀĒĪŌŪƏ\s-]*"$/ }],
   ["pattern", '"x-x-x---........"', "rhythm per 16th: x next syllable, - hold, . silence", null, { re: /^"[x.-]+"$/ }],
   ["voices", "24", "how many people, 1–48", null, { re: /^\d+$/ }],
   ["voice", "men", "men · women · mixed", ["men", "women", "mixed"], { re: /^(men|women|mixed)$/ }],
@@ -2435,7 +2455,8 @@ for (const [k, doc] of [["marimba", "Marimba / balafon: wooden bars."], ["piano"
 }
 CATALOG.chant = { doc: "Chant 吟唱: a sung voice from IPA, one syllable per note (_ holds the last vowel over the next note): . chant ipa=\"tɕʰin ʂən _ ʂɿ\" \"1 2 3 5\". Formant synthesis, any language; tone letters and stress marks are ignored (the melody gives the pitch).", args: [
   ["ipa", '"tɕʰin ʂən _ ʂɿ"', "the words in IPA, a syllable per note; _ holds the vowel (a melisma)"], ["voice", "men", "men, women or boy", ["men", "women", "boy"], { re: /^(men|women|boy)$/ }],
-  ["voices", "1", "how many sing together, 1–12 (a choir)"], ["vib", "0.012", "vibrato depth, 0–0.05"], ["breath", "0.08", "breathiness, 0–1"], ...MELODIC_ARGS] };
+  ["voices", "1", "how many sing together, 1–12 (a choir)"], ["vib", "0.012", "vibrato depth, 0–0.05"], ["breath", "0.08", "breathiness, 0–1"],
+  ["bright", "0.3", "0–1: the singer's ring (a formant near 3 kHz): 0 soft and covered, 1 an open, carrying folk or psaltic voice"], ...MELODIC_ARGS] };
 CATALOG.drums.args.push(["kit", "rock", "rock, darbuka, taiko, opera (京剧), aztec, african, tabla, gamelan, celtic, flamenco, orch (orchestra), zhangu (战鼓), sky (thunder), temple (木魚 りん), work (hammer, chisel), daf (frame drum), horses, elephants, guns; battle: clash (steel, metal shields), woodshield, rattan (藤牌), hide", Object.keys(KITS), { re: new RegExp(`^(${Object.keys(KITS).join("|")})$`) }]);
 CATALOG.drums.args[1][3] = [...new Set(Object.values(KITS).flat())];
 CATALOG.drums.args[1][4] = { re: new RegExp(`^(${[...new Set(Object.values(KITS).flat())].join("|")})$`) };
@@ -2452,7 +2473,8 @@ const VOWELS = { // F1 F2 F3 (Hz, adult male); women scale up ~1.17
 // Syllable → onset consonant, vowel sequence (diphthongs glide), coda nasal.
 function parseSyllable(s) {
   const t = s.toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "");
-  const m = /^(sh|ch|ts|zh|[bcdfghjklmnprstvwyz]?)([aeiouə]+)(ng|n|m|h|l|r|s|k|t)?$/.exec(t);
+  // clusters (sta, drum, dəʒd) are sung as their nearest simple syllable: the consonant next to the vowel
+  const m = /^[bcdfghjklmnpqrstvwxyz]*?(sh|ch|ts|zh|[bcdfghjklmnprstvwyz]?)([aeiouə]+)(ng|n|m|h|l|r|s|k|t)?[bcdfghjklmnpqrstvwxyz]*$/.exec(t);
   if (!m) throw new Error(`\`${s}\`: a syllable is like ka, sa, ya, sha, lai, ō, un`);
   return { onset: m[1], vowels: [...m[2]], coda: m[3] || "", accent: s !== s.toLowerCase() };
 }
