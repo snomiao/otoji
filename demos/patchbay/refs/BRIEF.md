@@ -49,7 +49,7 @@ Brass: `bell=` trumpet horn trombone tuba cornett natural conch (guessed from th
 so use `dyn=` for a forte rather than `vol=`. A shawm (suona, shehnai, zurna) belongs on a `reed` line.
 Voice (chant): `scoop=` cents from below, `glide=` from the last note, `head=A4` the register break (a yodel, a grito),
 `shake=` held-note shading (nonghyeon, yuri), `press=` a pressed chest voice, `bright=` the ring; ˈ in the IPA stresses a
-syllable; `5t` a turn (the notes above and below), `5f` flutter, `5r` tremolo, `(3)5` grace, `5~6` slide.
+syllable; `5t` a turn (the notes above and below), `(4.5.4)3` a run into the note, `5g` gamak/andolan (a slow wide swing), `5k` a catch (a sob, the Thracian trembling), `swell=` a held note grows; reed and flute take `shake=` too, `5f` flutter, `5r` tremolo, `(3)5` grace, `5~6` slide.
 Sung words: public-domain or traditional texts only, in the original language as IPA; captions in native script.
 
 ## Rules

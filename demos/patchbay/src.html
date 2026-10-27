@@ -1577,7 +1577,7 @@ function scaleNamed(name) {
 // Techniques: (3)5 grace note · 5~6 slide to 6 · a letter after the note:
 // x body tap, h harmonic, m mute, p pizzicato, s spiccato, c col legno,
 // r tremolo/roll, o overblow, f flutter-tongue.
-const TECH_LETTERS = { x: "knock", h: "harmonic", m: "mute", p: "pizz", s: "spiccato", c: "col-legno", r: "tremolo", o: "overblow", f: "flutter", t: "turn" };
+const TECH_LETTERS = { x: "knock", h: "harmonic", m: "mute", p: "pizz", s: "spiccato", c: "col-legno", r: "tremolo", o: "overblow", f: "flutter", t: "turn", g: "gamak", k: "catch" };
 const PITCH = "([#b]?)([1-7])(['’,]*)";
 const phrasePitch = (m, i) => ({ deg: Number(m[i + 1]), acc: m[i] === "#" ? 100 : m[i] === "b" ? -100 : 0, oct: [...m[i + 2]].reduce((a, c) => a + (c === "," ? -1 : 1), 0) });
 function parsePhrase(s) {
@@ -1587,12 +1587,15 @@ function parsePhrase(s) {
     // a chord swept: 1+5+1'/ low to high (a downstroke, 扫), 1+5+1'\ high to low (an upstroke, 拂)
     const strum = (t.endsWith("/") || t.endsWith("\\")) && t.includes("+"), body = strum ? t.slice(0, -1) : t;
     const notes = body.split("+").map((x) => {
-      const m = new RegExp(`^(?:\\(${PITCH}\\))?${PITCH}(?:~${PITCH})?([xhmpscroft]?)$`).exec(x);
-      if (!m) throw new Error(`bad phrase token \`${t}\` (1–7, 0 rest, - hold, ' or , for octaves, 1+3+5 a chord, 1+3+5/ or 1+3+5\\ swept down or up, 5~6 slide, (3)5 grace, 5x 5h 5m 5p 5s 5c 5r 5o 5f 5t techniques)`);
+      let run = null; const rm = /^\(([^()]*\.[^()]*)\)(.+)$/.exec(x); // (4.5.4)3: a run of quick notes sung or played into the note
+      if (rm) { run = rm[1].split(".").map((y) => { const q = new RegExp(`^${PITCH}$`).exec(y); if (!q) throw new Error(`bad run note \`${y}\` in \`${t}\``); return phrasePitch(q, 1); }); x = rm[2]; }
+      const m = new RegExp(`^(?:\\(${PITCH}\\))?${PITCH}(?:~${PITCH})?([xhmpscroftgk]?)$`).exec(x);
+      if (!m) throw new Error(`bad phrase token \`${t}\` (1–7, 0 rest, - hold, ' or , for octaves, 1+3+5 a chord, 1+3+5/ or 1+3+5\\ swept down or up, 5~6 slide, (3)5 grace, 5x 5h 5m 5p 5s 5c 5r 5o 5f 5t 5g 5k techniques, (4.5.4)3 a run)`);
       const n = phrasePitch(m, 4);
       if (m[1] !== undefined) n.grace = phrasePitch(m, 1);
       if (m[7] !== undefined) n.slide = phrasePitch(m, 7);
       if (m[10]) n.tech = TECH_LETTERS[m[10]];
+      if (run) n.run = run;
       return n;
     });
     return notes.length > 1 ? { ...notes[0], chord: notes, strum, up: strum && t.endsWith("\\") } : notes[0];
@@ -1792,6 +1795,7 @@ function playMelodic(r, c, step, t) {
   const note = (f, dur, p = peak, idx = 0, x = {}) => {
     const tech = x.tech || cfg.tech;
     if (x.grace) { emit(x.grace, Math.min(0.08, dur * 0.3), p * 0.8, idx); x = { ...x, delay: 0.06 }; }
+    if (x.run) { const d1 = Math.min(0.08, dur * 0.5 / x.run.length); x.run.forEach((y, k) => emit(y, d1 * 0.95, p * 0.8, idx, { at: k * d1, legato: k > 0 })); x = { ...x, delay: x.run.length * d1 }; dur -= x.delay; }
     const d0 = x.delay || 0;
     if (tech === "turn" && x.turn && dur > 0.25) { // above, the note, below, then the note held
       const d1 = Math.min(0.07, dur * 0.12); [x.turn[0], f, x.turn[1]].forEach((y, k) => emit(y, d1 * 0.95, p * 0.85, idx, { at: d0 + k * d1, legato: k > 0 }));
@@ -1825,14 +1829,14 @@ function playMelodic(r, c, step, t) {
       let prev = null; for (let b = 1; b <= cfg.sylls.length && !prev; b++) { const x = cfg.sylls[(nth - b + cfg.sylls.length * 64) % cfg.sylls.length]; if (!x.hold) prev = x; }
       const tr = cfg.tune ? Math.pow(2, cfg.tune / 1200) : 1;
       chantNote(out, t, hzOf(tok) * tr, stepDur * per * hold * 1.02, peak, syl, prev, cfg,
-        { grace: tok.grace && hzOf(tok.grace) * tr, slide: tok.slide && hzOf(tok.slide) * tr, tech: tok.tech || cfg.tech, turn: (tok.tech || cfg.tech) === "turn" && turnOf(tok).map((x) => x * tr) });
+        { grace: tok.grace && hzOf(tok.grace) * tr, slide: tok.slide && hzOf(tok.slide) * tr, tech: tok.tech || cfg.tech, turn: (tok.tech || cfg.tech) === "turn" && turnOf(tok).map((x) => x * tr), run: tok.run && tok.run.map((x) => hzOf(x) * tr) });
       r.detail = `${syl.hold ? "~" : syl.text} on ${name(tok)} · ${cfg.scaleName} on ${cfg.key}`; mark(r, t, stepDur * per * hold);
       return;
     }
     const n = tok.chord ? tok.chord.length : 1, sweep = Math.min(0.03, (stepDur * per * 0.6) / n); // fast strums sweep fast
     (tok.chord || [tok]).forEach((x, k) => {
       note(hzOf(x), stepDur * per * hold * 0.95, tok.chord ? peak * 0.6 : peak, k,
-        { tech: x.tech, grace: x.grace && hzOf(x.grace), slide: x.slide && hzOf(x.slide), turn: (x.tech || cfg.tech) === "turn" && turnOf(x), at: tok.strum ? (tok.up ? n - 1 - k : k) * sweep : 0 });
+        { tech: x.tech, grace: x.grace && hzOf(x.grace), slide: x.slide && hzOf(x.slide), turn: (x.tech || cfg.tech) === "turn" && turnOf(x), run: x.run && x.run.map(hzOf), at: tok.strum ? (tok.up ? n - 1 - k : k) * sweep : 0 });
     });
     r.detail = `${(tok.chord || [tok]).map(name).join("+")} · ${cfg.scaleName} on ${cfg.key}`;
     return;
@@ -2168,7 +2172,7 @@ function chantNote(out, t, f, dur, peak, syl, prev, cfg, orn = {}) {
   if (!chantNoise) { chantNoise = ctx.createBuffer(1, ctx.sampleRate * 2, ctx.sampleRate); const d = chantNoise.getChannelData(0); for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1; }
   const held = syl.hold, s = held ? { onset: [], vowels: prev ? [prev.vowels[prev.vowels.length - 1]] : [{ F: IPA_VOWELS.a }], coda: [] } : syl;
   const scale = { men: 1, women: 1.17, boy: 1.25 }[cfg.voice] || 1;
-  if (cfg.last && t - cfg.last.end < 0.4) orn = { ...orn, from: cfg.last.f }; // the note before, if the line runs on (glide=, head=)
+  if (cfg.last && t - cfg.last.end < 0.8) orn = { ...orn, from: cfg.last.f }; // the note before, if the line runs on (glide=, head=)
   cfg.last = { f, end: t + dur };
   for (let v = 0; v < cfg.voices; v++) {
     const det = cfg.voices > 1 ? (Math.random() - 0.5) * 0.012 : 0, lag = cfg.voices > 1 ? Math.random() * 0.025 : 0, fs = scale * (0.97 + Math.random() * 0.06);
@@ -2190,13 +2194,26 @@ function singOne(out, t, f, dur, peak, s, held, fs, cfg, orn = {}) {
   const flip = cfg.head != null && orn.from && (69 + 12 * Math.log2(orn.from / 440) >= cfg.head) !== headV;
   let f0 = orn.grace || f, reach = 0;
   if (!orn.grace && flip) { f0 = f * (headV ? 1.035 : 0.965); reach = 0.035; }
-  else if (!orn.grace && orn.from && cfg.glide && orn.from !== f) { f0 = orn.from; reach = 0.04 + cfg.glide * 0.2; }
+  else if (!orn.grace && orn.from && cfg.glide && orn.from !== f) { f0 = orn.from; reach = 0.04 + cfg.glide * 0.2 + Math.max(0, cfg.glide - 0.6) * 0.8; } // (above 0.6 the slide takes much of the note, as a lament's do)
   else if (!orn.grace && cfg.scoop && !held) { f0 = f * Math.pow(2, -cfg.scoop * (0.6 + 0.8 * Math.random()) / 1200); reach = 0.05 + cfg.scoop / 2500; }
   const r0 = flip ? t : Math.min(vStart, t + dur * 0.4); // (from the vowel: the consonants before it would swallow the slide)
   o.frequency.setValueAtTime(f0, t); if (reach) { o.frequency.setValueAtTime(f0, r0); o.frequency.exponentialRampToValueAtTime(f, r0 + Math.min(dur * 0.5, reach)); }
   if (orn.turn) { // a turn: the note above, the note, the note below, the note
     const d1 = Math.min(0.065, dur * 0.1), t0 = Math.max(t, vStart) + reach + 0.02, seq = [f, orn.turn[0], f, orn.turn[1], f];
     seq.forEach((x, k) => { o.frequency.setValueAtTime(k ? seq[k - 1] : x, t0 + k * d1); if (k) o.frequency.exponentialRampToValueAtTime(x, t0 + k * d1 + d1 * 0.35); });
+  }
+  if (orn.run) { // a run inside the syllable: quick notes, each slid into, then the note
+    const d1 = Math.min(0.09, dur * 0.5 / orn.run.length), t0 = Math.max(t, vStart); [...orn.run, f].forEach((x, k) => { o.frequency.setValueAtTime(k ? [...orn.run, f][k - 1] : x, t0 + k * d1); if (k) o.frequency.exponentialRampToValueAtTime(x, t0 + k * d1 + d1 * 0.4); });
+  }
+  if (orn.tech === "gamak" && dur > 0.3) { // gamak, andolan, kampitam: a slow, wide swing of the note itself, 2-4 times a second
+    const sw = ctx.createOscillator(), sd = ctx.createGain(); sw.frequency.value = 2.6 + Math.random() * 0.8; sd.gain.setValueAtTime(0, t); sd.gain.linearRampToValueAtTime(f * 0.04, Math.min(end, vStart + 0.25));
+    sw.connect(sd).connect(o.frequency); sw.start(t); sw.stop(end + 0.1);
+  }
+  if (orn.tech === "catch") { // a sob or the Thracian trembling: the voice catches, dipping in pitch and breaking off, about twice a second
+    for (let c0 = Math.max(t, vStart) + 0.18; c0 < end - 0.12; c0 += 0.42 + Math.random() * 0.1) {
+      o.frequency.setValueAtTime(f, c0); o.frequency.exponentialRampToValueAtTime(f * 0.96, c0 + 0.03); o.frequency.exponentialRampToValueAtTime(f, c0 + 0.09);
+      voiceG.gain.setValueAtTime(1, c0); voiceG.gain.linearRampToValueAtTime(0.3, c0 + 0.02); voiceG.gain.linearRampToValueAtTime(1, c0 + 0.08);
+    }
   }
   if (orn.grace) { o.frequency.setValueAtTime(orn.grace, t + Math.min(0.07, dur * 0.25)); o.frequency.exponentialRampToValueAtTime(f, t + Math.min(0.11, dur * 0.35)); }
   if (orn.slide) { const s0 = t + dur * 0.45; o.frequency.setValueAtTime(f, s0); o.frequency.exponentialRampToValueAtTime(orn.slide, Math.min(end - 0.02, s0 + Math.max(0.08, dur * 0.3))); }
@@ -2512,7 +2529,7 @@ function applyEnvelopes() {
 
 // Shared by every melodic instrument.
 const MELODIC_ARGS = [
-  ["phrase", '"1 2 3 5 6 - 5 3"', "简谱 melody: 1–7, 0 rest, - hold, ' up / , down an octave, 1+3+5 a chord (1+3+5/ strummed), 5~6 slide, (3)5 grace, 5x body tap, 5h harmonic, 5m mute, 5p pizzicato, 5s spiccato, 5c col legno, 5r tremolo, 5o overblow, 5f flutter, 5t turn (the notes above and below)", null, { re: { test: (v) => /^".+"$/.test(v) && (() => { try { parsePhrase(v.slice(1, -1)); return true; } catch (e) { return false; } })() } }],
+  ["phrase", '"1 2 3 5 6 - 5 3"', "简谱 melody: 1–7, 0 rest, - hold, ' up / , down an octave, 1+3+5 a chord (1+3+5/ strummed), 5~6 slide, (3)5 grace, 5x body tap, 5h harmonic, 5m mute, 5p pizzicato, 5s spiccato, 5c col legno, 5r tremolo, 5o overblow, 5f flutter, 5t turn (the notes above and below), (4.5.4)3 a run into the note; on chant also 5g gamak (a slow, wide swing: andolan, kampitam) and 5k a catch (a sob, the Thracian trembling)", null, { re: { test: (v) => /^".+"$/.test(v) && (() => { try { parsePhrase(v.slice(1, -1)); return true; } catch (e) { return false; } })() } }],
   ["scale", "major", "colours the degrees", null, null],
   ["key", "C", "tonic", null, { re: /^[A-G][#b]?$/ }],
   ["chords", '"Am F C G"', "chord per bar", null, { re: /^"([A-G][#b]?(maj7|m7|m|7|dim|sus2|sus4)?\s*)+"$/ }],
