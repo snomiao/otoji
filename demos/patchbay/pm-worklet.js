@@ -119,6 +119,14 @@ class Bowed {
 // A DC blocker.
 class DCBlock { constructor() { this.x = 0; this.y = 0; } tick(x) { const y = x - this.x + 0.995 * this.y; this.x = x; this.y = y; return y; } }
 // Shared wind breath: a pressure envelope with noise and vibrato.
+// shake: held-note shading on a wind (the piri's nonghyeon, the hichiriki's swells): a long note starts
+// plain, then its pitch swings wider and slower, by bending the bore's length
+function shakeTick(v) {
+  if (!v.shake || (v.t & 31)) return;
+  const held = v.t / v.sr, long = v.release / v.sr, grow = Math.max(0, Math.min(1, (held - 0.25) / Math.max(0.3, long - 0.25)));
+  v.sph = (v.sph || 0) + 2 * Math.PI * (4.6 - 1.6 * grow * v.shake) * 32 / v.sr;
+  v.bore.setLen(v.baseLen / (1 + v.shake * 0.045 * grow * Math.sin(v.sph)));
+}
 class Breath {
   constructor(sr, p) { this.sr = sr; this.p = p; this.lvl = 0; this.vib = 0; }
   tick(target, rate) { this.lvl += (target - this.lvl) * rate; this.vib += 2 * Math.PI * (this.p.vibRate || 5) / this.sr;
@@ -127,9 +135,10 @@ class Breath {
 // Flute (STK Flute): the breath jet strikes the edge; a cubic jet table drives the bore.
 class Flute {
   constructor(sr, p) { this.sr = sr; this.p = p; this.bore = new Delay(Math.ceil(sr / 40) + 4); this.jet = new Delay(Math.ceil(sr / 40) + 4); this.lp = new OnePole(0.6); this.dc = new DCBlock(); this.breath = new Breath(sr, p); this.on = false; }
-  start(f, peak, dur, legato) { this.bore.stir(0.02); const jr = this.p.jetRatio || 0.32, bore = (this.sr / f) / (1 + jr); this.bore.setLen(bore + 0.1); this.jet.setLen(bore * jr); /* the jet is inside the loop */ this.peak = peak; this.release = Math.floor(this.sr * dur); this.t = 0; this.on = true; }
+  start(f, peak, dur, shake) { this.bore.stir(0.02); const jr = this.p.jetRatio || 0.32, bore = (this.sr / f) / (1 + jr); this.bore.setLen(this.baseLen = bore + 0.1); this.shake = shake || 0; this.sph = 0; this.jet.setLen(bore * jr); /* the jet is inside the loop */ this.peak = peak; this.release = Math.floor(this.sr * dur); this.t = 0; this.on = true; }
   tick() {
     if (!this.on) return 0;
+    shakeTick(this);
     const b = this.breath.tick(this.t < this.release ? (this.p.pressure || 0.9) : 0, this.t < this.release ? 0.004 : 0.002);
     const temp = this.dc.tick(-this.lp.tick(this.bore.read()));
     let pd = b - 0.5 * temp; this.jet.write(pd); pd = this.jet.read();
@@ -145,9 +154,10 @@ class Flute {
 // the nasal edge of a double reed. (A bore folded at the reed, as in STK Saxofony, jumps register.)
 class Reed {
   constructor(sr, p) { this.sr = sr; this.p = p; this.bore = new Delay(Math.ceil(sr / 40) + 4); this.lp = new OnePole(p.bright || 0.5); this.dc = new DCBlock(); this.dc2 = new DCBlock(); this.breath = new Breath(sr, { noise: 0.08, vibDepth: 0.02, ...p }); this.edge = new OnePole(0.5); this.on = false; }
-  start(f, peak, dur) { this.bore.stir(0.02); this.bore.setLen(this.sr / f * 0.5 - 1); this.peak = peak; this.release = Math.floor(this.sr * dur); this.t = 0; this.on = true; }
+  start(f, peak, dur, shake) { this.bore.stir(0.02); this.bore.setLen(this.baseLen = this.sr / f * 0.5 - 1); this.shake = shake || 0; this.sph = 0; this.peak = peak; this.release = Math.floor(this.sr * dur); this.t = 0; this.on = true; }
   tick() {
     if (!this.on) return 0;
+    shakeTick(this);
     const b = this.breath.tick(this.t < this.release ? (this.p.pressure || 0.8) : 0, this.t < this.release ? 0.006 : 0.003);
     const refl = -0.95 * this.lp.tick(this.bore.read());
     const pd = refl - b; let reed = 0.7 - 0.3 * pd; reed = Math.max(-1, Math.min(1, reed));
@@ -196,7 +206,7 @@ class PM extends AudioWorkletProcessor {
     }
     if (WINDS[this.model]) { // one voice per chord note; a held line re-tongues each note
       const k = Math.min(3, ev.idx || 0); let v = this.voices[k]; if (!v) this.voices[k] = v = new WINDS[this.model](sampleRate, this.p);
-      v.start(ev.tech === "overblow" ? ev.f * 2 : ev.f, ev.peak, ev.dur); return;
+      v.start(ev.tech === "overblow" ? ev.f * 2 : ev.f, ev.peak, ev.dur, ev.shake); return;
     }
     let v = this.voices.find((x) => x && !x.on); if (!v) { if (this.voices.length < 8) this.voices.push(v = new Pluck(sampleRate, this.p)); else v = this.voices[0]; }
     v.start(ev.f, ev.peak, ev.dur, ev.tech, ev.bend);
