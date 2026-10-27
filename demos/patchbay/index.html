@@ -920,11 +920,18 @@ KINDS.fire = { source: true, build: (o) => ({ level: num(o, "level", 0.5, 0, 1),
 KINDS.screen = { source: true, build: (o) => ({ vol: num(o, "vol", 1, 0, 2) }) };
 KINDS.wind = { source: true, build: (o) => ({ level: num(o, "level", 0.5, 0, 1), gust: o.gust ? hz(o.gust, 0.12) : 0.12 }) };
 // Melodic instruments share one set of options (scale, key, phrase, chords…).
-for (const k of ["piano", "bass", "strings", "pluck", "flute", "organ", "choir", "bell", "marimba", "brass", "timpani", "throat", "reed", "jawharp", "hurdygurdy", "bagpipe"]) KINDS[k] = { source: true, build: (o) => buildMelodic(k, o) };
+for (const k of ["piano", "bass", "strings", "pluck", "flute", "organ", "choir", "bell", "marimba", "timpani", "throat", "reed", "jawharp", "hurdygurdy", "bagpipe"]) KINDS[k] = { source: true, build: (o) => buildMelodic(k, o) };
+KINDS.brass = { source: true, build: (o) => {
+  if (o.bell && !BRASS_BELLS[o.bell]) throw new Error(`bell= is one of ${Object.keys(BRASS_BELLS).join(", ")}`);
+  return { ...buildMelodic("brass", o), bell: o.bell };
+} };
 KINDS.chant = { source: true, build: (o) => {
   const c = buildMelodic("chant", o);
   const voice = o.voice || "men"; if (!["men", "women", "boy"].includes(voice)) throw new Error("voice is men, women or boy");
-  return { ...c, sylls: parseIpa(o.ipa), voice, voices: num(o, "voices", 1, 1, 12), vib: num(o, "vib", 0.012, 0, 0.05), breath: num(o, "breath", 0.08, 0, 1), bright: num(o, "bright", 0.3, 0, 1) };
+  if (o.head && noteMidi(o.head) === null) throw new Error("head= is a note name like A4: from there up the voice turns to its head voice");
+  const sylls = parseIpa(o.ipa);
+  return { ...c, sylls, stressed: sylls.some((x) => x.stress), voice, voices: num(o, "voices", 1, 1, 12), vib: num(o, "vib", 0.012, 0, 0.05), breath: num(o, "breath", 0.08, 0, 1), bright: num(o, "bright", 0.3, 0, 1),
+    scoop: num(o, "scoop", 0, 0, 400), glide: num(o, "glide", 0, 0, 1), shake: num(o, "shake", 0, 0, 1), press: num(o, "press", 0, 0, 1), head: o.head ? noteMidi(o.head) : null };
 } };
 
 // ── autocomplete catalog: what each kind is, takes and accepts ────────
@@ -1030,6 +1037,7 @@ function pmFor(kind, id) {
     return { model: "bowed", params: { beta: 0.127, force: 0.6, vibDepth: 0.005, vibRate: 5.5, body: [[480, 2], [1300, 3], [2900, 4]] } }; // violin family
   }
   if (kind === "flute") return { model: "flute", params: { jetRatio: has(/shakuhachi|xiao|ney|nay|kaval|quena|duduk|sebi|danso/) ? 0.38 : 0.32, noise: has(/shakuhachi|ney|nay|kaval|xiao/) ? 0.22 : 0.12, vibDepth: 0.025 } };
+  if (kind === "brass" && has(/suona|shehnai|shahnai|nadaswaram|taepyeongso|hojok|ken\b|sarunai|sralai|zurna|surnay|sorna|mizmar|ghaita|algaita/)) return pmFor("reed", id); // a double reed written as brass
   if (kind === "reed") return { model: "reed", params: { conical: !has(/clarinet|chalumeau|zummara|arghul|launeddas|memet|hornpipe|pibgorn/), bright: has(/suona|zurna|shehnai|nadaswaram|ghaita|algaita|mizmar/) ? 0.7 : 0.5, pressure: 0.85 } };
   return null;
 }
@@ -1577,7 +1585,7 @@ function scaleNamed(name) {
 // Techniques: (3)5 grace note · 5~6 slide to 6 · a letter after the note:
 // x body tap, h harmonic, m mute, p pizzicato, s spiccato, c col legno,
 // r tremolo/roll, o overblow, f flutter-tongue.
-const TECH_LETTERS = { x: "knock", h: "harmonic", m: "mute", p: "pizz", s: "spiccato", c: "col-legno", r: "tremolo", o: "overblow", f: "flutter" };
+const TECH_LETTERS = { x: "knock", h: "harmonic", m: "mute", p: "pizz", s: "spiccato", c: "col-legno", r: "tremolo", o: "overblow", f: "flutter", t: "turn" };
 const PITCH = "([#b]?)([1-7])(['’,]*)";
 const phrasePitch = (m, i) => ({ deg: Number(m[i + 1]), acc: m[i] === "#" ? 100 : m[i] === "b" ? -100 : 0, oct: [...m[i + 2]].reduce((a, c) => a + (c === "," ? -1 : 1), 0) });
 function parsePhrase(s) {
@@ -1587,8 +1595,8 @@ function parsePhrase(s) {
     // a chord swept: 1+5+1'/ low to high (a downstroke, 扫), 1+5+1'\ high to low (an upstroke, 拂)
     const strum = (t.endsWith("/") || t.endsWith("\\")) && t.includes("+"), body = strum ? t.slice(0, -1) : t;
     const notes = body.split("+").map((x) => {
-      const m = new RegExp(`^(?:\\(${PITCH}\\))?${PITCH}(?:~${PITCH})?([xhmpscrof]?)$`).exec(x);
-      if (!m) throw new Error(`bad phrase token \`${t}\` (1–7, 0 rest, - hold, ' or , for octaves, 1+3+5 a chord, 1+3+5/ or 1+3+5\\ swept down or up, 5~6 slide, (3)5 grace, 5x 5h 5m 5p 5s 5c 5r 5o 5f techniques)`);
+      const m = new RegExp(`^(?:\\(${PITCH}\\))?${PITCH}(?:~${PITCH})?([xhmpscroft]?)$`).exec(x);
+      if (!m) throw new Error(`bad phrase token \`${t}\` (1–7, 0 rest, - hold, ' or , for octaves, 1+3+5 a chord, 1+3+5/ or 1+3+5\\ swept down or up, 5~6 slide, (3)5 grace, 5x 5h 5m 5p 5s 5c 5r 5o 5f 5t techniques)`);
       const n = phrasePitch(m, 4);
       if (m[1] !== undefined) n.grace = phrasePitch(m, 1);
       if (m[7] !== undefined) n.slide = phrasePitch(m, 7);
@@ -1781,9 +1789,10 @@ function playMelodic(r, c, step, t) {
   const emit0 = (f, dur, p, idx, ev = {}) => {
     const pm = pmReady && (r.pmSpec !== undefined ? r.pmSpec : (r.pmSpec = withBody(r, pmFor(r.node.kind, r.node.id))));
     const at = t + (ev.at || 0), plucky = ["pizz", "col-legno", "knock"].includes(ev.tech) && pm && pm.model === "bowed";
-    if (pm && !plucky) { pmNode(pm, "main").port.postMessage({ t: at, f, dur, peak: p * 1.6, idx, tech: ev.tech, bend: ev.bend, legato: ev.legato }); return; }
+    if (pm && !plucky) { pmNode(pm, "main").port.postMessage({ t: at, f, dur, peak: p * (r.node.kind === "brass" ? 0.65 : 1.6), idx, /* a shawm on a brass line: brass levels */ tech: ev.tech, bend: ev.bend, legato: ev.legato }); return; }
     if (plucky) { const ps = withBody(r, pmFor("pluck", r.node.id)); const n = pmNode(ps, "pluck"); if (ev.tech === "col-legno") { n.port.postMessage({ t: at, f, dur: 0.05, peak: p * 1.6, tech: "knock" }); n.port.postMessage({ t: at, f, dur: 0.05, peak: p * 0.8, tech: "mute" }); } else n.port.postMessage({ t: at, f, dur, peak: p * 1.6, tech: ev.tech === "knock" ? "knock" : undefined }); return; }
     if (ev.tech === "knock" || ev.tech === "col-legno") { kitHit(out, "rim", at, false); return; }
+    if (r.node.kind === "brass" && !cfg.bell) cfg.bell = brassBell(r.node.id); // bell= unset: guessed from the name
     cfg.inst.play(out, at, ev.tech === "harmonic" ? f * 2 : f, ev.tech === "mute" ? dur * 0.25 : dur, cfg.adsr, p, cfg);
   };
   const emit = (f, dur, p, idx, ev = {}) => emit0(cfg.tune ? f * Math.pow(2, cfg.tune / 1200) : f, dur, p, idx, ev); // tune=: cents off the key
@@ -1792,7 +1801,10 @@ function playMelodic(r, c, step, t) {
     const tech = x.tech || cfg.tech;
     if (x.grace) { emit(x.grace, Math.min(0.08, dur * 0.3), p * 0.8, idx); x = { ...x, delay: 0.06 }; }
     const d0 = x.delay || 0;
-    if (tech === "tremolo" || tech === "flutter") { const gap = tech === "flutter" ? 0.045 : 0.07; for (let k = 0; d0 + k * gap < dur; k++) emit(f, gap * 0.8, p, idx, { at: d0 + k * gap, tech: "spiccato" }); }
+    if (tech === "turn" && x.turn && dur > 0.25) { // above, the note, below, then the note held
+      const d1 = Math.min(0.07, dur * 0.12); [x.turn[0], f, x.turn[1]].forEach((y, k) => emit(y, d1 * 0.95, p * 0.85, idx, { at: d0 + k * d1, legato: k > 0 }));
+      emit(f, dur - 3 * d1, p, idx, { at: d0 + 3 * d1, legato: true });
+    } else if (tech === "tremolo" || tech === "flutter") { const gap = tech === "flutter" ? 0.045 : 0.07; for (let k = 0; d0 + k * gap < dur; k++) emit(f, gap * 0.8, p, idx, { at: d0 + k * gap, tech: "spiccato" }); }
     else if (x.slide) {
       const pm = pmReady && r.pmSpec;
       if (pm && pm.model === "pluck") emit(f, dur, p, idx, { at: d0, bend: x.slide / f });
@@ -1810,6 +1822,10 @@ function playMelodic(r, c, step, t) {
     const name = (x) => `${x.deg}${"'".repeat(Math.max(0, x.oct))}${",".repeat(Math.max(0, -x.oct))}`;
     const creep = cfg.drift ? cfg.drift * Math.max(0, t - startedAt) / 60 : 0; // drift=: cents a minute
     const hzOf = (x) => midiHz(keyMidi(cfg.key, cfg.oct)) * Math.pow(2, (degreeCents(cfg.scale, x.deg) + x.acc + 1200 * x.oct + creep) / 1200);
+    const turnOf = (x) => { // the scale's notes above and below, for a turn
+      const at = (d) => { const k = x.deg - 1 + d, deg = ((k % 7) + 7) % 7 + 1; return hzOf({ deg, acc: 0, oct: x.oct + Math.floor(k / 7) }); }, f = hzOf(x);
+      let u = 1, l = -1; while (u < 4 && at(u) <= f * 1.01) u++; while (l > -4 && at(l) >= f * 0.99) l--; return [at(u), at(l)];
+    };
     if (r.node.kind === "chant") { // one IPA syllable per sung note, in order, round and round
       const notesIn = cfg.noteAt || (cfg.noteAt = cfg.phrase.map((x, j) => cfg.phrase.slice(0, j).filter((y) => !y.rest && !y.hold).length));
       const perCycle = cfg.phrase.filter((y) => !y.rest && !y.hold).length, nth = Math.floor(step / per / cfg.phrase.length) * perCycle + notesIn[i];
@@ -1817,14 +1833,14 @@ function playMelodic(r, c, step, t) {
       let prev = null; for (let b = 1; b <= cfg.sylls.length && !prev; b++) { const x = cfg.sylls[(nth - b + cfg.sylls.length * 64) % cfg.sylls.length]; if (!x.hold) prev = x; }
       const tr = cfg.tune ? Math.pow(2, cfg.tune / 1200) : 1;
       chantNote(out, t, hzOf(tok) * tr, stepDur * per * hold * 1.02, peak, syl, prev, cfg,
-        { grace: tok.grace && hzOf(tok.grace) * tr, slide: tok.slide && hzOf(tok.slide) * tr, tech: tok.tech || cfg.tech });
+        { grace: tok.grace && hzOf(tok.grace) * tr, slide: tok.slide && hzOf(tok.slide) * tr, tech: tok.tech || cfg.tech, turn: (tok.tech || cfg.tech) === "turn" && turnOf(tok).map((x) => x * tr) });
       r.detail = `${syl.hold ? "~" : syl.text} on ${name(tok)} · ${cfg.scaleName} on ${cfg.key}`; mark(r, t, stepDur * per * hold);
       return;
     }
     const n = tok.chord ? tok.chord.length : 1, sweep = Math.min(0.03, (stepDur * per * 0.6) / n); // fast strums sweep fast
     (tok.chord || [tok]).forEach((x, k) => {
       note(hzOf(x), stepDur * per * hold * 0.95, tok.chord ? peak * 0.6 : peak, k,
-        { tech: x.tech, grace: x.grace && hzOf(x.grace), slide: x.slide && hzOf(x.slide), at: tok.strum ? (tok.up ? n - 1 - k : k) * sweep : 0 });
+        { tech: x.tech, grace: x.grace && hzOf(x.grace), slide: x.slide && hzOf(x.slide), turn: (x.tech || cfg.tech) === "turn" && turnOf(x), at: tok.strum ? (tok.up ? n - 1 - k : k) * sweep : 0 });
     });
     r.detail = `${(tok.chord || [tok]).map(name).join("+")} · ${cfg.scaleName} on ${cfg.key}`;
     return;
@@ -1924,16 +1940,76 @@ INSTRUMENTS.marimba = { adsr: [0.002, 0.5, 0, 0.2], play(out, t, f, dur, adsr, p
   g.connect(out);
 } };
 MELODIC.push("marimba");
-// Brass (horns, trumpets, 号角, karnay): saw through a filter that opens as the note swells.
-INSTRUMENTS.brass = { adsr: [0.06, 0.3, 0.8, 0.2], play(out, t, f, dur, adsr, peak) {
-  const o = ctx.createOscillator(), o2 = ctx.createOscillator(), lp = ctx.createBiquadFilter(), g = ctx.createGain();
-  o.type = o2.type = "sawtooth"; o.frequency.value = f; o2.frequency.value = f; o2.detune.value = -5;
-  lp.type = "lowpass"; lp.Q.value = 1.2;
-  lp.frequency.setValueAtTime(f * 1.2, t); lp.frequency.linearRampToValueAtTime(Math.min(8000, f * 5), t + Math.max(adsr[0], 0.05) + 0.08);
-  lp.frequency.setTargetAtTime(Math.min(8000, f * 3.5), t + adsr[0] + 0.1, 0.2);
-  const stop = envGain(g, t, dur, peak * 0.5, adsr);
-  o.connect(lp); o2.connect(lp); lp.connect(g).connect(out);
-  for (const x of [o, o2]) { x.start(t); x.stop(stop); }
+// Brass: lips buzzing into a tube. The buzz is a pulse; the louder the player blows,
+// the more the bore steepens the wave, so a forte trumpet bites at 2–4 kHz and a piano
+// one is round. Each bell gives its own colour (bell=, or guessed from the line's name).
+const BRASS_BELLS = {
+  trumpet: { doc: "trumpet, cornet, tromba: a bright flared bell", lvl: 1.65, formants: [[1250, 1.1, 5], [2700, 1.6, 4]], cut: 600, dark: 9000, bite: 1, buzz: 0.05, scoop: 25, wander: 3 },
+  horn: { doc: "a horn played into the hand (Waldhorn, alto horns): round and veiled", lvl: 1.4, formants: [[420, 1.3, 6], [1000, 2, 2]], dark: 2400, bite: 0.45, buzz: 0.04, scoop: 40, wander: 4 },
+  trombone: { doc: "trombone, sackbut, Posaune: broad, the slide's glide", lvl: 1.8, formants: [[520, 1.2, 5], [1500, 1.8, 3]], cut: 200, dark: 5500, bite: 0.85, buzz: 0.05, scoop: 30, wander: 4 },
+  tuba: { doc: "tuba, sousaphone, helicon: a wide low bore", lvl: 1.6, formants: [[240, 1.2, 5], [650, 2, 2]], dark: 1800, bite: 0.35, buzz: 0.04, scoop: 20, wander: 3 },
+  cornett: { doc: "the cornett (Zink), rozhok: wood with a cup, close to a singing voice", lvl: 1.3, formants: [[750, 1.8, 6], [1600, 2.5, 3]], dark: 3500, bite: 0.15, buzz: 0.03, scoop: 15, wander: 5, vib: 0.004 },
+  natural: { doc: "natural and animal horns and long trumpets (karnay, jiao, salpinx, lur, olifant, kakaki): raw, open, wavering", lvl: 2.3, formants: [[850, 1.3, 5], [2200, 1.8, 3]], cut: 450, dark: 6500, bite: 0.8, buzz: 0.12, scoop: 70, wander: 12 },
+  conch: { doc: "a conch shell (horagai, sangu, shankh, tecciztli, pututu): a hollow hoot, breathy, few overtones", lvl: 1.0, formants: [[600, 3, 4]], dark: 1300, bite: 0.25, buzz: 0.16, scoop: 60, wander: 15, hollow: true },
+};
+function brassBell(id) {
+  const n = id.toLowerCase(), has = (re) => re.test(n);
+  if (has(/conch|shell|horagai|sangu|tecciztli|atecocolli|shankh|pututu|fotuto|dung-?dkar|triton/)) return "conch";
+  if (has(/cornett|zink|rozhok|serpent/)) return "cornett";
+  if (has(/trombon|posaun|sackbut|puzon/)) return "trombone";
+  if (has(/tuba|sousa|helicon|ophicl|bombardon/)) return "tuba";
+  if (has(/^horns?\d*$|waldhorn|^cors?-|^cor$|alto|altow|peck|french|mellophon/)) return "horn";
+  if (has(/trumpet-hot|trump|tromp|tromba|clarion|cornet|kornet|banda|trabka|trąbka/) && !has(/xajoj|taquara|hom-/)) return "trumpet";
+  return "natural";
+}
+let brassWaves = null, brassCurve = null;
+INSTRUMENTS.brass = { adsr: [0.05, 0.3, 0.85, 0.18], play(out, t, f, dur, adsr, peak, cfg = {}) {
+  const B = BRASS_BELLS[cfg.bell] || BRASS_BELLS.trumpet, end = t + dur;
+  if (!brassWaves) { // the lips' pulse (rich, about 1/n) and a conch's hollow hoot
+    const mk = (amp) => { const n = 40, re = new Float32Array(n), im = new Float32Array(n); for (let k = 1; k < n; k++) im[k] = amp(k); return ctx.createPeriodicWave(re, im); };
+    brassWaves = { pulse: mk((k) => 1 / Math.pow(k, 0.9)), hollow: mk((k) => [0, 1, 0.35, 0.12, 0.05][k] || 0) };
+  }
+  if (!chantNoise) { chantNoise = ctx.createBuffer(1, ctx.sampleRate * 2, ctx.sampleRate); const d = chantNoise.getChannelData(0); for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1; }
+  const loud = Math.max(0.2, Math.min(1.8, peak / (0.22 * (cfg.vol || 1)))); // the dynamic, not the line's level
+  // pitch: the lips find the note from below (a natural horn's long scoop), then wander a little
+  const o = ctx.createOscillator(); o.setPeriodicWave(B.hollow ? brassWaves.hollow : brassWaves.pulse);
+  o.frequency.setValueAtTime(f * Math.pow(2, -B.scoop * (1.4 - loud * 0.4) / 1200), t);
+  o.frequency.exponentialRampToValueAtTime(f * 1.002, t + 0.045 + B.scoop / 2000); o.frequency.exponentialRampToValueAtTime(f, t + 0.09 + B.scoop / 1500);
+  const wl = ctx.createOscillator(), wd = ctx.createGain(); wl.frequency.value = 0.6 + Math.random() * 1.2; wd.gain.value = f * B.wander / 1731; wl.connect(wd).connect(o.frequency);
+  const nodes = [o, wl];
+  if (B.vib) { const vl = ctx.createOscillator(), vd = ctx.createGain(); vl.frequency.value = 5.2; vd.gain.setValueAtTime(0, t); vd.gain.linearRampToValueAtTime(f * B.vib, Math.min(end, t + 0.35)); vl.connect(vd).connect(o.frequency); nodes.push(vl); }
+  const sum = ctx.createGain();
+  // the round part: the pulse through a filter that opens with the breath
+  const lp = ctx.createBiquadFilter(); lp.type = "lowpass"; lp.Q.value = 0.9;
+  const open = Math.min(B.dark, f * (1.5 + 5 * loud ** 1.5)), rest = Math.min(B.dark, f * (1.2 + 3.5 * loud ** 1.5));
+  lp.frequency.setValueAtTime(f * 1.2, t); lp.frequency.linearRampToValueAtTime(open, t + 0.06); lp.frequency.setTargetAtTime(rest, t + 0.1, 0.15);
+  o.connect(lp).connect(sum);
+  // the bite: the same pulse driven into a soft clip (the shock wave of a loud bore), its edges high-passed;
+  // strongest on the attack (the blat), and it grows with the square of the dynamic
+  const drive = ctx.createGain(), sh = ctx.createWaveShaper(), hp = ctx.createBiquadFilter(), biteG = ctx.createGain();
+  sh.curve = brassCurve || (brassCurve = (() => { const c = new Float32Array(1024); for (let i = 0; i < 1024; i++) { const x = i / 511.5 - 1; c[i] = Math.tanh(3 * x) + 0.15 * x * x; } return c; })());
+  hp.type = "highpass"; hp.frequency.value = Math.max(1000, f * 2.5); hp.Q.value = 0.7;
+  const bite = B.bite * loud * loud;
+  drive.gain.setValueAtTime(0.0001, t); drive.gain.linearRampToValueAtTime(0.6 + 1.6 * bite, t + 0.03); drive.gain.setTargetAtTime(0.3 + 0.9 * bite, t + 0.05, 0.08);
+  biteG.gain.value = 0.4 * Math.min(2, bite);
+  o.connect(drive).connect(sh).connect(hp).connect(biteG).connect(sum);
+  // the buzz: breath noise gated by the lips' own pulse (rasp), more on horns and shells
+  const nz = ctx.createBufferSource(); nz.buffer = chantNoise; nz.loop = true; nz.loopStart = Math.random();
+  const nbp = ctx.createBiquadFilter(), ng = ctx.createGain(), nmod = ctx.createGain(), nlvl = ctx.createGain();
+  nbp.type = "bandpass"; nbp.frequency.value = B.hollow ? 900 : 1800; nbp.Q.value = 0.6; ng.gain.value = B.hollow ? 0.5 : 0; nmod.gain.value = 0.5;
+  nlvl.gain.setValueAtTime(B.buzz * (1.5 + loud), t); nlvl.gain.setTargetAtTime(B.buzz * (0.6 + 0.5 * loud), t + 0.06, 0.1);
+  nz.connect(nbp).connect(ng); o.connect(nmod).connect(ng.gain); ng.connect(nlvl).connect(sum); nodes.push(nz);
+  // the tongue: a short "t" at the start
+  const tk = ctx.createBufferSource(), tbp = ctx.createBiquadFilter(), tg = ctx.createGain(); tk.buffer = chantNoise; tk.loopStart = 0; tbp.type = "bandpass"; tbp.frequency.value = 3000; tbp.Q.value = 1;
+  tg.gain.setValueAtTime(0.12 * loud, t); tg.gain.exponentialRampToValueAtTime(0.001, t + 0.02); tk.connect(tbp).connect(tg).connect(sum); tk.start(t); tk.stop(t + 0.03);
+  // the bell: formants, then what the bell lets out
+  let head = sum;
+  if (B.cut) { const ls = ctx.createBiquadFilter(); ls.type = "lowshelf"; ls.frequency.value = B.cut; ls.gain.value = -6; head = head.connect(ls); } // a flared bell lets the low partials go less well
+  for (const [fr, q, db] of B.formants) { const pk = ctx.createBiquadFilter(); pk.type = "peaking"; pk.frequency.value = fr; pk.Q.value = q; pk.gain.value = db; head = head.connect(pk); }
+  const bell = ctx.createBiquadFilter(); bell.type = "lowpass"; bell.frequency.value = B.dark * (0.8 + 0.3 * loud); bell.Q.value = 0.5; head = head.connect(bell);
+  const g = ctx.createGain(); const stop = envGain(g, t, dur, peak * 0.42 * B.lvl, adsr);
+  head.connect(g).connect(out);
+  for (const x of nodes) { x.start(t); x.stop(stop); }
 } };
 // Timpani (kettle drums): tuned, a soft thump and a long low ring. Rolls are fast repeated notes.
 INSTRUMENTS.timpani = { adsr: [0.004, 1.4, 0, 0.8], play(out, t, f, dur, adsr, peak) {
@@ -2040,6 +2116,7 @@ const IPA_VOWELS = {
   ə: [500, 1500, 2500, 3500], ɛ: [530, 1840, 2480, 3500], œ: [550, 1500, 2400, 3400], ɜ: [560, 1480, 2520, 3500], ɞ: [560, 1300, 2400, 3400], ʌ: [640, 1190, 2390, 3400], ɔ: [570, 840, 2410, 3300],
   æ: [660, 1720, 2410, 3400], ɐ: [650, 1300, 2500, 3400], a: [750, 1300, 2500, 3500], ɶ: [700, 1200, 2400, 3300], ɑ: [750, 940, 2540, 3400], ɒ: [650, 850, 2500, 3300],
   ɿ: [350, 1500, 2700, 3600], ʅ: [380, 1350, 1900, 3200], // Mandarin apical vowels (zi, zhi)
+  ɝ: [500, 1350, 1650, 3200], ɚ: [480, 1350, 1650, 3200], // r-coloured
 };
 // Consonants. k: s stop, f fricative, a affricate, n nasal, l approximant, h aspiration, r trill/tap.
 // v voiced; fr/bw the noise band (fricatives, bursts); F the formants it pulls toward.
@@ -2051,8 +2128,10 @@ const IPA_CONS = {
   ɕ: { k: "f", fr: 4300, bw: 2400, amp: 0.75 }, ʑ: { k: "f", v: 1, fr: 4300, bw: 2400, amp: 0.45 }, ʂ: { k: "f", fr: 2900, bw: 1800, amp: 0.75 }, ʐ: { k: "f", v: 1, fr: 2900, bw: 1800, amp: 0.3, F: [380, 1350, 1800, 3200] },
   ç: { k: "f", fr: 3800, bw: 2500, amp: 0.5 }, x: { k: "f", fr: 1700, bw: 1500, amp: 0.5 }, ɣ: { k: "f", v: 1, fr: 1700, bw: 1500, amp: 0.3 }, χ: { k: "f", fr: 1200, bw: 1200, amp: 0.55 }, ʁ: { k: "f", v: 1, fr: 1200, bw: 1200, amp: 0.3 },
   ħ: { k: "h" }, h: { k: "h" }, ɦ: { k: "h", v: 1 },
+  ɸ: { k: "f", fr: 1500, bw: 2500, amp: 0.2 }, β: { k: "f", v: 1, fr: 1500, bw: 2500, amp: 0.12, F: [300, 900, 2300, 3300] }, ʝ: { k: "f", v: 1, fr: 3800, bw: 2500, amp: 0.3 }, ɬ: { k: "f", fr: 4200, bw: 3000, amp: 0.55 },
   m: { k: "n", F: [250, 1000, 2300, 3300] }, n: { k: "n", F: [250, 1500, 2500, 3400] }, ɲ: { k: "n", F: [250, 2100, 2800, 3500] }, ŋ: { k: "n", F: [250, 2000, 2600, 3400] }, ɳ: { k: "n", F: [250, 1400, 1900, 3200] },
   l: { k: "l", F: [360, 1300, 2700, 3500] }, ɫ: { k: "l", F: [400, 900, 2600, 3400] }, ɭ: { k: "l", F: [380, 1300, 1900, 3200] }, ʎ: { k: "l", F: [300, 2000, 2800, 3500] },
+  ʕ: { k: "l", F: [800, 1150, 2400, 3300] }, ʋ: { k: "l", F: [300, 1500, 2400, 3300] }, ɰ: { k: "l", F: [320, 1300, 2500, 3400] },
   ɹ: { k: "l", F: [400, 1200, 1600, 3200] }, ɻ: { k: "l", F: [400, 1300, 1700, 3200] }, j: { k: "l", F: [270, 2200, 3000, 3700] }, w: { k: "l", F: [300, 700, 2200, 3300] }, ɥ: { k: "l", F: [280, 1900, 2400, 3400] },
   r: { k: "r", F: [450, 1300, 2500, 3400] }, ɾ: { k: "r", F: [450, 1400, 2500, 3400], tap: 1 }, ɽ: { k: "r", F: [450, 1300, 1700, 3200], tap: 1 }, ʀ: { k: "r", F: [500, 1200, 2400, 3300] },
 };
@@ -2060,6 +2139,7 @@ const IPA_AFFRICATES = { ts: "s", dz: "z", tʃ: "ʃ", dʒ: "ʒ", tɕ: "ɕ", dʑ:
 // Read one IPA syllable (or "_", a held vowel) into { onset, vowels, coda }.
 function parseIpaSyllable(text) {
   if (text === "_") return { hold: true };
+  const stress = /ˈ/.test(text) ? 1 : /ˌ/.test(text) ? 0.5 : 0; // stressed syllables are sung louder and land firmer
   const t = text.normalize("NFD").replace(/c\u0327/g, "ç").replace(/[ˈˌ.‿˥˦˧˨˩0-9̩̯̥̃̊ʲʷ͈ˀ̚͡]/g, (c) => (c === "͡" ? "" : "")); // marks the melody makes moot
   const segs = []; let i = 0;
   while (i < t.length) {
@@ -2079,7 +2159,7 @@ function parseIpaSyllable(text) {
     if (k < 0) throw new Error(`"${text}" has no vowel to sing`);
     first = last = k; segs[k] = { ...segs[k], vowel: true, F: segs[k].F || [380, 1350, 1900, 3200] };
   }
-  return { text, onset: segs.slice(0, first), vowels: segs.slice(first, last + 1).filter((s) => s.vowel || s.F), coda: segs.slice(last + 1) };
+  return { text, stress, onset: segs.slice(0, first), vowels: segs.slice(first, last + 1).filter((s) => s.vowel || s.F), coda: segs.slice(last + 1) };
 }
 function parseIpa(text) {
   const sylls = String(text || "").trim().split(/\s+/).filter(Boolean).map(parseIpaSyllable);
@@ -2095,6 +2175,8 @@ function chantNote(out, t, f, dur, peak, syl, prev, cfg, orn = {}) {
   if (!chantNoise) { chantNoise = ctx.createBuffer(1, ctx.sampleRate * 2, ctx.sampleRate); const d = chantNoise.getChannelData(0); for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1; }
   const held = syl.hold, s = held ? { onset: [], vowels: prev ? [prev.vowels[prev.vowels.length - 1]] : [{ F: IPA_VOWELS.a }], coda: [] } : syl;
   const scale = { men: 1, women: 1.17, boy: 1.25 }[cfg.voice] || 1;
+  if (cfg.last && t - cfg.last.end < 0.4) orn = { ...orn, from: cfg.last.f }; // the note before, if the line runs on (glide=, head=)
+  cfg.last = { f, end: t + dur };
   for (let v = 0; v < cfg.voices; v++) {
     const det = cfg.voices > 1 ? (Math.random() - 0.5) * 0.012 : 0, lag = cfg.voices > 1 ? Math.random() * 0.025 : 0, fs = scale * (0.97 + Math.random() * 0.06);
     singOne(out, t + lag, f * (1 + det), dur, peak / Math.sqrt(cfg.voices), s, held, fs, cfg, orn);
@@ -2108,12 +2190,32 @@ function singOne(out, t, f, dur, peak, s, held, fs, cfg, orn = {}) {
   const vStart = t + s.onset.reduce((a, c) => a + segT(c) * scaleT, 0), vEnd = end - s.coda.reduce((a, c) => a + segT(c) * scaleT, 0);
   // the glottal pulse: sawtooth with vibrato that comes in after the attack
   const o = ctx.createOscillator(), lfo = ctx.createOscillator(), vd = ctx.createGain(), voiceG = ctx.createGain();
-  o.type = "sawtooth"; o.frequency.setValueAtTime(orn.grace || f, t);
+  o.type = "sawtooth";
+  // how the note is reached: from below (scoop=), sliding over from the last note (glide=), or with a break
+  // across the register (head=: below it the chest voice, above it the head voice; crossing cracks like a yodel or a grito)
+  const midi = 69 + 12 * Math.log2(f / 440), headV = cfg.head != null && midi >= cfg.head;
+  const flip = cfg.head != null && orn.from && (69 + 12 * Math.log2(orn.from / 440) >= cfg.head) !== headV;
+  let f0 = orn.grace || f, reach = 0;
+  if (!orn.grace && flip) { f0 = f * (headV ? 1.035 : 0.965); reach = 0.035; }
+  else if (!orn.grace && orn.from && cfg.glide && orn.from !== f) { f0 = orn.from; reach = 0.04 + cfg.glide * 0.2; }
+  else if (!orn.grace && cfg.scoop && !held) { f0 = f * Math.pow(2, -cfg.scoop * (0.6 + 0.8 * Math.random()) / 1200); reach = 0.05 + cfg.scoop / 2500; }
+  o.frequency.setValueAtTime(f0, t); if (reach) o.frequency.exponentialRampToValueAtTime(f, t + Math.min(dur * 0.5, reach));
+  if (orn.turn) { // a turn: the note above, the note, the note below, the note
+    const d1 = Math.min(0.065, dur * 0.1), t0 = Math.max(t + reach, vStart) + 0.02, seq = [f, orn.turn[0], f, orn.turn[1], f];
+    seq.forEach((x, k) => { o.frequency.setValueAtTime(k ? seq[k - 1] : x, t0 + k * d1); if (k) o.frequency.exponentialRampToValueAtTime(x, t0 + k * d1 + d1 * 0.35); });
+  }
   if (orn.grace) { o.frequency.setValueAtTime(orn.grace, t + Math.min(0.07, dur * 0.25)); o.frequency.exponentialRampToValueAtTime(f, t + Math.min(0.11, dur * 0.35)); }
   if (orn.slide) { const s0 = t + dur * 0.45; o.frequency.setValueAtTime(f, s0); o.frequency.exponentialRampToValueAtTime(orn.slide, Math.min(end - 0.02, s0 + Math.max(0.08, dur * 0.3))); }
-  lfo.frequency.value = 5 + Math.random() * 1.2; vd.gain.setValueAtTime(0, t); vd.gain.linearRampToValueAtTime(f * cfg.vib, Math.min(end, vStart + 0.3));
+  lfo.frequency.value = 5 + Math.random() * 1.2; vd.gain.setValueAtTime(0, t); vd.gain.linearRampToValueAtTime(f * cfg.vib * (1 - 0.7 * (cfg.shake || 0)), Math.min(end, vStart + 0.3));
+  if (cfg.shake && dur > 0.5) { // held-note shading (nonghyeon, yuri): the long note starts plain, then shakes wider and slower
+    vd.gain.linearRampToValueAtTime(f * (cfg.vib + cfg.shake * 0.035), end); lfo.frequency.setValueAtTime(lfo.frequency.value, vStart + 0.3); lfo.frequency.linearRampToValueAtTime(lfo.frequency.value - 1.8 * cfg.shake, end);
+  }
   lfo.connect(vd).connect(o.frequency);
-  const tilt = ctx.createBiquadFilter(); tilt.type = "lowpass"; tilt.frequency.value = 3200 + 3200 * (cfg.bright ?? 0); tilt.Q.value = 0.5; // the glottal source falls off with frequency
+  // the glottal source falls off with frequency: steeply in the head voice, least in a pressed chest voice (press=),
+  // whose closed glottis also weakens the fundamental
+  const press = headV ? 0 : cfg.press || 0, tilt = ctx.createBiquadFilter(); tilt.type = "lowpass"; tilt.Q.value = 0.5;
+  tilt.frequency.value = headV ? 1500 + 1200 * (cfg.bright ?? 0) : 3200 + 3200 * (cfg.bright ?? 0) + 3000 * press;
+  const h1 = ctx.createBiquadFilter(); h1.type = "lowshelf"; h1.frequency.value = f * 1.5; h1.gain.value = headV ? 5 : -9 * press;
   if (orn.tech === "flutter") { const sh = ctx.createOscillator(), sd = ctx.createGain(); sh.frequency.value = 6.5; sd.gain.setValueAtTime(0, t); sd.gain.linearRampToValueAtTime(f * 0.017, t + Math.min(0.25, dur * 0.4)); sh.connect(sd).connect(o.frequency); sh.start(t); sh.stop(end + 0.1); }
   // breath noise through the same formants (aspiration, h), and a separate band for fricatives and bursts
   const nz = ctx.createBufferSource(); nz.buffer = chantNoise; nz.loop = true;
@@ -2124,13 +2226,13 @@ function singOne(out, t, f, dur, peak, s, held, fs, cfg, orn = {}) {
     const bp = ctx.createBiquadFilter(), g = ctx.createGain(); bp.type = "bandpass"; g.gain.value = [1, 1.5, 0.5, 0.25][k];
     voiceG.connect(bp); breathG.connect(bp); bp.connect(g).connect(sum); return bp;
   });
-  const setF = (at, target, ramp) => formants.forEach((bp, k) => { const fr = target[k], q = fr / [130, 170, 240, 320][k];
+  const setF = (at, target, ramp) => formants.forEach((bp, k) => { const fr = target[k], q = fr / ([130, 170, 240, 320][k] * (1 - 0.35 * press));
     if (ramp) { bp.frequency.linearRampToValueAtTime(fr, at); bp.Q.linearRampToValueAtTime(q, at); } else { bp.frequency.setValueAtTime(fr, at); bp.Q.setValueAtTime(q, at); } });
-  o.connect(tilt).connect(voiceG); nz.connect(breathG); nz.connect(fricBP).connect(fricG).connect(sum);
+  o.connect(tilt).connect(h1).connect(voiceG); nz.connect(breathG); nz.connect(fricBP).connect(fricG).connect(sum);
   // envelopes
   const V = voiceG.gain, B = breathG.gain, Fr = fricG.gain;
   const firstV = F(s.vowels[0].F || IPA_VOWELS.a), lastV = F(s.vowels[s.vowels.length - 1].F || IPA_VOWELS.a);
-  V.setValueAtTime(held ? 1 : 0, t); B.setValueAtTime(cfg.breath * 0.6, t); Fr.setValueAtTime(0, t);
+  V.setValueAtTime(held ? 1 : 0, t); B.setValueAtTime(cfg.breath * (headV ? 1.2 : 0.6), t); Fr.setValueAtTime(0, t);
   setF(t, s.onset.length ? F(s.onset[0].F || firstV) : firstV, false);
   let at = t;
   for (const c of s.onset) { // consonants before the vowel
@@ -2163,10 +2265,11 @@ function singOne(out, t, f, dur, peak, s, held, fs, cfg, orn = {}) {
   }
   // the whole note: a soft attack (none when the vowel is held on), a short release
   // the singer's ring: a peak near 3 kHz (bright=)
-  const ring = ctx.createBiquadFilter(); ring.type = "peaking"; ring.frequency.value = 2900 * fs; ring.Q.value = 1.6; ring.gain.value = 10 * (cfg.bright ?? 0);
-  const lvl = peak * 2.5; // (the open voice is brighter and fuller: same loudness as before)
+  const ring = ctx.createBiquadFilter(); ring.type = "peaking"; ring.frequency.value = 2900 * fs; ring.Q.value = 1.6; ring.gain.value = (headV ? 3 : 10) * (cfg.bright ?? 0) + 6 * press;
+  const lvl = peak * 2.5 * (cfg.stressed ? (s.stress ? 1 + 0.35 * s.stress : 0.8) : 1) * (headV ? 1.25 : 1 - 0.25 * press); // (pressing is louder at the ear, not in level) // (the open voice is brighter and fuller: same loudness as before)
   const g = ctx.createGain(); g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(lvl, t + (held ? 0.03 : 0.012));
-  g.gain.setValueAtTime(lvl, Math.max(t + 0.04, end - 0.05)); g.gain.exponentialRampToValueAtTime(0.0001, end + 0.08);
+  if (flip) { g.gain.setValueAtTime(lvl, t + 0.012); g.gain.linearRampToValueAtTime(lvl * 0.25, t + 0.022); g.gain.linearRampToValueAtTime(lvl, t + 0.05); } // the crack
+  g.gain.setValueAtTime(lvl, Math.max(t + 0.06, end - 0.05)); g.gain.exponentialRampToValueAtTime(0.0001, end + 0.08);
   let head = sum.connect(ring);
   if (orn.tech === "tremolo") { // one pitch pulsed, about seven times a second
     const am = ctx.createGain(), lf = ctx.createOscillator(), ld = ctx.createGain(); am.gain.value = 0.6; lf.frequency.value = 7; ld.gain.value = 0.4;
@@ -2414,7 +2517,7 @@ function applyEnvelopes() {
 
 // Shared by every melodic instrument.
 const MELODIC_ARGS = [
-  ["phrase", '"1 2 3 5 6 - 5 3"', "简谱 melody: 1–7, 0 rest, - hold, ' up / , down an octave, 1+3+5 a chord (1+3+5/ strummed), 5~6 slide, (3)5 grace, 5x body tap, 5h harmonic, 5m mute, 5p pizzicato, 5s spiccato, 5c col legno, 5r tremolo, 5o overblow, 5f flutter", null, { re: { test: (v) => /^".+"$/.test(v) && (() => { try { parsePhrase(v.slice(1, -1)); return true; } catch (e) { return false; } })() } }],
+  ["phrase", '"1 2 3 5 6 - 5 3"', "简谱 melody: 1–7, 0 rest, - hold, ' up / , down an octave, 1+3+5 a chord (1+3+5/ strummed), 5~6 slide, (3)5 grace, 5x body tap, 5h harmonic, 5m mute, 5p pizzicato, 5s spiccato, 5c col legno, 5r tremolo, 5o overblow, 5f flutter, 5t turn (the notes above and below)", null, { re: { test: (v) => /^".+"$/.test(v) && (() => { try { parsePhrase(v.slice(1, -1)); return true; } catch (e) { return false; } })() } }],
   ["scale", "major", "colours the degrees", null, null],
   ["key", "C", "tonic", null, { re: /^[A-G][#b]?$/ }],
   ["chords", '"Am F C G"', "chord per bar", null, { re: /^"([A-G][#b]?(maj7|m7|m|7|dim|sus2|sus4)?\s*)+"$/ }],
@@ -2463,7 +2566,7 @@ CATALOG.rain = { doc: "Rain: soft noise and droplets, for a quiet ending.", args
 for (const [k, doc] of [["marimba", "Marimba / balafon: wooden bars."], ["piano", "Piano: chords, or a melody by phrase= / notes=."], ["bass", "Bass: chord roots on beats 1 and 3, or a phrase."],
   ["strings", "提琴 strings (violin, cello, 京胡): bowed, with vibrato."], ["pluck", "Plucked strings: koto, guzheng, pipa, oud."],
   ["flute", "Flute: ney, shakuhachi, dizi."], ["organ", "Pipe organ."], ["choir", "Choir 'ah'."], ["bell", "Bell: 编钟, temple or church bell."],
-  ["brass", "Brass: horns, trumpets, 号角, karnay; the filter opens as the note swells."], ["timpani", "Timpani (kettle drums): tuned hits; fast repeated notes make a roll."],
+  ["brass", "Brass: lips buzzing into a tube (trumpets, horns, 号角, karnay, conch shells); louder notes bite brighter, and the bell (bell=) gives the colour."], ["timpani", "Timpani (kettle drums): tuned hits; fast repeated notes make a roll."],
   ["throat", "Throat singing (khöömii): a drone on the key's tonic with a whistled overtone melody; notes snap to its harmonics. oct=5 sygyt (whistle), oct=3 a deep kargyraa-like drone."],
   ["reed", "Double reed: suona 唢呐, zurna, shehnai, hichiriki 篳篥, shawm, chirimía; nasal and bright."],
   ["jawharp", "Jaw harp (khomus, tumur khuur, marranzano): a twang on the key's tonic; notes pick its overtones."],
@@ -2471,10 +2574,15 @@ for (const [k, doc] of [["marimba", "Marimba / balafon: wooden bars."], ["piano"
   ["bagpipe", "Bagpipe (gaida, tulum, dudy, säckpipa, uilleann): a reed chanter over a drone on the key's tonic."]]) {
   CATALOG[k] = { doc, args: MELODIC_ARGS };
 }
-CATALOG.chant = { doc: "Chant 吟唱: a sung voice from IPA, one syllable per note (_ holds the last vowel over the next note): . chant ipa=\"tɕʰin ʂən _ ʂɿ\" \"1 2 3 5\". Formant synthesis, any language; tone letters and stress marks are ignored (the melody gives the pitch).", args: [
+CATALOG.brass.args = [...MELODIC_ARGS, ["bell", "trumpet", "the instrument's colour (guessed from the line's name when unset): " + Object.entries(BRASS_BELLS).map(([k, v]) => `${k}, ${v.doc}`).join("; "), Object.keys(BRASS_BELLS)]];
+CATALOG.chant = { doc: "Chant 吟唱: a sung voice from IPA, one syllable per note (_ holds the last vowel over the next note): . chant ipa=\"tɕʰin ʂən _ ʂɿ\" \"1 2 3 5\". Formant synthesis, any language; tone letters are ignored (the melody gives the pitch); stress marks (ˈ ˌ) make a syllable louder and the others lighter, as speech-rhythm chant is sung.", args: [
   ["ipa", '"tɕʰin ʂən _ ʂɿ"', "the words in IPA, a syllable per note; _ holds the vowel (a melisma)"], ["voice", "men", "men, women or boy", ["men", "women", "boy"], { re: /^(men|women|boy)$/ }],
   ["voices", "1", "how many sing together, 1–12 (a choir)"], ["vib", "0.012", "vibrato depth, 0–0.05"], ["breath", "0.08", "breathiness, 0–1"],
-  ["bright", "0.3", "0–1: the singer's ring (a formant near 3 kHz): 0 soft and covered, 1 an open, carrying folk or psaltic voice"], ...MELODIC_ARGS] };
+  ["bright", "0.3", "0–1: the singer's ring (a formant near 3 kHz): 0 soft and covered, 1 an open, carrying folk or psaltic voice"],
+  ["scoop", "0", "cents each note is reached from below (0–400): 30 a light lean, 150 a blues or gospel scoop"], ["glide", "0", "0–1: slide over from the note before (portamento), as folk singers join their notes"],
+  ["head", "A4", "the break: from this note up the voice turns to its head voice (falsetto), and crossing it cracks (a yodel, a grito, krimanchuli)"],
+  ["shake", "0", "0–1: held-note shading: long notes start plain, then shake wider and slower (Korean nonghyeon, Japanese yuri)"],
+  ["press", "0", "0–1: a pressed chest voice: weaker fundamental, a hard bright edge (Balkan and Caucasian women's singing, a field holler)"], ...MELODIC_ARGS] };
 // Kits the scores asked for, each after recordings of the real drums.
 Object.assign(KITS, {
   janggu: ["kung", "tta", "bak"],        // Korean hourglass drum: the hand on the low head, the stick on the high one; the bak clapper

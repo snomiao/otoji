@@ -44,6 +44,12 @@ pavilion courtyard cave boat river forest valley field; size= wet= dry=). Name n
 (the soundbox is picked from the name; body= overrides). `scale@name` with exact cents (`2:150`), `key`, `clock bpm N/4`
 (6/8, 12/8; aksak as 9/4 at the eighth-note rate), `arrange@song name:Nbars@bpm` (`@~bpm` glides), `?song.N` gates,
 `dyn=`, `human=`, `grid=` 4/8/16, phrase marks (slides `~`, grace `(3)5`, strum `/`, chords `1+5`, techniques).
+Timing: `clock sway=` (the ensemble breathes), `name:2bars@50*` a free-time section, `rubato=` `drift=` `tune=` per line.
+Brass: `bell=` trumpet horn trombone tuba cornett natural conch (guessed from the name); louder dynamics bite brighter,
+so use `dyn=` for a forte rather than `vol=`. A shawm (suona, shehnai, zurna) belongs on a `reed` line.
+Voice (chant): `scoop=` cents from below, `glide=` from the last note, `head=A4` the register break (a yodel, a grito),
+`shake=` held-note shading (nonghyeon, yuri), `press=` a pressed chest voice, `bright=` the ring; ˈ in the IPA stresses a
+syllable; `5t` a turn (the notes above and below), `5f` flutter, `5r` tremolo, `(3)5` grace, `5~6` slide.
 Sung words: public-domain or traditional texts only, in the original language as IPA; captions in native script.
 
 ## Rules
