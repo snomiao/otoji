@@ -805,6 +805,7 @@ function argMap(kind, args) {
     const i = a.indexOf("=");
     if (i > 0 && !a.startsWith('"')) { o[a.slice(0, i)] = unquote(a.slice(i + 1)); continue; }
     const opt = spec.find((x) => x[4] && x[4].re.test(a) && o[x[0]] === undefined);
+    if (!opt && o.scale === undefined && spec.some((x) => x[0] === "scale") && typeof scaleNamed === "function" && scaleNamed(a)) { o.scale = a; continue; } // a bare scale name, as on the key line
     if (!opt) {
       const hints = spec.flatMap((x) => x[3] || []).slice(0, 4);
       throw new Error(`\`${a}\`: not an option of ${kind}` + (hints.length ? ` (try ${hints.join(", ")}…)` : spec.length ? ` (write ${spec[0][0]}=…)` : ""));
@@ -2182,6 +2183,7 @@ function chantNote(out, t, f, dur, peak, syl, prev, cfg, orn = {}) {
   const scale = { men: 1, women: 1.17, boy: 1.25 }[cfg.voice] || 1;
   if (cfg.last && t - cfg.last.end < 0.8) orn = { ...orn, from: cfg.last.f }; // the note before, if the line runs on (glide=, head=)
   cfg.last = { f, end: t + dur };
+  if (cfg.glide) orn = { ...orn, slideOk: Math.random() < 0.35 + cfg.glide }; // singers slide the leaps; a step only sometimes (more often as glide= grows)
   for (let v = 0; v < cfg.voices; v++) {
     const det = cfg.voices > 1 ? (Math.random() - 0.5) * 0.012 : 0, lag = cfg.voices > 1 ? Math.random() * 0.025 : 0, fs = scale * (0.97 + Math.random() * 0.06);
     singOne(out, t + lag, f * (1 + det), dur, peak / Math.sqrt(cfg.voices), s, held, fs, cfg, orn);
@@ -2202,7 +2204,7 @@ function singOne(out, t, f, dur, peak, s, held, fs, cfg, orn = {}) {
   const flip = cfg.head != null && orn.from && (69 + 12 * Math.log2(orn.from / 440) >= cfg.head) !== headV;
   let f0 = orn.grace || f, reach = 0;
   if (!orn.grace && flip) { f0 = f * (headV ? 1.035 : 0.965); reach = 0.035; }
-  else if (!orn.grace && orn.from && cfg.glide && orn.from !== f) { f0 = orn.from; reach = 0.04 + cfg.glide * 0.2 + Math.max(0, cfg.glide - 0.6) * 0.8; } // (above 0.6 the slide takes much of the note, as a lament's do)
+  else if (!orn.grace && orn.from && cfg.glide && orn.from !== f && (Math.abs(Math.log2(f / orn.from)) > 0.18 || orn.slideOk)) { f0 = orn.from; reach = 0.04 + cfg.glide * 0.2 + Math.max(0, cfg.glide - 0.6) * 0.8; } // (above 0.6 the slide takes much of the note, as a lament's do)
   else if (!orn.grace && cfg.scoop && !held) { f0 = f * Math.pow(2, -cfg.scoop * (0.6 + 0.8 * Math.random()) / 1200); reach = 0.05 + cfg.scoop / 2500; }
   const r0 = flip ? t : Math.min(vStart, t + dur * 0.4); // (from the vowel: the consonants before it would swallow the slide)
   o.frequency.setValueAtTime(f0, t); if (reach) { o.frequency.setValueAtTime(f0, r0); o.frequency.exponentialRampToValueAtTime(f, r0 + Math.min(dur * 0.5, reach)); }
