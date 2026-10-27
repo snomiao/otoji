@@ -6,7 +6,7 @@ SCORES["americans:death"] = {
     { title: "When the Saints Go Marching In (1945)", who: "Bunk Johnson's Brass Band, New Orleans, American Music label", url: "https://www.youtube.com/watch?v=I1qFMZQrGbs" },
     { title: "Just a Closer Walk with Thee (dirge, 1951)", who: "Eureka Brass Band, recorded in New Orleans by Folkways", url: "https://www.youtube.com/watch?v=aMnhdaWafIY" },
   ],
-  measured: "Bunk's Saints: 117 beats a minute in two (bass drum on every beat, 8th-note snare), major, the band filling 250 Hz–4 kHz, only 5 dB of dynamics (a street band never lets up); the 78 transfer sits a quarter-tone sharp of A♭, so A♭. Eureka's dirge: no pulse the tracker can lock to, so the bass drum's slow four at about 58 is used; long swelling notes (0.5–2.5 s, ~6 cents vibrato), 22 dB of dynamics, nothing above 4 kHz. Our render: Saints at 117.5 in two, 4.7 dB range, spectrum peaking 500 Hz–1 kHz; the dirge in a slow four with an 8 dB swell. Still differs: the synth brass is rounder than the old cornets (2–4 kHz sits 13 dB under the 78 even with the eq lift), and there is no growl, rip or shake on the trumpet. The hymn is Nearer, My God, to Thee (Bethany, Lowell Mason 1856), a dirge the bands also play, since Closer Walk's printed arrangement is newer",
+  measured: "Bunk's Saints: 117 beats a minute in two (bass drum on every beat, 8th-note snare), major, the band filling 250 Hz–4 kHz, only 5 dB of dynamics (a street band never lets up); the 78 transfer sits a quarter-tone sharp of A♭, so A♭. Eureka's dirge: no pulse the tracker can lock to, so the bass drum's slow four at about 58 is used; long swelling notes (0.5–2.5 s, ~6 cents vibrato), 22 dB of dynamics, nothing above 4 kHz. Our render: Saints at 117.5 in two, 4.7 dB range, spectrum peaking 500 Hz–1 kHz; the dirge in a slow four with an 8 dB swell. With the lip-buzz brass (the hot chorus ff, the Saints at f; each bell from its name: cornet and trumpets trumpet, alto and peck horns horn, trombone, tuba and sousaphone tuba) the eq lift is down from +7 to +4 and the 2–4 kHz band sits 3 dB under our 0.5–2 kHz peak (13 dB before); centroid 2.6–2.7 kHz against the 78's 2.57 kHz, whose loudest band is 2–4 kHz (with its hiss). Still differs: our 125–500 Hz is 4–7 dB thinner than the 78's bass drum and tuba, and there is no growl, rip or shake on the trumpet. The hymn is Nearer, My God, to Thee (Bethany, Lowell Mason 1856), a dirge the bands also play, since Closer Walk's printed arrangement is newer",
   text: `
 . clock        58 4/4
 . arrange@song dirge:12bars@58 roll:4bars@117 saints:16bars sing:16bars hot:16bars
@@ -37,7 +37,7 @@ SCORES["americans:death"] = {
 . crowd@shouts  shout "YE o-YE" "x-..............................................x---............" voices=14 voice=mixed vol=1.2 ?song.5
 
 *> space       courtyard size=1.6 wet=0.25
->  eq          low=-3 mid=1 high=7
+>  eq          low=0 mid=0 high=4
 >  speaker     0.5
 `,
 };

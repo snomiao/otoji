@@ -27,7 +27,7 @@
     refs: [
       { title: "Lu Ming 鹿鸣, Confucian ritual song from the Feng Ya Shi'er Shi Pu (the model for the manner)", who: "Zhao Yue 赵越 and the Yayue Training Institute, China Conservatory of Music", url: "https://www.youtube.com/watch?v=yQ4KkaFlA4U" },
     ],
-    measured: "from the ritual-song reconstruction: one note a syllable at about ♩ = 44, gong on D with both G and G# (the old scale), a man's voice with bells and stones framing the lines, a long tail. The drought ode has no surviving tune and no recording of it sung was found (only a spoken reading, whose free speech pitch is no model): the melody here is ours in that manner, resting on B (the yu tone) for a lament; words in Mandarin; the heat is crickets at 35 °C, the nearest the engine has to cicadas. Render: one syllable a quarter (1.6 onsets a second with the bells and stones), E3–C#4, centroid 1.76 kHz against the reconstruction's 1.49, a long open-air tail from the field space",
+    measured: "from the ritual-song reconstruction: one note a syllable at about ♩ = 44, gong on D with both G and G# (the old scale), a man's voice with bells and stones framing the lines, a long tail. The drought ode has no surviving tune and no recording of it sung was found (only a spoken reading, whose free speech pitch is no model): the melody here is ours in that manner, resting on B (the yu tone) for a lament; words in Mandarin; the heat is crickets at 35 °C, the nearest the engine has to cicadas. Render: one syllable a quarter (1.6 onsets a second with the bells and stones), E3–C#4, centroid 1.76 kHz against the reconstruction's 1.49, a long open-air tail from the field space. Voice gestures (pyin on the reconstruction's voice stem): the singer reaches over half of his notes from about 50 cents below and slides 0.3–0.4 s between notes; ours now scoops (scoop=60) and glides (glide=0.3, transitions ~0.29 s against 0.38 s), but the scoops mostly fall inside the syllables' opening consonants, so fewer of them are heard than in his singing",
     text: `
 . clock        46 4/4
 . arrange@song heat:2bars prayer:20bars
@@ -36,7 +36,7 @@
 . caption@c1   "倬彼雲漢，昭回于天。王曰於乎，何辜今之人！ / 天降喪亂，饑饉薦臻。靡神不舉，靡愛斯牲。圭璧既卒，寧莫我聽？" ?song.2
 . wind@dry      0.15 gust=0.05Hz
 . insects@heat  0.35 temp=35 count=6
-. chant@king    voice=men oct=3 grid=8 human=0.4 rubato=0.25 vib=0.02 breath=0.15 bright=0.4 dyn="mf mf f mf mp mf mf mp f mp" ipa="${words}" "${ode}" ?song.2
+. chant@king    voice=men oct=3 grid=8 human=0.4 rubato=0.25 scoop=60 glide=0.3 vib=0.02 breath=0.15 bright=0.4 dyn="mf mf f mf mp mf mf mp f mp" ipa="${words}" "${ode}" ?song.2
 . bell@bianzhong oct=3 grid=8 vol=0.8 "${bells}" ?song.2
 . bell@bianqing  oct=4 grid=8 vol=0.6 "${stones}" ?song.2
 . drums@gu      kit=zhangu vol=0.3 "........................x.......|................................|................................" ?song.2

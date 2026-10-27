@@ -7,7 +7,7 @@ SCORES["poles:death"] = {
     { title: "Marsz żałobny \"Lekki odpoczynek\"", who: "Orkiestra Dęta OSP Sejny (a village fire-brigade band) at a funeral", url: "https://www.youtube.com/watch?v=qLyyGGGLQY4" },
     { title: "Chopin, Sonata Op. 35, 3rd movement (score in MIDI)", who: "piano-midi.de (Bernd Krüger), via Wikimedia Commons", url: "https://commons.wikimedia.org/wiki/File:Chopin_-_Funeral_March.mid" },
   ],
-  measured: "Cortot's record: B-flat minor (heard a little sharp), the pulse slow and heavy (~55 to the quarter) with the dotted figure of the theme, a dull 78 top (brightness ~980 Hz) and a long hall tail; the Sejny band: brightness ~1490 Hz, energy at 250–2000 Hz, the band almost dry in the open air (rt60 ~1.7 s), dynamics steady (range 9 dB), vibrato ~5 c. Ours: Chopin's first eight bars from the score (theme on cornets an octave up, the inner F–G♭ on alto horns, the B♭/G♭ ostinato on trombones and tuba), 56 bpm, bass drum on 1 and 3, a bell every two bars, mourners murmuring, a street space; it differs in that a real band swells and drags a little on the dotted notes and its cornets have vibrato and a brassy edge our brass voice lacks. Our render measured: most-used note B♭, range F3–E5 for the upper band, brightness ~1260 Hz (the Sejny band 1490) with the energy at 250–1000 Hz, after trimming the tuba and drum that first swamped the low end; no vibrato at all where the band has ~5 c",
+  measured: "Cortot's record: B-flat minor (heard a little sharp), the pulse slow and heavy (~55 to the quarter) with the dotted figure of the theme, a dull 78 top (brightness ~980 Hz) and a long hall tail; the Sejny band: brightness ~1490 Hz, energy at 250–2000 Hz, the band almost dry in the open air (rt60 ~1.7 s), dynamics steady (range 9 dB), vibrato ~5 c. Ours: Chopin's first eight bars from the score (theme on cornets an octave up, the inner F–G♭ on alto horns, the B♭/G♭ ostinato on trombones and tuba), 56 bpm, bass drum on 1 and 3, a bell every two bars, mourners murmuring, a street space; it differs in that a real band swells and drags a little on the dotted notes and its cornets have vibrato. Our render measured: most-used note B♭, range F3–E5 for the upper band. With the lip-buzz brass (the cornets at f; bells from the names: kornety trumpet, altówki horn, puzony trombone, tuba) the old eq lift is gone (now low −3, mid +1, high 0) and the band's profile is close to Sejny's: 125–250 −8, 250–500 −4, 500 Hz–1 kHz −2, 1–2 kHz 0, 2–4 kHz −4, 4–8 kHz −17 dB (Sejny −6, −3, 0, 0, −7, −15), centroid 1.6 kHz (Sejny 1.9 with the street around it); still no vibrato on the cornets where the band has ~5 c",
   text: `
 . clock        56 4/4
 . arrange@song dzwon:2bars marsz:8bars marsz2:8bars
@@ -23,7 +23,7 @@ SCORES["poles:death"] = {
 . drums@beben  kit=orch vol=0.3 "x.......x.......|................|................" ?song.2-3
 
 *> space       courtyard size=2.2 wet=0.25
->  eq          low=-6 mid=2 high=3
+>  eq          low=-3 mid=1 high=0
 >  speaker     0.5
 `,
 };

@@ -18,7 +18,7 @@
     refs: [
       { title: "口述回忆：老北京叫卖原声 2 (street cries sung from memory)", who: "杨德山, a former Beijing street vendor", url: "https://www.youtube.com/watch?v=b1KxZbgCy68" },
     ],
-    measured: "no recording of the rhyme as a song exists (it is spoken), so its melody here is built from the Beijing tones of the words, at about three syllables a second as children recite. The old vendor: a man's voice moving D3–D5 with ~12 cents of vibrato, calls that hold their last vowel and slide down, energy mostly 250 Hz–1 kHz (a speaking voice, 1.2 kHz centroid), a dry open lane. The cry of candied haws is written in that range and manner. Pigeon whistles are a soft high flute chord, the nearest the engine has. Render: eighths at ♩ = 92 (about three syllables a second; 1.7 onsets a second measured, with the held line ends), children's voices F#3–E5, energy 250–500 Hz like the vendor's; the synthetic children sound evener and less shouted than real children, and the tones' glides are plain straight slides where speech curves",
+    measured: "no recording of the rhyme as a song exists (it is spoken), so its melody here is built from the Beijing tones of the words, at about three syllables a second as children recite. The old vendor: a man's voice moving D3–D5 with ~12 cents of vibrato, calls that hold their last vowel and slide down, energy mostly 250 Hz–1 kHz (a speaking voice, 1.2 kHz centroid), a dry open lane. The cry of candied haws is written in that range and manner. Pigeon whistles are a soft high flute chord, the nearest the engine has. Render: eighths at ♩ = 92 (about three syllables a second; 1.7 onsets a second measured, with the held line ends), children's voices F#3–E5, energy 250–500 Hz like the vendor's; the synthetic children sound evener and less shouted than real children, and the tones' glides are plain straight slides where speech curves. Voice gestures: the hawker's cry now scoops into its notes, slides from note to note (glide=0.5) and is pressed like a street call (press=0.4, the vendor's harmonics stronger than his fundamental); the children glide lightly between syllables (glide=0.25) as tones do in speech; the hawker is still brighter than the old vendor (2.0 kHz with the wind against 1.2 kHz)",
     text: `
 . clock        92 4/4
 . arrange@song wind:2bars chant1:6bars lane:3bars chant2:6bars chant3:6bars laugh:1bars
@@ -29,9 +29,9 @@
 . caption@c3   "七九河开，八九雁来 / 九九加一九，耕牛遍地走" ?song.4-5
 . wind@beifeng    0.3 gust=0.07Hz
 . flute@geshao    oct=6 grid=4 vol=0.3 dyn="0 p mp p 0 0 0 0 0 0 0 0 p mp p 0" "3+5 - - - - - - - 2+5 - - - - - - -" ?song.1-6
-. chant@kids      rubato=0.2 voice=boy voices=3 oct=4 grid=8 human=0.5 vib=0.01 breath=0.15 dyn="mf" ipa="${words}" "${rhyme}" ?song.2
-. chant@hawker    rubato=0.5 voice=men oct=3 grid=4 human=0.4 vol=0.45 vib=0.03 breath=0.12 dyn="mp p mp" ipa="piŋ tʰaŋ _ xu lu _ ei _ _ _ _ _" "5 - 6 5 3 - 2~1 - 1 - - -" ?song.3
-. chant@kids2     voice=boy voices=7 oct=4 grid=8 human=0.6 vib=0.01 breath=0.15 dyn="mf mf f f f f" ipa="${words}" "${rhyme}" ?song.4-5
+. chant@kids      rubato=0.2 voice=boy voices=3 oct=4 grid=8 human=0.5 glide=0.25 vib=0.01 breath=0.15 dyn="mf" ipa="${words}" "${rhyme}" ?song.2
+. chant@hawker    rubato=0.5 voice=men oct=3 grid=4 human=0.4 vol=0.45 scoop=40 glide=0.5 press=0.4 vib=0.03 breath=0.12 dyn="mp p mp" ipa="piŋ tʰaŋ _ xu lu _ ei _ _ _ _ _" "5 - 6 5 3 - 2~1 - 1 - - -" ?song.3
+. chant@kids2     voice=boy voices=7 oct=4 grid=8 human=0.6 glide=0.25 vib=0.01 breath=0.15 dyn="mf mf f f f f" ipa="${words}" "${rhyme}" ?song.4-5
 . crowd@laugh     shout "ha ha HA ha" voice=women voices=6 pitch=1.5 vol=1.5 ?song.6
 
 *> space       courtyard size=1.1

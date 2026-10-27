@@ -23,7 +23,7 @@
       { title: "Xian Hua Diao 鲜花调 (Yangzhou qingqu, historic recording c. 1962)", who: "Wang Wanqing 王万青 (1899–1967), voice and pipa, with ensemble", url: "https://www.youtube.com/watch?v=baVB3MdJo9k" },
       { title: "茉莉花 (扬州清曲)", who: "Yangzhou qingqu singers, dialect performance", url: "https://www.youtube.com/watch?v=0clQppYdclc" },
     ],
-    measured: "mix and voice stem: phrases rest on D, pitch set D E G A B (G-gong pentatonic resting on its 5th, within ~20 cents of 12-tone), male voice F#3–A#4, vibrato ~13 cents, about 1 note in 6 glides; ~152 eighths a minute (76 quarters, 2/4); the band stem is brighter (2 kHz centroid) and also rests on G/D; the percussion stem is thin high ticks (clapper and saucer), not drums; a dry small room. Ours: same key, scale, tempo and instruments; the traditional 六合 words in Mandarin IPA, not Yangzhou dialect; the singer's sliding Yangzhou ornaments are only partly given by the voice's glides and the erhu's slides. Render measured: tonic D, same five-note set, tempo ~144 (record ~152), brightness 1350 Hz (record 1380); ours still has ~7 dB more at 125–250 Hz and ~7 dB less at 1–2 kHz than the record (its singer's nasal, forward tone)",
+    measured: "mix and voice stem: phrases rest on D, pitch set D E G A B (G-gong pentatonic resting on its 5th, within ~20 cents of 12-tone), male voice F#3–A#4, vibrato ~13 cents, about 1 note in 6 glides; ~152 eighths a minute (76 quarters, 2/4); the band stem is brighter (2 kHz centroid) and also rests on G/D; the percussion stem is thin high ticks (clapper and saucer), not drums; a dry small room. Ours: same key, scale, tempo and instruments; the traditional 六合 words in Mandarin IPA, not Yangzhou dialect; the singer's sliding Yangzhou ornaments are only partly given by the voice's glides and the erhu's slides. Render measured: tonic D, same five-note set, tempo ~144 (record ~152), brightness 1350 Hz (record 1380); ours still has ~7 dB more at 125–250 Hz and ~7 dB less at 1–2 kHz than the record (its singer's nasal, forward tone). Voice gestures (pyin on the singer's stem): Wang Wanqing joins his notes with slides (median transit 0.23 s, most over 0.12 s); ours now glides between notes (glide=0.45, transit 0.21 s) and leans into notes from below (scoop=50), which gives more of the Yangzhou sliding; his nasal, forward tone at 1–2 kHz is still missing",
     text: `
 . clock        76 2/4
 . arrange@song intro:8bars verse1:24bars verse2:24bars
@@ -33,7 +33,7 @@
 . caption@c2   "好一朵金银花，好一朵金银花 / 奴有心采一朵戴，看花的人儿要将奴骂" ?song.3
 . crowd@chaguan  murmur "ni hao tsa lai la ho i kou ma" voices=7 vol=1.2 dyn="mp p p p" ?song.1
 . crowd@chaguan2 murmur "hao ia tsa a" voices=4 vol=0.7 dyn="p" ?song.2-3
-. chant@wang   voice=men oct=3 grid=8 human=0.5 vib=0.02 breath=0.12 dyn="mf mf mp mf f mf mp" ipa="${lyrics1} ${lyrics2}" "${sung} ${sung}" ?song.2-3
+. chant@wang   voice=men oct=3 grid=8 human=0.5 scoop=50 glide=0.45 vib=0.02 breath=0.12 dyn="mf mf mp mf f mf mp" ipa="${lyrics1} ${lyrics2}" "${sung} ${sung}" ?song.2-3
 . pluck@pipa   oct=4 grid=8 human=0.5 vol=1.3 dyn="mf mp mp mf" "${pipa}" ?song.1-3
 . pluck@sanxian oct=3 grid=8 human=0.4 vol=0.7 dyn="mp" "${all}" ?song.1-3
 . strings@erhu oct=4 grid=8 human=0.5 vol=0.45 dyn="mp p p mp" "${erhu}" ?song.1-3

@@ -13,7 +13,7 @@
     refs: [
       { title: "诗经吟诵《国风·周南·芣苢》", who: "黎展名 Li Zhanming, chanted recitation (吟诵), 黄延平 accompaniment", url: "https://www.youtube.com/watch?v=XXQMRLfLiXQ" },
     ],
-    measured: "recitation: comes to rest on G, uses G Bb C D F (yu pentatonic; 12-tone within ~20 cents), most syllables on G and D with the others as passing and ornament notes, ~152 eighths a minute (2.5 onsets a second), E2–F#4, a voice-led spectrum (250–1000 Hz, centroid 1.36 kHz). The Zhou melody is lost and 吟诵 is the literati way of chanting, not a field song: we keep its notes and pace, and turn it into a call and answer as a work song would go; the words are in Mandarin. Render: ~152 eighths a minute as the recitation, home on G, the same notes; brighter (2.3 kHz centroid against 1.36) because women sing it here where a man recites, and the synthetic women's chorus is smoother than a field group would be",
+    measured: "recitation: comes to rest on G, uses G Bb C D F (yu pentatonic; 12-tone within ~20 cents), most syllables on G and D with the others as passing and ornament notes, ~152 eighths a minute (2.5 onsets a second), E2–F#4, a voice-led spectrum (250–1000 Hz, centroid 1.36 kHz). The Zhou melody is lost and 吟诵 is the literati way of chanting, not a field song: we keep its notes and pace, and turn it into a call and answer as a work song would go; the words are in Mandarin. Render: ~152 eighths a minute as the recitation, home on G, the same notes; brighter (2.3 kHz centroid against 1.36) because women sing it here where a man recites, and the synthetic women's chorus is smoother than a field group would be. Voice gestures: the reciter slides between notes (median 0.18 s); the caller and the women now glide (glide=0.2, 0.21 s) and the women's group is a little pressed (press=0.25) for a rougher field voice; still smoother and brighter than a real field group",
     text: `
 . clock        76 4/4
 . arrange@song field:2bars sing:12bars sing2:12bars rest:2bars
@@ -26,9 +26,9 @@
 . insects@summer 0.12 temp=26 count=3
 . crowd@chatter  murmur "a ya ni kan ha la" voice=women voices=6 vol=2 dyn="mp p" ?song.1
 . crowd@chatter2 murmur "a ya ha" voice=women voices=4 vol=2 dyn="mp" ?song.4
-. chant@caller   voice=women oct=4 grid=8 human=0.6 vib=0.02 breath=0.15 dyn="mf" ipa="${callWords}" "${three(callLine)}" ?song.2-3
-. chant@women    voice=women voices=6 oct=4 grid=8 human=0.6 vol=0.45 vib=0.015 breath=0.15 dyn="mf mf mf mf mf mf mf mf mf mf mf mf f" ipa="${answerWords}" "${three(answer)}" ?song.2-3
-. chant@everyone voice=women voices=8 oct=4 grid=8 human=0.6 vib=0.015 breath=0.15 dyn="mp" ipa="${callWords}" "${three(callLine)}" ?song.3
+. chant@caller   voice=women oct=4 grid=8 human=0.6 scoop=30 glide=0.2 vib=0.02 breath=0.15 dyn="mf" ipa="${callWords}" "${three(callLine)}" ?song.2-3
+. chant@women    voice=women voices=6 oct=4 grid=8 human=0.6 vol=0.45 glide=0.2 press=0.25 vib=0.015 breath=0.15 dyn="mf mf mf mf mf mf mf mf mf mf mf mf f" ipa="${answerWords}" "${three(answer)}" ?song.2-3
+. chant@everyone voice=women voices=8 oct=4 grid=8 human=0.6 glide=0.2 press=0.25 vib=0.015 breath=0.15 dyn="mp" ipa="${callWords}" "${three(callLine)}" ?song.3
 
 *> space       field size=1
 >  speaker     0.5

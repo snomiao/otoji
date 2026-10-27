@@ -923,7 +923,7 @@ KINDS.wind = { source: true, build: (o) => ({ level: num(o, "level", 0.5, 0, 1),
 for (const k of ["piano", "bass", "strings", "pluck", "flute", "organ", "choir", "bell", "marimba", "timpani", "throat", "reed", "jawharp", "hurdygurdy", "bagpipe"]) KINDS[k] = { source: true, build: (o) => buildMelodic(k, o) };
 KINDS.brass = { source: true, build: (o) => {
   if (o.bell && !BRASS_BELLS[o.bell]) throw new Error(`bell= is one of ${Object.keys(BRASS_BELLS).join(", ")}`);
-  return { ...buildMelodic("brass", o), bell: o.bell };
+  return { ...buildMelodic("brass", o), bell: o.bell, vib: o.vib !== undefined ? num(o, "vib", 0, 0, 0.03) : undefined };
 } };
 KINDS.chant = { source: true, build: (o) => {
   const c = buildMelodic("chant", o);
@@ -931,7 +931,7 @@ KINDS.chant = { source: true, build: (o) => {
   if (o.head && noteMidi(o.head) === null) throw new Error("head= is a note name like A4: from there up the voice turns to its head voice");
   const sylls = parseIpa(o.ipa);
   return { ...c, sylls, stressed: sylls.some((x) => x.stress), voice, voices: num(o, "voices", 1, 1, 12), vib: num(o, "vib", 0.012, 0, 0.05), breath: num(o, "breath", 0.08, 0, 1), bright: num(o, "bright", 0.3, 0, 1),
-    scoop: num(o, "scoop", 0, 0, 400), glide: num(o, "glide", 0, 0, 1), shake: num(o, "shake", 0, 0, 1), press: num(o, "press", 0, 0, 1), head: o.head ? noteMidi(o.head) : null };
+    scoop: num(o, "scoop", 0, 0, 400), glide: num(o, "glide", 0, 0, 1), shake: num(o, "shake", 0, 0, 1), swell: num(o, "swell", 0, 0, 1), press: num(o, "press", 0, 0, 1), head: o.head ? noteMidi(o.head) : null };
 } };
 
 // ── autocomplete catalog: what each kind is, takes and accepts ────────
@@ -1944,12 +1944,12 @@ MELODIC.push("marimba");
 // the more the bore steepens the wave, so a forte trumpet bites at 2–4 kHz and a piano
 // one is round. Each bell gives its own colour (bell=, or guessed from the line's name).
 const BRASS_BELLS = {
-  trumpet: { doc: "trumpet, cornet, tromba: a bright flared bell", lvl: 1.65, formants: [[1250, 1.1, 5], [2700, 1.6, 4]], cut: 600, dark: 9000, bite: 1, buzz: 0.05, scoop: 25, wander: 3 },
+  trumpet: { doc: "trumpet, cornet, tromba: a bright flared bell", lvl: 1.65, formants: [[1250, 1.1, 5], [2700, 1.6, 0]], cut: 600, dark: 9000, bite: 1, buzz: 0.05, scoop: 25, wander: 3 },
   horn: { doc: "a horn played into the hand (Waldhorn, alto horns): round and veiled", lvl: 1.4, formants: [[420, 1.3, 6], [1000, 2, 2]], dark: 2400, bite: 0.45, buzz: 0.04, scoop: 40, wander: 4 },
   trombone: { doc: "trombone, sackbut, Posaune: broad, the slide's glide", lvl: 1.8, formants: [[520, 1.2, 5], [1500, 1.8, 3]], cut: 200, dark: 5500, bite: 0.85, buzz: 0.05, scoop: 30, wander: 4 },
   tuba: { doc: "tuba, sousaphone, helicon: a wide low bore", lvl: 1.6, formants: [[240, 1.2, 5], [650, 2, 2]], dark: 1800, bite: 0.35, buzz: 0.04, scoop: 20, wander: 3 },
   cornett: { doc: "the cornett (Zink), rozhok: wood with a cup, close to a singing voice", lvl: 1.3, formants: [[750, 1.8, 6], [1600, 2.5, 3]], dark: 3500, bite: 0.15, buzz: 0.03, scoop: 15, wander: 5, vib: 0.004 },
-  natural: { doc: "natural and animal horns and long trumpets (karnay, jiao, salpinx, lur, olifant, kakaki): raw, open, wavering", lvl: 2.3, formants: [[850, 1.3, 5], [2200, 1.8, 3]], cut: 450, dark: 6500, bite: 0.8, buzz: 0.12, scoop: 70, wander: 12 },
+  natural: { doc: "natural and animal horns and long trumpets (karnay, jiao, salpinx, lur, olifant, kakaki): raw, open, wavering", lvl: 2.3, formants: [[1350, 1.2, 6], [2200, 1.8, 0]], cut: 600, dark: 4200, bite: 0.8, buzz: 0.12, scoop: 70, wander: 12 },
   conch: { doc: "a conch shell (horagai, sangu, shankh, tecciztli, pututu): a hollow hoot, breathy, few overtones", lvl: 1.0, formants: [[600, 3, 4]], dark: 1300, bite: 0.25, buzz: 0.16, scoop: 60, wander: 15, hollow: true },
 };
 function brassBell(id) {
@@ -1977,7 +1977,8 @@ INSTRUMENTS.brass = { adsr: [0.05, 0.3, 0.85, 0.18], play(out, t, f, dur, adsr, 
   o.frequency.exponentialRampToValueAtTime(f * 1.002, t + 0.045 + B.scoop / 2000); o.frequency.exponentialRampToValueAtTime(f, t + 0.09 + B.scoop / 1500);
   const wl = ctx.createOscillator(), wd = ctx.createGain(); wl.frequency.value = 0.6 + Math.random() * 1.2; wd.gain.value = f * B.wander / 1731; wl.connect(wd).connect(o.frequency);
   const nodes = [o, wl];
-  if (B.vib) { const vl = ctx.createOscillator(), vd = ctx.createGain(); vl.frequency.value = 5.2; vd.gain.setValueAtTime(0, t); vd.gain.linearRampToValueAtTime(f * B.vib, Math.min(end, t + 0.35)); vl.connect(vd).connect(o.frequency); nodes.push(vl); }
+  const vib = cfg.vib ?? B.vib; // vib=: a village band's cornets, a bugler's lip vibrato
+  if (vib) { const vl = ctx.createOscillator(), vd = ctx.createGain(); vl.frequency.value = 5.2; vd.gain.setValueAtTime(0, t); vd.gain.linearRampToValueAtTime(f * vib, Math.min(end, t + 0.35)); vl.connect(vd).connect(o.frequency); nodes.push(vl); }
   const sum = ctx.createGain();
   // the round part: the pulse through a filter that opens with the breath
   const lp = ctx.createBiquadFilter(); lp.type = "lowpass"; lp.Q.value = 0.9;
@@ -2183,7 +2184,7 @@ function chantNote(out, t, f, dur, peak, syl, prev, cfg, orn = {}) {
   }
 }
 function singOne(out, t, f, dur, peak, s, held, fs, cfg, orn = {}) {
-  const end = t + dur, F = (a) => a.map((x, i) => x * (i < 3 ? fs : fs * 0.98));
+  const press0 = cfg.press || 0, end = t + dur, F = (a) => a.map((x, i) => x * (i < 3 ? fs : fs * 0.98) * (i === 0 ? 1 + 0.25 * press0 : i === 1 ? 1 + 0.08 * press0 : 1)); // a pressed, open voice raises F1
   // time for the consonants: onset before the vowel, coda after it
   const segT = (c) => (c.k === "s" ? 0.06 : c.k === "a" ? 0.1 : c.k === "f" ? 0.11 : c.k === "h" ? 0.07 : c.k === "r" ? (c.tap ? 0.03 : 0.08) : 0.07);
   const scaleT = Math.min(1, (dur * 0.4) / Math.max(0.001, s.onset.reduce((a, c) => a + segT(c), 0) + s.coda.reduce((a, c) => a + segT(c), 0)));
@@ -2199,9 +2200,10 @@ function singOne(out, t, f, dur, peak, s, held, fs, cfg, orn = {}) {
   if (!orn.grace && flip) { f0 = f * (headV ? 1.035 : 0.965); reach = 0.035; }
   else if (!orn.grace && orn.from && cfg.glide && orn.from !== f) { f0 = orn.from; reach = 0.04 + cfg.glide * 0.2; }
   else if (!orn.grace && cfg.scoop && !held) { f0 = f * Math.pow(2, -cfg.scoop * (0.6 + 0.8 * Math.random()) / 1200); reach = 0.05 + cfg.scoop / 2500; }
-  o.frequency.setValueAtTime(f0, t); if (reach) o.frequency.exponentialRampToValueAtTime(f, t + Math.min(dur * 0.5, reach));
+  const r0 = flip ? t : Math.min(vStart, t + dur * 0.4); // (from the vowel: the consonants before it would swallow the slide)
+  o.frequency.setValueAtTime(f0, t); if (reach) { o.frequency.setValueAtTime(f0, r0); o.frequency.exponentialRampToValueAtTime(f, r0 + Math.min(dur * 0.5, reach)); }
   if (orn.turn) { // a turn: the note above, the note, the note below, the note
-    const d1 = Math.min(0.065, dur * 0.1), t0 = Math.max(t + reach, vStart) + 0.02, seq = [f, orn.turn[0], f, orn.turn[1], f];
+    const d1 = Math.min(0.065, dur * 0.1), t0 = Math.max(t, vStart) + reach + 0.02, seq = [f, orn.turn[0], f, orn.turn[1], f];
     seq.forEach((x, k) => { o.frequency.setValueAtTime(k ? seq[k - 1] : x, t0 + k * d1); if (k) o.frequency.exponentialRampToValueAtTime(x, t0 + k * d1 + d1 * 0.35); });
   }
   if (orn.grace) { o.frequency.setValueAtTime(orn.grace, t + Math.min(0.07, dur * 0.25)); o.frequency.exponentialRampToValueAtTime(f, t + Math.min(0.11, dur * 0.35)); }
@@ -2214,8 +2216,8 @@ function singOne(out, t, f, dur, peak, s, held, fs, cfg, orn = {}) {
   // the glottal source falls off with frequency: steeply in the head voice, least in a pressed chest voice (press=),
   // whose closed glottis also weakens the fundamental
   const press = headV ? 0 : cfg.press || 0, tilt = ctx.createBiquadFilter(); tilt.type = "lowpass"; tilt.Q.value = 0.5;
-  tilt.frequency.value = headV ? 1500 + 1200 * (cfg.bright ?? 0) : 3200 + 3200 * (cfg.bright ?? 0) + 3000 * press;
-  const h1 = ctx.createBiquadFilter(); h1.type = "lowshelf"; h1.frequency.value = f * 1.5; h1.gain.value = headV ? 5 : -9 * press;
+  tilt.frequency.value = headV ? 1500 + 1200 * (cfg.bright ?? 0) : 3200 + 3200 * (cfg.bright ?? 0) + 1500 * press;
+  const h1 = ctx.createBiquadFilter(); h1.type = "lowshelf"; h1.frequency.value = f * 1.5; h1.gain.value = headV ? 5 : -14 * press;
   if (orn.tech === "flutter") { const sh = ctx.createOscillator(), sd = ctx.createGain(); sh.frequency.value = 6.5; sd.gain.setValueAtTime(0, t); sd.gain.linearRampToValueAtTime(f * 0.017, t + Math.min(0.25, dur * 0.4)); sh.connect(sd).connect(o.frequency); sh.start(t); sh.stop(end + 0.1); }
   // breath noise through the same formants (aspiration, h), and a separate band for fricatives and bursts
   const nz = ctx.createBufferSource(); nz.buffer = chantNoise; nz.loop = true;
@@ -2265,11 +2267,12 @@ function singOne(out, t, f, dur, peak, s, held, fs, cfg, orn = {}) {
   }
   // the whole note: a soft attack (none when the vowel is held on), a short release
   // the singer's ring: a peak near 3 kHz (bright=)
-  const ring = ctx.createBiquadFilter(); ring.type = "peaking"; ring.frequency.value = 2900 * fs; ring.Q.value = 1.6; ring.gain.value = (headV ? 3 : 10) * (cfg.bright ?? 0) + 6 * press;
+  const ring = ctx.createBiquadFilter(); ring.type = "peaking"; ring.frequency.value = 2900 * fs; ring.Q.value = 1.6; ring.gain.value = (headV ? 3 : 10) * (cfg.bright ?? 0) + 2 * press;
   const lvl = peak * 2.5 * (cfg.stressed ? (s.stress ? 1 + 0.35 * s.stress : 0.8) : 1) * (headV ? 1.25 : 1 - 0.25 * press); // (pressing is louder at the ear, not in level) // (the open voice is brighter and fuller: same loudness as before)
   const g = ctx.createGain(); g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(lvl, t + (held ? 0.03 : 0.012));
   if (flip) { g.gain.setValueAtTime(lvl, t + 0.012); g.gain.linearRampToValueAtTime(lvl * 0.25, t + 0.022); g.gain.linearRampToValueAtTime(lvl, t + 0.05); } // the crack
-  g.gain.setValueAtTime(lvl, Math.max(t + 0.06, end - 0.05)); g.gain.exponentialRampToValueAtTime(0.0001, end + 0.08);
+  if (cfg.swell && dur > 0.6) { g.gain.setValueAtTime(lvl * (1 - 0.4 * cfg.swell), t + 0.06); g.gain.linearRampToValueAtTime(lvl * (1 + 0.3 * cfg.swell), end - 0.1); } // swell=: a long note grows (heikyoku, a muezzin's held note)
+  g.gain.setValueAtTime(lvl * (cfg.swell && dur > 0.6 ? 1 + 0.3 * cfg.swell : 1), Math.max(t + 0.06, end - 0.05)); g.gain.exponentialRampToValueAtTime(0.0001, end + 0.08);
   let head = sum.connect(ring);
   if (orn.tech === "tremolo") { // one pitch pulsed, about seven times a second
     const am = ctx.createGain(), lf = ctx.createOscillator(), ld = ctx.createGain(); am.gain.value = 0.6; lf.frequency.value = 7; ld.gain.value = 0.4;
@@ -2574,7 +2577,7 @@ for (const [k, doc] of [["marimba", "Marimba / balafon: wooden bars."], ["piano"
   ["bagpipe", "Bagpipe (gaida, tulum, dudy, säckpipa, uilleann): a reed chanter over a drone on the key's tonic."]]) {
   CATALOG[k] = { doc, args: MELODIC_ARGS };
 }
-CATALOG.brass.args = [...MELODIC_ARGS, ["bell", "trumpet", "the instrument's colour (guessed from the line's name when unset): " + Object.entries(BRASS_BELLS).map(([k, v]) => `${k}, ${v.doc}`).join("; "), Object.keys(BRASS_BELLS)]];
+CATALOG.brass.args = [...MELODIC_ARGS, ["bell", "trumpet", "the instrument's colour (guessed from the line's name when unset): " + Object.entries(BRASS_BELLS).map(([k, v]) => `${k}, ${v.doc}`).join("; "), Object.keys(BRASS_BELLS)], ["vib", "0", "vibrato depth 0–0.03 (0.003 ≈ 5 cents)"]];
 CATALOG.chant = { doc: "Chant 吟唱: a sung voice from IPA, one syllable per note (_ holds the last vowel over the next note): . chant ipa=\"tɕʰin ʂən _ ʂɿ\" \"1 2 3 5\". Formant synthesis, any language; tone letters are ignored (the melody gives the pitch); stress marks (ˈ ˌ) make a syllable louder and the others lighter, as speech-rhythm chant is sung.", args: [
   ["ipa", '"tɕʰin ʂən _ ʂɿ"', "the words in IPA, a syllable per note; _ holds the vowel (a melisma)"], ["voice", "men", "men, women or boy", ["men", "women", "boy"], { re: /^(men|women|boy)$/ }],
   ["voices", "1", "how many sing together, 1–12 (a choir)"], ["vib", "0.012", "vibrato depth, 0–0.05"], ["breath", "0.08", "breathiness, 0–1"],
@@ -2582,6 +2585,7 @@ CATALOG.chant = { doc: "Chant 吟唱: a sung voice from IPA, one syllable per no
   ["scoop", "0", "cents each note is reached from below (0–400): 30 a light lean, 150 a blues or gospel scoop"], ["glide", "0", "0–1: slide over from the note before (portamento), as folk singers join their notes"],
   ["head", "A4", "the break: from this note up the voice turns to its head voice (falsetto), and crossing it cracks (a yodel, a grito, krimanchuli)"],
   ["shake", "0", "0–1: held-note shading: long notes start plain, then shake wider and slower (Korean nonghyeon, Japanese yuri)"],
+  ["swell", "0", "0–1: long notes grow louder as they are held (heikyoku, a muezzin)"],
   ["press", "0", "0–1: a pressed chest voice: weaker fundamental, a hard bright edge (Balkan and Caucasian women's singing, a field holler)"], ...MELODIC_ARGS] };
 // Kits the scores asked for, each after recordings of the real drums.
 Object.assign(KITS, {

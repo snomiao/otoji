@@ -18,7 +18,7 @@
     refs: [
       { title: "樂府詩吟誦《龜雖壽》(曹操, from the same 步出夏門行 cycle) in the 古體詩吟誦調", who: "邱鳳娟, chanted recitation (吟诵)", url: "https://www.youtube.com/watch?v=Dnko71qeJVg" },
     ],
-    measured: "recitation in the old-style-verse tune: home on F#, pitch set F# G# A# B C# D# (gong pentatonic with the 4th as a passing note), F3–E4, a wide vibrato (~19 cents) and a slide on one note in five, ~143 eighths a minute, energy 125–500 Hz (1.5 kHz centroid). We use that scale, pace, range and sliding, with two falling-and-rising line tunes of our own built from its contour, in Mandarin. No recording of 苦寒行 being chanted was found, so a poem of the same cycle stands in; the qingshang tune Cao Cao's court used is lost. Render: range F3–D#4 (reciter F3–E4), brightness 1.50 kHz against 1.47, vibrato ~14 cents and glides on one note in seven against 19 cents and one in five, pace ~136 eighths with rubato against ~143; the howling wind and the valley make ours wetter than the dry studio reference, on purpose",
+    measured: "recitation in the old-style-verse tune: home on F#, pitch set F# G# A# B C# D# (gong pentatonic with the 4th as a passing note), F3–E4, a wide vibrato (~19 cents) and a slide on one note in five, ~143 eighths a minute, energy 125–500 Hz (1.5 kHz centroid). We use that scale, pace, range and sliding, with two falling-and-rising line tunes of our own built from its contour, in Mandarin. No recording of 苦寒行 being chanted was found, so a poem of the same cycle stands in; the qingshang tune Cao Cao's court used is lost. Render: range F3–D#4 (reciter F3–E4), brightness 1.50 kHz against 1.47, vibrato ~14 cents and glides on one note in seven against 19 cents and one in five, pace ~136 eighths with rubato against ~143; the howling wind and the valley make ours wetter than the dry studio reference, on purpose. Voice gestures (pyin on the recitation): slides of ~0.2 s between notes; the soldier now glides (glide=0.3, transit 0.18 s) and leans into notes from below (scoop=25), the column glides less",
     text: `
 . clock        72 4/4
 . arrange@song road:2bars song:16bars hum:16bars
@@ -28,8 +28,8 @@
 . wind@beifeng  0.6 gust=0.15Hz
 . drums@step    kit=zhangu vol=0.12 "x.......x.......|................|................" ?song.1-3
 . drums@horse   kit=horses vol=0.8 "................................................................|................................................................................................................................x...............................|................................................................" ?song.1-3
-. chant@soldier voice=men oct=3 grid=8 human=0.6 rubato=0.3 vib=0.03 breath=0.2 dyn="mp mf mf mp mf mf mp mp mp mf mf mp mf mf mp p" ipa="${words}" "${tune}" ?song.2-3
-. chant@column  voice=men voices=8 oct=3 grid=8 human=0.7 vib=0.015 breath=0.3 vol=0.5 dyn="p mp" ipa="${words}" "${tune}" ?song.3
+. chant@soldier voice=men oct=3 grid=8 human=0.6 rubato=0.3 scoop=25 glide=0.3 vib=0.03 breath=0.2 dyn="mp mf mf mp mf mf mp mp mp mf mf mp mf mf mp p" ipa="${words}" "${tune}" ?song.2-3
+. chant@column  voice=men voices=8 oct=3 grid=8 human=0.7 glide=0.2 vib=0.015 breath=0.3 vol=0.5 dyn="p mp" ipa="${words}" "${tune}" ?song.3
 
 *> space       valley size=1.3
 >  speaker      0.5

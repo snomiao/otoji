@@ -20,7 +20,7 @@
     refs: [
       { title: "古詩吟誦《觀滄海》(曹操), 錢紹武先生吟誦調", who: "盛榮芳, chanted recitation (吟诵)", url: "https://www.youtube.com/watch?v=XaE-s29WiSw" },
     ],
-    measured: "recitation: comes home to E (tuned ~30 cents flat), uses E F# G# A B C# D with a G natural now and then, G3–G#4, vibrato ~14 cents, one note in six slides, slow and free (pulse clarity 0.14; long notes of 1–4 s at line ends), bright voice (2.1 kHz centroid, strong 250 Hz–4 kHz). Our line keeps that resting tone, scale, range and the shape of its two recurring line-tunes, set to eighths at ♩ = 58 with rubato; words in Mandarin. The Han–Wei yuefu melody is lost; the army band and the soldiers' singing are our setting. Render of the solo: home on E, range G3–G#4 exactly as the reciter, vibrato ~12 cents; darker than him (1.3 kHz centroid against 2.1 at bright=0.45, so we raised the voice's ring to 0.7) with the sea adding low rumble under 250 Hz",
+    measured: "recitation: comes home to E (tuned ~30 cents flat), uses E F# G# A B C# D with a G natural now and then, G3–G#4, vibrato ~14 cents, one note in six slides, slow and free (pulse clarity 0.14; long notes of 1–4 s at line ends), bright voice (2.1 kHz centroid, strong 250 Hz–4 kHz). Our line keeps that resting tone, scale, range and the shape of its two recurring line-tunes, set to eighths at ♩ = 58 with rubato; words in Mandarin. The Han–Wei yuefu melody is lost; the army band and the soldiers' singing are our setting. Render of the solo: home on E, range G3–G#4 exactly as the reciter, vibrato ~12 cents; darker than him (1.3 kHz centroid against 2.1 at bright=0.45, so we raised the voice's ring to 0.7) with the sea adding low rumble under 250 Hz. Voice gestures: the reciter's slides are short (~0.09 s), so the soldier glides only lightly (glide=0.15, 0.18 s); the massed army sings a little pressed (press=0.2), as men shout-sing in the open; the jiao is now the natural-horn bell blown forte (dyn=f), raw and wavering rather than a trumpet. Our solo voice still has wider vibrato on held notes than the reciter",
     text: `
 . clock        58 4/4
 . arrange@song sea:2bars cao:16bars army:12bars
@@ -30,9 +30,9 @@
 . caption@c2   "日月之行，若出其中；星漢燦爛，若出其裏。 / 幸甚至哉，歌以詠志。" ?song.3
 . water@sea     0.45 lap=0.7 splash=0.15
 . wind@autumn   0.3 gust=0.09Hz
-. brass@jiao    oct=3 grid=4 vol=0.5 dyn="mf mp" "1 - - - 5, - 1 -" ?song.1
-. chant@soldier voice=men oct=3 grid=8 human=0.5 rubato=0.35 vib=0.025 breath=0.12 bright=0.7 dyn="mf mf f mf mf f mf mf f mf mf f mf mf f mf" ipa="${c.slice(0, 4).join(" ")}" "${[odd, even, odd, even].join(" ")}" ?song.2
-. chant@army    voice=men voices=12 oct=3 grid=8 human=0.6 vib=0.015 breath=0.15 dyn="f" ipa="${c.slice(4).join(" ")}" "${[odd, even, odd].join(" ")}" ?song.3
+. brass@jiao    oct=3 grid=4 vol=0.4 bell=natural dyn="f mf" "1 - - - 5, - 1 -" ?song.1
+. chant@soldier voice=men oct=3 grid=8 human=0.5 rubato=0.35 glide=0.15 vib=0.025 breath=0.12 bright=0.7 dyn="mf mf f mf mf f mf mf f mf mf f mf mf f mf" ipa="${c.slice(0, 4).join(" ")}" "${[odd, even, odd, even].join(" ")}" ?song.2
+. chant@army    voice=men voices=12 oct=3 grid=8 human=0.6 glide=0.1 press=0.2 vib=0.015 breath=0.15 dyn="f" ipa="${c.slice(4).join(" ")}" "${[odd, even, odd].join(" ")}" ?song.3
 . reed@jia      oct=4 grid=8 vol=0.3 dyn="mf" "${[odd, even, odd].join(" ")}" ?song.3
 . drums@gu      kit=zhangu vol=0.35 "X.......x.......|....x.......x...|................" ?song.3
 
