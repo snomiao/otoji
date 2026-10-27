@@ -4,15 +4,15 @@
 {
   // C-major degrees (white-note first mode): 6, = A3 the reciting tone, 2, = D3 the final
   const antiphon = ["6, 6, 5, 6, 5, 3, 4, 5, 3, 4, 3, 2, - 3, 4, 6, 5, 4, 3, 4, 5, 4, 3, 2, - 2, - - 0 0",
-    "ek tʃe kwam bo _ num et kwam ju kun _ dum a bi ta re _ fra _ tres in _ u num"];
+    "ˈek tʃe kwam ˈbo _ num et kwam ju ˈkun _ dum a bi ˈta re _ ˈfra _ tres in _ ˈu num"];
   // the psalm: intonation F G (first verse and Gloria), tenor A, mediant G A, ending G F G A
   const psalm = [
-    ["4, 5, 6, 6, 6, 6, 6, 6, 5, 6, - 0 6, 6, 6, 6, 6, 5, 4, 5, 6, - 0 0 0", "ek tʃe kwam bo num et kwam ju kun dum a bi ta re fra tres in u num"],
-    ["6, 6, 6, 6, 6, 6, 6, 5, 6, - 0 6, 6, 6, 6, 6, 6, 6, 5, 4, 5, 6, - 0 0 0", "si kut un ɡwen tum in ka pi te kwod de ʃen dit in bar bam bar bam a ron"],
-    ["6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 5, 6, - 0 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 5, 4, 5, 6, - 0 0 0", "kwod de ʃen dit in o ram ve sti men ti e jus si kut ros er mon kwi de ʃen dit in mon tem si on"],
-    ["6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 5, 6, - 0 6, 6, 6, 6, 6, 5, 4, 5, 6, - 0 0 0", "kwo ni am il lik man da vit do mi nus be ne dik tsi o nem et vi tam us kwe in se ku lum"],
-    ["4, 5, 6, 6, 6, 6, 6, 5, 6, - 0 6, 6, 6, 5, 4, 5, 6, - 0 0 0", "ɡlo ri a pa tri et fi li o et spi ri tu i san kto"],
-    ["6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 5, 6, - 0 6, 6, 6, 6, 6, 6, 6, 5, 4, 5, 6, - 0 0 0", "si kut e rat in prin tʃi pi o et nunk et sem per et in se ku la se ku lo rum a men"],
+    ["4, 5, 6, 6, 6, 6, 6, 6, 5, 6, - 0 6, 6, 6, 6, 6, 5, 4, 5, 6, - 0 0 0", "ˈek tʃe kwam ˈbo num et kwam ju ˈkun dum a bi ˈta re ˈfra tres in ˈu num"],
+    ["6, 6, 6, 6, 6, 6, 6, 5, 6, - 0 6, 6, 6, 6, 6, 6, 6, 5, 4, 5, 6, - 0 0 0", "ˈsi kut un ˈɡwen tum in ˈka pi te kwod de ˈʃen dit in ˈbar bam ˈbar bam ˈa ron"],
+    ["6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 5, 6, - 0 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 5, 4, 5, 6, - 0 0 0", "kwod de ˈʃen dit in ˈo ram ve sti ˈmen ti ˈe jus ˈsi kut ros ˈer mon kwi de ˈʃen dit in ˈmon tem ˈsi on"],
+    ["6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 5, 6, - 0 6, 6, 6, 6, 6, 5, 4, 5, 6, - 0 0 0", "ˈkwo ni am ˈil lik man ˈda vit ˈdo mi nus be ne dik tsi ˈo nem et ˈvi tam ˈus kwe in ˈse ku lum"],
+    ["4, 5, 6, 6, 6, 6, 6, 5, 6, - 0 6, 6, 6, 5, 4, 5, 6, - 0 0 0", "ˈɡlo ri a ˈpa tri et ˈfi li o et ˈspi ri tu i ˈsan kto"],
+    ["6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 5, 6, - 0 6, 6, 6, 6, 6, 6, 6, 5, 4, 5, 6, - 0 0 0", "ˈsi kut ˈe rat in prin ˈtʃi pi o et nunk et ˈsem per et in ˈse ku la se ku ˈlo rum a ˈmen"],
   ];
   const fit = (p) => { const t = p.split(" "); while (t.length % 8) t.push("0"); return t; };
   // the form: the cantor begins the antiphon, all finish it; the psalm verses alternate between the two sides of the chapter; all repeat the antiphon
@@ -41,7 +41,7 @@
       { title: "Antiphon Ecce quam bonum (Antiphonale Monasticum 1934, p. 140), gabc", who: "GregoBase", url: "https://gregobase.selapa.net/chant.php?id=10122" },
       { title: "Antiphon Ecce quam bonum (Cod. Sang. 390, c. 990), gabc", who: "GregoBase", url: "https://gregobase.selapa.net/chant.php?id=20094" },
     ],
-    measured: "Pluscarden: unison men reciting on A3 (−20 c) for long stretches (one pitch held over 3–8 s of syllables), the cadences falling a tone and a fourth/fifth below (0 500 700 990 around the final), range C#3–A3, ~2.1 syllables a second, vibrato ~6 c, energy 125–1000 Hz flat then falling ~8 dB an octave, an ~8 s church tail. Ours: the antiphon notes from the 1934 book (the same melody as the St Gall antiphoner of c. 990), the psalm in the first tone (intonation F G, tenor A, mediant G A, ending G F G A as the antiphon's euouae gives it), A3 as Pluscarden sings it, one syllable an eighth at 96 (3.2 a second, quicker than Pluscarden as a small community recites), the two sides of the chapter alternating. Differs: our psalm tone puts the mediant and ending on the last syllables without following the Latin accents, as a real cantor would; the chapter house is our staging. Render check: reciting note and final as Pluscarden (A3, range C#3–A3), cadence degrees 0 500 800 1000 around A, 1.7 syllables a second with the breaths, bands 500–1000 −7, 1–2 kHz −14, 2–4 kHz −15 dB (Pluscarden −2, −10, −18), tail ~4 s against ~8 in the abbey church",
+    measured: "Pluscarden: unison men reciting on A3 (−20 c) for long stretches (one pitch held over 3–8 s of syllables), the cadences falling a tone and a fourth/fifth below (0 500 700 990 around the final), range C#3–A3, ~2.1 syllables a second, vibrato ~6 c, energy 125–1000 Hz flat then falling ~8 dB an octave, an ~8 s church tail. Ours: the antiphon notes from the 1934 book (the same melody as the St Gall antiphoner of c. 990), the psalm in the first tone (intonation F G, tenor A, mediant G A, ending G F G A as the antiphon's euouae gives it), A3 as Pluscarden sings it, one syllable an eighth at 96 (3.2 a second, quicker than Pluscarden as a small community recites), the two sides of the chapter alternating. Differs: our psalm tone puts the mediant and ending on the last syllables without following the Latin accents, as a real cantor would; the chapter house is our staging. Render check: reciting note and final as Pluscarden (A3, range C#3–A3), cadence degrees 0 500 800 1000 around A, 1.7 syllables a second with the breaths, bands 500–1000 −7, 1–2 kHz −14, 2–4 kHz −15 dB (Pluscarden −2, −10, −18), tail ~4 s against ~8 in the abbey church Revision: Pluscarden's notes start as often above as below (29%/29% by more than 20 c) and change in under 25 ms, so no scoop or glide here; the Latin word accents now carry stress marks, as the psalm is recited in speech rhythm. Render: syllable-peak spread p90–p10 rose from 8.0 to 9.5 dB (Pluscarden 15.2); the accents are louder but not longer, which the engine cannot yet do.",
     text: `
 . clock        96 4/4
 . arrange@song ${arrange}

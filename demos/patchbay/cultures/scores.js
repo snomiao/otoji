@@ -37,7 +37,7 @@ SCORES["achaemenids:showcase"] = {
   about: "a magus chants the Avesta at a sacrifice on a hilltop, as Herodotus describes the Persians' rites: the Ahuna Vairya and Ashem Vohu recited on one tone by the fire, a karna horn calling first",
   heard: "an open hilltop at dawn, no temple and no altar: the fire crackles in the wind, the magus with his mouth covered recites close to one note, a second priest with him, and the people stand back in silence",
   refs: [{ title: "Sorosh vāj (Khordeh Avesta)", who: "Mobed Mehraban Firouzgary, Zoroastrian priest of Iran", url: "https://www.youtube.com/watch?v=qu6x_j8sXuo" }],
-  measured: "a reconstruction: Achaemenid chant is lost, and Avestan recitation as Iranian mobeds keep it is the nearest living tradition. Mobed Firouzgary: no beat at all (pulse clarity −0.08), about 2 syllables a second, almost all of it on a reciting tone near C♯3 (+20 cents) with neighbours a little above it (about 80, 190, 370 and 470 cents: microtonal steps, not a scale), range C3–F♯3, the phrase opening a step or two higher and settling back to the tone, little vibrato (≈6 cents), a warm dry voice (spectrum peak 250–500 Hz). Our magus recites the Ahuna Vairya (twice its first lines) and the Ashem Vohu in Avestan, the oldest Iranian prayers, on that tone and those steps; the words are the prayers, not the Sorosh vāj of the recording. Our render: tonic C♯, onsets 2 a second like his, the same 250–500 Hz peak and dark voice up to 2 kHz; above that the fire's crackle lifts us (brightness 1700 Hz against 1190), our pulse is still steadier than his (clarity 0.27 against −0.08) even with rubato, and his range reaches F♯3 where ours mostly stays C♯–E",
+  measured: "a reconstruction: Achaemenid chant is lost, and Avestan recitation as Iranian mobeds keep it is the nearest living tradition. Mobed Firouzgary: no beat at all (pulse clarity −0.08), about 2 syllables a second, almost all of it on a reciting tone near C♯3 (+20 cents) with neighbours a little above it (about 80, 190, 370 and 470 cents: microtonal steps, not a scale), range C3–F♯3, the phrase opening a step or two higher and settling back to the tone, little vibrato (≈6 cents), a warm dry voice (spectrum peak 250–500 Hz). Our magus recites the Ahuna Vairya (twice its first lines) and the Ashem Vohu in Avestan, the oldest Iranian prayers, on that tone and those steps; the words are the prayers, not the Sorosh vāj of the recording. Our render: tonic C♯, onsets 2 a second like his, the same 250–500 Hz peak and dark voice up to 2 kHz; above that the fire's crackle lifts us (brightness 1700 Hz against 1190), our pulse is still steadier than his (clarity 0.27 against −0.08) even with rubato, and his range reaches F♯3 where ours mostly stays C♯–E Revision: the chant line also carried its own key words (avesta C# tune=20), which made the engine sing it about four semitones high (render centred on F3/G#3); removed, so the line takes the scene's key and now sits on C#3 with D3 and D#3 above, as the mobed's own pitch histogram (C#3, D3, D#3). Measured note by note, the mobed reaches 22% of his notes from more than 20 c below (15% from above): the magus now scoops (45 c). A glide was tried and dropped: it made him arrive from above far more often than the mobed does.",
   text: `
 . clock        120 4/4
 . arrange@song karna:4bars yasna:20bars
@@ -48,7 +48,7 @@ SCORES["achaemenids:showcase"] = {
 . fire@atar    0.15 crackle=0.3
 . wind@kuh     0.15 gust=0.06Hz
 . brass@karna  oct=3 grid=8 vol=0.5 dyn="mf p" "1 - - - - - - - 5, - - - 1 - - - - - - - 0 0 0 0 0 0 0 0 0 0 0 0" ?song.1
-. chant@magu   avesta C# tune=20 voice=men voices=2 oct=3 grid=8 human=0.4 rubato=0.4 bright=0.3 vib=0.008 breath=0.12 dyn="mf mp mf mf" ipa="ja θaː a huː vaj rjoː a θaː ra tuʃ a ʃaːt tʃiːt ha tʃaː vaŋ heːuʃ daz daː ma naŋ hoː ʃjaw θa na naːm aŋ heːuʃ maz daːj xʃa θrəm tʃaː a hu raːj aː jim dri ɣu bjoː da dat vaːs taː rəm ja θaː a huː vaj rjoː a θaː ra tuʃ a ʃaːt tʃiːt ha tʃaː a ʃəm vo huː va hiʃ təm as tiː uʃ taː as tiː uʃ taː ah maːj hjat a ʃaːj va hiʃ taːj a ʃəm" "3 3 - 2 1 2 - 1 - - - 0 0 1 - 3 - 1 1 1 - 2 2 2 1 - - - 0 0 2 3 - 3 2 1 - 2 - 1 - - - 0 0 3 3 2 3 2 - 3 - 2 1 - - - 0 0 1 1 3 2 2 2 1 - - - 0 0 4 1 1 3 1 - 3 2 2 1 - - - 0 0 3 1 - 1 3 2 1 - - - 0 0 1 1 - 1 - 1 3 2 - 3 2 1 - - - 0 0 3 2 3 1 3 3 1 2 1 - - - 0 0 1 1 1 2 2 - 2 2 1 - - - 0 0 2 1 2 1 1 2 2 1 - - - 0 0 0 0 0" ?song.2
+. chant@magu   scoop=45 voice=men voices=2 oct=3 grid=8 human=0.4 rubato=0.4 bright=0.3 vib=0.008 breath=0.12 dyn="mf mp mf mf" ipa="ja θaː a huː vaj rjoː a θaː ra tuʃ a ʃaːt tʃiːt ha tʃaː vaŋ heːuʃ daz daː ma naŋ hoː ʃjaw θa na naːm aŋ heːuʃ maz daːj xʃa θrəm tʃaː a hu raːj aː jim dri ɣu bjoː da dat vaːs taː rəm ja θaː a huː vaj rjoː a θaː ra tuʃ a ʃaːt tʃiːt ha tʃaː a ʃəm vo huː va hiʃ təm as tiː uʃ taː as tiː uʃ taː ah maːj hjat a ʃaːj va hiʃ taːj a ʃəm" "3 3 - 2 1 2 - 1 - - - 0 0 1 - 3 - 1 1 1 - 2 2 2 1 - - - 0 0 2 3 - 3 2 1 - 2 - 1 - - - 0 0 3 3 2 3 2 - 3 - 2 1 - - - 0 0 1 1 3 2 2 2 1 - - - 0 0 4 1 1 3 1 - 3 2 2 1 - - - 0 0 3 1 - 1 3 2 1 - - - 0 0 1 1 - 1 - 1 3 2 - 3 2 1 - - - 0 0 3 2 3 1 3 3 1 2 1 - - - 0 0 1 1 1 2 2 - 2 2 1 - - - 0 0 2 1 2 1 1 2 2 1 - - - 0 0 0 0 0" ?song.2
 
 *> space       field size=1 wet=0.15
 >  speaker     0.5
@@ -1588,7 +1588,7 @@ SCORES["egyptians-late:build"] = {
   refs: [
     { title: "Verdi: Aida, Grand March (Victor 35265, 1912)", who: "Vessella's Italian Band, 78 rpm", url: "https://www.youtube.com/watch?v=CSdQnkpPOJo" },
   ],
-  measured: "Vessella's band (1912): 123 in two, bass drum and cymbal on the beats, the melody in the brass resting on E♭ (the 78 runs about 20 c flat; Verdi's march sits in A♭ with the trumpets' tune in B; the band plays it in its own key), the tune holding the dominant in long repeated notes before climbing through the supertonic to the upper fifth and sixth (5 … 2' 1' … 5' 6' 5' 4'), 500 Hz–1 kHz, a steady loud band (dynamics 25 dB over the whole side, mostly f). Ours: the trumpet line rebuilt from that note sequence and its durations at 123, clarinets doubling an octave up, horns on the off-beats, tuba, drums; rendered 123 in two, resting on E♭, trumpets measured on 0/200/700/900 c. Still differs: the harmony under the tune is simplified to I–V, not Verdi's; the synth brass is smoother than the band's; the building site's work call (hela, hela) and hammers are scene sound, not from a recording",
+  measured: "Vessella's band (1912): 123 in two, bass drum and cymbal on the beats, the melody in the brass resting on E♭ (the 78 runs about 20 c flat; Verdi's march sits in A♭ with the trumpets' tune in B; the band plays it in its own key), the tune holding the dominant in long repeated notes before climbing through the supertonic to the upper fifth and sixth (5 … 2' 1' … 5' 6' 5' 4'), 500 Hz–1 kHz, a steady loud band (dynamics 25 dB over the whole side, mostly f). Ours: the trumpet line rebuilt from that note sequence and its durations at 123, clarinets doubling an octave up, horns on the off-beats, tuba, drums; rendered 123 in two, resting on E♭, trumpets measured on 0/200/700/900 c. Still differs: the harmony under the tune is simplified to I–V, not Verdi's; the synth brass is smoother than the band's; the building site's work call (hela, hela) and hammers are scene sound, not from a recording Revision: the brass now take their forte from dyn= (the bite grows with it): trumpets f, rising to ff for the climb to the upper fifth and sixth (bars 14–17), horns mf on the off-beats (round), tuba f. Render: in the ff bars the 2–4 kHz band becomes the strongest (brightness ~3.4 kHz against ~2.9 kHz at f); the 78's own top is cut off by the medium, so the record cannot show how brassy the band was, and the crescendo at the climb is our reading of the score, not measured.",
   text: `
 . clock        123 4/4
 . arrange@song building:8bars march:19bars
@@ -1598,10 +1598,10 @@ SCORES["egyptians-late:build"] = {
 . crowd@haulers chant "HE-la HE-la he-LA" "x-x-x---x-x-x---" voices=12 voice=men vol=0.9 ?song.1
 . drums@site   kit=work vol=0.7 human=0.6 "x..x....x.x.....|....x.......x...|X...............X..............." ?song.1
 . crowd@workers murmur "ja al la ya ha bi bi ja rab" voices=10 voice=men vol=0.6 dyn="mp" ?song.1
-. brass@trumpets oct=4 grid=8 human=0.3 vol=1.3 dyn="f" "5 - 5 - - - - - - 5 - - - 5 - - 5 - - - - - 5 - - - - - - 5 - - 5 - - 5 - - 5 - - - - - - - - - - - - - - 2' 2' 5 - - - - - - - - - 5 2' 5 - - - - - 5 - - - - 1' - - - - - 2' 2' - - - - - - 2' 1' - - 1' - - 2' 2' 2' 5, - 2' 2' - 2' 5' - - - 5' - - - 6' - - 6' - - 5' - - 5' - - - 4' - 4 4 - 1 1 4 - - 4 - 4 - - 2' 1' - 1' - - 5 -" ?song.2
+. brass@trumpets oct=4 grid=8 human=0.3 vol=1.1 dyn="f f f f f f f f f f f f f ff ff ff ff f f" "5 - 5 - - - - - - 5 - - - 5 - - 5 - - - - - 5 - - - - - - 5 - - 5 - - 5 - - 5 - - - - - - - - - - - - - - 2' 2' 5 - - - - - - - - - 5 2' 5 - - - - - 5 - - - - 1' - - - - - 2' 2' - - - - - - 2' 1' - - 1' - - 2' 2' 2' 5, - 2' 2' - 2' 5' - - - 5' - - - 6' - - 6' - - 5' - - 5' - - - 4' - 4 4 - 1 1 4 - - 4 - 4 - - 2' 1' - 1' - - 5 -" ?song.2
 . reed@clarinets oct=5 grid=8 human=0.4 vol=0.22 "5 - 5 - - - - - - 5 - - - 5 - - 5 - - - - - 5 - - - - - - 5 - - 5 - - 5 - - 5 - - - - - - - - - - - - - - 2' 2' 5 - - - - - - - - - 5 2' 5 - - - - - 5 - - - - 1' - - - - - 2' 2' - - - - - - 2' 1' - - 1' - - 2' 2' 2' 5, - 2' 2' - 2' 5' - - - 5' - - - 6' - - 6' - - 5' - - 5' - - - 4' - 4 4 - 1 1 4 - - 4 - 4 - - 2' 1' - 1' - - 5 -" ?song.2
-. brass@horns oct=3 grid=4 human=0.3 vol=0.5 "0 1+3+5 0 1+3+5 0 7,+2+5 0 1+3+5" ?song.2
-. brass@tuba   oct=2 grid=4 human=0.3 vol=0.35 "1 5, 1 5, 5, 2 1 5," ?song.2
+. brass@horns oct=3 grid=4 human=0.3 vol=0.55 dyn="mf" "0 1+3+5 0 1+3+5 0 7,+2+5 0 1+3+5" ?song.2
+. brass@tuba   oct=2 grid=4 human=0.3 vol=0.35 dyn="f" "1 5, 1 5, 5, 2 1 5," ?song.2
 . drums@band-drums kit=orch vol=0.25 human=0.3 "X.......X.......|....x.......x...|X.......X......." ?song.2
 
 *> space       hall size=1.1 wet=0.28
@@ -2517,15 +2517,15 @@ fratres> eq@nave mid=4 high=-12
 {
   // C-major degrees (white-note first mode): 6, = A3 the reciting tone, 2, = D3 the final
   const antiphon = ["6, 6, 5, 6, 5, 3, 4, 5, 3, 4, 3, 2, - 3, 4, 6, 5, 4, 3, 4, 5, 4, 3, 2, - 2, - - 0 0",
-    "ek tʃe kwam bo _ num et kwam ju kun _ dum a bi ta re _ fra _ tres in _ u num"];
+    "ˈek tʃe kwam ˈbo _ num et kwam ju ˈkun _ dum a bi ˈta re _ ˈfra _ tres in _ ˈu num"];
   // the psalm: intonation F G (first verse and Gloria), tenor A, mediant G A, ending G F G A
   const psalm = [
-    ["4, 5, 6, 6, 6, 6, 6, 6, 5, 6, - 0 6, 6, 6, 6, 6, 5, 4, 5, 6, - 0 0 0", "ek tʃe kwam bo num et kwam ju kun dum a bi ta re fra tres in u num"],
-    ["6, 6, 6, 6, 6, 6, 6, 5, 6, - 0 6, 6, 6, 6, 6, 6, 6, 5, 4, 5, 6, - 0 0 0", "si kut un ɡwen tum in ka pi te kwod de ʃen dit in bar bam bar bam a ron"],
-    ["6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 5, 6, - 0 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 5, 4, 5, 6, - 0 0 0", "kwod de ʃen dit in o ram ve sti men ti e jus si kut ros er mon kwi de ʃen dit in mon tem si on"],
-    ["6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 5, 6, - 0 6, 6, 6, 6, 6, 5, 4, 5, 6, - 0 0 0", "kwo ni am il lik man da vit do mi nus be ne dik tsi o nem et vi tam us kwe in se ku lum"],
-    ["4, 5, 6, 6, 6, 6, 6, 5, 6, - 0 6, 6, 6, 5, 4, 5, 6, - 0 0 0", "ɡlo ri a pa tri et fi li o et spi ri tu i san kto"],
-    ["6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 5, 6, - 0 6, 6, 6, 6, 6, 6, 6, 5, 4, 5, 6, - 0 0 0", "si kut e rat in prin tʃi pi o et nunk et sem per et in se ku la se ku lo rum a men"],
+    ["4, 5, 6, 6, 6, 6, 6, 6, 5, 6, - 0 6, 6, 6, 6, 6, 5, 4, 5, 6, - 0 0 0", "ˈek tʃe kwam ˈbo num et kwam ju ˈkun dum a bi ˈta re ˈfra tres in ˈu num"],
+    ["6, 6, 6, 6, 6, 6, 6, 5, 6, - 0 6, 6, 6, 6, 6, 6, 6, 5, 4, 5, 6, - 0 0 0", "ˈsi kut un ˈɡwen tum in ˈka pi te kwod de ˈʃen dit in ˈbar bam ˈbar bam ˈa ron"],
+    ["6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 5, 6, - 0 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 5, 4, 5, 6, - 0 0 0", "kwod de ˈʃen dit in ˈo ram ve sti ˈmen ti ˈe jus ˈsi kut ros ˈer mon kwi de ˈʃen dit in ˈmon tem ˈsi on"],
+    ["6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 5, 6, - 0 6, 6, 6, 6, 6, 5, 4, 5, 6, - 0 0 0", "ˈkwo ni am ˈil lik man ˈda vit ˈdo mi nus be ne dik tsi ˈo nem et ˈvi tam ˈus kwe in ˈse ku lum"],
+    ["4, 5, 6, 6, 6, 6, 6, 5, 6, - 0 6, 6, 6, 5, 4, 5, 6, - 0 0 0", "ˈɡlo ri a ˈpa tri et ˈfi li o et ˈspi ri tu i ˈsan kto"],
+    ["6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 5, 6, - 0 6, 6, 6, 6, 6, 6, 6, 5, 4, 5, 6, - 0 0 0", "ˈsi kut ˈe rat in prin ˈtʃi pi o et nunk et ˈsem per et in ˈse ku la se ku ˈlo rum a ˈmen"],
   ];
   const fit = (p) => { const t = p.split(" "); while (t.length % 8) t.push("0"); return t; };
   // the form: the cantor begins the antiphon, all finish it; the psalm verses alternate between the two sides of the chapter; all repeat the antiphon
@@ -2554,7 +2554,7 @@ fratres> eq@nave mid=4 high=-12
       { title: "Antiphon Ecce quam bonum (Antiphonale Monasticum 1934, p. 140), gabc", who: "GregoBase", url: "https://gregobase.selapa.net/chant.php?id=10122" },
       { title: "Antiphon Ecce quam bonum (Cod. Sang. 390, c. 990), gabc", who: "GregoBase", url: "https://gregobase.selapa.net/chant.php?id=20094" },
     ],
-    measured: "Pluscarden: unison men reciting on A3 (−20 c) for long stretches (one pitch held over 3–8 s of syllables), the cadences falling a tone and a fourth/fifth below (0 500 700 990 around the final), range C#3–A3, ~2.1 syllables a second, vibrato ~6 c, energy 125–1000 Hz flat then falling ~8 dB an octave, an ~8 s church tail. Ours: the antiphon notes from the 1934 book (the same melody as the St Gall antiphoner of c. 990), the psalm in the first tone (intonation F G, tenor A, mediant G A, ending G F G A as the antiphon's euouae gives it), A3 as Pluscarden sings it, one syllable an eighth at 96 (3.2 a second, quicker than Pluscarden as a small community recites), the two sides of the chapter alternating. Differs: our psalm tone puts the mediant and ending on the last syllables without following the Latin accents, as a real cantor would; the chapter house is our staging. Render check: reciting note and final as Pluscarden (A3, range C#3–A3), cadence degrees 0 500 800 1000 around A, 1.7 syllables a second with the breaths, bands 500–1000 −7, 1–2 kHz −14, 2–4 kHz −15 dB (Pluscarden −2, −10, −18), tail ~4 s against ~8 in the abbey church",
+    measured: "Pluscarden: unison men reciting on A3 (−20 c) for long stretches (one pitch held over 3–8 s of syllables), the cadences falling a tone and a fourth/fifth below (0 500 700 990 around the final), range C#3–A3, ~2.1 syllables a second, vibrato ~6 c, energy 125–1000 Hz flat then falling ~8 dB an octave, an ~8 s church tail. Ours: the antiphon notes from the 1934 book (the same melody as the St Gall antiphoner of c. 990), the psalm in the first tone (intonation F G, tenor A, mediant G A, ending G F G A as the antiphon's euouae gives it), A3 as Pluscarden sings it, one syllable an eighth at 96 (3.2 a second, quicker than Pluscarden as a small community recites), the two sides of the chapter alternating. Differs: our psalm tone puts the mediant and ending on the last syllables without following the Latin accents, as a real cantor would; the chapter house is our staging. Render check: reciting note and final as Pluscarden (A3, range C#3–A3), cadence degrees 0 500 800 1000 around A, 1.7 syllables a second with the breaths, bands 500–1000 −7, 1–2 kHz −14, 2–4 kHz −15 dB (Pluscarden −2, −10, −18), tail ~4 s against ~8 in the abbey church Revision: Pluscarden's notes start as often above as below (29%/29% by more than 20 c) and change in under 25 ms, so no scoop or glide here; the Latin word accents now carry stress marks, as the psalm is recited in speech rhythm. Render: syllable-peak spread p90–p10 rose from 8.0 to 9.5 dB (Pluscarden 15.2); the accents are louder but not longer, which the engine cannot yet do.",
     text: `
 . clock        96 4/4
 . arrange@song ${arrange}
@@ -2579,13 +2579,13 @@ cantor,leftside,rightside> eq@vault mid=4 high=-10
 {
   // verses of the hymn: [notes as C-major degrees (the reciting tone on 6, = A), Latin in IPA]
   const V = [
-    ["3, 5, 6, 6, 6, 5, 6, 7, 6, - - 0 3, 5, 6, 6, 5, 6, 7, 7, 6, 5, 5, - - 0 0 0", "te de _ um lau _ da _ mus te do mi num kon fi _ te _ _ mur"],
-    ["5, 7, 7, 1 7, 6, 7, 6, - - 0 3, 5, 6, 6, 5, 6, 7, 7, 6, 5, 5, - - 0 0 0", "te _ e ter num pa _ trem om nis ter ra ve ne _ ra _ _ tur"],
-    ["5, 7, 7, 1 7, 6, 7, 6, 5, 6, - - 0 3, 5, 6, 6, 6, 6, 6, 6, 6, 5, 6, 7, 7, 6, 5, 5, - - 0 0 0", "ti _ bi om nes _ an dʒe _ li ti bi tʃe li et u ni ver se po te _ sta _ _ tes"],
-    ["5, 7, 7, 1 7, 6, 6, 7, 6, 5, 6, - - 0 3, 5, 6, 6, 6, 6, 5, 6, 7, 7, 6, 5, 5, - - 0 0 0", "ti _ bi ke ru bim et se ra _ fim in tʃes sa bi li vo tʃe pro _ kla _ _ mant"],
-    ["5, 6, 7, 6, - - 0 0 0", "san _ _ ktus"],
-    ["5, 6, 7, 6, - - 0 0 0", "san _ _ ktus"],
-    ["5, 6, 7, 6, - - 7, 6, 6, 5, 6, 7, 7, 6, 5, 5, - - 0 0 0", "san _ _ ktus do mi nus de us _ sa ba _ ot"],
+    ["3, 5, 6, 6, 6, 5, 6, 7, 6, - - 0 3, 5, 6, 6, 5, 6, 7, 7, 6, 5, 5, - - 0 0 0", "te ˈde _ um lau _ ˈda _ mus te ˈdo mi num kon fi _ ˈte _ _ mur"],
+    ["5, 7, 7, 1 7, 6, 7, 6, - - 0 3, 5, 6, 6, 5, 6, 7, 7, 6, 5, 5, - - 0 0 0", "te _ e ˈter num ˈpa _ trem ˈom nis ˈter ra ve ne _ ˈra _ _ tur"],
+    ["5, 7, 7, 1 7, 6, 7, 6, 5, 6, - - 0 3, 5, 6, 6, 6, 6, 6, 6, 6, 5, 6, 7, 7, 6, 5, 5, - - 0 0 0", "ˈti _ bi ˈom nes _ ˈan dʒe _ li ˈti bi ˈtʃe li et u ni ˈver se po te _ ˈsta _ _ tes"],
+    ["5, 7, 7, 1 7, 6, 6, 7, 6, 5, 6, - - 0 3, 5, 6, 6, 6, 6, 5, 6, 7, 7, 6, 5, 5, - - 0 0 0", "ˈti _ bi ˈke ru bim et ˈse ra _ fim in tʃes ˈsa bi li ˈvo tʃe pro _ ˈkla _ _ mant"],
+    ["5, 6, 7, 6, - - 0 0 0", "ˈsan _ _ ktus"],
+    ["5, 6, 7, 6, - - 0 0 0", "ˈsan _ _ ktus"],
+    ["5, 6, 7, 6, - - 7, 6, 6, 5, 6, 7, 7, 6, 5, 5, - - 0 0 0", "ˈsan _ _ ktus ˈdo mi nus ˈde us _ ˈsa ba _ ot"],
   ];
   const fit = (p) => { const t = p.split(" "); while (t.length % 8) t.push("0"); return t; };
   const bars = V.map(([p]) => fit(p).length / 8);
@@ -2606,7 +2606,7 @@ cantor,leftside,rightside> eq@vault mid=4 high=-10
       { title: "Hymne: Te Deum", who: "Chœur des moines de l'Abbaye Saint-Pierre de Solesmes", url: "https://www.youtube.com/watch?v=O_kN19-2h3s" },
       { title: "Te Deum (Antiphonale Monasticum 1934, p. 1250), gabc", who: "GregoBase", url: "https://gregobase.selapa.net/chant.php?id=9696" },
     ],
-    measured: "Solesmes: the reciting note between A# and B, cadences a tone and a minor third below, ~2.5 syllables a second, unison men, vibrato ~10 c, energy 125–1000 Hz. Ours: the same 1934 notes on Bb3, a little slower (eighths at 84) and much less even (human 0.8) for a camp of soldiers, two big men's crowds a few cents apart, the open-air field space instead of an abbey church. Differs: no recording exists of a crowd of soldiers singing chant; the rough singing, the shouts at the sails and the beach are reconstruction from the chronicle. Render check: reciting note A#, scale 0 200 300 1000 around it as Solesmes, range G2–B3 (the soldiers an octave down), 2 notes a second; bands 500–1000 −8, 1–2 kHz −16, 2–4 kHz −18 dB (Solesmes −2, −8, −17), more low energy from the wind and sea",
+    measured: "Solesmes: the reciting note between A# and B, cadences a tone and a minor third below, ~2.5 syllables a second, unison men, vibrato ~10 c, energy 125–1000 Hz. Ours: the same 1934 notes on Bb3, a little slower (eighths at 84) and much less even (human 0.8) for a camp of soldiers, two big men's crowds a few cents apart, the open-air field space instead of an abbey church. Differs: no recording exists of a crowd of soldiers singing chant; the rough singing, the shouts at the sails and the beach are reconstruction from the chronicle. Render check: reciting note A#, scale 0 200 300 1000 around it as Solesmes, range G2–B3 (the soldiers an octave down), 2 notes a second; bands 500–1000 −8, 1–2 kHz −16, 2–4 kHz −18 dB (Solesmes −2, −8, −17), more low energy from the wind and sea Revision (voice options): measured note by note with pyin, Solesmes' Te Deum reaches 37% of its notes from more than 20 c below (18% from above, median −10 c in the first 45 ms) and joins notes quickly (75% of voiced note changes within 23 ms, so no portamento); the Latin word accents now carry stress marks (ˈ), so accented syllables sound louder and the rest lighter, as in the monks' speech-rhythm recitation, and the voices scoop up into their notes (priest 35 c, Templars 50; the hoarse soldiers 65 c with a glide and a little pressed chest voice, our staging of a camp, not measured). Our Te Deum render after it (measured on the Holy Sepulchre scene, the same voices): still only ~10% of notes from below, as the choir's 10–12 voices with their own small lags smear the scoop; the accents are louder but not longer, which is the half of speech rhythm the engine cannot yet do.",
     text: `
 . clock        84 4/4
 . arrange@song ${arrange}
@@ -2618,9 +2618,9 @@ ${caps.map((c, i) => `. caption@c${i + 1} "${c}" ?song.${i + 2}`).join("\n")}
 . fire@camp    0.12 crackle=0.3
 . crowd@lines  shout "na-VES NA-ves" "x-x-----x-x-----" voices=36 voice=men vol=1.8 dyn="mf f ff f" ?song.1
 . crowd@tents  murmur "pan de-u BA na-ves AR-ri-va" voices=24 vol=1.2 dyn="f mf" ?song.1
-. chant@priest voice=men oct=4 grid=8 human=0.4 vib=0.012 breath=0.1 dyn="f" ipa="${words.split(" ").slice(0, nIntone).join(" ")}" "${intone}" ?song.${hymn}
-. chant@templars voice=men voices=12 oct=4 grid=8 human=0.8 vib=0.012 breath=0.2 dyn="f" ipa="${campWords}" "${camp}" ?song.${hymn}
-. chant@soldiers voice=men voices=12 oct=3 grid=8 human=0.9 vib=0.015 breath=0.25 vol=0.7 dyn="f" ipa="${campWords}" "${camp}" ?song.${hymn}
+. chant@priest scoop=35 voice=men oct=4 grid=8 human=0.4 vib=0.012 breath=0.1 dyn="f" ipa="${words.split(" ").slice(0, nIntone).join(" ")}" "${intone}" ?song.${hymn}
+. chant@templars scoop=50 glide=0.1 voice=men voices=12 oct=4 grid=8 human=0.8 vib=0.012 breath=0.2 dyn="f" ipa="${campWords}" "${camp}" ?song.${hymn}
+. chant@soldiers scoop=65 glide=0.15 press=0.25 voice=men voices=12 oct=3 grid=8 human=0.9 vib=0.015 breath=0.25 vol=0.7 dyn="f" ipa="${campWords}" "${camp}" ?song.${hymn}
 priest,templars,soldiers> eq@hoarse mid=4 high=-8
 
 *> space       field size=1.4 wet=0.2
@@ -2635,18 +2635,18 @@ priest,templars,soldiers> eq@hoarse mid=4 high=-8
 {
   // verses of the hymn: [notes as C-major degrees (the reciting tone on 6, = A), Latin in IPA]
   const V = [
-    ["3, 5, 6, 6, 6, 5, 6, 7, 6, - - 0 3, 5, 6, 6, 5, 6, 7, 7, 6, 5, 5, - - 0 0 0", "te de _ um lau _ da _ mus te do mi num kon fi _ te _ _ mur"],
-    ["5, 7, 7, 1 7, 6, 7, 6, - - 0 3, 5, 6, 6, 5, 6, 7, 7, 6, 5, 5, - - 0 0 0", "te _ e ter num pa _ trem om nis ter ra ve ne _ ra _ _ tur"],
-    ["5, 7, 7, 1 7, 6, 7, 6, 5, 6, - - 0 3, 5, 6, 6, 6, 6, 6, 6, 6, 5, 6, 7, 7, 6, 5, 5, - - 0 0 0", "ti _ bi om nes _ an dʒe _ li ti bi tʃe li et u ni ver se po te _ sta _ _ tes"],
-    ["5, 7, 7, 1 7, 6, 6, 7, 6, 5, 6, - - 0 3, 5, 6, 6, 6, 6, 5, 6, 7, 7, 6, 5, 5, - - 0 0 0", "ti _ bi ke ru bim et se ra _ fim in tʃes sa bi li vo tʃe pro _ kla _ _ mant"],
-    ["5, 6, 7, 6, - - 0 0 0", "san _ _ ktus"],
-    ["5, 6, 7, 6, - - 0 0 0", "san _ _ ktus"],
-    ["5, 6, 7, 6, - - 7, 6, 6, 5, 6, 7, 7, 6, 5, 5, - - 0 0 0", "san _ _ ktus do mi nus de us _ sa ba _ ot"],
-    ["5, 7, 7, 7, 1 7, 6, 6, 7, 6, - - 0 3, 5, 6, 6, 6, 5, 6, 7, 7, 6, 5, 5, - - 0 0 0", "ple _ ni sunt tʃe li et ter _ ra ma je sta tis ɡlo ri e _ tu _ _ e"],
-    ["5, 7, 1 7, 6, 7, 6, - - 0 6, 6, 6, 5, 6, 7, 7, 6, 5, 5, - - 0 0 0", "te _ ɡlo ri o _ sus a po sto lo rum _ ko _ _ rus"],
-    ["5, 7, 1 7, 6, 7, 6, - - 0 6, 6, 5, 6, 7, 7, 6, 5, 5, - - 0 0 0", "te _ pro fe ta _ rum lau da bi lis _ nu me _ rus"],
-    ["5, 7, 1 7, 6, 6, 6, 6, 7, 6, - - 0 6, 5, 6, 7, 7, 6, 5, 5, - - 0 0 0", "te _ mar ti rum kan di da _ tus lau dat e _ kser tʃi _ tus"],
-    ["5, 7, 7, 1 7, 6, 6, 7, 6, - - 0 3, 5, 6, 6, 6, 6, 5, 6, 7, 7, 6, 5, 5, - - 0 0 0", "te _ per or bem ter ra _ rum san kta _ kon fi te tur ek _ kle si _ a"],
+    ["3, 5, 6, 6, 6, 5, 6, 7, 6, - - 0 3, 5, 6, 6, 5, 6, 7, 7, 6, 5, 5, - - 0 0 0", "te ˈde _ um lau _ ˈda _ mus te ˈdo mi num kon fi _ ˈte _ _ mur"],
+    ["5, 7, 7, 1 7, 6, 7, 6, - - 0 3, 5, 6, 6, 5, 6, 7, 7, 6, 5, 5, - - 0 0 0", "te _ e ˈter num ˈpa _ trem ˈom nis ˈter ra ve ne _ ˈra _ _ tur"],
+    ["5, 7, 7, 1 7, 6, 7, 6, 5, 6, - - 0 3, 5, 6, 6, 6, 6, 6, 6, 6, 5, 6, 7, 7, 6, 5, 5, - - 0 0 0", "ˈti _ bi ˈom nes _ ˈan dʒe _ li ˈti bi ˈtʃe li et u ni ˈver se po te _ ˈsta _ _ tes"],
+    ["5, 7, 7, 1 7, 6, 6, 7, 6, 5, 6, - - 0 3, 5, 6, 6, 6, 6, 5, 6, 7, 7, 6, 5, 5, - - 0 0 0", "ˈti _ bi ˈke ru bim et ˈse ra _ fim in tʃes ˈsa bi li ˈvo tʃe pro _ ˈkla _ _ mant"],
+    ["5, 6, 7, 6, - - 0 0 0", "ˈsan _ _ ktus"],
+    ["5, 6, 7, 6, - - 0 0 0", "ˈsan _ _ ktus"],
+    ["5, 6, 7, 6, - - 7, 6, 6, 5, 6, 7, 7, 6, 5, 5, - - 0 0 0", "ˈsan _ _ ktus ˈdo mi nus ˈde us _ ˈsa ba _ ot"],
+    ["5, 7, 7, 7, 1 7, 6, 6, 7, 6, - - 0 3, 5, 6, 6, 6, 5, 6, 7, 7, 6, 5, 5, - - 0 0 0", "ˈple _ ni sunt ˈtʃe li et ˈter _ ra ma je ˈsta tis ˈɡlo ri e _ ˈtu _ _ e"],
+    ["5, 7, 1 7, 6, 7, 6, - - 0 6, 6, 6, 5, 6, 7, 7, 6, 5, 5, - - 0 0 0", "te _ ɡlo ri ˈo _ sus a po ˈsto lo rum _ ˈko _ _ rus"],
+    ["5, 7, 1 7, 6, 7, 6, - - 0 6, 6, 5, 6, 7, 7, 6, 5, 5, - - 0 0 0", "te _ pro fe ˈta _ rum lau ˈda bi lis _ ˈnu me _ rus"],
+    ["5, 7, 1 7, 6, 6, 6, 6, 7, 6, - - 0 6, 5, 6, 7, 7, 6, 5, 5, - - 0 0 0", "te _ ˈmar ti rum kan di ˈda _ tus ˈlau dat e _ kser ˈtʃi _ tus"],
+    ["5, 7, 7, 1 7, 6, 6, 7, 6, - - 0 3, 5, 6, 6, 6, 6, 5, 6, 7, 7, 6, 5, 5, - - 0 0 0", "te _ per ˈor bem ter ˈra _ rum ˈsan kta _ kon fi ˈte tur ek _ ˈkle si _ a"],
   ];
   // each verse padded to whole bars, so each is a section; a choir rests (0) through the other's verses
   const fit = (p) => { const t = p.split(" "); while (t.length % 8) t.push("0"); return t; };
@@ -2673,7 +2673,7 @@ priest,templars,soldiers> eq@hoarse mid=4 high=-8
       { title: "Te Deum, hymnus (tonus monasticus)", who: "Benedictine Monks of the Abbey of Saint-Maurice, Clervaux", url: "https://www.youtube.com/watch?v=OilWu7y1IR0" },
       { title: "Te Deum (Antiphonale Monasticum 1934, p. 1250), gabc", who: "GregoBase", url: "https://gregobase.selapa.net/chant.php?id=9696" },
     ],
-    measured: "Solesmes (first 90 s): unison men, the reciting note between A# and B (B −40 c) with the cadences a tone and a minor third below (0 170 260 1010 cents around it), range G#3–C#4, ~2.5 syllables a second, the reciting runs quick and the cadence notes doubled, vibrato ~10 c, energy 125–1000 Hz falling ~8 dB an octave above, a ~9 s church tail; Clervaux the same tone a little lower (A#). Ours: the 1934 notes, recited on Bb3 (key Db), eighths at 92 (3 a second, gaps between verses bringing it to ~2 notes a second), a breath between half-verses and a gap between verses, alternating choirs of 10 clergy and 16 mixed people, cathedral space. Differs: the monks' recitation is speech-rhythmed (longer stressed syllables) where ours is even; a lay crowd in 1177 sang less evenly than monks, which human= only hints at; the bells are our staging of the chronicle. Render check: reciting note A#, cadence on G#, as Solesmes; bands 500–1000 −8, 1–2 kHz −16, 2–4 kHz −17 dB (Solesmes −2, −8, −17), a little hollower in the middle; tail ~4.5 s against the abbey's 9",
+    measured: "Solesmes (first 90 s): unison men, the reciting note between A# and B (B −40 c) with the cadences a tone and a minor third below (0 170 260 1010 cents around it), range G#3–C#4, ~2.5 syllables a second, the reciting runs quick and the cadence notes doubled, vibrato ~10 c, energy 125–1000 Hz falling ~8 dB an octave above, a ~9 s church tail; Clervaux the same tone a little lower (A#). Ours: the 1934 notes, recited on Bb3 (key Db), eighths at 92 (3 a second, gaps between verses bringing it to ~2 notes a second), a breath between half-verses and a gap between verses, alternating choirs of 10 clergy and 16 mixed people, cathedral space. Differs: the monks' recitation is speech-rhythmed (longer stressed syllables) where ours is even; a lay crowd in 1177 sang less evenly than monks, which human= only hints at; the bells are our staging of the chronicle. Render check: reciting note A#, cadence on G#, as Solesmes; bands 500–1000 −8, 1–2 kHz −16, 2–4 kHz −17 dB (Solesmes −2, −8, −17), a little hollower in the middle; tail ~4.5 s against the abbey's 9 Revision (voice options): measured note by note with pyin, Solesmes' Te Deum reaches 37% of its notes from more than 20 c below (18% from above, median −10 c in the first 45 ms) and joins notes quickly (75% of voiced note changes within 23 ms, so no portamento); the Latin word accents now carry stress marks (ˈ), so accented syllables sound louder and the rest lighter, as in the monks' speech-rhythm recitation, and the voices scoop up into their notes (cantor 35 c, canons 50; the lay people 60/55 with a slight glide, which is our staging, not measured). Our Te Deum render after it (measured on the Holy Sepulchre scene, the same voices): still only ~10% of notes from below, as the choir's 10–12 voices with their own small lags smear the scoop; the accents are louder but not longer, which is the half of speech rhythm the engine cannot yet do.",
     text: `
 . clock        92 4/4
 . arrange@song ${arrange}
@@ -2685,10 +2685,10 @@ ${caps.map((c, i) => `. caption@c${i + 1} "${c}" ?song.${i + 2}`).join("\n")}
 . bell@peal    oct=3 grid=8 human=0.6 vol=0.55 dyn="mf f f f" "1 - 5, - 3 - 1 - 5, - 3 - 1 - - - 1 - 5, - 3 - 2 - 1 - 5, - 6, - 5, -" ?song.${last}
 . crowd@church murmur "a-MEN do-mi-ne de-us SAN-ta" voices=20 vol=1 dyn="mf mp p" ?song.1
 . crowd@acclaim shout "a-MEN" "x---x-------...." voices=30 voice=mixed vol=1.4 dyn="0 f f mf" ?song.${last}
-. chant@cantor voice=men oct=4 grid=8 human=0.3 vib=0.012 breath=0.06 dyn="f" ipa="${intoneWords}" "${intone}" ?song.${hymn}
-. chant@canons voice=men voices=10 oct=4 grid=8 human=0.3 vib=0.008 breath=0.06 dyn="mf" ipa="${answerWords}" "${answer}" ?song.${hymn}
-. chant@people voice=men voices=12 oct=4 grid=8 human=0.7 vib=0.012 breath=0.1 dyn="f" ipa="${words(people)}" "${part(people)}" ?song.${hymn}
-. chant@women  voice=women voices=8 oct=4 grid=8 human=0.7 vib=0.015 breath=0.1 vol=0.6 dyn="mf" ipa="${words(people)}" "${part(people)}" ?song.${hymn}
+. chant@cantor scoop=35 voice=men oct=4 grid=8 human=0.3 vib=0.012 breath=0.06 dyn="f" ipa="${intoneWords}" "${intone}" ?song.${hymn}
+. chant@canons scoop=50 voice=men voices=10 oct=4 grid=8 human=0.3 vib=0.008 breath=0.06 dyn="mf" ipa="${answerWords}" "${answer}" ?song.${hymn}
+. chant@people scoop=60 glide=0.1 voice=men voices=12 oct=4 grid=8 human=0.7 vib=0.012 breath=0.1 dyn="f" ipa="${words(people)}" "${part(people)}" ?song.${hymn}
+. chant@women scoop=55 glide=0.1  voice=women voices=8 oct=4 grid=8 human=0.7 vib=0.015 breath=0.1 vol=0.6 dyn="mf" ipa="${words(people)}" "${part(people)}" ?song.${hymn}
 cantor,canons,people,women> eq@stone mid=5 high=-10
 
 *> space       cathedral size=1.2 wet=0.42
@@ -2703,10 +2703,10 @@ cantor,canons,people,women> eq@stone mid=5 high=-10
 {
   // verses of the hymn: [notes as C-major degrees (the reciting tone on 6, = A), Latin in IPA]
   const V = [
-    ["3, 5, 6, 6, 6, 5, 6, 7, 6, - - 0 3, 5, 6, 6, 5, 6, 7, 7, 6, 5, 5, - - 0 0 0", "te de _ um lau _ da _ mus te do mi num kon fi _ te _ _ mur"],
-    ["5, 7, 7, 1 7, 6, 7, 6, - - 0 3, 5, 6, 6, 5, 6, 7, 7, 6, 5, 5, - - 0 0 0", "te _ e ter num pa _ trem om nis ter ra ve ne _ ra _ _ tur"],
-    ["5, 7, 7, 1 7, 6, 7, 6, 5, 6, - - 0 3, 5, 6, 6, 6, 6, 6, 6, 6, 5, 6, 7, 7, 6, 5, 5, - - 0 0 0", "ti _ bi om nes _ an dʒe _ li ti bi tʃe li et u ni ver se po te _ sta _ _ tes"],
-    ["5, 7, 7, 1 7, 6, 6, 7, 6, 5, 6, - - 0 3, 5, 6, 6, 6, 6, 5, 6, 7, 7, 6, 5, 5, - - 0 0 0", "ti _ bi ke ru bim et se ra _ fim in tʃes sa bi li vo tʃe pro _ kla _ _ mant"],
+    ["3, 5, 6, 6, 6, 5, 6, 7, 6, - - 0 3, 5, 6, 6, 5, 6, 7, 7, 6, 5, 5, - - 0 0 0", "te ˈde _ um lau _ ˈda _ mus te ˈdo mi num kon fi _ ˈte _ _ mur"],
+    ["5, 7, 7, 1 7, 6, 7, 6, - - 0 3, 5, 6, 6, 5, 6, 7, 7, 6, 5, 5, - - 0 0 0", "te _ e ˈter num ˈpa _ trem ˈom nis ˈter ra ve ne _ ˈra _ _ tur"],
+    ["5, 7, 7, 1 7, 6, 7, 6, 5, 6, - - 0 3, 5, 6, 6, 6, 6, 6, 6, 6, 5, 6, 7, 7, 6, 5, 5, - - 0 0 0", "ˈti _ bi ˈom nes _ ˈan dʒe _ li ˈti bi ˈtʃe li et u ni ˈver se po te _ ˈsta _ _ tes"],
+    ["5, 7, 7, 1 7, 6, 6, 7, 6, 5, 6, - - 0 3, 5, 6, 6, 6, 6, 5, 6, 7, 7, 6, 5, 5, - - 0 0 0", "ˈti _ bi ˈke ru bim et ˈse ra _ fim in tʃes ˈsa bi li ˈvo tʃe pro _ ˈkla _ _ mant"],
   ];
   const fit = (t) => { t = t.slice(); while (t.length % 8) t.push("0"); return t; };
   // the chaplain intones each verse's first half alone, the pilgrims sing each second half; each half its own section
@@ -2727,7 +2727,7 @@ cantor,canons,people,women> eq@stone mid=5 high=-10
       { title: "Hymne: Te Deum", who: "Chœur des moines de l'Abbaye Saint-Pierre de Solesmes", url: "https://www.youtube.com/watch?v=O_kN19-2h3s" },
       { title: "Te Deum (Antiphonale Monasticum 1934, p. 1250), gabc", who: "GregoBase", url: "https://gregobase.selapa.net/chant.php?id=9696" },
     ],
-    measured: "Clervaux (first 90 s): unison men on a reciting note of A# (+20 c), cadences a tone and a minor third below, range A#2–C#4, slow (0.5 clear onsets a second, the notes slurred in the abbey's ~8 s tail), energy centred 500–1000 Hz; Solesmes the same tone at ~2.5 syllables a second. Ours: the 1934 notes on Bb3, eighths at 80, a solo chaplain for each first half-verse and pilgrims (men and women, uneven) for each second half, at sea with the river (open water) space, no church tail. Differs: no recording of chant at sea exists; the half-verse alternation is the usual way a priest leads lay people in the hymn, the scene itself is imagined. Render check: reciting note A#, cadence G#, range E3–C4, 1.6 notes a second (between Clervaux's slur and Solesmes' pace), bands 500–1000 −5, 1–2 kHz −12, 2–4 kHz −17 dB (Clervaux 0, −6, −13): a little darker, and the sea adds low noise the abbey records lack",
+    measured: "Clervaux (first 90 s): unison men on a reciting note of A# (+20 c), cadences a tone and a minor third below, range A#2–C#4, slow (0.5 clear onsets a second, the notes slurred in the abbey's ~8 s tail), energy centred 500–1000 Hz; Solesmes the same tone at ~2.5 syllables a second. Ours: the 1934 notes on Bb3, eighths at 80, a solo chaplain for each first half-verse and pilgrims (men and women, uneven) for each second half, at sea with the river (open water) space, no church tail. Differs: no recording of chant at sea exists; the half-verse alternation is the usual way a priest leads lay people in the hymn, the scene itself is imagined. Render check: reciting note A#, cadence G#, range E3–C4, 1.6 notes a second (between Clervaux's slur and Solesmes' pace), bands 500–1000 −5, 1–2 kHz −12, 2–4 kHz −17 dB (Clervaux 0, −6, −13): a little darker, and the sea adds low noise the abbey records lack Revision (voice options): measured note by note with pyin, Solesmes' Te Deum reaches 37% of its notes from more than 20 c below (18% from above, median −10 c in the first 45 ms) and joins notes quickly (75% of voiced note changes within 23 ms, so no portamento); the Latin word accents now carry stress marks (ˈ), so accented syllables sound louder and the rest lighter, as in the monks' speech-rhythm recitation, and the voices scoop up into their notes (chaplain 35 c; the pilgrims 60/55 with a slight glide, our staging, not measured). Our Te Deum render after it (measured on the Holy Sepulchre scene, the same voices): still only ~10% of notes from below, as the choir's 10–12 voices with their own small lags smear the scoop; the accents are louder but not longer, which is the half of speech rhythm the engine cannot yet do.",
     text: `
 . clock        80 4/4
 . arrange@song ${arrange}
@@ -2739,9 +2739,9 @@ ${caps.map((c, i) => `. caption@c${i + 1} "${c}" ?song.${2 * i + 2}-${2 * i + 3}
 . wind@rigging 0.22 gust=0.08Hz
 . crowd@lookout shout "TE-ra TE-ra" "x-x-----x-x-----" voices=2 voice=men vol=1.2 dyn="f ff 0 0" ?song.1
 . crowd@deck   murmur "a-ke TE-ra sen-ta MA-ri-a de-u" voices=16 voice=mixed vol=1.8 dyn="0 mf f mf" ?song.1
-. chant@chaplain voice=men oct=4 grid=8 human=0.3 vib=0.012 breath=0.08 dyn="f" ipa="${cw.join(" ")}" "${chaplain}" ?song.${hymn}
-. chant@pilgrims voice=men voices=10 oct=4 grid=8 human=0.8 vib=0.014 breath=0.18 dyn="mf" ipa="${pw.join(" ")}" "${pilgrims}" ?song.${hymn}
-. chant@pilgrimwomen voice=women voices=7 oct=4 grid=8 human=0.8 vib=0.016 breath=0.18 vol=0.6 dyn="mf" ipa="${pw.join(" ")}" "${pilgrims}" ?song.${hymn}
+. chant@chaplain scoop=35 voice=men oct=4 grid=8 human=0.3 vib=0.012 breath=0.08 dyn="f" ipa="${cw.join(" ")}" "${chaplain}" ?song.${hymn}
+. chant@pilgrims scoop=60 glide=0.1 voice=men voices=10 oct=4 grid=8 human=0.8 vib=0.014 breath=0.18 dyn="mf" ipa="${pw.join(" ")}" "${pilgrims}" ?song.${hymn}
+. chant@pilgrimwomen scoop=55 glide=0.1 voice=women voices=7 oct=4 grid=8 human=0.8 vib=0.016 breath=0.18 vol=0.6 dyn="mf" ipa="${pw.join(" ")}" "${pilgrims}" ?song.${hymn}
 . crowd@weeping murmur "a-a o-i e-a" voices=6 voice=women vol=2 dyn="mf mp" ?song.${last}
 chaplain,pilgrims,pilgrimwomen> eq@voices mid=4 high=-8
 
@@ -2910,7 +2910,7 @@ SCORES["macedonians:showcase"] = {
   refs: [
     { title: "Stefan Hagel plays the Hellenistic aulos", who: "European Music Archaeology Project, reconstructed aulos", url: "https://www.youtube.com/watch?v=OcHWvl16mpg" },
   ],
-  measured: "Uncertain: the orthios nomos is lost; ancient writers say it was high-pitched and stirring and in the 'orthios' rhythm of long notes; the anecdote (Timotheus playing before Alexander) is told by later authors. This is a new reconstruction: long high calls in the Hypolydian (C D E F♯ G A B), climbing and speeding up (the section glides from 76 to 104), over a held lower pipe. Measured on Hagel's reconstructed aulos: sustained notes of up to 8 s alternating with quick figures, steady pitch, a soft 170 ms attack, harmonic 0.96. Ours: rendered, the aulos sits at 1–4 kHz and the dynamic arc rises steadily to the end (ff); the court's alalai war cry and clashing arms; salpinx signal and the soldiers' paean (ἰὴ παιάν). Still differs: the engine's reed holds the climbing line less clearly than written (a test scale showed octave slips on some notes in its middle register and about 10 c flat); there is no second pipe beating against the first",
+  measured: "Uncertain: the orthios nomos is lost; ancient writers say it was high-pitched and stirring and in the 'orthios' rhythm of long notes; the anecdote (Timotheus playing before Alexander) is told by later authors. This is a new reconstruction: long high calls in the Hypolydian (C D E F♯ G A B), climbing and speeding up (the section glides from 76 to 104), over a held lower pipe. Measured on Hagel's reconstructed aulos: sustained notes of up to 8 s alternating with quick figures, steady pitch, a soft 170 ms attack, harmonic 0.96. Ours: rendered, the aulos sits at 1–4 kHz and the dynamic arc rises steadily to the end (ff); the court's alalai war cry and clashing arms; salpinx signal and the soldiers' paean (ἰὴ παιάν). Still differs: the engine's reed holds the climbing line less clearly than written (a test scale showed octave slips on some notes in its middle register and about 10 c flat); there is no second pipe beating against the first Revision: the salpinx signal is now ff (the engine's natural-horn bell, raw and wavering, bites harder at ff), as ancient writers describe the war trumpet as harsh and piercing; there is no recording, so this is not measured.",
   text: `
 . clock        76 4/4
 . arrange@song banquet:2bars orthios:8bars@~104 alarm:2bars paean:4bars@88
@@ -2923,7 +2923,7 @@ SCORES["macedonians:showcase"] = {
 . reed@aulos-drone oct=4 grid=8 human=0.2 vol=0.3 dyn="p mp mf" "5 - - - - - - - - - - - - - - -" ?song.2
 . drums@weapons kit=clash vol=0.7 human=0.5 "X...x.x.X..x....|..x.....x.......|x.......x.x....." ?song.3
 . crowd@uproar shout "a-LA-LAI" "x-x-x---x-x-x---" voices=24 voice=men vol=1 ?song.3
-. brass@salpinx oct=4 grid=8 human=0.2 vol=0.8 dyn="f" "1 - - - 5 - - - 1' - - - - - - - 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0" ?song.4
+. brass@salpinx oct=4 grid=8 human=0.2 vol=0.65 dyn="ff" "1 - - - 5 - - - 1' - - - - - - - 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0" ?song.4
 . chant@soldiers voice=men voices=12 oct=3 grid=8 human=0.6 vib=0.02 breath=0.2 bright=0.5 dyn="f" ipa="i eː pai aːn i eː pai aːn i eː pai aːn i" "1 - 1 - 3 - 4 - 5 - - - 4 - 3 - 1 - 1 - 3 - 4 - 3 - - - 1 - - -" ?song.4
 
 *> space       hall size=0.8 wet=0.25
@@ -2940,7 +2940,7 @@ SCORES["magyars:triumph"] = {
     { title: "Te Deum laudamus", who: "Schola Hungarica (László Dobszay, Janka Szendrei)", url: "https://www.youtube.com/watch?v=ZsBURJOYOaE" },
     { title: "Te Deum (Antiphonale Monasticum, 1934), gabc", who: "GregoBase", url: "https://gregobase.selapa.net/chant.php?id=9696" },
   ],
-  measured: "Schola Hungarica (first 90 s): men in unison reciting on a note near G#3 (sung ~45 c above G), the half-verse cadences a tone and a third below, range D3–A#3, very broad (0.8 clear onsets a second, the reciting notes ~0.3–0.5 s and the cadences held 1–2 s), vibrato ~4 c, energy at 250–1000 Hz (brightness ~1430 Hz), a church tail of ~7 s. Ours: the first four verses from the 1934 book, recited on G#3 (key B), eighths at 66 with rubato, cantor / clergy / people alternating, with the noon bell before and after; the Hungarian 'sh' for Latin s. It differs in that we do not know whether a 15th-century Hungarian town used exactly this monastic form of the tone (Schola Hungarica follows medieval Hungarian sources, close to it), and our people sing more evenly than a town congregation. Our render: range D3–A#3 with the reciting note G#3 and cadences on F# and D#, exactly the record's frame; scale steps 0 200 290 700 1000 c like the record's 0 200 290 710 1000; brightness ~1270 Hz (record ~1430); the women double the people's verses an octave up, which the all-male record has not",
+  measured: "Schola Hungarica (first 90 s): men in unison reciting on a note near G#3 (sung ~45 c above G), the half-verse cadences a tone and a third below, range D3–A#3, very broad (0.8 clear onsets a second, the reciting notes ~0.3–0.5 s and the cadences held 1–2 s), vibrato ~4 c, energy at 250–1000 Hz (brightness ~1430 Hz), a church tail of ~7 s. Ours: the first four verses from the 1934 book, recited on G#3 (key B), eighths at 66 with rubato, cantor / clergy / people alternating, with the noon bell before and after; the Hungarian 'sh' for Latin s. It differs in that we do not know whether a 15th-century Hungarian town used exactly this monastic form of the tone (Schola Hungarica follows medieval Hungarian sources, close to it), and our people sing more evenly than a town congregation. Our render: range D3–A#3 with the reciting note G#3 and cadences on F# and D#, exactly the record's frame; scale steps 0 200 290 700 1000 c like the record's 0 200 290 710 1000; brightness ~1270 Hz (record ~1430); the women double the people's verses an octave up, which the all-male record has not Revision: measured note by note, Schola Hungarica reaches 22% of its notes from more than 20 c below (12% from above) and slides through a quarter of its note changes (75th percentile 58 ms); so the singers now scoop (cantor 25 c, clergy 40, people 50/45) and glide (0.15), and the Latin accents carry stress marks. Render: 15–25% of notes from below, 12–15% from above, note changes p75 46–70 ms, close to the record; accents louder but not lengthened.",
   text: `
 . clock        66 4/4
 . arrange@song harang:4bars v1:4bars v2:3bars v3:4bars v4:4bars delharang:4bars
@@ -2954,10 +2954,10 @@ SCORES["magyars:triumph"] = {
 . bell@harang2 oct=2 grid=4 vol=0.8 human=0.3 dyn="f f f mf" "1 - - - - -" ?song.6
 . bell@kisharang oct=3 grid=4 vol=0.35 human=0.5 "0 0 0 5 - - - 0 3 - - -" ?song.6
 . crowd@nep    murmur "is-ten a-zon ha-rang go-zik a hi-rek gyoz-tunk" voices=24 voice=mixed vol=0.8 dyn="mp mf mf p" ?song.1
-. chant@kantor voice=men voices=1 oct=3 grid=8 human=0.3 rubato=0.35 vib=0.012 breath=0.07 dyn="f" ipa="te de _ um lau _ da _ muʃ" "3, 5, 6, 6, 6, 5, 6, 7, 6, - 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0" ?song.2-5
-. chant@papok  voice=men voices=8 oct=3 grid=8 human=0.4 rubato=0.35 vib=0.01 breath=0.07 dyn="mf" ipa="te do mi num kon fi _ te _ _ mur ti _ bi om neʃ _ an ge _ li ti bi tse li et u ni ver ʃe po te _ ʃta _ _ teʃ" "0 0 0 0 0 0 0 0 0 0 0 3, 5, 6, 6, 5, 6, 7, 7, 6, 5, 5, - 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 5, 7, 7, 1 7, 6, 7, 6, 5, 6, - 0 3, 5, 6, 6, 6, 6, 6, 6, 6, 5, 6, 7, 7, 6, 5, 5, - 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0" ?song.2-5
-. chant@ferfiak voice=men voices=12 oct=3 grid=8 human=0.8 rubato=0.4 drift=-10 vib=0.014 breath=0.12 dyn="f" ipa="te _ e ter num pa _ trem om niʃ ter ra ve ne _ ra _ _ tur ti _ bi ke ru bim et ʃe ra _ fim in tseʃ ʃa bi li vo tse pro _ kla _ _ mant" "0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 5, 7, 7, 1 7, 6, 7, 6, - 0 3, 5, 6, 6, 5, 6, 7, 7, 6, 5, 5, - 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 5, 7, 7, 1 7, 6, 6, 7, 6, 5, 6, - 0 3, 5, 6, 6, 6, 6, 5, 6, 7, 7, 6, 5, 5, - 0 0 0 0 0" ?song.2-5
-. chant@asszonyok voice=women voices=10 oct=4 grid=8 human=0.8 rubato=0.4 drift=-10 vib=0.016 breath=0.12 vol=0.6 dyn="mf" ipa="te _ e ter num pa _ trem om niʃ ter ra ve ne _ ra _ _ tur ti _ bi ke ru bim et ʃe ra _ fim in tseʃ ʃa bi li vo tse pro _ kla _ _ mant" "0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 5, 7, 7, 1 7, 6, 7, 6, - 0 3, 5, 6, 6, 5, 6, 7, 7, 6, 5, 5, - 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 5, 7, 7, 1 7, 6, 6, 7, 6, 5, 6, - 0 3, 5, 6, 6, 6, 6, 5, 6, 7, 7, 6, 5, 5, - 0 0 0 0 0" ?song.2-5
+. chant@kantor scoop=25 glide=0.15 voice=men voices=1 oct=3 grid=8 human=0.3 rubato=0.35 vib=0.012 breath=0.07 dyn="f" ipa="te ˈde _ um lau _ ˈda _ muʃ" "3, 5, 6, 6, 6, 5, 6, 7, 6, - 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0" ?song.2-5
+. chant@papok scoop=40 glide=0.15  voice=men voices=8 oct=3 grid=8 human=0.4 rubato=0.35 vib=0.01 breath=0.07 dyn="mf" ipa="te ˈdo mi num kon fi _ ˈte _ _ mur ˈti _ bi ˈom neʃ _ ˈan ge _ li ˈti bi ˈtse li et u ni ˈver ʃe po te _ ˈʃta _ _ teʃ" "0 0 0 0 0 0 0 0 0 0 0 3, 5, 6, 6, 5, 6, 7, 7, 6, 5, 5, - 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 5, 7, 7, 1 7, 6, 7, 6, 5, 6, - 0 3, 5, 6, 6, 6, 6, 6, 6, 6, 5, 6, 7, 7, 6, 5, 5, - 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0" ?song.2-5
+. chant@ferfiak scoop=50 glide=0.15 voice=men voices=12 oct=3 grid=8 human=0.8 rubato=0.4 drift=-10 vib=0.014 breath=0.12 dyn="f" ipa="te _ e ˈter num ˈpa _ trem ˈom niʃ ˈter ra ve ne _ ˈra _ _ tur ˈti _ bi ˈke ru bim et ˈʃe ra _ fim in tseʃ ˈʃa bi li ˈvo tse pro _ ˈkla _ _ mant" "0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 5, 7, 7, 1 7, 6, 7, 6, - 0 3, 5, 6, 6, 5, 6, 7, 7, 6, 5, 5, - 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 5, 7, 7, 1 7, 6, 6, 7, 6, 5, 6, - 0 3, 5, 6, 6, 6, 6, 5, 6, 7, 7, 6, 5, 5, - 0 0 0 0 0" ?song.2-5
+. chant@asszonyok scoop=45 glide=0.15 voice=women voices=10 oct=4 grid=8 human=0.8 rubato=0.4 drift=-10 vib=0.016 breath=0.12 vol=0.6 dyn="mf" ipa="te _ e ˈter num ˈpa _ trem ˈom niʃ ˈter ra ve ne _ ˈra _ _ tur ˈti _ bi ˈke ru bim et ˈʃe ra _ fim in tseʃ ˈʃa bi li ˈvo tse pro _ ˈkla _ _ mant" "0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 5, 7, 7, 1 7, 6, 7, 6, - 0 3, 5, 6, 6, 5, 6, 7, 7, 6, 5, 5, - 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 5, 7, 7, 1 7, 6, 6, 7, 6, 5, 6, - 0 3, 5, 6, 6, 6, 6, 5, 6, 7, 7, 6, 5, 5, - 0 0 0 0 0" ?song.2-5
 
 *> space       church size=1.4 wet=0.42
 >  eq          low=0 mid=6 high=-6
@@ -3005,14 +3005,14 @@ SCORES["malians:ritual"] = {
 {
   // verses of the hymn: [notes as C-major degrees (the reciting tone on 6, = A), Latin in IPA]
   const V = [
-    ["3, 5, 6, 6, 6, 5, 6, 7, 6, - - 0 3, 5, 6, 6, 5, 6, 7, 7, 6, 5, 5, - - 0 0 0", "te de _ um lau _ da _ mus te do mi num kon fi _ te _ _ mur"],
-    ["5, 7, 7, 1 7, 6, 7, 6, - - 0 3, 5, 6, 6, 5, 6, 7, 7, 6, 5, 5, - - 0 0 0", "te _ e ter num pa _ trem om nis ter ra ve ne _ ra _ _ tur"],
-    ["5, 7, 7, 1 7, 6, 7, 6, 5, 6, - - 0 3, 5, 6, 6, 6, 6, 6, 6, 6, 5, 6, 7, 7, 6, 5, 5, - - 0 0 0", "ti _ bi om nes _ an dʒe _ li ti bi tʃe li et u ni ver se po te _ sta _ _ tes"],
-    ["5, 7, 7, 1 7, 6, 6, 7, 6, 5, 6, - - 0 3, 5, 6, 6, 6, 6, 5, 6, 7, 7, 6, 5, 5, - - 0 0 0", "ti _ bi ke ru bim et se ra _ fim in tʃes sa bi li vo tʃe pro _ kla _ _ mant"],
-    ["5, 6, 7, 6, - - 0 0 0", "san _ _ ktus"],
-    ["5, 6, 7, 6, - - 0 0 0", "san _ _ ktus"],
-    ["5, 6, 7, 6, - - 7, 6, 6, 5, 6, 7, 7, 6, 5, 5, - - 0 0 0", "san _ _ ktus do mi nus de us _ sa ba _ ot"],
-    ["5, 7, 7, 7, 1 7, 6, 6, 7, 6, - - 0 3, 5, 6, 6, 6, 5, 6, 7, 7, 6, 5, 5, - - 0 0 0", "ple _ ni sunt tʃe li et ter _ ra ma je sta tis ɡlo ri e _ tu _ _ e"],
+    ["3, 5, 6, 6, 6, 5, 6, 7, 6, - - 0 3, 5, 6, 6, 5, 6, 7, 7, 6, 5, 5, - - 0 0 0", "te ˈde _ um lau _ ˈda _ mus te ˈdo mi num kon fi _ ˈte _ _ mur"],
+    ["5, 7, 7, 1 7, 6, 7, 6, - - 0 3, 5, 6, 6, 5, 6, 7, 7, 6, 5, 5, - - 0 0 0", "te _ e ˈter num ˈpa _ trem ˈom nis ˈter ra ve ne _ ˈra _ _ tur"],
+    ["5, 7, 7, 1 7, 6, 7, 6, 5, 6, - - 0 3, 5, 6, 6, 6, 6, 6, 6, 6, 5, 6, 7, 7, 6, 5, 5, - - 0 0 0", "ˈti _ bi ˈom nes _ ˈan dʒe _ li ˈti bi ˈtʃe li et u ni ˈver se po te _ ˈsta _ _ tes"],
+    ["5, 7, 7, 1 7, 6, 6, 7, 6, 5, 6, - - 0 3, 5, 6, 6, 6, 6, 5, 6, 7, 7, 6, 5, 5, - - 0 0 0", "ˈti _ bi ˈke ru bim et ˈse ra _ fim in tʃes ˈsa bi li ˈvo tʃe pro _ ˈkla _ _ mant"],
+    ["5, 6, 7, 6, - - 0 0 0", "ˈsan _ _ ktus"],
+    ["5, 6, 7, 6, - - 0 0 0", "ˈsan _ _ ktus"],
+    ["5, 6, 7, 6, - - 7, 6, 6, 5, 6, 7, 7, 6, 5, 5, - - 0 0 0", "ˈsan _ _ ktus ˈdo mi nus ˈde us _ ˈsa ba _ ot"],
+    ["5, 7, 7, 7, 1 7, 6, 6, 7, 6, - - 0 3, 5, 6, 6, 6, 5, 6, 7, 7, 6, 5, 5, - - 0 0 0", "ˈple _ ni sunt ˈtʃe li et ˈter _ ra ma je ˈsta tis ˈɡlo ri e _ ˈtu _ _ e"],
   ];
   const fit = (t) => { t = t.slice(); while (t.length % 8) t.push("0"); return t; };
   const sung = (i) => i % 2 === 0, organ = (i) => i % 2 === 1;
@@ -3036,7 +3036,7 @@ SCORES["malians:ritual"] = {
       { title: "Cavazzoni, Gloria (in alternatim) from the Missa de Beata Virgine", who: "Schola Gregoriana Benedetto XVI with organ", url: "https://www.youtube.com/watch?v=OjF7sRnaIxc" },
       { title: "Te Deum (Antiphonale Monasticum 1934, p. 1250), gabc", who: "GregoBase", url: "https://gregobase.selapa.net/chant.php?id=9696" },
     ],
-    measured: "Solesmes: the reciting note between A# and B, cadences a tone and a minor third below, ~2.5 syllables a second, vibrato ~10 c, energy 125–1000 Hz. Cavazzoni (first 120 s): the organ's energy sits 125–1000 Hz with a strong low end (0–125 Hz −9 dB), ~3.5 onsets a second, no pulse, plain diatonic harmony around the chant. Ours: the chant on Bb3 at 88 for the sung verses (knights, men and women of Birgu), organ verses with the chant as a cantus firmus in quarters under plain triads and doubled an octave down in the pedal, church space; bells before and after, a salute of guns at the end. Differs: Cavazzoni's verses are free counterpoint over the chant, ours only harmonise it note by note; the Maltese people's own songs of the feast (the regatta, l-għana) are not in this scene. Render check: reciting note A#, cadence G#; with the pedal the low end matches Cavazzoni's organ (0–125 Hz −10 dB against −9, 500–1000 −6 against −2); bands 1–2 kHz −14, 2–4 kHz −19 dB (Solesmes −8, −17)",
+    measured: "Solesmes: the reciting note between A# and B, cadences a tone and a minor third below, ~2.5 syllables a second, vibrato ~10 c, energy 125–1000 Hz. Cavazzoni (first 120 s): the organ's energy sits 125–1000 Hz with a strong low end (0–125 Hz −9 dB), ~3.5 onsets a second, no pulse, plain diatonic harmony around the chant. Ours: the chant on Bb3 at 88 for the sung verses (knights, men and women of Birgu), organ verses with the chant as a cantus firmus in quarters under plain triads and doubled an octave down in the pedal, church space; bells before and after, a salute of guns at the end. Differs: Cavazzoni's verses are free counterpoint over the chant, ours only harmonise it note by note; the Maltese people's own songs of the feast (the regatta, l-għana) are not in this scene. Render check: reciting note A#, cadence G#; with the pedal the low end matches Cavazzoni's organ (0–125 Hz −10 dB against −9, 500–1000 −6 against −2); bands 1–2 kHz −14, 2–4 kHz −19 dB (Solesmes −8, −17) Revision (voice options): measured note by note with pyin, Solesmes' Te Deum reaches 37% of its notes from more than 20 c below (18% from above, median −10 c in the first 45 ms) and joins notes quickly (75% of voiced note changes within 23 ms, so no portamento); the Latin word accents now carry stress marks (ˈ), so accented syllables sound louder and the rest lighter, as in the monks' speech-rhythm recitation, and the voices scoop up into their notes (the knights 50 c; the people of Birgu 60/55 with a slight glide, our staging, not measured). Our Te Deum render after it (measured on the Holy Sepulchre scene, the same voices): still only ~10% of notes from below, as the choir's 10–12 voices with their own small lags smear the scoop; the accents are louder but not longer, which is the half of speech rhythm the engine cannot yet do.",
     text: `
 . clock        88 4/4
 . arrange@song ${arrange}
@@ -3050,9 +3050,9 @@ ${caps.map((c, i) => `. caption@c${i + 1} "${c}" ?song.${i + 2}`).join("\n")}
 . drums@santangelo kit=guns vol=0.8 "x...............|................|................" ?song.${last}
 . crowd@ruins  murmur "ma-ri-ja SAN-ta al-la ga-RA-zi" voices=20 voice=mixed vol=1.6 dyn="mf mp p" ?song.1
 . crowd@vittorja shout "vit-TOR-ja" "x-x-x---........" voices=40 voice=mixed vol=1.6 dyn="f ff ff f" ?song.${last}
-. chant@cavalieri voice=men voices=10 oct=4 grid=8 human=0.4 vib=0.01 breath=0.08 dyn="f" ipa="${words}" "${line(sung)}" ?song.${hymn}
-. chant@nies   voice=men voices=10 oct=4 grid=8 human=0.8 vib=0.014 breath=0.15 vol=0.7 dyn="f" ipa="${words}" "${line(sung)}" ?song.${hymn}
-. chant@nisa   voice=women voices=10 oct=4 grid=8 human=0.8 vib=0.016 breath=0.15 vol=0.6 dyn="f" ipa="${words}" "${line(sung)}" ?song.${hymn}
+. chant@cavalieri scoop=50 voice=men voices=10 oct=4 grid=8 human=0.4 vib=0.01 breath=0.08 dyn="f" ipa="${words}" "${line(sung)}" ?song.${hymn}
+. chant@nies scoop=60 glide=0.1   voice=men voices=10 oct=4 grid=8 human=0.8 vib=0.014 breath=0.15 vol=0.7 dyn="f" ipa="${words}" "${line(sung)}" ?song.${hymn}
+. chant@nisa scoop=55 glide=0.1   voice=women voices=10 oct=4 grid=8 human=0.8 vib=0.016 breath=0.15 vol=0.6 dyn="f" ipa="${words}" "${line(sung)}" ?song.${hymn}
 . organ@orgni  oct=4 grid=8 human=0.2 vol=1.3 dyn="mf" "${line(organ)}" ?song.${hymn}
 . organ@pedale oct=3 grid=8 human=0.2 vol=0.7 dyn="mf" "${line(organ).replace(/\+\S+/g, "")}" ?song.${hymn}
 cavalieri,nies,nisa> eq@voices mid=4 high=-9
@@ -3602,7 +3602,7 @@ SCORES["sengoku-daimyo:triumph"] = {
   const R = "0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0";
   const rais = [call, R, call, R, call, R, call, R].join(" ");
   const crew = [R, answer, R, answer, R, answer, R, answer].join(" ");
-  const callWords = "e ti ra mu la _ ran ka ta ri spon di mu a tut ta vu tʃi a ja mo la e vai a van ti e ti ra mu la _ ran ka ta";
+  const callWords = "e ti ˈra mu la _ ran ˈka ta ri spon ˈdi mu a ˈtut ta ˈvu tʃi a ja ˈmo la e ˈvai a ˈvan ti e ti ˈra mu la _ ran ˈka ta";
   SCORES["sicilians:gather"] = {
     about: "The cialoma of the tonnara: the rais calls, the crew answers 'oh leva leva' as they haul the net of the death chamber up from the sea and the tuna thrash",
     heard: "spring at the tonnara of Favignana, the black barges drawn in a square over the last chamber of the nets, out on the open sea in the sun: the rais gives the order and a man with a big high voice calls the cialoma, the crews heave in rhythm, bare feet slapping the deck, ropes and timbers creaking; the water churns white as the fish come up, the men shout and gaff them",
@@ -3610,7 +3610,7 @@ SCORES["sengoku-daimyo:triumph"] = {
       { title: "U leva leva (tuna-fishing chantey), Vibo Valentia Marina, 1954", who: "Rocco Cannovino and fishermen, recorded by Alan Lomax and Diego Carpitella", url: "https://www.youtube.com/watch?v=W1DEg175TP8" },
       { title: "Canto della Tonnara: Cialoma – Aiamola e vvai avanti", who: "tonnaroti of Favignana", url: "https://www.youtube.com/watch?v=LZy6Stzjzok" },
     ],
-    measured: "Lomax 1954: a soloist high (to G5) and a men's chorus answering, tonic G, a scale with a low second and a neutral seventh (0 180 390 500 710 890 1040 cents), each call descending 1' 7 6 5 4 3 to the fifth, ~3.5 onsets a second over a heavy walking pulse (~108), vibrato ~14 c, 17% glides, bright and open-air (energy 500–1000 Hz, little low end, brightness ~2 kHz). Favignana: the same call-and-response, slower, the answers held long. Ours: that scale on G at 108, the call and the answer two bars each, feet on the deck on the beat, sea, timbers, shouts at the gaffing, open air. Differs: the record is a re-enactment for the collectors (no fish were in the net); our crowd and splashing stage the mattanza itself. Render check: tonic G, the scale 180 390 490 700 880 1040 cents as on the Lomax record, range D4–G5 (record B3–G5), 3.3 onsets a second at 108 (record 3.5), bands 1–2 kHz −10 and 2–4 kHz −9 dB (record −11, −18): a little brighter; the deck and the sea add low end the record lacks",
+    measured: "Lomax 1954: a soloist high (to G5) and a men's chorus answering, tonic G, a scale with a low second and a neutral seventh (0 180 390 500 710 890 1040 cents), each call descending 1' 7 6 5 4 3 to the fifth, ~3.5 onsets a second over a heavy walking pulse (~108), vibrato ~14 c, 17% glides, bright and open-air (energy 500–1000 Hz, little low end, brightness ~2 kHz). Favignana: the same call-and-response, slower, the answers held long. Ours: that scale on G at 108, the call and the answer two bars each, feet on the deck on the beat, sea, timbers, shouts at the gaffing, open air. Differs: the record is a re-enactment for the collectors (no fish were in the net); our crowd and splashing stage the mattanza itself. Render check: tonic G, the scale 180 390 490 700 880 1040 cents as on the Lomax record, range D4–G5 (record B3–G5), 3.3 onsets a second at 108 (record 3.5), bands 1–2 kHz −10 and 2–4 kHz −9 dB (record −11, −18): a little brighter; the deck and the sea add low end the record lacks Revision: measured note by note, the Lomax record slides through its note changes (median 23 ms, 75th percentile 58 ms) and its notes start ±20 c off about a quarter of the time each way; the soloist's second harmonic is stronger than the fundamental (h1 −5, h2 0 dB), a pressed, open-air chest voice. So the caller now glides (0.2), scoops (30 c) and presses (0.3, with less ring), the crew glides and scoops, and the Sicilian words carry their stress (tiˈramu, ranˈcata; ˈleva). Render: note changes median 23 / p75 46 ms, 20% of notes from below and 25% from above (record 23%/22%), h1 −1 h2 −4 dB (before −0/−5); still brighter than the record at 1–4 kHz (−4/−5 dB under the peak band against −11/−18).",
     text: `
 . clock        108 4/4
 . arrange@song order:2bars c1:2bars r1:2bars c2:2bars r2:2bars c3:2bars r3:2bars c4:2bars r4:2bars mattanza:4bars
@@ -3624,8 +3624,8 @@ SCORES["sengoku-daimyo:triumph"] = {
 . water@churn  0.7 lap=0.9 splash=0.9 ?song.10
 . boat@barche  0.4 creak=0.6
 . crowd@rais   shout "A-ja MO-la" "x-x-x---........" voices=1 voice=men vol=2 dyn="ff" ?song.1
-. chant@cantaturi voice=men oct=4 grid=8 human=0.5 vib=0.012 breath=0.15 bright=0.6 dyn="f" ipa="${callWords}" "${rais}" ?song.2-9
-. chant@ciurma voice=men voices=12 oct=3 grid=8 human=0.7 vib=0.012 breath=0.25 dyn="f" ipa="o le va le va _" "${crew}" ?song.2-9
+. chant@cantaturi glide=0.2 scoop=30 press=0.3 voice=men oct=4 grid=8 human=0.5 vib=0.012 breath=0.15 bright=0.45 dyn="f" ipa="${callWords}" "${rais}" ?song.2-9
+. chant@ciurma glide=0.15 scoop=30 voice=men voices=12 oct=3 grid=8 human=0.7 vib=0.012 breath=0.25 dyn="f" ipa="o ˈle va ˈle va _" "${crew}" ?song.2-9
 . drums@peri   kit=flamenco vol=0.35 "x...x...x...x...|................|................" ?song.2-10
 . crowd@mattanza shout "dai DAI a-MMAZ-za" "x-x-x-x-........" voices=24 voice=men vol=2 dyn="f ff ff f" ?song.10
 
@@ -3737,7 +3737,7 @@ SCORES["teutons:death"] = {
     { title: "Sequence: Dies irae (mode 1)", who: "Monks of l'Abbaye Saint-Pierre de Solesmes", url: "https://www.youtube.com/watch?v=vUgye2KNReM" },
     { title: "Séquence Dies irae", who: "Chœur des moines de l'Abbaye Notre-Dame de Fontgombault", url: "https://www.youtube.com/watch?v=7zHmh8mhGv8" },
   ],
-  measured: "Solesmes, first 90 s: men in unison, range about E3–D#4, the final pitched about F (+20 c, i.e. the written D sung a minor third up), the mode-1 steps D E F G A C at 12-tone within ~20 c, vibrato under 7 c and almost no glides; free rhythm at about 3 syllables a second (0.25–0.35 s a note), phrase ends held 0.7–1.2 s with a breath after; energy sits at 125–1000 Hz, nothing above 4 kHz; the church tail is very long (rt60 measured ~8 s, probably an overestimate). The melody (three lines, each ending on the final) follows the Liber Usualis; the half-choirs alternate a stanza each, as the record does. Ours: the same steps, register and pace on an eighth-note grid loosened with rubato toward the singers' free rhythm (word accents are still not lengthened), and the synthetic voices are cleaner than a choir of thirty. Our render measured: the same steps and final, tempo ~100 eighths/min, brightness 1190 Hz against the record's 955 (after an eq cut of the highs: the formant voices hiss above 4 kHz), the 500–1000 Hz vowel band 4 dB weaker than the monks'",
+  measured: "Solesmes, first 90 s: men in unison, range about E3–D#4, the final pitched about F (+20 c, i.e. the written D sung a minor third up), the mode-1 steps D E F G A C at 12-tone within ~20 c, vibrato under 7 c and almost no glides; free rhythm at about 3 syllables a second (0.25–0.35 s a note), phrase ends held 0.7–1.2 s with a breath after; energy sits at 125–1000 Hz, nothing above 4 kHz; the church tail is very long (rt60 measured ~8 s, probably an overestimate). The melody (three lines, each ending on the final) follows the Liber Usualis; the half-choirs alternate a stanza each, as the record does. Ours: the same steps, register and pace on an eighth-note grid loosened with rubato toward the singers' free rhythm (word accents are still not lengthened), and the synthetic voices are cleaner than a choir of thirty. Our render measured: the same steps and final, tempo ~100 eighths/min, brightness 1190 Hz against the record's 955 (after an eq cut of the highs: the formant voices hiss above 4 kHz), the 500–1000 Hz vowel band 4 dB weaker than the monks' Revision: measured note by note, Solesmes' Dies irae reaches 32% of its notes from more than 20 c below (20% from above) and slides through a quarter of its note changes (75th percentile 70 ms); so now scoop=45 and glide=0.15, and the trochaic word accents (ˈdi-es ˈi-rae) carry stress marks. Render: notes from below 16% (record 32%), note changes p75 70 ms (record 70); accents louder but still not lengthened.",
   text: `
 . clock        100 4/4
 . arrange@song knell:3bars stanza1:5bars stanza2:5bars
@@ -3747,8 +3747,8 @@ SCORES["teutons:death"] = {
 . caption@c1   "Dies irae, dies illa, / solvet saeclum in favilla: / teste David cum Sibylla." ?song.2
 . caption@c2   "Quantus tremor est futurus, / quando judex est venturus, / cuncta stricte discussurus!" ?song.3
 . bell@glocke  oct=2 grid=4 vol=0.7 dyn="mf mf mf mp p pp" "1 - - - - - 1 - - - - -" ?song.1-2
-. chant@chorus1 rubato=0.4 voice=men voices=10 oct=3 grid=8 human=0.5 vib=0.006 breath=0.05 dyn="mf mf f mf mp" ipa="di es i re di es il la sol vet _ sɛ _ klum _ in fa vil la tes te _ da vid _ kum si bil la" "3 2 3 1 2 7, 1 1 - - 0 3 3 4 3 2 1 7, 2 3 2 1 - - 0 5, 7, 1 1 1 7, 2 3 2 1 - - - 0" ?song.2
-. chant@chorus2 rubato=0.4 voice=men voices=10 oct=3 grid=8 human=0.5 vib=0.006 breath=0.05 dyn="mf mf f mf mp" ipa="kvan tus tre mor est fu tu rus kvan do _ ju _ deks _ est ven tu rus kunk ta _ strik te _ dis kus su rus" "3 2 3 1 2 7, 1 1 - - 0 3 3 4 3 2 1 7, 2 3 2 1 - - 0 5, 7, 1 1 1 7, 2 3 2 1 - - - 0" ?song.3
+. chant@chorus1 scoop=45 glide=0.15 rubato=0.4 voice=men voices=10 oct=3 grid=8 human=0.5 vib=0.006 breath=0.05 dyn="mf mf f mf mp" ipa="ˈdi es ˈi re ˈdi es ˈil la ˈsol vet _ ˈsɛ _ klum _ in fa ˈvil la ˈtes te _ ˈda vid _ kum si ˈbil la" "3 2 3 1 2 7, 1 1 - - 0 3 3 4 3 2 1 7, 2 3 2 1 - - 0 5, 7, 1 1 1 7, 2 3 2 1 - - - 0" ?song.2
+. chant@chorus2 scoop=45 glide=0.15 rubato=0.4 voice=men voices=10 oct=3 grid=8 human=0.5 vib=0.006 breath=0.05 dyn="mf mf f mf mp" ipa="ˈkvan tus ˈtre mor est fu ˈtu rus ˈkvan do _ ˈju _ deks _ est ven ˈtu rus ˈkunk ta _ ˈstrik te _ dis kus ˈsu rus" "3 2 3 1 2 7, 1 1 - - 0 3 3 4 3 2 1 7, 2 3 2 1 - - 0 5, 7, 1 1 1 7, 2 3 2 1 - - - 0" ?song.3
 
 *> space       church size=1.8 wet=0.5
 >  eq          low=1 mid=0 high=-14
@@ -3793,7 +3793,7 @@ SCORES["teutons:voyage"] = {
     { title: "Ave Maris Stella (Dominican chant)", who: "Dominican Friars of the Holy Trinity Convent, Kraków", url: "https://www.youtube.com/watch?v=HeGoncU5D7M" },
     { title: "Ave Maris Stella (Processionarium O.P., 1913), gabc", who: "GregoBase", url: "https://gregobase.selapa.net/chant.php?id=4594" },
   ],
-  measured: "the Kraków Dominicans: men in unison on a final near D (sung ~30 c flat and sinking by most of a semitone over the hymn), range A#2–B3, the mode-1 tune D A A B G A B C D C B A G … tracked as in the Dominican book, ordinary notes 0.3–0.45 s and the line ends 1.3–1.6 s, ~2.5 notes a second, vibrato ~5 c, energy 125–1000 Hz (brightness ~1320 Hz), a long church tail. Ours: the Dominican notes (melismas on 'Ave', 'maris', 'stella', 'Mater', 'alma', 'Virgo', 'porta') for stanzas 1–3, 76 eighths a minute with rubato, a drift of −25 c a minute like the friars' sinking, in the open air with the sea, the hull and the wind instead of a church; it differs in that a ship's crew would sing far rougher than friars and than our voices. Our render, yin-tracked: D A B G A B C D C B G A D …, the Dominican line in order, sinking from −5 to −30 c over the first half minute; range C#3–B3, energy at 125–500 Hz, brightness ~1090 Hz (friars ~1320) with the sea and hull under it",
+  measured: "the Kraków Dominicans: men in unison on a final near D (sung ~30 c flat and sinking by most of a semitone over the hymn), range A#2–B3, the mode-1 tune D A A B G A B C D C B A G … tracked as in the Dominican book, ordinary notes 0.3–0.45 s and the line ends 1.3–1.6 s, ~2.5 notes a second, vibrato ~5 c, energy 125–1000 Hz (brightness ~1320 Hz), a long church tail. Ours: the Dominican notes (melismas on 'Ave', 'maris', 'stella', 'Mater', 'alma', 'Virgo', 'porta') for stanzas 1–3, 76 eighths a minute with rubato, a drift of −25 c a minute like the friars' sinking, in the open air with the sea, the hull and the wind instead of a church; it differs in that a ship's crew would sing far rougher than friars and than our voices. Our render, yin-tracked: D A B G A B C D C B G A D …, the Dominican line in order, sinking from −5 to −30 c over the first half minute; range C#3–B3, energy at 125–500 Hz, brightness ~1090 Hz (friars ~1320) with the sea and hull under it Revision: the friars' notes start as often above as below (21%/23%), so the brother keeps a clean attack; the sailors scoop (35 c) and glide a little, our guess at a rough crew, not measured; the Latin accents (ˈa-ve ˈma-ris ˈstel-la) carry stress marks.",
   text: `
 . clock        76 4/4
 . arrange@song nebel:3bars land:1bars hymnus:22bars
@@ -3805,8 +3805,8 @@ SCORES["teutons:voyage"] = {
 . wind@takel   0.2 gust=0.1Hz ?song.1-3
 . crowd@ausguck shout "LANT LANT" "x---x---........" voices=1 voice=men vol=2 ?song.2
 . crowd@mannschaft shout "HO-LA" "........x-x-----" voices=10 voice=men vol=2 ?song.2
-. chant@bruder voice=men voices=1 oct=3 grid=8 human=0.4 rubato=0.3 drift=-25 vib=0.012 breath=0.08 dyn="f" ipa="a ve _ _ ma ris _ stɛl _ la _ _ _" "1 5 5 6 4 5 6 7 1' 7 6 5 4 - - 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0" ?song.3
-. chant@matrosen vol=1.4 voice=men voices=12 oct=3 grid=8 human=0.8 rubato=0.35 drift=-25 vib=0.014 breath=0.12 dyn="mf f f f f f f f f f f f f f f f f f f mf mp" ipa="de i ma _ tɛr al _ ma at kve sɛm pɛr vir go _ _ _ _ _ fe liks tsɛ li pɔr _ _ ta su mɛns _ _ il lud _ a _ ve _ _ _ ga bri e _ lis o _ re fun da nos in pa tse _ _ _ _ _ mu tans e ve no _ _ mɛn sol ve _ _ vin kla _ re _ is _ _ _ pro fɛr lu _ mɛn tse _ tsis ma la nos tra pɛl le _ _ _ _ _ bo na kunk ta pos _ _ tse" "0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 5 5 1 2 4 3 2 1 - - 0 0 3 2 4 5 5 1 2 3 2 1 7, - - 0 2 4 2 3 2 1 7, 1 - - 0 0 0 0 0 1 5 5 6 4 5 6 7 1' 7 6 5 4 - - 0 5 5 1 2 4 3 2 1 - - 0 0 3 2 4 5 5 1 2 3 2 1 7, - - 0 2 4 2 3 2 1 7, 1 - - 0 0 0 0 0 1 5 5 6 4 5 6 7 1' 7 6 5 4 - - 0 5 5 1 2 4 3 2 1 - - 0 0 3 2 4 5 5 1 2 3 2 1 7, - - 0 2 4 2 3 2 1 7, 1 - - 0 0 0 0 0 0 0 0 0 0" ?song.3
+. chant@bruder voice=men voices=1 oct=3 grid=8 human=0.4 rubato=0.3 drift=-25 vib=0.012 breath=0.08 dyn="f" ipa="ˈa ve _ _ ˈma ris _ ˈstɛl _ la _ _ _" "1 5 5 6 4 5 6 7 1' 7 6 5 4 - - 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0" ?song.3
+. chant@matrosen scoop=35 glide=0.1 vol=1.4 voice=men voices=12 oct=3 grid=8 human=0.8 rubato=0.35 drift=-25 vib=0.014 breath=0.12 dyn="mf f f f f f f f f f f f f f f f f f f mf mp" ipa="ˈde i ˈma _ tɛr ˈal _ ma ˈat kve ˈsɛm pɛr ˈvir go _ _ _ _ _ ˈfe liks ˈtsɛ li ˈpɔr _ _ ta ˈsu mɛns _ _ ˈil lud _ ˈa _ ve _ _ _ ga ˈbri e _ lis ˈo _ re ˈfun da nos in ˈpa tse _ _ _ _ _ ˈmu tans ˈe ve ˈno _ _ mɛn ˈsol ve _ _ ˈvin kla _ ˈre _ is _ _ _ ˈpro fɛr ˈlu _ mɛn ˈtse _ tsis ˈma la ˈnos tra ˈpɛl le _ _ _ _ _ ˈbo na ˈkunk ta ˈpos _ _ tse" "0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 5 5 1 2 4 3 2 1 - - 0 0 3 2 4 5 5 1 2 3 2 1 7, - - 0 2 4 2 3 2 1 7, 1 - - 0 0 0 0 0 1 5 5 6 4 5 6 7 1' 7 6 5 4 - - 0 5 5 1 2 4 3 2 1 - - 0 0 3 2 4 5 5 1 2 3 2 1 7, - - 0 2 4 2 3 2 1 7, 1 - - 0 0 0 0 0 1 5 5 6 4 5 6 7 1' 7 6 5 4 - - 0 5 5 1 2 4 3 2 1 - - 0 0 3 2 4 5 5 1 2 3 2 1 7, - - 0 2 4 2 3 2 1 7, 1 - - 0 0 0 0 0 0 0 0 0 0" ?song.3
 
 *> space       field size=1.2 wet=0.22
 >  eq          low=0 mid=0 high=-6
