@@ -17,6 +17,7 @@ pub mod pipeline;
 pub mod polish;
 pub mod session;
 pub mod slug;
+pub mod tray_ctl;
 pub mod tts;
 
 #[cfg(feature = "node")]

@@ -62,7 +62,7 @@ fn otoji_cache() -> std::path::PathBuf {
 
 /// Ensure the default Chinese KWS model is present; download+extract if not.
 /// Returns its directory. Idempotent.
-async fn ensure_kws_model() -> Result<std::path::PathBuf> {
+pub async fn ensure_kws_model() -> Result<std::path::PathBuf> {
     let cache = otoji_cache();
     let dir = cache.join(KWS_MODEL);
     if dir.join("tokens.txt").is_file() {
@@ -148,6 +148,108 @@ fn read_wav_16k_mono(path: &Path) -> Result<Vec<f32>> {
     Ok(out)
 }
 
+/// A ready keyword spotter: feed it 16 kHz mono samples, get the keyword
+/// back when one is heard. Shared by `otoji kws` and otoji-tray's wake word.
+pub struct WakeSpotter {
+    spotter: KeywordSpotter,
+    stream: sherpa_onnx::OnlineStream,
+    last_emit: Option<(String, Instant)>,
+    cooldown: Duration,
+    /// Path of the keywords file actually used (for logging).
+    pub keywords_file: String,
+}
+
+impl WakeSpotter {
+    /// `keywords_file` wins when non-empty; otherwise a file is written next
+    /// to the model from `keyword_line` (default: [`DEFAULT_KEYWORD_LINE`]).
+    pub fn new(
+        dir: &Path,
+        keywords_file: &str,
+        keyword_line: Option<&str>,
+        threshold: f32,
+        cooldown_ms: u64,
+    ) -> Result<Self> {
+        if !dir.is_dir() {
+            return Err(anyhow!("KWS model dir not found: {}", dir.display()));
+        }
+        let keywords_file = if keywords_file.trim().is_empty() {
+            let line = keyword_line
+                .filter(|l| !l.trim().is_empty())
+                .unwrap_or(DEFAULT_KEYWORD_LINE);
+            let path = dir.join("otoji-keywords.txt");
+            std::fs::write(&path, format!("{}\n", line.trim()))
+                .with_context(|| format!("write {}", path.display()))?;
+            path.to_string_lossy().into_owned()
+        } else {
+            if !Path::new(keywords_file).is_file() {
+                return Err(anyhow!("KWS keywords file not found: {keywords_file}"));
+            }
+            keywords_file.to_string()
+        };
+
+        let (encoder, decoder, joiner) = find_transducer_files(dir)?;
+        let tokens = dir.join("tokens.txt");
+        if !tokens.is_file() {
+            return Err(anyhow!("tokens.txt missing in {}", dir.display()));
+        }
+
+        let mut cfg = KeywordSpotterConfig::default();
+        cfg.model_config.transducer.encoder = Some(encoder);
+        cfg.model_config.transducer.decoder = Some(decoder);
+        cfg.model_config.transducer.joiner = Some(joiner);
+        cfg.model_config.tokens = Some(tokens.to_string_lossy().into_owned());
+        cfg.model_config.num_threads = 1;
+        cfg.model_config.provider = Some("cpu".into());
+        cfg.keywords_file = Some(keywords_file.clone());
+        cfg.keywords_threshold = threshold;
+
+        let spotter = KeywordSpotter::create(&cfg)
+            .ok_or_else(|| anyhow!("sherpa: failed to create KeywordSpotter"))?;
+        let stream = spotter.create_stream();
+        Ok(Self {
+            spotter,
+            stream,
+            last_emit: None,
+            cooldown: Duration::from_millis(cooldown_ms),
+            keywords_file,
+        })
+    }
+
+    /// Feed samples; returns the keyword on a fresh detection (honoring the
+    /// cooldown) and resets so it doesn't re-fire.
+    pub fn feed(&mut self, samples: &[f32]) -> Option<String> {
+        if !samples.is_empty() {
+            self.stream.accept_waveform(16_000, samples);
+        }
+        while self.spotter.is_ready(&self.stream) {
+            self.spotter.decode(&self.stream);
+        }
+        let keyword = self.spotter.get_result(&self.stream)?.keyword;
+        if keyword.is_empty() {
+            return None;
+        }
+        self.spotter.reset(&self.stream);
+        let now = Instant::now();
+        let skip = matches!(&self.last_emit, Some((prev, t)) if prev == &keyword && now.duration_since(*t) < self.cooldown);
+        if skip {
+            return None;
+        }
+        self.last_emit = Some((keyword.clone(), now));
+        Some(keyword)
+    }
+
+    /// Flush the stream at end of input (for --wav mode).
+    pub fn finish(&mut self) -> Option<String> {
+        self.stream.input_finished();
+        self.feed(&[])
+    }
+}
+
+/// Convert 16-bit little-endian PCM bytes to the f32 samples `feed` takes.
+pub fn pcm16_bytes_to_f32(bytes: &[u8]) -> Vec<f32> {
+    pcm16_to_f32(bytes)
+}
+
 pub async fn run(opts: KwsOptions) -> Result<()> {
     // Model: use the given dir, else auto-download the Chinese wenetspeech KWS.
     let model_dir = if opts.model_dir.trim().is_empty() {
@@ -155,110 +257,49 @@ pub async fn run(opts: KwsOptions) -> Result<()> {
     } else {
         std::path::PathBuf::from(&opts.model_dir)
     };
-    let dir = model_dir.as_path();
-    if !dir.is_dir() {
-        return Err(anyhow!("KWS model dir not found: {}", dir.display()));
-    }
-    // Keywords: use the given file, else write one from `keyword_line` (default
-    // wakes on 小克小克) into the cache next to the model.
-    let keywords_file = if opts.keywords_file.trim().is_empty() {
-        let line = opts
-            .keyword_line
-            .clone()
-            .unwrap_or_else(|| DEFAULT_KEYWORD_LINE.to_string());
-        let path = dir.join("otoji-keywords.txt");
-        std::fs::write(&path, format!("{}\n", line.trim()))
-            .with_context(|| format!("write {}", path.display()))?;
-        path.to_string_lossy().into_owned()
-    } else {
-        if !Path::new(&opts.keywords_file).is_file() {
-            return Err(anyhow!(
-                "KWS keywords file not found: {}",
-                opts.keywords_file
-            ));
-        }
-        opts.keywords_file.clone()
-    };
-
-    let (encoder, decoder, joiner) = find_transducer_files(dir)?;
-    let tokens = dir.join("tokens.txt");
-    if !tokens.is_file() {
-        return Err(anyhow!("tokens.txt missing in {}", opts.model_dir));
-    }
-
-    let mut cfg = KeywordSpotterConfig::default();
-    cfg.model_config.transducer.encoder = Some(encoder);
-    cfg.model_config.transducer.decoder = Some(decoder);
-    cfg.model_config.transducer.joiner = Some(joiner);
-    cfg.model_config.tokens = Some(tokens.to_string_lossy().into_owned());
-    cfg.model_config.num_threads = 1;
-    cfg.model_config.provider = Some("cpu".into());
-    cfg.keywords_file = Some(keywords_file.clone());
-    cfg.keywords_threshold = opts.threshold;
-
-    let spotter = KeywordSpotter::create(&cfg)
-        .ok_or_else(|| anyhow!("sherpa: failed to create KeywordSpotter"))?;
-    let stream = spotter.create_stream();
-
+    let mut spotter = WakeSpotter::new(
+        &model_dir,
+        &opts.keywords_file,
+        opts.keyword_line.as_deref(),
+        opts.threshold,
+        opts.cooldown_ms,
+    )?;
     eprintln!(
         "[otoji-kws] ready — model={} keywords={} threshold={}",
-        dir.display(),
-        keywords_file,
+        model_dir.display(),
+        spotter.keywords_file,
         opts.threshold
     );
 
     let start = Instant::now();
-    let mut last_emit: Option<(String, Instant)> = None;
-    let cooldown = Duration::from_millis(opts.cooldown_ms);
-
-    // Detection step shared by mic and --wav: emit a `wake` JSON line on a
-    // fresh keyword, honoring the cooldown, and reset so it doesn't re-fire.
-    let mut on_samples = |samples: &[f32]| {
-        if samples.is_empty() {
-            return;
-        }
-        stream.accept_waveform(16_000, samples);
-        while spotter.is_ready(&stream) {
-            spotter.decode(&stream);
-        }
-        if let Some(result) = spotter.get_result(&stream) {
-            let keyword = result.keyword.clone();
-            if keyword.is_empty() {
-                return;
-            }
-            let now = Instant::now();
-            let skip = matches!(&last_emit, Some((prev, t)) if prev == &keyword && now.duration_since(*t) < cooldown);
-            if !skip {
-                let ts_ms = now.duration_since(start).as_millis() as u64;
-                let line = serde_json::json!({ "type": "wake", "keyword": keyword, "timestamp_ms": ts_ms });
-                println!("{line}");
-                use std::io::Write;
-                let _ = std::io::stdout().flush();
-                last_emit = Some((keyword, now));
-            }
-            spotter.reset(&stream);
-        }
+    let emit = |keyword: String| {
+        let ts_ms = start.elapsed().as_millis() as u64;
+        let line = serde_json::json!({ "type": "wake", "keyword": keyword, "timestamp_ms": ts_ms });
+        println!("{line}");
+        use std::io::Write;
+        let _ = std::io::stdout().flush();
     };
 
     if let Some(wav) = opts.wav.clone() {
         let samples = read_wav_16k_mono(&wav)?;
         // feed in 100ms hops so streaming decode advances naturally
         for hop in samples.chunks(1600) {
-            on_samples(hop);
+            if let Some(k) = spotter.feed(hop) {
+                emit(k);
+            }
         }
-        stream.input_finished();
-        while spotter.is_ready(&stream) {
-            spotter.decode(&stream);
+        if let Some(k) = spotter.finish() {
+            emit(k);
         }
-        on_samples(&[]);
         return Ok(());
     }
 
     let (audio_tx, mut audio_rx) = audio::channel(64);
     let _mic = mic::start(opts.device.as_deref(), opts.frame_ms, audio_tx).context("mic")?;
     while let Some(chunk) = audio_rx.recv().await {
-        let samples = pcm16_to_f32(&chunk.pcm);
-        on_samples(&samples);
+        if let Some(k) = spotter.feed(&pcm16_to_f32(&chunk.pcm)) {
+            emit(k);
+        }
     }
     Ok(())
 }
