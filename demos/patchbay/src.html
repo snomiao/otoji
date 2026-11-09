@@ -924,7 +924,8 @@ KINDS.chant = { source: true, build: (o) => {
   if (o.head && noteMidi(o.head) === null) throw new Error("head= is a note name like A4: from there up the voice turns to its head voice");
   const sylls = parseIpa(o.ipa);
   return { ...c, sylls, stressed: sylls.some((x) => x.stress), voice, voices: num(o, "voices", 1, 1, 12), vib: num(o, "vib", 0.012, 0, 0.05), breath: num(o, "breath", 0.08, 0, 1), bright: num(o, "bright", 0.3, 0, 1),
-    scoop: num(o, "scoop", 0, 0, 400), glide: num(o, "glide", 0, 0, 1), shake: num(o, "shake", 0, 0, 1), swell: num(o, "swell", 0, 0, 1), press: num(o, "press", 0, 0, 1), head: o.head ? noteMidi(o.head) : null };
+    scoop: num(o, "scoop", 0, 0, 400), glide: num(o, "glide", 0, 0, 1), shake: num(o, "shake", 0, 0, 1), swell: num(o, "swell", 0, 0, 1), press: num(o, "press", 0, 0, 1), head: o.head ? noteMidi(o.head) : null,
+    engine: tractEngine(o.engine) };
 } };
 
 // ── autocomplete catalog: what each kind is, takes and accepts ────────
@@ -1288,6 +1289,7 @@ function rebuild() {
   // Fade out and drop the old audio nodes; keep clock positions.
   for (const n of live.values()) if (n.out && ctx) {
     n.out.gain.setTargetAtTime(0, ctx.currentTime, 0.015); const o = n.out, src = n.src, lfos = n.lfos || []; if (n.pm) { const pm = n.pm; setTimeout(() => { pm.port.postMessage("stop"); pm.disconnect(); }, 200); }
+    if (n.tract) { const tv = n.tract.nodes; setTimeout(() => { for (const x of tv) { x.port.postMessage("stop"); x.disconnect(); } }, 200); }
     setTimeout(() => { o.disconnect(); for (const x of src ? [src, ...lfos] : lfos) try { x.stop(); } catch (e) { /* already stopped */ } }, 120);
   }
   live = new Map();
@@ -1829,8 +1831,10 @@ function playMelodic(r, c, step, t) {
       const syl = cfg.sylls[nth % cfg.sylls.length];
       let prev = null; for (let b = 1; b <= cfg.sylls.length && !prev; b++) { const x = cfg.sylls[(nth - b + cfg.sylls.length * 64) % cfg.sylls.length]; if (!x.hold) prev = x; }
       const tr = cfg.tune ? Math.pow(2, cfg.tune / 1200) : 1;
-      chantNote(out, t, hzOf(tok) * tr, stepDur * per * hold * 1.02, peak, syl, prev, cfg,
-        { grace: tok.grace && hzOf(tok.grace) * tr, slide: tok.slide && hzOf(tok.slide) * tr, tech: tok.tech || cfg.tech, turn: (tok.tech || cfg.tech) === "turn" && turnOf(tok).map((x) => x * tr), run: tok.run && tok.run.map((x) => hzOf(x) * tr) });
+      const orn = { grace: tok.grace && hzOf(tok.grace) * tr, slide: tok.slide && hzOf(tok.slide) * tr, tech: tok.tech || cfg.tech, turn: (tok.tech || cfg.tech) === "turn" && turnOf(tok).map((x) => x * tr), run: tok.run && tok.run.map((x) => hzOf(x) * tr) };
+      let sung = false;
+      if (cfg.engine === "tract" && tract.ready) try { tractNote(r, t, hzOf(tok) * tr, stepDur * per * hold * 1.02, peak, syl, prev, cfg, orn); sung = true; } catch (e) { console.warn(e); } // the formant voice sings what the tract can't
+      if (!sung) chantNote(out, t, hzOf(tok) * tr, stepDur * per * hold * 1.02, peak, syl, prev, cfg, orn);
       r.detail = `${syl.hold ? "~" : syl.text} on ${name(tok)} · ${cfg.scaleName} on ${cfg.key}`; mark(r, t, stepDur * per * hold);
       return;
     }
@@ -2292,6 +2296,105 @@ function singOne(out, t, f, dur, peak, s, held, fs, cfg, orn = {}) {
   head.connect(g).connect(out);
   for (const n of [o, lfo, nz]) { n.start(t); n.stop(end + 0.1); }
 }
+// ── chant engine=tract: CHIMERA's simulated vocal tract (chimera/, MIT, jamesondh/chimera-vocal-synth) ──
+// Lungs, vocal folds and a branched airway (tongue, lips, nose) simulated sample by sample in Rust/wasm:
+// consonants are made by the mouth closing and opening, not by filtered noise. Each sung note is planned
+// here into gestures (a syllable's onset lands before the beat, its vowel holds open-ended) and the
+// tract-worklet.js voice plays them at their time; a note sung on into the next is joined legato.
+// Costs about a fifth of a core per singer, so a line takes one to three.
+const tract = { ready: false, loading: null, mod: null, x: null };
+function tractEngine(v) {
+  if (v === undefined || v === "formant") return "formant";
+  if (v !== "tract") throw new Error("engine= is formant or tract");
+  if (ctx) tractLoad();
+  return "tract";
+}
+function tractLoad() {
+  if (!ctx || !ctx.audioWorklet) return Promise.resolve();
+  return tract.loading || (tract.loading = (async () => {
+    const mod = await WebAssembly.compile(await (await fetch("chimera/chimera.wasm")).arrayBuffer());
+    tract.x = (await WebAssembly.instantiate(mod, {})).exports; tract.mod = mod;
+    await ctx.audioWorklet.addModule("tract-worklet.js");
+    tract.ready = true;
+  })().catch((e) => { console.warn("tract engine:", e); tract.loading = null; }));
+}
+const tractEnc = new TextEncoder(), tractDec = new TextDecoder();
+function tractCall(fn, args) { // CHIMERA's JSON interface (planning, IPA)
+  const x = tract.x, b = tractEnc.encode(JSON.stringify({ fn, ...args })), p = x.chimera_alloc(b.length);
+  new Uint8Array(x.memory.buffer, p, b.length).set(b);
+  const st = x.chimera_call(p, b.length); x.chimera_free(p, b.length);
+  const v = JSON.parse(tractDec.decode(new Uint8Array(x.memory.buffer, x.chimera_result_ptr(), x.chimera_result_len())));
+  if (st) throw new Error(`tract ${fn}: ${v.error}`);
+  return v;
+}
+// IPA letters CHIMERA has no gesture for, as the nearest it has (aspiration and length are left to the melody).
+const TRACT_IPA = { ɿ: "ɨ", ʅ: "ɨ", ɕ: "ʃ", ʑ: "ʒ", ɥ: "j", tɕ: "tʃ", dʑ: "dʒ", tʂ: "tʃ", ʈʂ: "tʃ", dʐ: "dʒ", ɖʐ: "dʒ", ɡ: "g" };
+const tractSylCache = new Map();
+function tractSyl(s) {
+  if (tractSylCache.has(s)) return tractSylCache.get(s);
+  const seg = (c) => ({ ipa: TRACT_IPA[c.c] || c.c, stress: 0 });
+  const cons = (list) => list.filter((c) => c.c !== "ʰ" && c.c !== "ʱ").map(seg);
+  // CHIMERA sings one vowel or a diphthong it knows (aɪ aʊ eɪ oʊ ɔɪ): a rising i/u before the vowel is a
+  // glide onset (ia → ja, uo → wo), a falling one after it the nearest diphthong (ai → aɪ, ou → oʊ)
+  const v = s.vowels.map((c) => TRACT_IPA[c.c] || c.c), onset = cons(s.onset);
+  if (v.length > 1 && /^[iɪyuʊɥ]$/.test(v[0]) && !/^[iɪyuʊ]$/.test(v[1])) onset.push({ ipa: /[uʊ]/.test(v.shift()) ? "w" : "j", stress: 0 });
+  let nuc = v[0];
+  if (v.length > 1) {
+    const off = /^[iɪye]$/.test(v[1]) ? "ɪ" : /^[uʊoɯ]$/.test(v[1]) ? "ʊ" : null, low = { ɑ: "a", æ: "a", ɐ: "a", ɛ: "e", ɔ: "ɔ", o: "o", ə: "o" }[v[0]] || v[0];
+    nuc = [v[0] + v[1], off && v[0] + off, off && low + off].find((d) => d && tractCall("plannedCounts", { ipa: [d] })[0] === 2) || v[0];
+  }
+  const out = { text: s.text, onset, nucleus: { ipa: nuc, stress: 1 }, coda: cons(s.coda), wordEnd: true, phraseEnd: false };
+  tractSylCache.set(s, out);
+  return out;
+}
+// The chant line's character as the folds': bright= closes them more abruptly (more upper harmonics), press= tenses
+// them (a pressed, edged chest voice), breath= leaves them a little open, human= lets the pitch wander more.
+const tractSource = (cfg) => ({
+  brightness: Math.min(1, 0.25 + 0.9 * Math.max(0, cfg.bright - 0.1) + 0.3 * cfg.press), tension: Math.min(1, 0.5 + 0.45 * cfg.press),
+  breathiness: Math.min(1, 0.15 + (cfg.breath - 0.08)), roughness: 0.1 + 0.15 * cfg.press, drift: 5 + 10 * (cfg.human || 0) });
+const TRACT_BODY = { men: { female: 0, child: 0 }, women: { female: 1, child: 0 }, boy: { female: 0, child: 1 } };
+function tractNote(r, t, f, dur, peak, syl, prev, cfg, orn = {}) {
+  const T = r.tract || (r.tract = { tag: 2, last: null, nodes: [] });
+  const body = TRACT_BODY[cfg.voice] || TRACT_BODY.men, n = Math.min(3, cfg.voices);
+  while (T.nodes.length < n) {
+    const k = T.nodes.length, node = new AudioWorkletNode(ctx, "tract", { numberOfInputs: 0, outputChannelCount: [1], processorOptions: { module: tract.mod, body: k ? { female: Math.min(1, body.female + 0.12 * k), child: body.child } : body, source: tractSource(cfg) } });
+    const g = ctx.createGain(); g.gain.value = 0.37 * cfg.vol / Math.sqrt(n);
+    // the singer's ring (2–3 kHz), which the bare tract lacks: as much as bright= asks
+    const ring = ctx.createBiquadFilter(); ring.type = "peaking"; ring.frequency.value = 2500; ring.Q.value = 0.9; ring.gain.value = 2 + 8 * cfg.bright + 3 * cfg.press;
+    node.connect(ring).connect(g).connect(r.out); T.nodes.push(node);
+  }
+  const midiOf = (hz) => 69 + 12 * Math.log2(hz / 440), loud = peak / (0.22 * (cfg.vol || 1));
+  const breath = 0.62 + 0.4 * Math.min(1, loud) + 0.12 * Math.max(0, loud - 1); // a louder note is more air (as CHIMERA's keys take velocity)
+  const vib = (cfg.vib ?? 0.012) * 1700; // cents
+  const legato = T.last && t - T.last.end < 0.06, held = syl.hold && legato; // `_` after a rest: the vowel again, without its onset
+  const base = syl.hold ? (held ? null : prev ? { ...tractSyl(prev), onset: [] } : null) : tractSyl(syl);
+  // the pitches this note passes through: grace, run, turn, the note, a slide on
+  const path = [];
+  if (orn.grace) path.push([orn.grace, Math.min(0.08, dur * 0.3)]);
+  if (orn.run) { const d1 = Math.min(0.09, dur * 0.5 / orn.run.length); for (const y of orn.run) path.push([y, d1]); }
+  if (orn.tech === "turn" && orn.turn && dur > 0.25) { const d1 = Math.min(0.07, dur * 0.12); path.push([orn.turn[0], d1], [f, d1], [orn.turn[1], d1]); }
+  const used = path.reduce((a, x) => a + x[1], 0);
+  if (orn.slide) path.push([f, (dur - used) * 0.5], [orn.slide, (dur - used) * 0.5]); else path.push([f, dur - used]);
+  const tag = T.tag; T.tag += 4;
+  const air = (gs) => gs.map((g) => (g.targets.breath !== undefined ? { ...g, targets: { ...g.targets, breath: g.targets.breath * breath } } : g));
+  let at = t;
+  path.forEach(([hz, d], k) => {
+    for (const [i, node] of T.nodes.entries()) {
+      const lag = i ? 0.012 * i : 0, m = midiOf(hz) + (i ? (i % 2 ? 0.08 : -0.08) : 0);
+      if (k === 0 && !held && base) {
+        const gs = tractCall("planNoteOn", { syl: base, midi: m, options: { body, vibrato: vib, tag, legatoFrom: legato && T.last.syl ? { syl: T.last.syl, midi: T.last.midi } : undefined } });
+        node.port.postMessage({ type: "on", at: at + lag, tag, gs: air(gs) });
+      } else node.port.postMessage({ type: "on", at: at + lag, tag, melisma: true, gs: tractCall("planMelisma", { midi: m, options: { vibrato: k === path.length - 1 ? vib : 0, tag } }) });
+    }
+    at += d;
+  });
+  const lastHz = path[path.length - 1][0], end = t + dur, syl0 = base || T.last?.syl;
+  if (syl0) {
+    const off = tractCall("planNoteOff", { syl: syl0, midi: midiOf(lastHz), body }).map((g) => ({ ...g, tag: g.label === "exhale" ? tag + 3 : tag + 2 }));
+    for (const [i, node] of T.nodes.entries()) node.port.postMessage({ type: "off", at: end + (i ? 0.012 * i : 0), tag: held && T.last ? T.last.tag : tag, gs: off });
+  }
+  T.last = { syl: syl0, midi: midiOf(lastHz), end, tag: held && T.last ? T.last.tag : tag };
+}
 INSTRUMENTS.chant = { adsr: [0.03, 0.1, 1, 0.08], play(out, t, f, dur, adsr, peak, cfg) { chantNote(out, t, f, dur, peak, parseIpaSyllable("a"), null, cfg || { voices: 1, voice: "men", vib: 0.012, breath: 0.08 }); } };
 MELODIC.push("chant");
 // Daf / bendir / riq: a frame drum's low dum, its rim tek, and the jingles.
@@ -2598,7 +2701,8 @@ CATALOG.chant = { doc: "Chant 吟唱: a sung voice from IPA, one syllable per no
   ["head", "A4", "the break: from this note up the voice turns to its head voice (falsetto), and crossing it cracks (a yodel, a grito, krimanchuli)"],
   ["shake", "0", "0–1: held-note shading: long notes start plain, then shake wider and slower (Korean nonghyeon, Japanese yuri)"],
   ["swell", "0", "0–1: long notes grow louder as they are held (heikyoku, a muezzin)"],
-  ["press", "0", "0–1: a pressed chest voice: weaker fundamental, a hard bright edge (Balkan and Caucasian women's singing, a field holler)"], ...MELODIC_ARGS] };
+  ["press", "0", "0–1: a pressed chest voice: weaker fundamental, a hard bright edge (Balkan and Caucasian women's singing, a field holler)"],
+  ["engine", "tract", "formant (the default: light, any choir size) or tract: a simulated vocal tract (CHIMERA): lungs, folds, tongue and lips, one to three singers; scoop, head, shake, swell and press are formant-only", ["formant", "tract"], { re: /^(formant|tract)$/ }], ...MELODIC_ARGS] };
 // Kits the scores asked for, each after recordings of the real drums.
 Object.assign(KITS, {
   janggu: ["kung", "tta", "bak"],        // Korean hourglass drum: the hand on the low head, the stick on the high one; the bak clapper
@@ -4564,7 +4668,8 @@ function applyPendingAtBar(cid, c) {
 const startBtn = document.getElementById("startBtn");
 async function start() {
   ensureAudio(); await ctx.resume();
-  if (!running) { rebuild(); await Promise.race([Promise.all([pmLoading, ...bodyCal.values()]), new Promise((r) => setTimeout(r, 800))]); } // the instrument models load and the bodies' levels settle (once, a few hundred ms) before the first note
+  if (!running) { rebuild(); await Promise.race([Promise.all([pmLoading, ...bodyCal.values()]), new Promise((r) => setTimeout(r, 800))]);
+    if ([...live.values()].some((r) => r.cfg && r.cfg.engine === "tract")) await Promise.race([tractLoad(), new Promise((r) => setTimeout(r, 3000))]); } // the instrument models load and the bodies' levels settle (once, a few hundred ms) before the first note
   master.gain.setTargetAtTime(volume(), ctx.currentTime, 0.02);
   const lead = ctx.currentTime < 0.5 ? 0.35 : 0.06; // a context that has only just started gets a moment before the first note
   running = true; mic.error = null; midi.error = null; startedAt = ctx.currentTime + lead; rebuild();

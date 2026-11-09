@@ -26,6 +26,8 @@ recordings of that people's own music. Read `cultures/scores/README.md` and the 
 - Search: `uvx yt-dlp --flat-playlist --print "%(id)s %(duration)s %(channel)s | %(title)s" "ytsearch15:<query>"`
   (search in the people's own language too).
 - Fetch: `refs/fetch.sh <id> [start] [len]` → `~/.cache/otoji/refs/<id>.wav`. Audio stays out of the repo.
+- Ambience and foley (rain, fire, water, a crowd): the `sound` skill searches Freesound by downloads, ratings and
+  descriptions (`python3 ~/.claude/skills/sound/scripts/sfx.py freesound "<query>"`, then `get ~/.cache/otoji/refs fs:<id>`).
 - Stems: `uvx --python 3.11 --from demucs --with torchaudio==2.5.1 --with torch==2.5.1 --with soundfile demucs -d cpu -n htdemucs -o ~/.cache/otoji/stems <wav>`
   → vocals/drums/bass/other.wav (about 1 min per 3 min of audio).
 - Measure: `uv run -q refs/analyse.py <wav> [--tonic D] [--notes 120] [--json out.json]` on the mix and on stems.
@@ -50,6 +52,9 @@ so use `dyn=` for a forte rather than `vol=`. A shawm (suona, shehnai, zurna) be
 Voice (chant): `scoop=` cents from below, `glide=` from the last note, `head=A4` the register break (a yodel, a grito),
 `shake=` held-note shading (nonghyeon, yuri), `press=` a pressed chest voice, `bright=` the ring; ˈ in the IPA stresses a
 syllable; `5t` a turn (the notes above and below), `(4.5.4)3` a run into the note, `5g` gamak/andolan (a slow wide swing), `5k` a catch (a sob, the Thracian trembling), `swell=` a held note grows; reed and flute take `shake=` too, `5f` flutter, `5r` tremolo, `(3)5` grace, `5~6` slide.
+`engine=tract` sings a chant line on CHIMERA's simulated vocal tract (lungs, folds, tongue, lips; one to three singers):
+real consonants and a living voice for a soloist or a small group; grace, runs, turns and slides carry over, while scoop,
+head, shake, swell and press are formant-only. Keep big choirs on the default formant engine (the tract costs a fifth of a core a singer).
 Sung words: public-domain or traditional texts only, in the original language as IPA; captions in native script.
 
 ## Rules
