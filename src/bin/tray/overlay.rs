@@ -186,6 +186,7 @@ fn pump_mic(mut stdin: std::process::ChildStdin) {
             (peak, sum_sq, n) = (0, 0.0, 0);
             last_report = Instant::now();
         }
+        super::wake::feed(&chunk.pcm);
         if stdin.write_all(&chunk.pcm).is_err() {
             break; // listen exited
         }

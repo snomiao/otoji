@@ -114,6 +114,51 @@ cargo build --release
 cargo run -- listen                         # live mic → on-device STT in the TUI
 ```
 
+## Install (macOS app)
+
+The menu bar app (`otoji.app`, bundle id `com.snomiao.otoji`) is built from source:
+
+```bash
+cargo build --release --bin otoji --bin otoji-tray
+scripts/build-tray-app.sh                   # installs to /Applications; pass another dir to override
+```
+
+## Control otoji from other apps
+
+A running `otoji-tray` listens on a Unix **datagram** socket, so another app can
+drive it without its own hotkey or mic access (this is how CapsLockX's CLX+V
+triggers otoji). The path is `<data dir>/tray-ctl.sock`:
+`~/Library/Application Support/otoji/tray-ctl.sock` on macOS, or under
+`OTOJI_DATA_DIR` when that is set.
+
+Each datagram is one ASCII command (trimmed, case-insensitive). There is no reply.
+
+| Command | Effect |
+| --- | --- |
+| `toggle` | Flip otoji on/off, same as the Fn+/ hotkey |
+| `on` / `off` | Turn otoji on / off; no-op if it already is |
+| `ptt-start` | Start a push-to-talk segment. Turns otoji on first if needed; the segment starts once `otoji listen` accepts it (dropped after 20 s) |
+| `ptt-end` | End the segment |
+| `settings` | Open the settings window |
+
+```bash
+otoji-tray --send toggle   # exit 0 = delivered, 1 = tray not running, 2 = bad command
+```
+
+If the send fails, the tray isn't running: start it with
+`open -b com.snomiao.otoji`, wait for the socket to accept, then send. Launching
+starts listening according to the pipeline, so send `on` or `ptt-start` after a
+launch rather than `toggle`, which could turn it straight back off.
+
+## Wake word (macOS app)
+
+Off by default. With `"wake_word": true` in `<data dir>/config.json`, hearing the
+keyword while otoji is on starts a push-to-talk segment that ends after 1.2 s of
+silence (8 s at most). It reads the tray's own mic stream, so nothing else opens
+the microphone. `wake_keyword` takes a sherpa keyword line (default wakes on
+小克小克) and `wake_threshold` sets the sensitivity. The KWS model downloads on
+first use.
+
 ## License
 
 MIT

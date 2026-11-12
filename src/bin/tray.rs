@@ -22,6 +22,10 @@ fn main() {
         }
         return;
     }
+    if let Some(i) = args.iter().position(|a| a == "--send") {
+        // Client mode: send one control command to the running tray and exit.
+        std::process::exit(send_command(args.get(i + 1).map(String::as_str)));
+    }
     // "Quit otoji" means quit until the user opens otoji again: launchd may start
     // the tray at login (or, with an older KeepAlive agent, after any exit), and
     // that start finds the marker and exits cleanly. Opening the app by hand
@@ -38,6 +42,27 @@ fn main() {
         let _ = std::fs::remove_file(&marker);
     }
     tray_macos::run();
+}
+
+/// `otoji-tray --send <cmd>`: 0 = delivered, 1 = tray not running, 2 = bad command.
+#[cfg(target_os = "macos")]
+fn send_command(arg: Option<&str>) -> i32 {
+    use otoji::tray_ctl::TrayCmd;
+    let names: Vec<&str> = TrayCmd::ALL.iter().map(|c| c.as_str()).collect();
+    let Some(cmd) = arg.and_then(TrayCmd::parse) else {
+        eprintln!("usage: otoji-tray --send <{}>", names.join("|"));
+        return 2;
+    };
+    match otoji::tray_ctl::send(cmd) {
+        Ok(()) => 0,
+        Err(e) => {
+            eprintln!(
+                "otoji-tray: tray not reachable at {} ({e}) — is otoji running?",
+                otoji::tray_ctl::socket_path().display()
+            );
+            1
+        }
+    }
 }
 
 /// Present while the user has quit the tray (see main).
@@ -71,6 +96,9 @@ mod tray_macos {
     }
     mod graph {
         include!("tray/graph.rs");
+    }
+    mod wake {
+        include!("tray/wake.rs");
     }
 
     /// pgrep/pkill pattern for real `otoji listen` processes: the program
@@ -1426,6 +1454,11 @@ mod tray_macos {
         if TOGGLE_REQUESTED.swap(false, std::sync::atomic::Ordering::SeqCst) {
             toggle_otoji();
         }
+        if TICKS.load(Ordering::Relaxed) % 10 == 0 {
+            wake::sync(&otoji::config::load());
+        }
+        wake_tick();
+        drain_control();
         overlay::tick();
         overlay::supervise();
         graph::sample_level();
@@ -1651,6 +1684,139 @@ mod tray_macos {
                     unsafe { libc::kill(pid, sig) };
                 }
             }
+        }
+    }
+
+    // ── External control (otoji::tray_ctl) ───────────────────────────────────
+    //
+    // Other apps (e.g. CapsLockX's CLX+V) send one-word datagrams to
+    // <data>/tray-ctl.sock. The socket thread only queues; refresh_tick runs
+    // the commands on the main thread.
+
+    static CTL_QUEUE: std::sync::Mutex<Vec<otoji::tray_ctl::TrayCmd>> =
+        std::sync::Mutex::new(Vec::new());
+    /// A ptt-start not yet delivered (listen may still be starting).
+    static PTT_PENDING: std::sync::Mutex<Option<std::time::Instant>> = std::sync::Mutex::new(None);
+    /// A wake-word segment in progress: (woke at, last speech heard).
+    static WAKE_HOLD: std::sync::Mutex<Option<(std::time::Instant, std::time::Instant)>> =
+        std::sync::Mutex::new(None);
+
+    fn start_control_socket() {
+        use std::os::unix::net::UnixDatagram;
+        let path = otoji::tray_ctl::socket_path();
+        let _ = std::fs::create_dir_all(otoji::notes::data_dir());
+        let _ = std::fs::remove_file(&path);
+        let sock = match UnixDatagram::bind(&path) {
+            Ok(s) => s,
+            Err(e) => {
+                eprintln!("otoji-tray: control socket {}: {e}", path.display());
+                return;
+            }
+        };
+        eprintln!("otoji-tray: control socket {}", path.display());
+        std::thread::Builder::new()
+            .name("tray-ctl".into())
+            .spawn(move || {
+                let mut buf = [0u8; 256];
+                while let Ok(n) = sock.recv(&mut buf) {
+                    let msg = String::from_utf8_lossy(&buf[..n]);
+                    match otoji::tray_ctl::TrayCmd::parse(&msg) {
+                        Some(cmd) => CTL_QUEUE.lock().unwrap().push(cmd),
+                        None => eprintln!("otoji-tray: unknown control command {msg:?}"),
+                    }
+                }
+            })
+            .ok();
+    }
+
+    /// Deliver a PTT line to the tray-owned listen child via its control
+    /// socket; with no tray child, signal any other `otoji listen` instead.
+    /// False = the tray child exists but isn't accepting yet (retry later).
+    fn send_ptt(line: &str, sig: libc::c_int) -> bool {
+        use std::io::Write;
+        if let Ok(mut s) = std::os::unix::net::UnixStream::connect(overlay::control_socket_path()) {
+            if s.write_all(format!("{line}\n").as_bytes()).is_ok() {
+                return true;
+            }
+        }
+        if overlay::is_listening() {
+            return false;
+        }
+        signal_listen_processes(sig);
+        true
+    }
+
+    fn set_on(on: bool) {
+        if graph::wants_listen() != on {
+            toggle_otoji();
+        }
+    }
+
+    fn drain_control() {
+        use otoji::tray_ctl::TrayCmd;
+        let cmds = std::mem::take(&mut *CTL_QUEUE.lock().unwrap());
+        for cmd in cmds {
+            eprintln!("otoji-tray: control {}", cmd.as_str());
+            match cmd {
+                TrayCmd::Toggle => toggle_otoji(),
+                TrayCmd::On => set_on(true),
+                TrayCmd::Off => set_on(false),
+                TrayCmd::PttStart => {
+                    set_on(true);
+                    *PTT_PENDING.lock().unwrap() = Some(std::time::Instant::now());
+                }
+                TrayCmd::PttEnd => {
+                    // Released before listen took the start: nothing to end.
+                    if PTT_PENDING.lock().unwrap().take().is_none() {
+                        send_ptt("PTT_END", libc::SIGUSR2);
+                    }
+                    *WAKE_HOLD.lock().unwrap() = None;
+                }
+                TrayCmd::Settings => OPEN_SETTINGS_FLAG.store(true, Ordering::SeqCst),
+            }
+        }
+        let mut pending = PTT_PENDING.lock().unwrap();
+        if let Some(since) = *pending {
+            if send_ptt("PTT_START", libc::SIGUSR1) {
+                *pending = None;
+            } else if since.elapsed() > std::time::Duration::from_secs(20) {
+                eprintln!("otoji-tray: ptt-start dropped — listen never became ready");
+                *pending = None;
+            }
+        }
+    }
+
+    /// Wake word heard → start a segment; end it on VAD silence or the cap.
+    fn wake_tick() {
+        let now = std::time::Instant::now();
+        let mut hold = WAKE_HOLD.lock().unwrap();
+        if wake::take_wake() {
+            if hold.is_none() {
+                CTL_QUEUE
+                    .lock()
+                    .unwrap()
+                    .push(otoji::tray_ctl::TrayCmd::PttStart);
+            }
+            *hold = Some((now, now));
+            return;
+        }
+        let Some((woke, mut last_speech)) = *hold else {
+            return;
+        };
+        if graph::vad_speech() {
+            last_speech = now;
+        }
+        let quiet =
+            woke.elapsed() > wake::POST_WAKE_GRACE && last_speech.elapsed() > wake::SILENCE_RELEASE;
+        if quiet || woke.elapsed() > wake::HOLD_CAP {
+            *hold = None;
+            drop(hold);
+            CTL_QUEUE
+                .lock()
+                .unwrap()
+                .push(otoji::tray_ctl::TrayCmd::PttEnd);
+        } else {
+            *hold = Some((woke, last_speech));
         }
     }
 
@@ -1896,6 +2062,8 @@ mod tray_macos {
 
             // Global hotkeys: Fn+/ or Alt+CapsLock on/off, optional hold-to-talk.
             install_hotkeys();
+            // External control: `otoji-tray --send <cmd>` / other apps.
+            start_control_socket();
 
             // Caption overlay + tray-owned listen child. Skipped when another
             // `otoji listen` already holds the mic (e.g. one spawned by CLX).
