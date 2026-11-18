@@ -16,7 +16,7 @@ function req(patch: RequestInit = {}, url = "https://otoji.org/signal/mic/polish
     ...patch,
   });
 }
-const result = { text: "clean", charged: 1, daily: { used: 2, max: 100 } };
+const result = { text: "clean", charged: 1, basis: "reported", daily: { used: 2, max: 100 } };
 const transport = (value: unknown = result, status = 200) =>
   vi.fn<typeof fetch>().mockResolvedValue(Response.json(value, { status }));
 
@@ -59,6 +59,24 @@ describe("Otoji account-billed mic proxy", () => {
     ).toBe(400);
     expect(send).not.toHaveBeenCalled();
   });
+  it.each(["40000", "not-a-number", "-1"])(
+    "rejects an invalid Content-Length before forwarding: %s",
+    async (length) => {
+      const send = transport();
+      const response = await handleMicPolish(
+        req({
+          headers: {
+            authorization: `Bearer ${token}`,
+            "content-type": "application/json",
+            "content-length": length,
+          },
+        }),
+        send,
+      );
+      expect(await response.json()).toEqual({ error: "too-long", field: "body" });
+      expect(send).not.toHaveBeenCalled();
+    },
+  );
   it("matches the account API's transcript, body-byte and complete-context-JSON limits", async () => {
     const send = transport();
     const context = { title: "x".repeat(1988) };
@@ -154,6 +172,8 @@ describe("Otoji account-billed mic proxy", () => {
       { text: "unmetered" },
       { ...result, charged: -1 },
       { ...result, daily: null },
+      { ...result, basis: undefined },
+      { ...result, basis: "actual" },
       null,
     ]) {
       const send = transport(data);
@@ -164,10 +184,20 @@ describe("Otoji account-billed mic proxy", () => {
     const send = vi.fn<typeof fetch>().mockRejectedValue(new Error("private account failure"));
     expect(await (await handleMicPolish(req(), send)).json()).toEqual({ error: "unavailable" });
   });
+  it.each(["reported", "estimated"] as const)(
+    "preserves the %s billing basis without accepting arbitrary upstream fields",
+    async (basis) => {
+      const response = await handleMicPolish(
+        req(),
+        transport({ ...result, basis, private: "hidden" }),
+      );
+      expect(await response.json()).toEqual({ ...result, basis });
+    },
+  );
   it("only grants the production script its own domain and bumps its version", () => {
     const header = micUserscriptHeader();
     expect(header.match(/@connect\s+\S+/g)).toEqual(["@connect      otoji.org"]);
-    expect(header).toContain("@version      0.1.2");
+    expect(header).toContain("@version      0.1.3");
     expect(header).not.toMatch(/deepseek|googleapis/);
   });
 });

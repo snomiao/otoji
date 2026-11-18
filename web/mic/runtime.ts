@@ -4,7 +4,7 @@ import type { MicConfigStore } from "./storage";
 import type { MicOwnership } from "./ownership";
 import { InputPipe, findEditableTarget, type EditableTarget } from "./input";
 import { collectContext, type SiteContext } from "./context";
-import type { polishText } from "./polish";
+import type { MicPolisher } from "./polish";
 import { MicPolishError } from "./polish";
 import { startMicRaw, type MicVadHandle } from "../src/lib/mic-vad";
 import { sttRecognize, warmSenseVoice } from "../src/providers/stt/sensevoice";
@@ -22,7 +22,7 @@ export interface MicRuntimeDeps {
   capture?: typeof startMicRaw;
   localWarm?: typeof warmSenseVoice;
   localRecognize?: typeof sttRecognize;
-  polish?: typeof polishText;
+  polish?: MicPolisher;
 }
 
 /** A microphone starts only from an explicit user gesture after the GM lease is acquired. */
@@ -243,7 +243,16 @@ export async function mountMicWidget(
                 if (text && settings.polish.enabled) {
                   try {
                     if (!deps.polish) throw new Error("Polishing transport is not configured.");
-                    text = await deps.polish(text, settings.polish, item.context, abort.signal);
+                    text = await deps.polish(
+                      text,
+                      settings.polish,
+                      item.context,
+                      abort.signal,
+                      (billing) => {
+                        if (run === generation && billing.basis === "estimated")
+                          note("Polished. Billing was estimated from text length.");
+                      },
+                    );
                   } catch (error) {
                     if (run === generation)
                       note(

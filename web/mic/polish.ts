@@ -2,6 +2,18 @@ import type { MicConfig } from "./config";
 import type { SiteContext } from "./context";
 
 export const MIC_POLISH_URL = "https://otoji.org/signal/mic/polish";
+export interface MicPolishBilling {
+  charged: number;
+  basis: "reported" | "estimated";
+  daily: { used: number; max: number };
+}
+export type MicPolisher = (
+  text: string,
+  config: MicConfig["polish"],
+  context: SiteContext | null,
+  signal?: AbortSignal,
+  onBilling?: (billing: MicPolishBilling) => void,
+) => Promise<string>;
 const MAX_CONTEXT_JSON_CHARS = 2000;
 const MAX_BODY_BYTES = 32 * 1024;
 
@@ -82,6 +94,7 @@ export async function polishText(
   context: SiteContext | null,
   signal?: AbortSignal,
   request: typeof fetch = fetch,
+  onBilling?: (billing: MicPolishBilling) => void,
 ): Promise<string> {
   if (!config.enabled) return text;
   if (!/^lk_[0-9a-f]{64}$/.test(config.accountToken)) throw new MicPolishError("auth");
@@ -128,11 +141,21 @@ export async function polishText(
   }
   const data = await response.json().catch(() => null);
   const output = data?.text;
+  const count = (n: unknown): n is number => typeof n === "number" && Number.isFinite(n) && n >= 0;
   if (
     typeof output !== "string" ||
     !output.trim() ||
-    output.length > Math.max(4096, text.length * 3)
+    output.length > Math.max(4096, text.length * 3) ||
+    !count(data?.charged) ||
+    !count(data?.daily?.used) ||
+    !count(data?.daily?.max) ||
+    (data?.basis !== "reported" && data?.basis !== "estimated")
   )
     throw new MicPolishError("unavailable");
+  onBilling?.({
+    charged: data.charged,
+    basis: data.basis,
+    daily: { used: data.daily.used, max: data.daily.max },
+  });
   return output.trim();
 }

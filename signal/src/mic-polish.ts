@@ -16,7 +16,8 @@ const dailyOf = (value: unknown): { used: number; max: number } | null => {
 };
 
 async function boundedBody(req: Request): Promise<string | null> {
-  if (Number(req.headers.get("content-length")) > MAX_BYTES) return null;
+  const length = req.headers.get("content-length");
+  if (length !== null && (!/^\d+$/.test(length) || Number(length) > MAX_BYTES)) return null;
   const reader = req.body?.getReader();
   if (!reader) return "";
   const chunks: Uint8Array[] = [];
@@ -137,6 +138,7 @@ export async function handleMicPolish(
   const result = (await upstream.json().catch(() => null)) as {
     text?: unknown;
     charged?: unknown;
+    basis?: unknown;
     daily?: { used?: unknown; max?: unknown };
   } | null;
   if (
@@ -144,6 +146,7 @@ export async function handleMicPolish(
     !result.text.trim() ||
     result.text.length > Math.max(4096, input.transcript.length * 3) ||
     !count(result.charged) ||
+    (result.basis !== "reported" && result.basis !== "estimated") ||
     !count(result.daily?.used) ||
     !count(result.daily?.max)
   )
@@ -152,6 +155,7 @@ export async function handleMicPolish(
     {
       text: result.text,
       charged: result.charged,
+      basis: result.basis,
       daily: { used: result.daily!.used, max: result.daily!.max },
     },
     { headers },

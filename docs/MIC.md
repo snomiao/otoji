@@ -46,7 +46,8 @@ Create an expiring Lianki account token with the `mic:polish` permission at
 private settings form. Tokens stay in GM storage and are sent only as an
 Authorization header, never in URLs or page messages. The account service
 validates the token's live account, expiry and permission, reserves credits
-before inference and settles actual usage afterward, and enforces the account's
+before inference and settles reported usage afterward (or a bounded text-length
+estimate when token counts are unavailable), and enforces the account's
 daily call maximum (shared by all its tokens, reset at 00:00 UTC). Admin permissions do not bypass payment or the daily maximum.
 The billed backend ships dark pending approval of the new permission.
 
@@ -61,7 +62,11 @@ account service never falls back to anonymous inference. The existing
   including keys and escapes; whole body: 32 KiB of UTF-8. The client fits
   optional context to those limits and drops it first if the body is too large;
   dictated text is never silently truncated.
-- Success: `{text, charged, daily: {used, max}}`, all billing quantities validated.
+- Success: `{text, charged, basis, daily: {used, max}}`, all billing quantities
+  validated. `basis` must be `reported` or `estimated`; the proxy preserves it.
+  Estimated usage is shown in the private widget and disclosed in settings.
+  The backend logs the basis but does not persist it on individual credit-ledger
+  rows, so historical ledger rows cannot distinguish the two bases.
 - 401/403: invalid token or missing permission; 402: insufficient credits;
   404: paid polishing is not enabled; 429 `daily-limit`: account daily call
   maximum reached (safe `daily` and UTC `resetAt` are preserved); rate-limit

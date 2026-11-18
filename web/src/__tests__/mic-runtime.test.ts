@@ -268,6 +268,31 @@ describe("mic widget lifecycle", () => {
     },
   );
 
+  it("shows when a successful polishing charge uses estimated usage", async () => {
+    const config = defaultMicConfig();
+    config.polish.enabled = true;
+    const h = harness(config);
+    h.deps.polish = async (_text, _config, _context, _signal, onBilling) => {
+      onBilling?.({ basis: "estimated", charged: 1, daily: { used: 1, max: 300 } });
+      return "clean";
+    };
+    const attach = Element.prototype.attachShadow;
+    let root!: ShadowRoot;
+    const spy = vi
+      .spyOn(Element.prototype, "attachShadow")
+      .mockImplementationOnce(function (this: Element, options) {
+        root = attach.call(this, options);
+        return root;
+      });
+    const runtime = await h.mount();
+    spy.mockRestore();
+    await runtime.start();
+    h.utterance();
+    await flush();
+    expect(h.field.value).toBe("seed clean");
+    expect(root.textContent).toContain("Billing was estimated from text length.");
+  });
+
   it("ownership loss aborts pending polishing and ignores its delayed result", async () => {
     const config = defaultMicConfig();
     config.polish.enabled = true;

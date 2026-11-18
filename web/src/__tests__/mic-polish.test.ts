@@ -12,10 +12,17 @@ const config = (patch: Partial<MicConfig["polish"]> = {}): MicConfig["polish"] =
 const context = { site: "github" as const, title: "Visible issue", messages: ["Relevant context"] };
 const requestFor = (data: unknown, status = 200) =>
   vi.fn<typeof fetch>().mockResolvedValue(
-    new Response(JSON.stringify(data), {
-      status,
-      headers: { "content-type": "application/json" },
-    }),
+    new Response(
+      JSON.stringify(
+        data && typeof data === "object"
+          ? { charged: 1, basis: "reported", daily: { used: 1, max: 300 }, ...data }
+          : data,
+      ),
+      {
+        status,
+        headers: { "content-type": "application/json" },
+      },
+    ),
   );
 
 describe("account-billed Worker AI polishing", () => {
@@ -50,6 +57,40 @@ describe("account-billed Worker AI polishing", () => {
     const request = requestFor({ text: "clean" });
     await polishText("raw", config({ useSiteContext: true }), context, undefined, request);
     expect(JSON.parse(String(request.mock.calls[0][1]?.body)).context).toEqual(context);
+  });
+  it.each(["reported", "estimated"] as const)(
+    "delivers validated %s billing metadata to the private UI",
+    async (basis) => {
+      const billing = vi.fn();
+      await polishText(
+        "raw",
+        config(),
+        null,
+        undefined,
+        requestFor({ text: "clean", basis, charged: 2, daily: { used: 4, max: 300 } }),
+        billing,
+      );
+      expect(billing).toHaveBeenCalledWith({ charged: 2, basis, daily: { used: 4, max: 300 } });
+    },
+  );
+  it.each([
+    { basis: undefined },
+    { basis: "unknown" },
+    { charged: -1 },
+    { daily: { used: "private", max: 300 } },
+  ])("rejects incomplete billing metadata without notifying the UI", async (invalid) => {
+    const billing = vi.fn();
+    await expect(
+      polishText(
+        "raw",
+        config(),
+        null,
+        undefined,
+        requestFor({ text: "clean", ...invalid }),
+        billing,
+      ),
+    ).rejects.toMatchObject({ code: "unavailable" });
+    expect(billing).not.toHaveBeenCalled();
   });
   it("fits the complete context JSON, including escaped characters and Unicode", async () => {
     for (const value of ['"\\\n'.repeat(900), "😀".repeat(1200)]) {

@@ -45,8 +45,8 @@ async function main() {
   } else {
     const workerRequest = createWorkerRequest((details) => GM_xmlhttpRequest(details));
     await mountMicWidget(store, createMicOwnership(createGmStorage(api)), {
-      polish: (text, config, context, signal) =>
-        polishText(text, config, context, signal, workerRequest),
+      polish: (text, config, context, signal, onBilling) =>
+        polishText(text, config, context, signal, workerRequest, onBilling),
     });
   }
   if (typeof GM_registerMenuCommand === "function")
