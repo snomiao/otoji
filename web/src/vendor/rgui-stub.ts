@@ -119,7 +119,7 @@ export interface RguiOptions {
   isValidConnection?: (from: PortRef, to: PortRef) => boolean;
   onConnect?: (from: PortRef, to: PortRef) => void;
   onNodeClick?: (nodeId: string, screen: { x: number; y: number }) => void;
-  onNodeContextMenu?: (nodeId: string, screen: { x: number; y: number }) => void;
+  onNodeContextMenu?: (nodeId: string, screen: { x: number; y: number }, nodeIds?: string[]) => void;
   // v0.3.0 selection
   onSelectionChange?: (nodeIds: string[]) => void;
   // v0.3.0 edge interaction + wire-drop-on-empty
@@ -143,6 +143,7 @@ export interface RguiOptions {
   /** v2.10 a panel was header-dragged (fires on release); pass the anchor back
    *  via Panel.anchor next run to restore its position */
   onPanelMove?: (panel: Panel, anchor: { x: number; y: number }) => void;
+  onPanelToggle?: (panel: Panel, collapsed: boolean) => void;
 }
 
 export interface Rgui {

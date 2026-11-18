@@ -1,10 +1,37 @@
-import { defineConfig } from "vite";
+import { defineConfig, type Plugin } from "vite";
 import react from "@vitejs/plugin-react";
 import { VitePWA } from "vite-plugin-pwa";
 import { dirname, join } from "node:path";
 import { cpSync, existsSync, mkdirSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { rguiAlias, rguiAliases } from "./rgui-alias";
+import { buildMicUserscript, bundleMicUserscript, micDevelopmentLoader } from "./userscript/build";
+
+const micDistribution: Plugin = {
+  name: "mic-distribution",
+  async closeBundle() { await buildMicUserscript(url("./dist")); },
+  configureServer(server) {
+    let cached: Promise<string> | undefined;
+    server.watcher.on("all", (_event, path) => {
+      if (/[\\/]mic[\\/]|[\\/]src[\\/]|[\\/]userscript[\\/]build\.ts$/.test(path)) cached = undefined;
+    });
+    server.middlewares.use(async (request, response, next) => {
+      const path = request.url?.split("?")[0];
+      if (path !== "/mic.user.js" && path !== "/mic/loader.user.js") { next(); return; }
+      response.setHeader("Content-Type", "application/javascript; charset=utf-8");
+      response.setHeader("Cache-Control", "no-store");
+      try {
+        const body = path === "/mic/loader.user.js" ? micDevelopmentLoader()
+          : await (cached ??= bundleMicUserscript().catch((error) => { cached = undefined; throw error; }));
+        response.end(body);
+      } catch (error) {
+        server.config.logger.error(`Mic userscript build failed: ${error instanceof Error ? error.message : "unknown error"}`);
+        response.statusCode = 500;
+        response.end("// Mic userscript build failed; check the development server output.");
+      }
+    });
+  },
+};
 
 // onnxruntime-web ships a ~26MB wasm that Vite would emit into dist/. We load
 // the wasm from the jsdelivr CDN at runtime (ort.env.wasm.wasmPaths), so the
@@ -42,6 +69,7 @@ export default defineConfig({
     react(),
     dropWasmAssets,
     copyEditor,
+    micDistribution,
     VitePWA({
       registerType: "autoUpdate",
       injectRegister: "auto",
@@ -65,8 +93,8 @@ export default defineConfig({
       workbox: {
         maximumFileSizeToCacheInBytes: 30 * 1024 * 1024,
         navigateFallback: "/index.html",
-        navigateFallbackDenylist: [/^\/signal(?:\/|$)/, /^\/editor(?:\/|$)/, /\/[^/?]+\.[^/?]+(?:\?.*)?$/],
-        globIgnores: ["editor/**"], // the Patchbay loads its own files; don't precache them with the app
+        navigateFallbackDenylist: [/^\/signal(?:\/|$)/, /^\/editor(?:\/|$)/, /^\/mic(?:\/|$)/, /\/[^/?]+\.[^/?]+(?:\?.*)?$/],
+        globIgnores: ["editor/**", "mic/**", "mic.user.js"],
         // NOTE: no huggingface.co route here on purpose — HF `resolve` URLs
         // 302 to cdn-lfs, and a CacheFirst replay of a redirected response
         // makes the SECOND fetch throw "Failed to fetch" (hit live). Model
@@ -98,7 +126,10 @@ export default defineConfig({
   // rgui source lives outside web/ (submodule / sibling worktree); let the dev
   // server read it.
   server: { fs: { allow: [url("."), dirname(rguiAlias)] } },
-  build: { outDir: "dist", sourcemap: true },
+  build: {
+    outDir: "dist", sourcemap: true,
+    rollupOptions: { input: { app: url("./index.html"), mic: url("./mic/index.html"), micSettings: url("./mic/settings/index.html") } },
+  },
   test: {
     environment: "jsdom",
     globals: true,

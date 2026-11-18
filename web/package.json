@@ -6,8 +6,8 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "typecheck": "tsgo --noEmit",
-    "build": "tsgo --noEmit && vite build",
+    "typecheck": "tsrs --noEmit",
+    "build": "bun run typecheck && vite build",
     "preview": "vite preview",
     "preview:fresh": "bun run build && vite preview --strictPort --port 5185",
     "test": "vitest run",
@@ -43,6 +43,7 @@
     "@webgpu/types": "^0.1.71",
     "esbuild": "^0.23.0",
     "jsdom": "^24.1.0",
+    "tsrs": "0.25.0-ts7.1.0-beta",
     "tsx": "^4.16.0",
     "vite": "^5.3.3",
     "vite-plugin-pwa": "^1.3.0",

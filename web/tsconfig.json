@@ -23,5 +23,5 @@
     "allowSyntheticDefaultImports": true,
     "types": ["vite/client", "vitest/globals", "node", "@webgpu/types"]
   },
-  "include": ["src", "extension", "userscript"]
+  "include": ["src", "extension", "userscript", "mic"]
 }
