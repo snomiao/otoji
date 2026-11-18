@@ -3,7 +3,17 @@
 const ACCOUNT_ENDPOINT = "https://lianki.com/api/mic/polish";
 const MAX_BYTES = 32 * 1024;
 const headers = { "Cache-Control": "no-store", "Content-Type": "application/json" };
-const error = (name: string, status: number) => Response.json({ error: name }, { status, headers });
+const error = (
+  name: string,
+  status: number,
+  extra: Record<string, unknown> = {},
+  extraHeaders: Record<string, string> = {},
+) => Response.json({ error: name, ...extra }, { status, headers: { ...headers, ...extraHeaders } });
+const count = (n: unknown): n is number => typeof n === "number" && Number.isFinite(n) && n >= 0;
+const dailyOf = (value: unknown): { used: number; max: number } | null => {
+  const daily = value as { used?: unknown; max?: unknown } | null;
+  return count(daily?.used) && count(daily?.max) ? { used: daily.used, max: daily.max } : null;
+};
 
 async function boundedBody(req: Request): Promise<string | null> {
   if (Number(req.headers.get("content-length")) > MAX_BYTES) return null;
@@ -51,7 +61,7 @@ export async function handleMicPolish(
   } catch {
     return error("bad-request", 400);
   }
-  if (body === null) return error("too-large", 413);
+  if (body === null) return error("too-long", 400, { field: "body" });
   let data: unknown;
   try {
     data = JSON.parse(body);
@@ -60,14 +70,17 @@ export async function handleMicPolish(
   }
   if (!data || typeof data !== "object" || Array.isArray(data)) return error("bad-request", 400);
   const input = data as Record<string, unknown>;
+  if (Object.keys(input).some((key) => key !== "transcript" && key !== "context"))
+    return error("unknown-field", 400);
   if (
-    Object.keys(input).some((key) => key !== "transcript" && key !== "context") ||
     typeof input.transcript !== "string" ||
     !input.transcript.trim() ||
-    input.transcript.length > 8000 ||
     (input.context != null && (typeof input.context !== "object" || Array.isArray(input.context)))
   )
     return error("bad-request", 400);
+  if (input.transcript.trim().length > 8000) return error("too-long", 400, { field: "transcript" });
+  if (input.context != null && JSON.stringify(input.context).length > 2000)
+    return error("too-long", 400, { field: "context" });
   let upstream: Response;
   try {
     upstream = await request(ACCOUNT_ENDPOINT, {
@@ -84,9 +97,41 @@ export async function handleMicPolish(
   // exceptions back to arbitrary sites. Only this endpoint's public contract.
   if (upstream.status === 401 || upstream.status === 403) return error("auth", upstream.status);
   if (upstream.status === 402) return error("no-credits", 402);
+  if (upstream.status === 404) return error("not-found", 404);
   if (upstream.status === 429) {
+    const result = (await upstream.json().catch(() => null)) as {
+      error?: unknown;
+      daily?: unknown;
+      resetAt?: unknown;
+    } | null;
+    if (result?.error === "daily-limit") {
+      const daily = dailyOf(result.daily);
+      const resetAt =
+        typeof result.resetAt === "string" &&
+        /^\d{4}-\d\d-\d\dT00:00:00\.000Z$/.test(result.resetAt) &&
+        Number.isFinite(Date.parse(result.resetAt))
+          ? result.resetAt
+          : null;
+      return error("daily-limit", 429, {
+        ...(daily ? { daily } : {}),
+        ...(resetAt ? { resetAt } : {}),
+      });
+    }
+    const retry = upstream.headers.get("retry-after") ?? "";
+    return error(
+      "rate-limit",
+      429,
+      {},
+      /^\d{1,5}$/.test(retry) && Number(retry) > 0 && Number(retry) <= 86400
+        ? { "Retry-After": retry }
+        : {},
+    );
+  }
+  if (upstream.status === 502) {
     const result = (await upstream.json().catch(() => null)) as { error?: unknown } | null;
-    return error(result?.error === "daily-limit" ? "daily-limit" : "rate", 429);
+    return result?.error === "model-failed"
+      ? error("model-failed", 502)
+      : error("unavailable", 503);
   }
   if (!upstream.ok) return error("unavailable", 503);
   const result = (await upstream.json().catch(() => null)) as {
@@ -94,7 +139,6 @@ export async function handleMicPolish(
     charged?: unknown;
     daily?: { used?: unknown; max?: unknown };
   } | null;
-  const count = (n: unknown): n is number => typeof n === "number" && Number.isFinite(n) && n >= 0;
   if (
     typeof result?.text !== "string" ||
     !result.text.trim() ||

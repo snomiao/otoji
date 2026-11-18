@@ -9,7 +9,7 @@ export function micUserscriptHeader(development = false): string {
   return `// ==UserScript==
 // @name         otoji mic
 // @namespace    https://otoji.org/mic
-// @version      0.1.1
+// @version      0.1.2
 // @description  Private, device-first dictation in editable fields.${development ? " Local development loader." : ""}
 // @match        http://*/*
 // @match        https://*/*

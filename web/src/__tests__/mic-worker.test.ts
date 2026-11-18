@@ -41,7 +41,7 @@ describe("Otoji account-billed mic proxy", () => {
     [{ body: JSON.stringify({ transcript: "x", model: "arbitrary-model" }) }, 400],
     [{ body: JSON.stringify({ transcript: "x", daily: { max: 999999 } }) }, 400],
     [{ body: JSON.stringify({ transcript: "x".repeat(8001) }) }, 400],
-    [{ body: "x".repeat(32769) }, 413],
+    [{ body: "x".repeat(32769) }, 400],
     [{ body: "invalid JSON" }, 400],
     [{ body: JSON.stringify({ transcript: "x", context: [] }) }, 400],
     [{ body: JSON.stringify({ transcript: " " }) }, 400],
@@ -59,12 +59,87 @@ describe("Otoji account-billed mic proxy", () => {
     ).toBe(400);
     expect(send).not.toHaveBeenCalled();
   });
+  it("matches the account API's transcript, body-byte and complete-context-JSON limits", async () => {
+    const send = transport();
+    const context = { title: "x".repeat(1988) };
+    expect(JSON.stringify(context).length).toBe(2000);
+    const accepted = await handleMicPolish(
+      req({ body: JSON.stringify({ transcript: "字".repeat(8000), context }) }),
+      send,
+    );
+    expect(accepted.status).toBe(200);
+    send.mockClear();
+    expect(
+      await (
+        await handleMicPolish(
+          req({
+            body: JSON.stringify({ transcript: "raw", context: { title: "x".repeat(1989) } }),
+          }),
+          send,
+        )
+      ).json(),
+    ).toEqual({ error: "too-long", field: "context" });
+    expect(
+      await (
+        await handleMicPolish(req({ body: JSON.stringify({ transcript: "raw", price: 0 }) }), send)
+      ).json(),
+    ).toEqual({ error: "unknown-field" });
+    expect(
+      await (
+        await handleMicPolish(
+          req({ body: JSON.stringify({ transcript: "\u0000".repeat(8000) }) }),
+          send,
+        )
+      ).json(),
+    ).toEqual({ error: "too-long", field: "body" });
+    expect(send).not.toHaveBeenCalled();
+  });
+  it("preserves safe daily-limit metadata and rate-limit Retry-After without private fields", async () => {
+    const send = transport(
+      {
+        error: "daily-limit",
+        daily: { used: 300, max: 300 },
+        resetAt: "2026-11-19T00:00:00.000Z",
+        private: "hidden",
+      },
+      429,
+    );
+    const response = await handleMicPolish(req(), send);
+    expect(await response.json()).toEqual({
+      error: "daily-limit",
+      daily: { used: 300, max: 300 },
+      resetAt: "2026-11-19T00:00:00.000Z",
+    });
+    send.mockResolvedValue(
+      Response.json(
+        { error: "rate-limit", private: "hidden" },
+        { status: 429, headers: { "Retry-After": "30" } },
+      ),
+    );
+    const rate = await handleMicPolish(req(), send);
+    expect(rate.headers.get("retry-after")).toBe("30");
+    expect(await rate.json()).toEqual({ error: "rate-limit" });
+    send.mockResolvedValue(
+      Response.json(
+        { error: "daily-limit", daily: { used: "bad", max: 3 }, resetAt: "private" },
+        { status: 429 },
+      ),
+    );
+    expect(await (await handleMicPolish(req(), send)).json()).toEqual({ error: "daily-limit" });
+  });
+  it("only promises a refund for the account API's explicit model-failed response", async () => {
+    const response = await handleMicPolish(req(), transport({ error: "gateway failure" }, 502));
+    expect(response.status).toBe(503);
+    expect(await response.json()).toEqual({ error: "unavailable" });
+  });
   it.each([
     [401, { error: "private" }, "auth"],
     [403, {}, "auth"],
     [402, {}, "no-credits"],
     [429, { error: "daily-limit", balance: "private" }, "daily-limit"],
-    [429, { error: "rate" }, "rate"],
+    [429, { error: "rate-limit" }, "rate-limit"],
+    [404, { error: "not-found" }, "not-found"],
+    [502, { error: "model-failed" }, "model-failed"],
     [500, { error: "private exception" }, "unavailable"],
   ] as const)(
     "preserves actionable refusal %s without upstream private data",
@@ -92,7 +167,7 @@ describe("Otoji account-billed mic proxy", () => {
   it("only grants the production script its own domain and bumps its version", () => {
     const header = micUserscriptHeader();
     expect(header.match(/@connect\s+\S+/g)).toEqual(["@connect      otoji.org"]);
-    expect(header).toContain("@version      0.1.1");
+    expect(header).toContain("@version      0.1.2");
     expect(header).not.toMatch(/deepseek|googleapis/);
   });
 });

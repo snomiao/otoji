@@ -47,7 +47,7 @@ private settings form. Tokens stay in GM storage and are sent only as an
 Authorization header, never in URLs or page messages. The account service
 validates the token's live account, expiry and permission, reserves credits
 before inference and settles actual usage afterward, and enforces the account's
-daily maximum. Admin permissions do not bypass payment or the daily maximum.
+daily call maximum (shared by all its tokens, reset at 00:00 UTC). Admin permissions do not bypass payment or the daily maximum.
 The billed backend ships dark pending approval of the new permission.
 
 The Otoji signaling Worker proxies only this fixed contract to
@@ -57,9 +57,16 @@ account service never falls back to anonymous inference. The existing
 `otoji.org/signal/*` route covers the endpoint; no new DNS route is required.
 
 - Request: POST, Bearer account token, JSON `{transcript, context: null | object}`.
+  Transcript: 8000 characters; context: 2000 characters of complete JSON,
+  including keys and escapes; whole body: 32 KiB of UTF-8. The client fits
+  optional context to those limits and drops it first if the body is too large;
+  dictated text is never silently truncated.
 - Success: `{text, charged, daily: {used, max}}`, all billing quantities validated.
 - 401/403: invalid token or missing permission; 402: insufficient credits;
-  429 `daily-limit`: account daily maximum reached; other failures: unavailable.
+  404: paid polishing is not enabled; 429 `daily-limit`: account daily call
+  maximum reached (safe `daily` and UTC `resetAt` are preserved); rate-limit
+  refusals preserve a bounded numeric `Retry-After`. An explicit 502
+  `model-failed` means the backend refunded the failed call.
 - A refusal shows an actionable notice and preserves the raw transcription.
   No automatic retry spends credits twice.
 
@@ -70,8 +77,9 @@ fields and hidden content are excluded. A configuration change stops active
 capture and cancels pending polishing; restart explicitly to use new settings.
 Only text goes to Workers AI; this path does not send microphone audio.
 
-The account service implementation and its configuration/limit tests are tracked
-separately in the coordinated Lianki change. Deploy that backend and the Otoji
+The paired account service implementation and its configuration/limit tests are
+in [Lianki #1001](https://github.com/snolab/lianki/pull/1001), with its contract
+in `docs/mic-polish-api.md` on that branch. Deploy that backend and the Otoji
 Worker together after review; installing the script alone does not enable paid AI.
 
 ## Multiple tabs
