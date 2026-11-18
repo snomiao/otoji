@@ -9,7 +9,7 @@ export function micUserscriptHeader(development = false): string {
   return `// ==UserScript==
 // @name         otoji mic
 // @namespace    https://otoji.org/mic
-// @version      0.1.0
+// @version      0.1.1
 // @description  Private, device-first dictation in editable fields.${development ? " Local development loader." : ""}
 // @match        http://*/*
 // @match        https://*/*
@@ -21,8 +21,7 @@ export function micUserscriptHeader(development = false): string {
 // @grant        GM_removeValueChangeListener
 // @grant        GM_registerMenuCommand
 // @grant        GM_xmlhttpRequest
-// @connect      api.deepseek.com
-// @connect      generativelanguage.googleapis.com
+// @connect      otoji.org
 ${development ? "// @connect      localhost\n// @connect      127.0.0.1\n" : ""}// @updateURL    ${development ? "none" : "https://otoji.org/mic.user.js"}
 // @downloadURL  ${development ? "http://localhost:5185/mic/loader.user.js" : "https://otoji.org/mic.user.js"}
 // ==/UserScript==

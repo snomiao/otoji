@@ -26,12 +26,10 @@ export async function mountMicSettings(store: MicConfigStore) {
     </fieldset>
     <fieldset><legend>Voice filtering</legend><label><input type="checkbox" name="voiceprint">Ask my configured speech server to apply its enrolled voice filter.</label><label>Server voice profile / device ID<input name="voiceDevice" autocomplete="off" placeholder="Profile already enrolled on your server"></label><small>Server mode only. Enroll voices on that server first; this script does not record enrollment samples or train voiceprints. Unsupported servers may ignore this request.</small></fieldset>
     <fieldset><legend>Optional text polishing</legend>
-      <label><input type="checkbox" name="polish">Send recognized text to my chosen provider for polishing.</label>
-      <label>Provider<select name="provider"><option value="deepseek">DeepSeek</option><option value="gemini">Gemini Flash</option></select></label>
-      <label>Model ID<input name="model" placeholder="Enter a model available to your API key" autocomplete="off"></label>
-      <label>API key<input name="apiKey" type="password" autocomplete="new-password" placeholder="Leave empty to keep the saved key"></label>
-      <label><input type="checkbox" name="clearKey">Delete the saved API key.</label>
-      <small>API keys stay in the userscript manager storage, not in the page or a URL. Text goes directly to the chosen API; provider charges and data policies apply. If a request fails, the recognized text is preserved.</small>
+      <label><input type="checkbox" name="polish">Polish recognized text with Otoji's Cloudflare Workers AI.</label>
+      <label>Lianki account token<input name="accountToken" type="password" autocomplete="new-password" placeholder="Leave empty to keep the saved token"></label>
+      <label><input type="checkbox" name="clearToken">Delete the saved account token.</label>
+      <small>Create a token with the microphone polishing permission in <a href="https://lianki.com/my/preferences" target="_blank" rel="noopener noreferrer">your account preferences</a>. Polishing spends that account's credits at actual usage, subject to its daily maximum. Insufficient credits or a reached limit preserves your original transcription. Tokens stay in userscript storage; only otoji.org receives requests.</small>
       <label><input type="checkbox" name="useSiteContext">Include limited page context on sites I list below.</label>
       <label>Allowed site origins, one per line<textarea name="sites" rows="4" placeholder="https://github.com&#10;https://app.slack.com"></textarea></label>
       <small>Each listed site opts in to limited visible context: page title, selection, editor label and a bounded set of relevant Slack thread or GitHub issue/PR details. Password and payment fields are excluded. Leave blank to send only dictated text.</small>
@@ -49,18 +47,16 @@ export async function mountMicSettings(store: MicConfigStore) {
     field("voiceprint").checked = saved.voiceprint.enabled;
     field("voiceDevice").value = saved.voiceprint.device;
     field("polish").checked = saved.polish.enabled;
-    field("provider").value = saved.polish.provider;
-    field("model").value = saved.polish.model;
     field("useSiteContext").checked = saved.polish.useSiteContext;
     field("sites").value = Object.entries(saved.sites)
       .filter(([, value]) => value.contextEnabled)
       .map(([origin]) => origin)
       .join("\n");
-    field("apiKey").value = "";
-    field("apiKey").placeholder = saved.polish.apiKey
-      ? "Key saved · leave empty to keep it"
-      : "Enter your API key";
-    field("clearKey").checked = false;
+    field("accountToken").value = "";
+    field("accountToken").placeholder = saved.polish.accountToken
+      ? "Token saved · leave empty to keep it"
+      : "Enter your account token";
+    field("clearToken").checked = false;
   };
   fill();
   form.addEventListener("submit", (event) => {
@@ -95,11 +91,9 @@ export async function mountMicSettings(store: MicConfigStore) {
         },
         polish: {
           enabled: field("polish").checked,
-          provider: field("provider").value,
-          model: field("model").value.trim(),
-          apiKey: field("clearKey").checked
+          accountToken: field("clearToken").checked
             ? ""
-            : field("apiKey").value.trim() || current.polish.apiKey,
+            : field("accountToken").value.trim() || current.polish.accountToken,
           useSiteContext: field("useSiteContext").checked,
         },
         widget: { ...current.widget, enabled: false },
@@ -118,8 +112,8 @@ export async function mountMicSettings(store: MicConfigStore) {
         throw new Error("Voice filtering requires speech server mode.");
       if (next.voiceprint.enabled && !next.voiceprint.device)
         throw new Error("Choose the voice profile / device ID enrolled on your server.");
-      if (next.polish.enabled && (!next.polish.apiKey || !next.polish.model))
-        throw new Error("Polishing requires an API key and a model ID.");
+      if (next.polish.enabled && !/^lk_[0-9a-f]{64}$/.test(next.polish.accountToken))
+        throw new Error("Polishing requires a valid Lianki account token with microphone permission.");
       saved = await store.save(next);
       fill();
       output.textContent =

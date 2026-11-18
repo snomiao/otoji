@@ -10,7 +10,7 @@ afterEach(() => {
 
 async function fixture() {
   let saved = defaultMicConfig();
-  saved.polish.apiKey = "fake-private-key";
+  saved.polish.accountToken = `lk_${"a".repeat(64)}`;
   saved.widget.enabled = true;
   const roots: ShadowRoot[] = [];
   const attach = Element.prototype.attachShadow;
@@ -53,16 +53,16 @@ describe("private microphone settings", () => {
   it("keeps settings inside a closed root without pre-filling saved keys", async () => {
     const h = await fixture();
     expect(document.querySelector("#otoji-mic-private-settings")!.shadowRoot).toBeNull();
-    expect(document.body.textContent).not.toContain("fake-private-key");
-    expect(h.field("apiKey").value).toBe("");
-    expect(h.field("apiKey").type).toBe("password");
+    expect(document.body.textContent).not.toContain(`lk_${"a".repeat(64)}`);
+    expect(h.field("accountToken").value).toBe("");
+    expect(h.field("accountToken").type).toBe("password");
   });
   it("saves preferences, retains an unchanged key and stops shared mic intent", async () => {
     const h = await fixture();
     h.field("sites").value = "https://github.com\nhttps://app.slack.com";
     await h.submit();
     expect(h.saved.widget.enabled).toBe(false);
-    expect(h.saved.polish.apiKey).toBe("fake-private-key");
+    expect(h.saved.polish.accountToken).toBe(`lk_${"a".repeat(64)}`);
     expect(h.saved.sites["https://github.com"].contextEnabled).toBe(true);
     expect(h.store.save).toHaveBeenCalledOnce();
   });
@@ -77,12 +77,13 @@ describe("private microphone settings", () => {
     expect(h.saved.recognition.mode).toBe("server");
     expect(h.saved.recognition.serverUrl).toBe("wss://speech.example/stt");
   });
-  it("does not enable polishing without a model and key or context for path URLs", async () => {
+  it("does not enable polishing without a valid account token or context for path URLs", async () => {
     const h = await fixture();
     h.field("polish").checked = true;
+    h.field("accountToken").value = "invalid";
     await h.submit();
     expect(h.store.save).not.toHaveBeenCalled();
-    h.field("model").value = "example-model";
+    h.field("accountToken").value = `lk_${"a".repeat(64)}`;
     h.field("sites").value = "https://example.com/private-path";
     await h.submit();
     expect(h.store.save).not.toHaveBeenCalled();
@@ -90,11 +91,11 @@ describe("private microphone settings", () => {
     await h.submit();
     expect(h.saved.polish.enabled).toBe(true);
   });
-  it("clears a saved provider credential only through the explicit checkbox", async () => {
+  it("clears a saved account credential only through the explicit checkbox", async () => {
     const h = await fixture();
-    h.field("clearKey").checked = true;
+    h.field("clearToken").checked = true;
     await h.submit();
-    expect(h.saved.polish.apiKey).toBe("");
+    expect(h.saved.polish.accountToken).toBe("");
   });
   it("requires a server-enrolled device profile when voice filtering is enabled", async () => {
     const h = await fixture();

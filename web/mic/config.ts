@@ -22,9 +22,7 @@ export interface MicConfig {
   };
   polish: {
     enabled: boolean;
-    provider: "deepseek" | "gemini";
-    apiKey: string;
-    model: string;
+    accountToken: string;
     useSiteContext: boolean;
   };
   sites: Record<string, { contextEnabled: boolean }>;
@@ -49,7 +47,7 @@ export function defaultMicConfig(): MicConfig {
       serverUrl: "",
     },
     voiceprint: { enabled: false, device: "", threshold: 0.75, profiles: [] },
-    polish: { enabled: false, provider: "deepseek", apiKey: "", model: "", useSiteContext: false },
+    polish: { enabled: false, accountToken: "", useSiteContext: false },
     sites: {},
     widget: { x: 24, y: 24, mode: "dictation", enabled: false },
   };
@@ -143,10 +141,9 @@ export function normalizeMicConfig(value: unknown): MicConfig {
       }),
     },
     polish: {
-      enabled: polish.enabled === true,
-      provider: polish.provider === "gemini" ? "gemini" : "deepseek",
-      apiKey: string(polish.apiKey),
-      model: string(polish.model, "", 200),
+      // Legacy direct-provider consent never enables account-billed Worker AI.
+      enabled: polish.enabled === true && !("provider" in polish),
+      accountToken: string(polish.accountToken),
       useSiteContext: polish.useSiteContext === true,
     },
     sites,

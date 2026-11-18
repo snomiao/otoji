@@ -35,22 +35,44 @@ existing framework-independent modules. No runtime imports cross repositories.
 
 ## Optional polishing
 
-Polishing is disabled by default. Enabling it requires a provider API key and a
-model available to that key. Only recognized text is sent, directly from the
-userscript manager to the selected provider. Keys remain in GM storage and are
-sent in HTTP headers through `GM_xmlhttpRequest`, never URL parameters or page
-messages. Failed polishing preserves the recognized text.
+Polishing is disabled by default. Opting in sends recognized text through the
+userscript manager to `https://otoji.org/signal/mic/polish` only. The production
+script grants `@connect otoji.org`; it never requests direct access to third-party
+AI domains. Models and pricing stay on the server. Old provider keys and model
+settings are discarded; old consent does not opt into account-billed polishing.
+
+Create an expiring Lianki account token with the `mic:polish` permission at
+`https://lianki.com/my/preferences`, then save it in the installed script's
+private settings form. Tokens stay in GM storage and are sent only as an
+Authorization header, never in URLs or page messages. The account service
+validates the token's live account, expiry and permission, reserves credits
+before inference and settles actual usage afterward, and enforces the account's
+daily maximum. Admin permissions do not bypass payment or the daily maximum.
+The billed backend ships dark pending approval of the new permission.
+
+The Otoji signaling Worker proxies only this fixed contract to
+`https://lianki.com/api/mic/polish`. It does not forward cookies, redirects,
+client-supplied account/model/price overrides or raw upstream errors. A missing
+account service never falls back to anonymous inference. The existing
+`otoji.org/signal/*` route covers the endpoint; no new DNS route is required.
+
+- Request: POST, Bearer account token, JSON `{transcript, context: null | object}`.
+- Success: `{text, charged, daily: {used, max}}`, all billing quantities validated.
+- 401/403: invalid token or missing permission; 402: insufficient credits;
+  429 `daily-limit`: account daily maximum reached; other failures: unavailable.
+- A refusal shows an actionable notice and preserves the raw transcription.
+  No automatic retry spends credits twice.
 
 Page context additionally requires the context switch and an explicit allowed
 site origin. Adapters collect bounded visible title/selection/editor labels and
 relevant Slack thread or GitHub issue/PR details. Form values, password/payment
 fields and hidden content are excluded. A configuration change stops active
 capture and cancels pending polishing; restart explicitly to use new settings.
+Only text goes to Workers AI; this path does not send microphone audio.
 
-Provider API formats:
-[DeepSeek chat completions](https://api-docs.deepseek.com/api/create-chat-completion/)
-and [Gemini content generation](https://ai.google.dev/api/generate-content).
-Provider policies, model availability and charges apply.
+The account service implementation and its configuration/limit tests are tracked
+separately in the coordinated Lianki change. Deploy that backend and the Otoji
+Worker together after review; installing the script alone does not enable paid AI.
 
 ## Multiple tabs
 

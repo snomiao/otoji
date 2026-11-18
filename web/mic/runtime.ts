@@ -5,6 +5,7 @@ import type { MicOwnership } from "./ownership";
 import { InputPipe, findEditableTarget, type EditableTarget } from "./input";
 import { collectContext, type SiteContext } from "./context";
 import type { polishText } from "./polish";
+import { MicPolishError } from "./polish";
 import { startMicRaw, type MicVadHandle } from "../src/lib/mic-vad";
 import { sttRecognize, warmSenseVoice } from "../src/providers/stt/sensevoice";
 import { connectPeerRecognizer, connectServerRecognizer } from "./remote";
@@ -243,9 +244,13 @@ export async function mountMicWidget(
                   try {
                     if (!deps.polish) throw new Error("Polishing transport is not configured.");
                     text = await deps.polish(text, settings.polish, item.context, abort.signal);
-                  } catch {
+                  } catch (error) {
                     if (run === generation)
-                      note("Polishing unavailable; keeping the recognized text.");
+                      note(
+                        error instanceof MicPolishError
+                          ? error.message
+                          : "Polishing unavailable; keeping the recognized text.",
+                      );
                   }
                 }
                 if (run !== generation) return;

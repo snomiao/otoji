@@ -19,6 +19,8 @@
  *                 fed-graph{graph} (publish the room's federation envelope)
  */
 
+import { handleMicPolish } from "./mic-polish";
+
 export interface Env {
   ROOMS: DurableObjectNamespace;
   // Cloudflare Realtime TURN app credentials (wrangler secrets). Absent in
@@ -37,6 +39,7 @@ const CORS = {
 export default {
   async fetch(req: Request, env: Env): Promise<Response> {
     const url = new URL(req.url);
+    if (url.pathname === "/signal/mic/polish") return handleMicPolish(req);
     if (req.method === "OPTIONS") return new Response(null, { headers: CORS });
 
     if (url.pathname === "/signal" || url.pathname === "/signal/") {

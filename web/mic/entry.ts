@@ -7,7 +7,7 @@ import {
 import { createMicOwnership } from "./ownership";
 import { mountMicWidget } from "./runtime";
 import { mountMicSettings } from "./settings";
-import { createProviderRequest, type ProviderGmRequest } from "./request";
+import { createWorkerRequest, type WorkerGmRequest } from "./request";
 import { polishText } from "./polish";
 
 declare const GM: GmStorageApi | undefined;
@@ -16,7 +16,7 @@ declare const GM_setValue: LegacyGmStorageApi["GM_setValue"];
 declare const GM_addValueChangeListener: LegacyGmStorageApi["GM_addValueChangeListener"];
 declare const GM_removeValueChangeListener: LegacyGmStorageApi["GM_removeValueChangeListener"];
 declare const GM_registerMenuCommand: ((label: string, fn: () => void) => unknown) | undefined;
-declare const GM_xmlhttpRequest: ProviderGmRequest;
+declare const GM_xmlhttpRequest: WorkerGmRequest;
 
 async function main() {
   if (
@@ -43,10 +43,10 @@ async function main() {
   if (settingsOrigin && /^\/mic\/settings\/?$/.test(location.pathname)) {
     await mountMicSettings(store);
   } else {
-    const providerRequest = createProviderRequest((details) => GM_xmlhttpRequest(details));
+    const workerRequest = createWorkerRequest((details) => GM_xmlhttpRequest(details));
     await mountMicWidget(store, createMicOwnership(createGmStorage(api)), {
       polish: (text, config, context, signal) =>
-        polishText(text, config, context, signal, providerRequest),
+        polishText(text, config, context, signal, workerRequest),
     });
   }
   if (typeof GM_registerMenuCommand === "function")

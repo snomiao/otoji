@@ -95,14 +95,21 @@ describe("private microphone configuration", () => {
     expect(config.sites).toEqual({ "https://example.com": { contextEnabled: true } });
     expect(config.polish).toMatchObject({
       enabled: false,
-      apiKey: "private",
-      provider: "deepseek",
+      accountToken: "",
     });
     expect(config).not.toHaveProperty("secret");
     expect(normalizeMicConfig(null)).toEqual(defaultMicConfig());
     expect(normalizeMicConfig({ version: 999, polish: { enabled: true } })).toEqual(
       defaultMicConfig(),
     );
+  });
+
+  it("drops old provider keys and requires renewed consent for account billing", () => {
+    const migrated = normalizeMicConfig({
+      polish: { enabled: true, provider: "gemini", apiKey: "legacy-secret", model: "old-model" },
+    });
+    expect(migrated.polish).toEqual({ enabled: false, accountToken: "", useSiteContext: false });
+    expect(JSON.stringify(migrated)).not.toContain("legacy-secret");
   });
 
   it("accepts secure remote endpoints and local development endpoints", () => {
@@ -142,12 +149,12 @@ describe("private microphone configuration", () => {
     const changed = vi.fn();
     second.subscribe(changed);
     await first.update({
-      polish: { apiKey: "private-key" },
+      polish: { accountToken: "private-key" },
       widget: { x: 130, y: 240, enabled: true },
     });
     await first.update({ recognition: { language: "ja-JP" } });
     expect(await second.load()).toMatchObject({
-      polish: { apiKey: "private-key", enabled: false },
+      polish: { accountToken: "private-key", enabled: false },
       widget: { x: 130, y: 240, enabled: true },
       recognition: { language: "ja-JP", mode: "device" },
     });

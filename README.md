@@ -9,7 +9,7 @@ leaves the browser by default: ASR, translation, and TTS all run on-device
 
 **[Standalone dictation](https://otoji.org/mic/)** installs a small microphone in
 editable fields across websites. It recognizes on-device by default; an approved
-WebRTC peer, a configured speech server and BYOK text polishing are optional.
+WebRTC peer, a configured speech server and account-billed Workers AI text polishing are optional.
 See [setup, privacy and development](./docs/MIC.md).
 
 Join a **room** and the graph spans your devices: a phone captures the mic, a

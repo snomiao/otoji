@@ -5,6 +5,7 @@ import type { MicOwnership, OwnershipState } from "../../mic/ownership";
 import type { MicRawOptions, MicVadHandle } from "../lib/mic-vad";
 
 import { mountMicWidget, type MicRuntimeDeps } from "../../mic/runtime";
+import { MicPolishError } from "../../mic/polish";
 
 function deferred<T>() {
   let resolve!: (value: T) => void;
@@ -250,6 +251,22 @@ describe("mic widget lifecycle", () => {
     expect(h.field.value).toBe("seed ");
     expect(document.querySelector("[data-otoji-interim]")).toBeNull();
   });
+
+  it.each(["credits", "daily-limit"] as const)(
+    "keeps the raw transcript on %s refusal without retrying paid AI",
+    async (code) => {
+      const config = defaultMicConfig();
+      config.polish.enabled = true;
+      const h = harness(config);
+      h.polish.mockRejectedValue(new MicPolishError(code));
+      const runtime = await h.mount();
+      await runtime.start();
+      h.utterance();
+      await flush();
+      expect(h.field.value).toBe("seed hello");
+      expect(h.polish).toHaveBeenCalledOnce();
+    },
+  );
 
   it("ownership loss aborts pending polishing and ignores its delayed result", async () => {
     const config = defaultMicConfig();
