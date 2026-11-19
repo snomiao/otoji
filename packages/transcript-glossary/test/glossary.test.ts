@@ -18,6 +18,24 @@ const options: GlossaryOptions = {
   correctionWeight: 8,
 };
 describe("bounded dynamic glossary", () => {
+  test("CJK words repeat across unspaced clauses, including after the pool fills", () => {
+    const text = "先看星河设置。再次检查星河任务。之后测试星河状态。最后验证星河模块。";
+    expect(
+      rankGlossary({ context: [{ text, at: 0 }] }, { ...options, topK: 1, capacity: 2 }, 0).terms,
+    ).toEqual(["星河"]);
+    const descriptor = Object.getOwnPropertyDescriptor(Intl, "Segmenter")!;
+    try {
+      Object.defineProperty(Intl, "Segmenter", { ...descriptor, value: undefined });
+      expect(
+        rankGlossary({ context: [{ text, at: 0 }] }, { ...options, topK: 1, capacity: 2 }, 0).terms,
+      ).toEqual(["星河"]);
+      expect(
+        rankGlossary({ context: [{ text: "plain plain text", at: 0 }] }, options, 0).terms[0],
+      ).toBe("plain");
+    } finally {
+      Object.defineProperty(Intl, "Segmenter", descriptor);
+    }
+  });
   test("shared legacy formatter filters unsafe vocabulary and bounds oversized lists", () => {
     expect(formatSttPrompt("base", ["  ", "https://example.invalid"])).toBe("base");
     expect(formatSttPrompt("base", ["Aurora"])).toBe('base Vocabulary: ["Aurora"].');

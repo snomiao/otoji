@@ -66,6 +66,25 @@ function term(raw: unknown, max: number): string | undefined {
   return t;
 }
 
+/** Word segmentation stays bounded by the caller's already clipped context. */
+function* contextWords(text: string): Generator<string> {
+  if (typeof Intl.Segmenter === "function") {
+    for (const part of new Intl.Segmenter("zh", { granularity: "word" }).segment(text))
+      if (part.isWordLike && part.segment.length >= 2) yield part.segment;
+    return;
+  }
+  // Deterministic fallback: preserve ordinary words and use adjacent CJK
+  // bigrams, rather than treating a whole unspaced clause as one name.
+  const words = /[\p{sc=Han}\p{sc=Hiragana}\p{sc=Katakana}]+|[\p{L}\p{N}][\p{L}\p{M}\p{N}_'-]*/gu;
+  for (const match of text.matchAll(words)) {
+    const word = match[0];
+    if (/^[\p{sc=Han}\p{sc=Hiragana}\p{sc=Katakana}]+$/u.test(word)) {
+      const letters = Array.from(word);
+      for (let i = 1; i < letters.length; i++) yield letters[i - 1]! + letters[i]!;
+    } else if (word.length >= 2) yield word;
+  }
+}
+
 /** Rank by frequency × time decay; ties are deterministic, candidate and result memory bounded. */
 export function rankGlossary(
   sources: GlossarySources,
@@ -135,10 +154,7 @@ export function rankGlossary(
     const text = entry.text.slice(0, remaining);
     remaining -= text.length;
     const weight = decay(entry.at);
-    // Unicode words; explicit host-selected multiword names belong in hotwords.
-    for (const match of text.matchAll(/[\p{L}\p{N}][\p{L}\p{M}\p{N}_'-]*/gu)) {
-      if (match[0].length >= 2) add(match[0], weight);
-    }
+    for (const word of contextWords(text)) add(word, weight);
   }
   const sorted = [...candidates.values()].sort(
     (a, b) => b.score - a.score || (a.text < b.text ? -1 : a.text > b.text ? 1 : 0),
