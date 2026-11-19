@@ -239,7 +239,10 @@ fn tokenize(s: &str, line: usize) -> Result<(Vec<String>, Option<String>), Parse
             }
         }
         if quoted {
-            return Err(ParseError { line, message: format!("unterminated quote in {tok}") });
+            return Err(ParseError {
+                line,
+                message: format!("unterminated quote in {tok}"),
+            });
         }
         tokens.push(tok);
     }
@@ -255,7 +258,10 @@ fn parse_ref(s: &str, line: usize) -> Result<InputRef, ParseError> {
         Some((n, p)) => (n, Some(p.to_string())),
         None => (rest, None),
     };
-    let bad = |what: &str| ParseError { line, message: format!("bad {what} in input ref `{s}`") };
+    let bad = |what: &str| ParseError {
+        line,
+        message: format!("bad {what} in input ref `{s}`"),
+    };
     if !is_id(node) {
         return Err(bad("node id"));
     }
@@ -265,7 +271,11 @@ fn parse_ref(s: &str, line: usize) -> Result<InputRef, ParseError> {
     if policy.as_deref().is_some_and(|p| !is_id(p)) {
         return Err(bad("policy"));
     }
-    Ok(InputRef { node: node.to_string(), port, policy })
+    Ok(InputRef {
+        node: node.to_string(),
+        port,
+        policy,
+    })
 }
 
 /// Parse a node line body (after an optional leading `#` for "off").
@@ -282,7 +292,12 @@ fn split_head(body: &str, line: usize) -> Option<Result<(Head, &str), ParseError
         None => (false, body),
     };
     let Some(close) = rest.find('>') else {
-        return piped.then(|| Err(ParseError { line, message: "`|` without a closing `>`".into() }));
+        return piped.then(|| {
+            Err(ParseError {
+                line,
+                message: "`|` without a closing `>`".into(),
+            })
+        });
     };
     let inner = rest[..close].trim();
     if inner == "*" {
@@ -291,7 +306,11 @@ fn split_head(body: &str, line: usize) -> Option<Result<(Head, &str), ParseError
     let head = if inner.is_empty() {
         Head::Previous
     } else {
-        match inner.split(',').map(|r| parse_ref(r.trim(), line)).collect::<Result<Vec<_>, _>>() {
+        match inner
+            .split(',')
+            .map(|r| parse_ref(r.trim(), line))
+            .collect::<Result<Vec<_>, _>>()
+        {
             Ok(refs) => Head::Refs(refs),
             // Without `|`, text that isn't a ref list just isn't a node line.
             Err(e) => return piped.then_some(Err(e)),
@@ -304,7 +323,10 @@ fn parse_node(head: Head, rest: &str, enabled: bool, line: usize) -> Result<Node
     let (mut tokens, comment) = tokenize(rest, line)?;
     let comment = comment.filter(|c| !is_status_comment(c));
     if tokens.is_empty() {
-        return Err(ParseError { line, message: "missing node kind".into() });
+        return Err(ParseError {
+            line,
+            message: "missing node kind".into(),
+        });
     }
     // `kind` or `name=kind`; without a name the id is the kind.
     let tok = tokens.remove(0);
@@ -317,9 +339,20 @@ fn parse_node(head: Head, rest: &str, enabled: bool, line: usize) -> Result<Node
         (tok.clone(), tok.clone(), false)
     };
     if !is_id(&id) || !is_id(&kind) {
-        return Err(ParseError { line, message: format!("bad node `{tok}` (want `kind` or `kind@name`)") });
+        return Err(ParseError {
+            line,
+            message: format!("bad node `{tok}` (want `kind` or `kind@name`)"),
+        });
     }
-    Ok(NodeLine { enabled, head, id, named, kind, args: tokens, comment })
+    Ok(NodeLine {
+        enabled,
+        head,
+        id,
+        named,
+        kind,
+        args: tokens,
+        comment,
+    })
 }
 
 /// How a control reference drives a node. Control references are
@@ -350,10 +383,14 @@ impl Control {
         }
     }
     fn from_sugar(c: char) -> Option<Control> {
-        [Control::On, Control::While, Control::Unless].into_iter().find(|k| k.sugar() == c)
+        [Control::On, Control::While, Control::Unless]
+            .into_iter()
+            .find(|k| k.sugar() == c)
     }
     fn from_key(k: &str) -> Option<Control> {
-        [Control::On, Control::While, Control::Unless].into_iter().find(|c| c.key() == k)
+        [Control::On, Control::While, Control::Unless]
+            .into_iter()
+            .find(|c| c.key() == k)
     }
 }
 
@@ -371,8 +408,16 @@ pub fn parse_control(arg: &str) -> Option<(Control, InputRef)> {
         Some((n, p)) => (n, Some(p.to_string())),
         None => (target, None),
     };
-    (is_id(node) && port.as_deref().is_none_or(is_id))
-        .then(|| (ctl, InputRef { node: node.to_string(), port, policy: None }))
+    (is_id(node) && port.as_deref().is_none_or(is_id)).then(|| {
+        (
+            ctl,
+            InputRef {
+                node: node.to_string(),
+                port,
+                policy: None,
+            },
+        )
+    })
 }
 
 impl NodeLine {
@@ -434,7 +479,9 @@ impl Pipeline {
                 // `#` + node = that node, turned off; anything else is a comment.
                 match split_head(after, n) {
                     Some(Ok((head, rest))) => lines.push(
-                        parse_node(head, rest, false, n).map(Line::Node).unwrap_or_else(invalid),
+                        parse_node(head, rest, false, n)
+                            .map(Line::Node)
+                            .unwrap_or_else(invalid),
                     ),
                     Some(Err(e)) => lines.push(invalid(e)),
                     None => lines.push(Line::Comment(after.trim().to_string())),
@@ -442,7 +489,9 @@ impl Pipeline {
             } else {
                 match split_head(t, n) {
                     Some(Ok((head, rest))) => lines.push(
-                        parse_node(head, rest, true, n).map(Line::Node).unwrap_or_else(invalid),
+                        parse_node(head, rest, true, n)
+                            .map(Line::Node)
+                            .unwrap_or_else(invalid),
                     ),
                     Some(Err(e)) => lines.push(invalid(e)),
                     None => lines.push(invalid(ParseError {
@@ -476,7 +525,10 @@ impl Pipeline {
             .iter()
             .enumerate()
             .filter_map(|(i, l)| match l {
-                Line::Invalid { error, .. } => Some(ParseError { line: i + 1, message: error.clone() }),
+                Line::Invalid { error, .. } => Some(ParseError {
+                    line: i + 1,
+                    message: error.clone(),
+                }),
                 _ => None,
             })
             .collect()
@@ -531,7 +583,10 @@ impl Pipeline {
                     Line::Invalid { .. } => continue,
                     Line::Node(n) => {
                         let err = if let Some(first) = seen.get(&n.id) {
-                            Some(format!("duplicate node name `{}` (first on line {first})", n.id))
+                            Some(format!(
+                                "duplicate node name `{}` (first on line {first})",
+                                n.id
+                            ))
                         } else {
                             match &n.head {
                                 // A bare `>` takes the nearest valid line above,
@@ -544,9 +599,11 @@ impl Pipeline {
                                 Head::Refs(refs) => refs.iter().find_map(|r| {
                                     if r.node == n.id {
                                         Some(format!("node `{}` takes input from itself", n.id))
-                                    } else if self.lines.iter().any(
-                                        |l| matches!(l, Line::Node(m) if m.id == r.node),
-                                    ) {
+                                    } else if self
+                                        .lines
+                                        .iter()
+                                        .any(|l| matches!(l, Line::Node(m) if m.id == r.node))
+                                    {
                                         None
                                     } else if invalid_ids.contains(&r.node) {
                                         Some(format!("input `{}` has an error", r.node))
@@ -563,7 +620,11 @@ impl Pipeline {
                                 let tok = format!("{}{}", c.sugar(), r.node);
                                 if r.node == n.id {
                                     Some(format!("`{tok}`: a node can't control itself"))
-                                } else if self.lines.iter().any(|l| matches!(l, Line::Node(m) if m.id == r.node)) {
+                                } else if self
+                                    .lines
+                                    .iter()
+                                    .any(|l| matches!(l, Line::Node(m) if m.id == r.node))
+                                {
                                     None
                                 } else if invalid_ids.contains(&r.node) {
                                     Some(format!("`{tok}`: `{}` has an error", r.node))
@@ -583,7 +644,9 @@ impl Pipeline {
                 }
             }
             let Some((i, error)) = bad else { break };
-            let Line::Node(n) = &self.lines[i] else { unreachable!() };
+            let Line::Node(n) = &self.lines[i] else {
+                unreachable!()
+            };
             let raw = self.node_source(n);
             let id = Some(n.id.clone());
             self.lines[i] = Line::Invalid { raw, error, id };
@@ -596,7 +659,13 @@ impl Pipeline {
             Head::Source => ".".to_string(),
             Head::Previous => ">".to_string(),
             Head::All => "*>".to_string(),
-            Head::Refs(r) => format!("{}>", r.iter().map(|r| r.to_string()).collect::<Vec<_>>().join(",")),
+            Head::Refs(r) => format!(
+                "{}>",
+                r.iter()
+                    .map(|r| r.to_string())
+                    .collect::<Vec<_>>()
+                    .join(",")
+            ),
         };
         let mut s = format!("{}{head} {}", if n.enabled { "" } else { "#" }, n.token());
         for a in &n.args {
@@ -625,7 +694,13 @@ impl Pipeline {
             let refs = match &n.head {
                 Head::Source | Head::All => vec![],
                 Head::Previous => prev
-                    .map(|p| vec![InputRef { node: p.to_string(), port: None, policy: None }])
+                    .map(|p| {
+                        vec![InputRef {
+                            node: p.to_string(),
+                            port: None,
+                            policy: None,
+                        }]
+                    })
                     .unwrap_or_default(),
                 Head::Refs(r) => r.clone(),
             };
@@ -634,8 +709,10 @@ impl Pipeline {
         }
         // `*>`: dangling outputs of its group (or the group above), never
         // environment nodes. Runtimes that know types filter further.
-        let env: std::collections::HashSet<&str> =
-            self.nodes().flat_map(|n| env_needs(&n.kind).iter().copied()).collect();
+        let env: std::collections::HashSet<&str> = self
+            .nodes()
+            .flat_map(|n| env_needs(&n.kind).iter().copied())
+            .collect();
         let mut consumed: std::collections::HashSet<String> =
             out.values().flatten().map(|r| r.node.clone()).collect();
         let group = self.groups();
@@ -648,15 +725,31 @@ impl Pipeline {
             let fits = |m: &&NodeLine, consumed: &std::collections::HashSet<String>| {
                 !env.contains(m.kind.as_str()) && !consumed.contains(&m.id)
             };
-            let mut pick: Vec<&NodeLine> =
-                all[..i].iter().copied().filter(|m| group[&m.id] == g && fits(m, &consumed)).collect();
+            let mut pick: Vec<&NodeLine> = all[..i]
+                .iter()
+                .copied()
+                .filter(|m| group[&m.id] == g && fits(m, &consumed))
+                .collect();
             if pick.is_empty() && g > 0 {
-                pick = all[..i].iter().copied().filter(|m| group[&m.id] == g - 1 && fits(m, &consumed)).collect();
+                pick = all[..i]
+                    .iter()
+                    .copied()
+                    .filter(|m| group[&m.id] == g - 1 && fits(m, &consumed))
+                    .collect();
             }
             for m in &pick {
                 consumed.insert(m.id.clone());
             }
-            out.insert(n.id.clone(), pick.iter().map(|m| InputRef { node: m.id.clone(), port: None, policy: None }).collect());
+            out.insert(
+                n.id.clone(),
+                pick.iter()
+                    .map(|m| InputRef {
+                        node: m.id.clone(),
+                        port: None,
+                        policy: None,
+                    })
+                    .collect(),
+            );
         }
         out
     }
@@ -689,18 +782,30 @@ impl Pipeline {
     /// [`env_needs`]). The bool marks an implicit ref. Not written by the
     /// formatter; this is the graph that actually runs.
     pub fn effective_inputs(&self) -> BTreeMap<String, Vec<(InputRef, bool)>> {
-        let kind_of: HashMap<&str, &str> = self.nodes().map(|n| (n.id.as_str(), n.kind.as_str())).collect();
+        let kind_of: HashMap<&str, &str> = self
+            .nodes()
+            .map(|n| (n.id.as_str(), n.kind.as_str()))
+            .collect();
         let mut out = BTreeMap::new();
         for (id, refs) in self.inputs() {
             let kind = kind_of.get(id.as_str()).copied().unwrap_or("");
             let mut all: Vec<(InputRef, bool)> = refs.into_iter().map(|r| (r, false)).collect();
             for need in env_needs(kind) {
-                let named = all.iter().any(|(r, _)| kind_of.get(r.node.as_str()) == Some(need));
+                let named = all
+                    .iter()
+                    .any(|(r, _)| kind_of.get(r.node.as_str()) == Some(need));
                 if named {
                     continue;
                 }
                 if let Some(env) = self.nodes().find(|n| n.enabled && n.kind == *need) {
-                    all.push((InputRef { node: env.id.clone(), port: None, policy: None }, true));
+                    all.push((
+                        InputRef {
+                            node: env.id.clone(),
+                            port: None,
+                            policy: None,
+                        },
+                        true,
+                    ));
                 }
             }
             out.insert(id, all);
@@ -715,7 +820,12 @@ impl Pipeline {
         self.render(None)
     }
 
-    fn head_text(&self, n: &NodeLine, explicit: &BTreeMap<String, Vec<InputRef>>, branching: bool) -> String {
+    fn head_text(
+        &self,
+        n: &NodeLine,
+        explicit: &BTreeMap<String, Vec<InputRef>>,
+        branching: bool,
+    ) -> String {
         let head = match &n.head {
             Head::Source => ".".to_string(),
             Head::Previous if !branching => ">".to_string(),
@@ -725,7 +835,11 @@ impl Pipeline {
                 format!("{}>", refs.join(","))
             }
         };
-        if n.enabled { head } else { format!("#{head}") }
+        if n.enabled {
+            head
+        } else {
+            format!("#{head}")
+        }
     }
 
     fn render(&self, status: Option<&HashMap<String, NodeStatus>>) -> String {
@@ -748,12 +862,24 @@ impl Pipeline {
         }
         let mut out = String::new();
         let mut block: Vec<Option<Cells>> = Vec::new(); // None = verbatim row
-        // Verbatim rows (comments, invalid lines), in order, with an optional
-        // status that aligns with the block's status column.
+                                                        // Verbatim rows (comments, invalid lines), in order, with an optional
+                                                        // status that aligns with the block's status column.
         let mut comments: Vec<(String, Option<String>)> = Vec::new();
-        let flush = |block: &mut Vec<Option<Cells>>, comments: &mut Vec<(String, Option<String>)>, out: &mut String| {
-            let wh = block.iter().flatten().map(|c| c.head.chars().count()).max().unwrap_or(0);
-            let wi = block.iter().flatten().map(|c| c.id.chars().count()).max().unwrap_or(0);
+        let flush = |block: &mut Vec<Option<Cells>>,
+                     comments: &mut Vec<(String, Option<String>)>,
+                     out: &mut String| {
+            let wh = block
+                .iter()
+                .flatten()
+                .map(|c| c.head.chars().count())
+                .max()
+                .unwrap_or(0);
+            let wi = block
+                .iter()
+                .flatten()
+                .map(|c| c.id.chars().count())
+                .max()
+                .unwrap_or(0);
             let wb = block
                 .iter()
                 .flatten()
@@ -935,7 +1061,9 @@ impl Pipeline {
     /// Inverse of [`to_graph_json`] (comments and blank lines are not kept).
     /// Nodes are ordered so every node comes after its inputs.
     pub fn from_graph_json(v: &Value) -> Result<Pipeline, String> {
-        let nodes = v["nodes"].as_object().ok_or("graph has no `nodes` object")?;
+        let nodes = v["nodes"]
+            .as_object()
+            .ok_or("graph has no `nodes` object")?;
         let edges = v["edges"].as_array().cloned().unwrap_or_default();
         let mut ins: BTreeMap<&str, Vec<InputRef>> = BTreeMap::new();
         let mut controls: BTreeMap<String, Vec<String>> = BTreeMap::new();
@@ -947,15 +1075,30 @@ impl Pipeline {
                 continue; // environment edge: re-derived, never written
             }
             if e["targetHandle"].as_str() == Some("control") {
-                let c = e["control"].as_str().and_then(Control::from_key).ok_or("control edge without a kind")?;
+                let c = e["control"]
+                    .as_str()
+                    .and_then(Control::from_key)
+                    .ok_or("control edge without a kind")?;
                 let port = e["sourceHandle"].as_str().filter(|p| *p != "out");
-                let tok = format!("{}{}{}", c.sugar(), src, port.map(|p| format!(".{p}")).unwrap_or_default());
+                let tok = format!(
+                    "{}{}{}",
+                    c.sugar(),
+                    src,
+                    port.map(|p| format!(".{p}")).unwrap_or_default()
+                );
                 controls.entry(dst.to_string()).or_default().push(tok);
                 continue;
             }
-            let port = e["sourceHandle"].as_str().filter(|p| *p != "out").map(String::from);
+            let port = e["sourceHandle"]
+                .as_str()
+                .filter(|p| *p != "out")
+                .map(String::from);
             let policy = e["policy"].as_str().map(String::from);
-            ins.entry(dst).or_default().push(InputRef { node: src.into(), port, policy });
+            ins.entry(dst).or_default().push(InputRef {
+                node: src.into(),
+                port,
+                policy,
+            });
         }
         // Stable topological order: by original row (pos.y), inputs first.
         let mut order: Vec<&String> = nodes.keys().collect();
@@ -985,13 +1128,20 @@ impl Pipeline {
             let mut args: Vec<String> = cfg
                 .get("args")
                 .and_then(|a| a.as_array())
-                .map(|a| a.iter().filter_map(|x| x.as_str().map(String::from)).collect())
+                .map(|a| {
+                    a.iter()
+                        .filter_map(|x| x.as_str().map(String::from))
+                        .collect()
+                })
                 .unwrap_or_default();
             for (k, val) in &cfg {
                 if k == "args" || k == "enabled" {
                     continue;
                 }
-                let val = val.as_str().map(String::from).unwrap_or_else(|| val.to_string());
+                let val = val
+                    .as_str()
+                    .map(String::from)
+                    .unwrap_or_else(|| val.to_string());
                 args.push(format!("{k}={val}"));
             }
             if let Some(d) = n["device"].as_str() {
@@ -1087,7 +1237,11 @@ impl Activity {
         let frac = self.fraction(now);
         let period = self.window.as_secs_f32();
         let phase = now.saturating_duration_since(self.epoch).as_secs_f32() % period / period;
-        let state = if frac >= 0.01 && phase < frac { busy } else { NodeState::Idle };
+        let state = if frac >= 0.01 && phase < frac {
+            busy
+        } else {
+            NodeState::Idle
+        };
         (state, frac)
     }
 }
@@ -1154,7 +1308,10 @@ stt.final> append@log $date.stt  # daily log
     #[test]
     fn leading_pipe_is_optional() {
         let p = Pipeline::parse(". mic\n|mic> stt\n| stt > overlay\n|> append x\n").unwrap();
-        assert_eq!(p.format(), ".    mic\nmic> stt\nstt> overlay\n>    append  x\n");
+        assert_eq!(
+            p.format(),
+            ".    mic\nmic> stt\nstt> overlay\n>    append  x\n"
+        );
         // Without `|`, text before `>` that isn't a ref list is not a node.
         assert!(Pipeline::parse(". mic\nsee a > b\n").is_err());
         let p = Pipeline::parse(". mic\n# see a > b\n").unwrap();
@@ -1167,7 +1324,10 @@ stt.final> append@log $date.stt  # daily log
     #[test]
     fn bare_kind_is_a_complete_line() {
         let p = Pipeline::parse(". mic\n> stt\n").unwrap();
-        let n: Vec<_> = p.nodes().map(|n| (n.id.as_str(), n.kind.as_str(), n.named)).collect();
+        let n: Vec<_> = p
+            .nodes()
+            .map(|n| (n.id.as_str(), n.kind.as_str(), n.named))
+            .collect();
         assert_eq!(n, vec![("mic", "mic", false), ("stt", "stt", false)]);
         assert_eq!(p.inputs()["stt"][0].node, "mic");
         assert_eq!(p.format(), ". mic\n> stt\n");
@@ -1208,21 +1368,34 @@ stt.final> append@log $date.stt  # daily log
         let p = Pipeline::parse_lenient(src);
         let ok: Vec<_> = p.nodes().map(|n| n.id.as_str()).collect();
         assert_eq!(ok, ["mic", "stt", "overlay"]);
-        let errs: Vec<_> = p.errors().into_iter().map(|e| (e.line, e.message)).collect();
+        let errs: Vec<_> = p
+            .errors()
+            .into_iter()
+            .map(|e| (e.line, e.message))
+            .collect();
         assert_eq!(
             errs,
             [
                 (3, "unknown node `nope`".to_string()),
                 (4, "input `polish` has an error".to_string()),
-                (6, "a node line starts with `.` (source) or `input>`".to_string()),
+                (
+                    6,
+                    "a node line starts with `.` (source) or `input>`".to_string()
+                ),
             ]
         );
         // A broken line gives up its name: the next `append` is not `append2`.
         let p2 = Pipeline::parse_lenient("nope> append x\n. mic\nmic> append y\n");
-        assert_eq!(p2.nodes().map(|n| n.id.as_str()).collect::<Vec<_>>(), ["mic", "append"]);
+        assert_eq!(
+            p2.nodes().map(|n| n.id.as_str()).collect::<Vec<_>>(),
+            ["mic", "append"]
+        );
         // Broken lines are kept verbatim; status shows the error.
         let f = p.format();
-        assert!(f.contains("\nnope> polish\n") && f.contains("\nhello\n"), "{f}");
+        assert!(
+            f.contains("\nnope> polish\n") && f.contains("\nhello\n"),
+            "{f}"
+        );
         let shown = p.render_with_status(&HashMap::new());
         assert!(shown.contains("# ! unknown node `nope`"), "{shown}");
         // …and copying the rendered view back drops the status again.
@@ -1234,7 +1407,8 @@ stt.final> append@log $date.stt  # daily log
     #[test]
     fn spaces_inside_input_clause_are_accepted() {
         assert!(Pipeline::parse(". mic\n|  stt . final > overlay\n").is_err());
-        let p = Pipeline::parse(". mic\n| mic >  stt\n| stt.final:latest , mic > overlay\n").unwrap();
+        let p =
+            Pipeline::parse(". mic\n| mic >  stt\n| stt.final:latest , mic > overlay\n").unwrap();
         assert_eq!(
             p.format(),
             ".                     mic\n\
@@ -1266,9 +1440,27 @@ stt.final> append@log $date.stt  # daily log
     fn render_with_status_parses_back() {
         let p = Pipeline::parse(SAMPLE).unwrap();
         let mut st = HashMap::new();
-        st.insert("mic".into(), NodeStatus { state: NodeState::Streaming, detail: "▁▃▇ · 3:42".into() });
-        st.insert("stt".into(), NodeStatus { state: NodeState::Chunk, detail: "12% busy".into() });
-        st.insert("polish".into(), NodeStatus { state: NodeState::NeedsUser, detail: "needs API key".into() });
+        st.insert(
+            "mic".into(),
+            NodeStatus {
+                state: NodeState::Streaming,
+                detail: "▁▃▇ · 3:42".into(),
+            },
+        );
+        st.insert(
+            "stt".into(),
+            NodeStatus {
+                state: NodeState::Chunk,
+                detail: "12% busy".into(),
+            },
+        );
+        st.insert(
+            "polish".into(),
+            NodeStatus {
+                state: NodeState::NeedsUser,
+                detail: "needs API key".into(),
+            },
+        );
         let shown = p.render_with_status(&st);
         assert_eq!(
             shown,
@@ -1283,7 +1475,9 @@ stt.final> append@log $date.stt          # -
         );
         let back = Pipeline::parse(&shown).unwrap();
         let strip = |p: &Pipeline| {
-            p.nodes().map(|n| (n.id.clone(), n.kind.clone(), n.args.clone(), n.enabled)).collect::<Vec<_>>()
+            p.nodes()
+                .map(|n| (n.id.clone(), n.kind.clone(), n.args.clone(), n.enabled))
+                .collect::<Vec<_>>()
         };
         assert_eq!(strip(&back), strip(&p));
     }
@@ -1292,9 +1486,17 @@ stt.final> append@log $date.stt          # -
     fn toggle_writes_hash_prefix() {
         let mut p = Pipeline::parse(SAMPLE).unwrap();
         assert!(p.set_enabled("polish", false));
-        assert!(p.format().contains("\n#stt.final> polish     gemini\n"), "{}", p.format());
+        assert!(
+            p.format().contains("\n#stt.final> polish     gemini\n"),
+            "{}",
+            p.format()
+        );
         assert!(p.set_enabled("dbg", true));
-        assert!(p.format().contains("\nstt>        append@dbg debug.txt\n"), "{}", p.format());
+        assert!(
+            p.format().contains("\nstt>        append@dbg debug.txt\n"),
+            "{}",
+            p.format()
+        );
         assert!(!p.set_enabled("nope", true));
     }
 
@@ -1333,13 +1535,24 @@ stt.final> append@log $date.stt          # -
         assert_eq!(g["nodes"]["stt"]["config"]["vad"], "3s");
         assert_eq!(g["nodes"]["dbg"]["config"]["enabled"], false);
         assert_eq!(g["nodes"]["pol"]["type"], "polish");
-        let pe = g["edges"].as_array().unwrap().iter().find(|e| e["target"] == "pol").unwrap();
-        assert_eq!((pe["sourceHandle"].as_str(), pe["policy"].as_str()), (Some("final"), Some("latest")));
+        let pe = g["edges"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|e| e["target"] == "pol")
+            .unwrap();
+        assert_eq!(
+            (pe["sourceHandle"].as_str(), pe["policy"].as_str()),
+            (Some("final"), Some("latest"))
+        );
         let back = Pipeline::from_graph_json(&g).unwrap();
         assert_eq!(back.to_graph_json(), g);
         assert!(back.format().contains("polish@pol gemini"));
         let mic = back.nodes().find(|n| n.id == "mic").unwrap();
-        assert_eq!((mic.token(), mic.args.clone()), ("mic".into(), vec!["default".into(), "@iphone".into()]));
+        assert_eq!(
+            (mic.token(), mic.args.clone()),
+            ("mic".into(), vec!["default".into(), "@iphone".into()])
+        );
     }
 
     #[test]
@@ -1369,9 +1582,15 @@ stt.final> append@log $date.stt          # -
         let t = b.epoch;
         b.record(t, t + ms(800));
         // At t+1000 the window holds 800 ms busy and the phase is 0 → busy.
-        assert_eq!(b.state_at(t + ms(1000), NodeState::Chunk).0, NodeState::Chunk);
+        assert_eq!(
+            b.state_at(t + ms(1000), NodeState::Chunk).0,
+            NodeState::Chunk
+        );
         // Once the work ages out of the window → idle.
-        assert_eq!(b.state_at(t + ms(5000), NodeState::Chunk), (NodeState::Idle, 0.0));
+        assert_eq!(
+            b.state_at(t + ms(5000), NodeState::Chunk),
+            (NodeState::Idle, 0.0)
+        );
         // An open interval counts until now.
         let mut c = Activity::new(ms(1000));
         let t = c.epoch;
@@ -1383,28 +1602,56 @@ stt.final> append@log $date.stt          # -
 
     #[test]
     fn control_sugar_and_long_forms() {
-        let src = ". mic\nmic> vad\n. drums hit=kick ^vad\n. groove=drums ?vad\n. piano unless=vad\n";
+        let src =
+            ". mic\nmic> vad\n. drums hit=kick ^vad\n. groove=drums ?vad\n. piano unless=vad\n";
         let p = Pipeline::parse(src).unwrap();
         let ctl = |id: &str| {
-            p.nodes().find(|n| n.id == id).unwrap().controls().into_iter().map(|(c, r)| (c, r.node)).collect::<Vec<_>>()
+            p.nodes()
+                .find(|n| n.id == id)
+                .unwrap()
+                .controls()
+                .into_iter()
+                .map(|(c, r)| (c, r.node))
+                .collect::<Vec<_>>()
         };
         assert_eq!(ctl("drums"), [(Control::On, "vad".to_string())]);
         assert_eq!(ctl("groove"), [(Control::While, "vad".to_string())]);
         assert_eq!(ctl("piano"), [(Control::Unless, "vad".to_string())]);
         // The formatter keeps the spelling you wrote.
         let f = p.format();
-        assert!(f.contains("hit=kick ^vad") && f.contains("unless=vad"), "{f}");
+        assert!(
+            f.contains("hit=kick ^vad") && f.contains("unless=vad"),
+            "{f}"
+        );
         // Graph JSON: dashed control edges, not data inputs or config.
         let g = p.to_graph_json();
-        let e = g["edges"].as_array().unwrap().iter().find(|e| e["target"] == "drums").unwrap();
-        assert_eq!((e["targetHandle"].as_str(), e["control"].as_str()), (Some("control"), Some("on")));
+        let e = g["edges"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|e| e["target"] == "drums")
+            .unwrap();
+        assert_eq!(
+            (e["targetHandle"].as_str(), e["control"].as_str()),
+            (Some("control"), Some("on"))
+        );
         assert!(g["nodes"]["piano"]["config"].get("unless").is_none());
         let back = Pipeline::from_graph_json(&g).unwrap();
         assert_eq!(back.to_graph_json(), g);
         // Unknown or self references break only that line.
         let p = Pipeline::parse_lenient(". mic\n. drums ?nope\n. piano !piano\n");
-        let errs: Vec<_> = p.errors().into_iter().map(|e| (e.line, e.message)).collect();
-        assert_eq!(errs, [(2, "`?nope`: unknown node `nope`".to_string()), (3, "`!piano`: a node can't control itself".to_string())]);
+        let errs: Vec<_> = p
+            .errors()
+            .into_iter()
+            .map(|e| (e.line, e.message))
+            .collect();
+        assert_eq!(
+            errs,
+            [
+                (2, "`?nope`: unknown node `nope`".to_string()),
+                (3, "`!piano`: a node can't control itself".to_string())
+            ]
+        );
         assert_eq!(p.nodes().count(), 1);
     }
 
@@ -1420,7 +1667,11 @@ stt.final> append@log $date.stt          # -
         assert_eq!(ids("x"), ["mic"]);
         let f = p.format();
         let squeeze = f.split_whitespace().collect::<Vec<_>>().join(" ");
-        assert!(squeeze.contains("*> overlay --- . llm openai") && squeeze.contains("*> append@x b.txt"), "{f}");
+        assert!(
+            squeeze.contains("*> overlay --- . llm openai")
+                && squeeze.contains("*> append@x b.txt"),
+            "{f}"
+        );
         assert_eq!(Pipeline::parse(&f).unwrap().format(), f);
     }
 
@@ -1437,21 +1688,41 @@ stt.final> append@log $date.stt          # -
         let src = ". mic\nmic> stt\n. llm gemma3:4b\n. llm@llm2 gpt-4.1-mini\nstt.final> polish\nllm2,stt.final> translate en\n";
         let p = Pipeline::parse(src).unwrap();
         let eff = p.effective_inputs();
-        let ids = |id: &str| eff[id].iter().map(|(r, i)| (r.node.clone(), *i)).collect::<Vec<_>>();
+        let ids = |id: &str| {
+            eff[id]
+                .iter()
+                .map(|(r, i)| (r.node.clone(), *i))
+                .collect::<Vec<_>>()
+        };
         // polish: implicit first llm; translate: the named llm2, nothing implicit.
         assert_eq!(ids("polish"), [("stt".into(), false), ("llm".into(), true)]);
-        assert_eq!(ids("translate"), [("llm2".into(), false), ("stt".into(), false)]);
+        assert_eq!(
+            ids("translate"),
+            [("llm2".into(), false), ("stt".into(), false)]
+        );
         assert_eq!(ids("stt"), [("mic".into(), false)]);
         // The implicit input is never written back.
-        assert!(p.format().contains("\nstt.final>      polish\n"), "{}", p.format());
+        assert!(
+            p.format().contains("\nstt.final>      polish\n"),
+            "{}",
+            p.format()
+        );
         // Graph JSON marks it, and reading it back drops it again.
         let g = p.to_graph_json();
-        let imp = g["edges"].as_array().unwrap().iter().filter(|e| e["implicit"] == true).count();
+        let imp = g["edges"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|e| e["implicit"] == true)
+            .count();
         assert_eq!(imp, 1);
         assert_eq!(Pipeline::from_graph_json(&g).unwrap().to_graph_json(), g);
         // A disabled llm is skipped; the next enabled one is used.
         let p = Pipeline::parse("#. llm a\n. llm@llm2 b\n. x\nx> polish\n").unwrap();
-        assert_eq!(p.effective_inputs()["polish"].last().unwrap().0.node, "llm2");
+        assert_eq!(
+            p.effective_inputs()["polish"].last().unwrap().0.node,
+            "llm2"
+        );
     }
 
     #[test]
@@ -1468,6 +1739,8 @@ stt.final> append@log $date.stt          # -
         let p = Pipeline::parse_lenient(src);
         assert_eq!(p.nodes().count(), 2);
         assert!(matches!(&p.lines[2], Line::Story(t) if t == ". not a node"));
-        assert!(p.format().contains("The flood came in the spring.\n. not a node\n\"\"\"\n"));
+        assert!(p
+            .format()
+            .contains("The flood came in the spring.\n. not a node\n\"\"\"\n"));
     }
 }

@@ -277,8 +277,8 @@ mod tests {
     #[test]
     fn audible_input_is_not_silenced() {
         let mut st = CaptureState::new(16 * 2 * 20); // 20 ms chunks
-        // 1 s of a 48 kHz, ~-10 dBFS signal: a few mixed tones plus a little
-        // deterministic noise so RNNoise doesn't treat it as pure hum.
+                                                     // 1 s of a 48 kHz, ~-10 dBFS signal: a few mixed tones plus a little
+                                                     // deterministic noise so RNNoise doesn't treat it as pure hum.
         let mut seed: u32 = 1;
         let input: Vec<f32> = (0..48_000)
             .map(|i| {

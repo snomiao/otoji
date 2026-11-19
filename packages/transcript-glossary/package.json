@@ -1,0 +1,11 @@
+{
+  "name": "@otoji/transcript-glossary",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": "./src/index.ts",
+  "scripts": {
+    "test": "bun test test",
+    "typecheck": "tsc --noEmit --strict --target ES2022 --module ESNext --moduleResolution bundler src/index.ts"
+  }
+}
