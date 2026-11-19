@@ -1,0 +1,7 @@
+# Transcript glossary
+
+Pure bounded frequency and time-decay Top-K ranking for transcription and paragraph polish. No storage, account discovery, network, model or DOM access. The host provides explicitly permitted context, user hotwords, explicit manual corrections, a clock and all product limits. Context is sampled once per call; repeatedly refreshing a snapshot does not train or expand a hidden vocabulary. Each call can read updated preferences for the next utterance.
+
+`rankGlossary(sources, options, now)` returns bounded terms and recent explicit corrections. Fixed words and corrections have configurable weights; context frequency is multiplied by exponential age decay. Candidate capacity, context input, source count, term size and serialized output are bounded. The host must keep each account's sources separate; the package retains no state. Do not learn corrections automatically from model output.
+
+`glossaryAsrPrompt` is for providers that actually support textual prompts (for example a Whisper `initial_prompt`). SenseVoice CTC has no such prompt path; use the glossary for subsequent polish instead. `withGlossaryPrompt` appends the shared untrusted-data rule to a paragraph prompt; put glossary data in the request's data field, never concatenate it into system instructions. These hints do not guarantee recognition or correction accuracy.
