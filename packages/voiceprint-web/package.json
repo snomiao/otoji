@@ -1,0 +1,19 @@
+{
+  "name": "@otoji/voiceprint-web",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "license": "MIT",
+  "files": ["dist", "README.md"],
+  "exports": { ".": { "types": "./dist/index.d.ts", "import": "./dist/index.js" } },
+  "sideEffects": false,
+  "scripts": {
+    "typecheck": "tsrs --noEmit",
+    "test": "vitest run",
+    "build": "bun run typecheck && bun build.mjs",
+    "bench": "bun run build && bun bench/serve.mjs",
+    "bench:check": "node bench/check.mjs"
+  },
+  "peerDependencies": { "onnxruntime-web": "1.27.0" },
+  "devDependencies": { "@playwright/test": "1.61.1", "@types/node": "25.5.2", "tsrs": "0.25.0-ts7.1.0-beta", "vitest": "2.1.9" }
+}

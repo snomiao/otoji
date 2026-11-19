@@ -97,7 +97,7 @@ export default defineConfig({
   resolve: { alias: rguiAliases },
   // rgui source lives outside web/ (submodule / sibling worktree); let the dev
   // server read it.
-  server: { fs: { allow: [url("."), dirname(rguiAlias)] } },
+  server: { fs: { allow: [url("."), url("../packages/voiceprint-web/src"), dirname(rguiAlias)] } },
   build: { outDir: "dist", sourcemap: true },
   test: {
     environment: "jsdom",
