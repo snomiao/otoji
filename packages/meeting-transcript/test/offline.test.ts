@@ -36,6 +36,18 @@ const speech: Transcribe = async (window) => [
 ];
 
 describe("bounded offline meeting transcription", () => {
+  it("deduplicates CJK partial overlap without splitting on whitespace", async () => {
+    const lines = await collect(
+      transcribeMeeting(source(audio(2)), {
+        transcribe: async () => [
+          { startMs: 0, endMs: 800, text: "你好世界" },
+          { startMs: 500, endMs: 1500, text: "世界你好" },
+        ],
+      }),
+    );
+    expect(lines.map((line) => line.text).join("")).toBe("你好世界你好");
+    expect(lines.at(-1)?.endMs).toBe(1500);
+  });
   it("processes an hour from 120s source chunks sequentially with at most 12s provider PCM", async () => {
     let produced = 0,
       active = 0,

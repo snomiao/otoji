@@ -13,6 +13,7 @@ import {
   type Embed,
 } from "./types";
 import { createDiarizer, type DiarizerOptions } from "./diarization";
+import { trimTranscriptOverlap, joinAsrText } from "./overlap";
 
 export interface MeetingGap {
   track: MeetingTrack;
@@ -46,34 +47,14 @@ interface TrackBuffer {
   recent: MeetingLine[];
 }
 const millis = (sample: number) => Math.round((sample * 1000) / SAMPLE_RATE);
-const normalize = (text: string) =>
-  text.normalize("NFKC").replace(/\s+/g, " ").trim().toLowerCase();
-
 function deduplicate(previous: readonly MeetingLine[], line: MeetingLine): MeetingLine | null {
-  let current = line;
+  let current: MeetingLine | null = line;
   for (const old of previous) {
-    if (old.endMs <= current.startMs || old.startMs >= current.endMs) continue;
-    const before = normalize(old.text),
-      after = normalize(current.text);
-    if (before === after || before.endsWith(after)) return null;
-    // Trimming requires exact normalized word boundaries and temporal overlap.
-    const words = current.text.trim().split(/\s+/);
-    for (let n = words.length - 1; n > 0; n--) {
-      const prefix = normalize(words.slice(0, n).join(" "));
-      if (before === prefix || before.endsWith(` ${prefix}`)) {
-        const startMs = Math.max(current.startMs, old.endMs);
-        if (startMs >= current.endMs) break;
-        current = {
-          ...current,
-          id: `${current.track}:${startMs}`,
-          startMs,
-          text: words.slice(n).join(" "),
-        };
-        break;
-      }
-    }
+    if (!current) break;
+    if (old.speaker !== current.speaker) continue;
+    current = trimTranscriptOverlap(old, current);
   }
-  return current;
+  return current ? { ...current, id: `${current.track}:${current.startMs}` } : null;
 }
 
 /** Sequential ASR over owned <=12s buffers; source frames and whole meetings are never retained. */
@@ -168,7 +149,7 @@ export async function* transcribeMeeting(
             const previous = lines.at(-1);
             if (previous && previous.startMs === line.startMs) {
               previous.endMs = Math.max(previous.endMs, line.endMs);
-              previous.text += ` ${line.text}`;
+              previous.text = joinAsrText([previous.text, line.text]);
               if (previous.speaker !== line.speaker) previous.speaker = "unknown";
             } else if (
               previous &&
@@ -177,7 +158,7 @@ export async function* transcribeMeeting(
               line.startMs >= previous.endMs &&
               line.startMs - previous.endMs <= 250
             ) {
-              previous.text += ` ${line.text}`;
+              previous.text = joinAsrText([previous.text, line.text]);
               previous.endMs = line.endMs;
             } else lines.push(line);
           }

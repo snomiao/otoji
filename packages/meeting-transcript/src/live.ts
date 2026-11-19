@@ -128,8 +128,8 @@ export function createLiveTranscriber(options: LiveOptions) {
       };
       const line = text ? trimTranscriptOverlap(s.previous, raw) : null;
       if (line) {
-        line.startMs = startMs;
-        line.id = `${track}:${startMs}`;
+        line.startMs = Math.max(startMs, line.startMs);
+        line.id = `${track}:${line.startMs}`;
       }
       if (s.draft && (!line || line.text.length < s.draft.text.length * 0.6)) {
         s.draft = { ...s.draft, endMs };

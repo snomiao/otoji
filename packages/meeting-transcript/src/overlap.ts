@@ -29,7 +29,7 @@ export function trimTranscriptOverlap(
   const left = units(previous.text).slice(-128),
     right = units(incoming.text);
   for (let n = Math.min(left.length, right.length, 128); n >= 1; n--) {
-    if (n === 1 && right.length > 1) continue;
+    if (n === 1 && right.length > 1 && right[0].key.length < 2) continue;
     if (!left.slice(-n).every((unit, i) => unit.key === right[i].key)) continue;
     const text = incoming.text
       .slice(right[n - 1].end)

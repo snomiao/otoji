@@ -23,6 +23,19 @@ const completeWindow: Transcribe = async (w) => {
   ];
 };
 describe("continuous meeting captions", () => {
+  it("preserves a timed first-word offset after leading silence", async () => {
+    const lines: MeetingLine[] = [];
+    const live = createLiveTranscriber({
+      transcribe: async () => [{ startMs: 750, endMs: 1000, text: "speech" }],
+      onDraft: () => {},
+      onStable: (rows) => lines.push(...rows),
+    });
+    await live.push(frame(0, 2));
+    await live.flush();
+    expect(lines[0].startMs).toBe(750);
+    expect(lines[0].id).toBe("me:750");
+    live.close();
+  });
   it("keeps 70 minutes continuous without a meeting-wide cutoff, bounded PCM and duplicate overlap", async () => {
     const lines: MeetingLine[] = [];
     let largest = 0,
