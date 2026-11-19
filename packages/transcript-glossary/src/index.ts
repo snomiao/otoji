@@ -68,6 +68,14 @@ function term(raw: unknown, max: number): string | undefined {
 
 /** Word segmentation stays bounded by the caller's already clipped context. */
 function* contextWords(text: string): Generator<string> {
+  // Remove complete sensitive spans before tokenization can split them into
+  // apparently harmless vocabulary. This never processes explicit hotwords.
+  text = text
+    .replace(/\b[a-z][a-z0-9+.-]*:\/\/[^\s<>"']+/gi, " ")
+    .replace(/\bwww\.[^\s<>"']+/gi, " ")
+    .replace(/[^\s<>"'@]+@[^\s<>"'@]+/g, " ")
+    .replace(/(^|[\s("'=])(?:\/|~\/|[a-z]:[\\/])[^\s<>"']+/gi, "$1 ")
+    .replace(/\b(?:[a-z0-9][a-z0-9-]*\.)+[a-z]{2,63}(?::\d+)?(?:\/[^\s<>"']*)?/gi, " ");
   if (typeof Intl.Segmenter === "function") {
     for (const part of new Intl.Segmenter("zh", { granularity: "word" }).segment(text))
       if (part.isWordLike && part.segment.length >= 2) yield part.segment;

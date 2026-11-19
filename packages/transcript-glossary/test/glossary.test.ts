@@ -18,6 +18,21 @@ const options: GlossaryOptions = {
   correctionWeight: 8,
 };
 describe("bounded dynamic glossary", () => {
+  test("context redacts whole locations and addresses before segmentation", () => {
+    const text =
+      "https://secret-project.internal/path sample@corp.invalid /Users/private-project/research C:\\private-project\\secret www.hidden.invalid/section allowed allowed";
+    expect(
+      rankGlossary({ context: [{ text, at: 0 }], hotwords: ["Explicit Project"] }, options, 0)
+        .terms,
+    ).toEqual(["Explicit Project", "allowed"]);
+    const descriptor = Object.getOwnPropertyDescriptor(Intl, "Segmenter")!;
+    try {
+      Object.defineProperty(Intl, "Segmenter", { ...descriptor, value: undefined });
+      expect(rankGlossary({ context: [{ text, at: 0 }] }, options, 0).terms).toEqual(["allowed"]);
+    } finally {
+      Object.defineProperty(Intl, "Segmenter", descriptor);
+    }
+  });
   test("CJK words repeat across unspaced clauses, including after the pool fills", () => {
     const text = "先看星河设置。再次检查星河任务。之后测试星河状态。最后验证星河模块。";
     expect(
