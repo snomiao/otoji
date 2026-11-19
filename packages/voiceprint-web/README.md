@@ -15,7 +15,8 @@ application remains responsible for consent, isolation, retention and deletion.
 
 ## Consume from a git submodule
 
-Build this directory after checking out the pinned Otoji submodule revision:
+Use Bun 1.4.4 to build this directory after checking out the pinned Otoji
+submodule revision:
 
 ```sh
 bun install --frozen-lockfile
