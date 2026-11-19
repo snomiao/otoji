@@ -3,6 +3,7 @@ import {
   rankGlossary,
   glossaryAsrPrompt,
   withGlossaryPrompt,
+  formatSttPrompt,
   type GlossaryOptions,
 } from "../src/index";
 
@@ -17,6 +18,25 @@ const options: GlossaryOptions = {
   correctionWeight: 8,
 };
 describe("bounded dynamic glossary", () => {
+  test("shared legacy formatter filters unsafe vocabulary and bounds oversized lists", () => {
+    expect(formatSttPrompt("base", ["  ", "https://example.invalid"])).toBe("base");
+    expect(formatSttPrompt("base", ["Aurora"])).toBe('base Vocabulary: ["Aurora"].');
+    expect(formatSttPrompt("base", Array(1000).fill("longword".repeat(10))).length).toBeLessThan(
+      8300,
+    );
+  });
+  test("frequent late terms enter a full bounded candidate pool", () => {
+    const result = rankGlossary(
+      {
+        context: [
+          { text: "first second third fourth dominant dominant dominant dominant dominant", at: 0 },
+        ],
+      },
+      { ...options, topK: 1, capacity: 2 },
+      0,
+    );
+    expect(result.terms).toEqual(["dominant"]);
+  });
   test("frequency and age rank context; stale repetition decays", () => {
     const result = rankGlossary(
       {

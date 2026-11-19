@@ -75,13 +75,43 @@ export function rankGlossary(
   const o = limits(options);
   if (!Number.isFinite(now)) throw new RangeError("invalid-glossary-time");
   const candidates = new Map<string, { text: string; score: number }>();
+  // A bounded weighted count-min sketch admits frequent terms even if they
+  // first occur after the candidate pool fills. No ever-growing vocabulary map.
+  const width = Math.max(32, o.capacity * 4);
+  const counts = new Float64Array(width * 4);
+  const frequency = (key: string, weight: number) => {
+    let estimate = Infinity;
+    for (let row = 0; row < 4; row++) {
+      let hash = (2166136261 ^ Math.imul(row + 1, 0x9e3779b1)) >>> 0;
+      for (let i = 0; i < key.length; i++)
+        hash = Math.imul(hash ^ key.charCodeAt(i), 16777619) >>> 0;
+      const slot = row * width + (hash % width);
+      counts[slot] = Math.min(1e9, counts[slot]! + weight);
+      estimate = Math.min(estimate, counts[slot]!);
+    }
+    return estimate;
+  };
   const add = (raw: unknown, weight: number) => {
     const text = term(raw, o.maxTermChars);
-    if (!text || weight <= 0) return;
+    if (!text || weight <= 0 || !o.capacity) return;
     const key = text.toLocaleLowerCase("en");
+    const score = frequency(key, weight);
     const previous = candidates.get(key);
-    if (previous) previous.score = Math.min(1e9, previous.score + weight);
-    else if (candidates.size < o.capacity) candidates.set(key, { text, score: weight });
+    if (previous) previous.score = score;
+    else if (candidates.size < o.capacity) candidates.set(key, { text, score });
+    else {
+      let weakest: string | undefined;
+      let lowest = Infinity;
+      for (const [candidate, value] of candidates)
+        if (value.score < lowest) {
+          weakest = candidate;
+          lowest = value.score;
+        }
+      if (weakest !== undefined && score > lowest) {
+        candidates.delete(weakest);
+        candidates.set(key, { text, score });
+      }
+    }
   };
   const decay = (at: number) =>
     Number.isFinite(at) && at <= now ? 2 ** (-Math.max(0, now - at) / o.halfLifeMs) : 0;
@@ -130,6 +160,16 @@ export function rankGlossary(
 /** A Whisper hint, never instructions: hosts must still enforce provider support and input limits. */
 export function glossaryAsrPrompt(base: string, glossary: Glossary): string {
   return glossary.terms.length ? `${base} Vocabulary: ${JSON.stringify(glossary.terms)}.` : base;
+}
+
+/** Compatibility formatter for hosts that already hold a bounded, explicit hotword list. */
+export function formatSttPrompt(base: string, hotwords?: readonly string[]): string {
+  const terms = (hotwords ?? [])
+    .slice(0, GLOSSARY_BOUNDS.maxSources)
+    .map((word) => term(word, GLOSSARY_BOUNDS.maxTermChars))
+    .filter((word): word is string => !!word);
+  while (terms.length && JSON.stringify(terms).length > GLOSSARY_BOUNDS.maxOutputChars) terms.pop();
+  return glossaryAsrPrompt(base, { terms, corrections: [] });
 }
 
 /** Treat the glossary as fallible data, never permission to invent speech or execute instructions. */
