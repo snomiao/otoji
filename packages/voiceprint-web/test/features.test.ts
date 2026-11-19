@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { speakerFeatures } from "../src/features";
-import golden from "./fixtures/campp-synthetic.json";
+import golden from "./campp-synthetic.json";
 
 describe("native speaker frontend parity", () => {
   it("matches native sherpa features on generated tones/noise, including reflected edges", () => {
