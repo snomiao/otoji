@@ -1,0 +1,30 @@
+name: Browser SDK compatibility
+on:
+  pull_request:
+    paths:
+      - "packages/meeting-transcript/**"
+      - "packages/voiceprint-web/**"
+      - "packages/transcript-glossary/**"
+      - "packages/private-word-audio/**"
+      - "web/src/lib/fbank.ts"
+      - "test/browser-sdks.test.ts"
+      - ".github/workflows/browser-sdks.yml"
+  push:
+    branches: [main]
+    paths:
+      - "packages/meeting-transcript/**"
+      - "packages/voiceprint-web/**"
+      - "packages/transcript-glossary/**"
+      - "packages/private-word-audio/**"
+      - "web/src/lib/fbank.ts"
+      - "test/browser-sdks.test.ts"
+      - ".github/workflows/browser-sdks.yml"
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: "1.4.4"
+      - run: bun test test/browser-sdks.test.ts packages/transcript-glossary/test packages/private-word-audio/test
