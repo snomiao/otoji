@@ -7,6 +7,11 @@
 leaves the browser by default: ASR, translation, and TTS all run on-device
 (transformers.js / onnxruntime-web / WebGPU / WASM).
 
+**[Standalone dictation](https://otoji.org/mic/)** installs a small microphone in
+editable fields across websites. It recognizes on-device by default; an approved
+WebRTC peer, a configured speech server and account-billed Workers AI text polishing are optional.
+See [setup, privacy and development](./docs/MIC.md).
+
 Join a **room** and the graph spans your devices: a phone captures the mic, a
 laptop runs SenseVoice, any device speaks the result — chained over a WebRTC
 P2P mesh, Google-Meet-style shareable URLs (`otoji.org/keen-gibbon-4a0d`).

@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#f6f3ec" />
+    <link rel="icon" href="/otoji.svg" type="image/svg+xml" />
+    <title>otoji mic — Dictation where you write</title>
+    <style>
+      :root { color-scheme: light dark; font: 17px/1.6 system-ui, sans-serif; background: #f6f3ec; color: #202c28; }
+      body { margin: 0; } main { max-width: 760px; margin: auto; padding: 40px 24px 80px; }
+      nav { display: flex; gap: 24px; } a { color: #176148; text-underline-offset: 4px; }
+      h1 { font-size: clamp(40px, 8vw, 68px); line-height: 1.05; letter-spacing: -.055em; margin: 70px 0 24px; }
+      h2 { font-size: 24px; line-height: 1.3; } .intro { font-size: 22px; max-width: 600px; }
+      .actions { display: flex; flex-wrap: wrap; gap: 12px; margin: 28px 0; }
+      .button, button { display: inline-block; padding: 12px 20px; border: 1px solid #23644c; border-radius: 10px; background: #23644c; color: white; font: inherit; text-decoration: none; cursor: pointer; }
+      button:disabled { opacity: .5; cursor: default; } .secondary { background: transparent; color: #176148; }
+      section { margin-top: 48px; padding-top: 24px; border-top: 1px solid #cbd2c8; }
+      label { display: block; margin: 18px 0; } input { display: block; width: 100%; box-sizing: border-box; margin-top: 6px; padding: 12px; font: inherit; border: 1px solid #a3b2a8; border-radius: 8px; background: #fffdf8; color: #202c28; }
+      input:focus-visible, a:focus-visible, button:focus-visible { outline: 3px solid #d07e24; outline-offset: 3px; }
+      small { font-size: 14px; } #host-status { min-height: 1.6em; } .peer-request { border: 1px solid #a3b2a8; padding: 16px; border-radius: 10px; margin: 12px 0; overflow-wrap: anywhere; }
+      .peer-request button { margin-right: 10px; } code { overflow-wrap: anywhere; }
+      @media (prefers-color-scheme: dark) { :root { background: #14201c; color: #e1e9e3; } a, .secondary { color: #a7dbb9; } section { border-color: #42594c; } input { background: #1d3027; color: #e1e9e3; } }
+    </style>
+  </head>
+  <body>
+    <main>
+      <nav aria-label="Main"><a href="/">otoji</a><a href="/mic/settings/">Mic settings</a></nav>
+      <h1>Your voice.<br />Your words.<br />Anywhere you write.</h1>
+      <p class="intro">A small microphone for text fields across the web, with recognition on your device by default.</p>
+      <div class="actions"><a class="button" href="/mic.user.js">Install otoji mic</a><a class="button secondary" href="/mic/settings/">Open settings</a></div>
+      <p>Install a userscript manager first, then follow its installation prompt. Focus an editable field and explicitly turn on the microphone. Drag the widget to a comfortable spot.</p>
+      <p>Local recognition downloads a speech model when needed. Sending audio to another device or server, and polishing text with Otoji Workers AI, are optional settings that require your consent.</p>
+      <section aria-labelledby="node-heading">
+        <h2 id="node-heading">Use this device as a recognition node</h2>
+        <p>Let another device send audio here for local recognition. Start only when you want to host, and approve each new peer with the controls below. This page never opens your microphone or plays audio.</p>
+        <p><small>Starting downloads and initializes the local speech model. The room and peer ID are connection details you share with your other device. They are separate from your private userscript settings.</small></p>
+        <form id="host-form">
+          <label>Room<input id="host-room" name="room" required maxlength="512" autocomplete="off" placeholder="Choose a private room name" /></label>
+          <label>This device's peer ID<input id="host-peer" name="peer" required maxlength="512" autocomplete="off" /></label>
+          <div class="actions"><button id="host-start" type="submit">Start recognition node</button><button id="host-stop" class="secondary" type="button" disabled>Stop</button></div>
+        </form>
+        <p id="host-status" role="status" aria-live="polite">Stopped. No peers are connected.</p>
+        <div id="host-requests" aria-live="polite"></div>
+        <p><small>Approvals last only until you stop this node or close the page. Peer IDs identify a connection; verify the ID with the person or device requesting access.</small></p>
+      </section>
+      <section aria-labelledby="development-heading">
+        <h2 id="development-heading">Local development</h2>
+        <p><a href="/mic/loader.user.js">Install the local development loader</a> after starting your own development server at <code>http://localhost:5185</code>.</p>
+        <p><small>The loader fetches only your loopback server, without a production fallback or cached bundle. It shares the regular script's name and namespace, so installing it replaces the regular script in supported managers. Storage retention depends on your manager; verify your settings after switching. Keep only one version enabled. Automatic updates are disabled for the loader; reinstall the regular script to return to the release version.</small></p>
+      </section>
+    </main>
+    <script type="module" src="/mic/page.ts"></script>
+  </body>
+</html>

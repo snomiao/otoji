@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#f6f3ec" />
+    <link rel="icon" href="/otoji.svg" type="image/svg+xml" />
+    <title>otoji mic settings</title>
+    <style>
+      :root { color-scheme: light dark; font: 17px/1.6 system-ui, sans-serif; background: #f6f3ec; color: #202c28; }
+      body { margin: 0; } main { max-width: 760px; margin: auto; padding: 40px 24px 80px; }
+      a { color: #176148; text-underline-offset: 4px; } h1 { margin-top: 56px; font-size: 40px; line-height: 1.15; letter-spacing: -.04em; }
+      #mic-settings-root { border: 1px solid #a3b2a8; border-radius: 16px; margin-top: 30px; padding: 24px; }
+      #mic-settings-root:has(#otoji-mic-private-settings) > p { display: none; }
+      a:focus-visible { outline: 3px solid #d07e24; outline-offset: 3px; }
+      @media (prefers-color-scheme: dark) { :root { background: #14201c; color: #e1e9e3; } a { color: #a7dbb9; } }
+    </style>
+  </head>
+  <body>
+    <main>
+      <nav aria-label="Main"><a href="/mic/">← otoji mic</a></nav>
+      <h1>Mic settings</h1>
+      <p>The installed userscript supplies your private settings form. Configuration and account tokens stay in your userscript manager's storage.</p>
+      <div id="mic-settings-root" data-mic-settings>
+        <p>Waiting for otoji mic. If the settings form does not appear, <a href="/mic.user.js">install the userscript</a>, enable it in your userscript manager, and reload this page.</p>
+        <p>The public page cannot read your private configuration or account tokens.</p>
+      </div>
+      <p><small>Developing locally? <a href="/mic/loader.user.js">Install the loopback-only loader</a>. It replaces the regular script; verify your manager retained your settings, and keep only one version enabled.</small></p>
+    </main>
+  </body>
+</html>

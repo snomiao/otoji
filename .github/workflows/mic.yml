@@ -1,0 +1,37 @@
+name: Standalone microphone
+
+on:
+  pull_request:
+    paths:
+      - "web/**"
+      - "signal/**"
+      - ".github/workflows/mic.yml"
+  push:
+    branches: [main]
+    paths:
+      - "web/**"
+      - "signal/**"
+      - ".github/workflows/mic.yml"
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: "1.3.13"
+      - run: bun install --frozen-lockfile
+      - run: bun run typecheck
+      - name: Install Worker dependencies
+        working-directory: signal
+        run: bun install --frozen-lockfile
+      - name: Typecheck Worker with the pinned tsrs
+        working-directory: signal
+        run: ../web/node_modules/.bin/tsrs --noEmit
+      - name: Microphone regression tests (no microphone or external services)
+        run: bun run test -- src/__tests__/mic-*.test.ts
+      - run: bun run build
