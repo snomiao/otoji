@@ -43,6 +43,21 @@ pub struct OtojiConfig {
     #[serde(default = "default_ptt_hotkey")]
     pub ptt_hotkey: String,
 
+    /// Wake word (otoji-tray): while otoji is on, hearing the keyword starts a
+    /// push-to-talk segment that ends after ~1.2 s of silence (8 s cap).
+    /// Off by default. Uses the tray's own mic stream — no second mic open.
+    #[serde(default)]
+    pub wake_word: bool,
+
+    /// sherpa keyword line for the wake word, e.g.
+    /// `x iǎo k è x iǎo k è @小克小克`. Empty = the built-in default.
+    #[serde(default)]
+    pub wake_keyword: String,
+
+    /// Wake-word detection threshold (higher = fewer false wakes).
+    #[serde(default = "default_wake_threshold")]
+    pub wake_threshold: f32,
+
     /// whisper.cpp GGML モデルファイルパス。空 = 自動検出。
     #[serde(default)]
     pub whisper_model_path: String,
@@ -158,6 +173,9 @@ fn default_kokoro_model_variant() -> String {
 fn default_ptt_polish_provider() -> String {
     "openai".to_string()
 }
+fn default_wake_threshold() -> f32 {
+    0.25
+}
 fn default_ptt_hotkey() -> String {
     // Off by default: holding Fn would collide with the Fn+/ on/off toggle.
     "off".to_string()
@@ -233,6 +251,9 @@ impl Default for OtojiConfig {
             ptt_polish_provider: default_ptt_polish_provider(),
             ptt_polish_model: String::new(),
             ptt_hotkey: default_ptt_hotkey(),
+            wake_word: false,
+            wake_keyword: String::new(),
+            wake_threshold: default_wake_threshold(),
             whisper_model_path: String::new(),
             whisper_language: default_whisper_language(),
             stt_correction: false,

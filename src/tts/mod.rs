@@ -9,6 +9,7 @@ pub mod cloudflare;
 pub mod elevenlabs;
 pub mod gemini;
 pub mod iflytek_tts;
+pub mod native;
 pub mod openai;
 pub mod piper;
 
