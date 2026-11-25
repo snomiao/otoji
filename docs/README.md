@@ -26,5 +26,6 @@ Cloudflare Durable Object 経由で同期される。現状の全体像とマイ
 - [08 — PTT 統合](./08-ptt-integration.md)
 - [09 — Polish ベンチマーク](./09-polish-benchmarks.md)
 - [10 — npm リリース](./10-npm-release.md)
+- [11 — パイプライン言語 (pipeline.otoji)](./11-pipeline-language.md)
 - [ASR ベンチ (2026-05-14)](./2026-05-14-asr-bench.md)
 - [Polish ベンチ (2026-05-14)](./2026-05-14-polish-bench.md)

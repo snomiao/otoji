@@ -15,11 +15,13 @@ export type NodeType =
   | "file-image"
   | "file-text"
   | "url"
+  | "google-doc-live"
   | "textarea"
   | "stt"
   | "web-speech"
   | "vosk"
   | "stream-asr"
+  | "wake-word"
   | "sherpa"
   | "vibevoice-asr"
   | "translate"
@@ -28,6 +30,7 @@ export type NodeType =
   | "text-normalize"
   | "text-filter"
   | "llm-agent"
+  | "graph-edit"
   | "sink"
   | "audio-out"
   | "video-recorder"
@@ -129,6 +132,15 @@ const RAW_NODE_SPECS: Record<NodeType, NodeSpec> = {
     inputs: [],
     outputs: [{ id: "out", type: "transcript" }],
   },
+  "google-doc-live": {
+    type: "google-doc-live",
+    label: "Google Doc",
+    // Live Google Docs source: polls the Docs API (OAuth token from settings)
+    // or streams realtime edits from a local `otoji gdoc` bridge. Emits the
+    // full document text on every change; pipe through text-diff for deltas.
+    inputs: [],
+    outputs: [{ id: "out", type: "transcript" }],
+  },
   textarea: {
     type: "textarea",
     label: "Text",
@@ -160,6 +172,25 @@ const RAW_NODE_SPECS: Record<NodeType, NodeSpec> = {
     // the device it runs on (no audio input port).
     inputs: [],
     outputs: [{ id: "out", type: "transcript" }],
+  },
+  "wake-word": {
+    type: "wake-word",
+    label: "Wake word",
+    // Continuous audio in; on wake it emits a control pulse (`wake`) and the
+    // following utterance as audio (`audio`) — feed that to an ASR node so the
+    // assistant only listens after it's addressed. Two sources (config.source):
+    //   onnx   — browser openWakeWord (tiny 3-stage ONNX, default)
+    //   native — capture only; the wake is driven by an EXTERNAL trigger on the
+    //            `trigger` port (e.g. `otoji kws | otoji node` into a pipe node),
+    //            so no model runs in the browser at all.
+    inputs: [
+      { id: "in", type: "segment" },
+      { id: "trigger", type: "transcript" },
+    ],
+    outputs: [
+      { id: "audio", type: "segment" },
+      { id: "wake", type: "control" },
+    ],
   },
   "stream-asr": {
     type: "stream-asr",
@@ -255,6 +286,12 @@ const RAW_NODE_SPECS: Record<NodeType, NodeSpec> = {
     label: "LLM agent",
     // Prompt-shaped text2text generation via the generic transformers.js runner.
     inputs: [{ id: "in", type: "transcript" }, { id: "model", type: "model" }, { id: "env", type: "environment" }],
+    outputs: [{ id: "out", type: "transcript" }],
+  },
+  "graph-edit": {
+    type: "graph-edit",
+    label: "Graph editor (agent)",
+    inputs: [{ id: "in", type: "transcript" }],
     outputs: [{ id: "out", type: "transcript" }],
   },
   sink: {
@@ -543,12 +580,12 @@ export const NODE_SPECS: Record<NodeType, NodeSpec> = Object.fromEntries(
 
 /** Palette grouping for the node types. */
 export const NODE_CATEGORIES: { id: string; label: string; types: NodeType[] }[] = [
-  { id: "input", label: "Input", types: ["mic-vad", "mic-raw", "audio-mix", "file-audio", "file-image", "file-text", "url", "textarea", "video-clip"] },
-  { id: "stt", label: "Speech → Text", types: ["stt", "stream-asr", "web-speech", "vosk"] },
+  { id: "input", label: "Input", types: ["mic-vad", "mic-raw", "audio-mix", "file-audio", "file-image", "file-text", "url", "google-doc-live", "textarea", "video-clip"] },
+  { id: "stt", label: "Speech → Text", types: ["wake-word", "stt", "stream-asr", "web-speech", "vosk"] },
   { id: "translate", label: "Text → Text", types: ["translate", "browser-translate-api", "text-aggregate", "text-normalize", "text-filter"] },
   { id: "tts", label: "Text → Speech", types: ["tts", "tts-model"] },
   { id: "output", label: "Output", types: ["sink", "audio-out", "video-recorder", "srt-out", "speaker"] },
-  { id: "model", label: "Custom model", types: ["model-source", "llm-agent", "model"] },
+  { id: "model", label: "Custom model", types: ["model-source", "llm-agent", "graph-edit", "model"] },
   { id: "vision", label: "Vision", types: ["camera", "screen-share", "paddle-ocr", "vision-model", "depth-field", "hand-space", "spatial-calibration", "rgbd-point-cloud", "model-3d", "spatial-renderer", "image-match", "ar-notes"] },
   { id: "text", label: "Text", types: ["text-diff"] },
   { id: "net", label: "Network", types: ["environment", "tracker"] },

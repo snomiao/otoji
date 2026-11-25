@@ -7,7 +7,7 @@ export interface DeviceOpt {
   me: boolean;
   online: boolean;
   role: string;
-  hasMic: boolean;
+  hasMic?: boolean;
   runtime?: string; // "browser" | "node" | "native" — drives the connection-type badge
   net?: string; // "lan" | "wan" for a node peer
 }

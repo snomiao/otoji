@@ -21,7 +21,7 @@ type Edge = {
 import { MultiSignalingClient } from "../net/multi-signaling";
 import { envTrackers, capTrackers, urlTrackers, appendTrackers, dedupeTrackers } from "../lib/trackers";
 import { loadApproved, saveApproved, vetTracker } from "../lib/tracker-trust";
-import { PeerMesh } from "../net/peers";
+import { PeerMesh, warmTurnServers } from "../net/peers";
 import { type DeviceOpt } from "./device-opt";
 import { GraphContext } from "./graph-context";
 import { GraphRuntime, nodeOwner, type TranscriptMsg } from "../graph/runtime";
@@ -53,7 +53,7 @@ import { videoClipsDB, type VideoClip } from "../lib/video-clips-db";
 import { isReadableTranscript } from "../lib/text";
 import { isRoomCode, joinUrl } from "../lib/roomcode";
 import { getDeviceId, getDeviceName, setDeviceName } from "../lib/device-id";
-import { getRole, setRole, detectCaps, type DeviceRole } from "../lib/device-role";
+import { canHostNode, getRole, setRole, detectCaps, type DeviceCaps, type DeviceRole } from "../lib/device-role";
 import { NetworkView } from "./NetworkView";
 import { JoinGate } from "./JoinGate";
 import { RguiGraphView, type RguiHandlers, type RguiApi } from "./RguiGraphView";
@@ -62,6 +62,7 @@ import { FEDERATION_DEMO_IDS, agentYesMirrorForOtojiDemo, fetchFederatedGraph, h
 import type { Panel, SummaryContent } from "@snomiao/rgui";
 import { TimelineView } from "./TimelineView";
 import type { PortType } from "../graph/model";
+import { parseGoogleDocId } from "../providers/text/google-doc";
 import {
   NODE_SPECS,
   NODE_CATEGORIES,
@@ -72,6 +73,9 @@ import {
   type VoiceGraph,
 } from "../graph/model";
 import { computeRates, formatRate } from "../graph/edge-throughput";
+import { resolveGraphNodeReference, type GraphCommand } from "../graph/graph-commands";
+import { voiceGraphToRgui } from "../graph/rgui-adapter";
+import { packSelectionFlush } from "../lib/group-pack";
 
 
 /** Trackers ADVERTISED by Signaling nodes in the synced graph. These are
@@ -148,8 +152,8 @@ function loadPanelCollapsed(): Record<string, boolean> {
 // scrolls (overlay is clip:"node" + overflow:"auto"), it never covers the preview.
 const CONTROL_ROWS: Partial<Record<NodeType, number>> = {
   environment: 7,
-  "mic-vad": 3, "mic-raw": 2, stt: 3, "stream-asr": 2, "web-speech": 3, vosk: 3, sherpa: 3, "vibevoice-asr": 5,
-  translate: 5, "browser-translate-api": 3, "text-aggregate": 3, "text-normalize": 8, "text-filter": 7, "llm-agent": 8, sink: 7, "video-recorder": 8, "video-clip": 6, url: 0, tts: 4, "tts-model": 5, "model-source": 12, model: 5,
+  "mic-vad": 3, "mic-raw": 2, stt: 3, "wake-word": 3, "stream-asr": 2, "web-speech": 3, vosk: 3, sherpa: 3, "vibevoice-asr": 5,
+  translate: 5, "browser-translate-api": 3, "text-aggregate": 3, "text-normalize": 8, "text-filter": 7, "llm-agent": 8, "graph-edit": 2, sink: 7, "video-recorder": 8, "video-clip": 6, url: 0, "google-doc-live": 4, tts: 4, "tts-model": 5, "model-source": 12, model: 5,
   // Visual nodes are full-bleed: controls live in the overlay's title bar, so
   // the whole body is preview.
   camera: 0, "screen-share": 0, "vision-model": 0, "qwen-image": 0, "depth-field": 0, "hand-space": 0, "spatial-calibration": 3, "rgbd-point-cloud": 4, "spatial-renderer": 0, "model-3d": 3, "image-match": 0, "ar-notes": 0, "paddle-ocr": 2, "text-diff": 3,
@@ -158,7 +162,7 @@ const CONTROL_ROWS: Partial<Record<NodeType, number>> = {
 type DisplayMode = "full-bleed" | "fit" | "stack";
 const DISPLAY_MODES: DisplayMode[] = ["full-bleed", "fit", "stack"];
 const VISUAL_DISPLAY_NODES = new Set<NodeType>(["camera", "screen-share", "vision-model", "qwen-image", "depth-field", "hand-space", "spatial-renderer", "image-match", "ar-notes", "file-image", "video-recorder", "video-clip", "url"]);
-const TEXT_DISPLAY_NODES = new Set<NodeType>(["environment", "stt", "stream-asr", "web-speech", "vosk", "sherpa", "vibevoice-asr", "translate", "browser-translate-api", "text-aggregate", "text-normalize", "text-filter", "llm-agent", "model-source", "model", "tts", "tts-model", "sink", "srt-out", "paddle-ocr", "text-diff"]);
+const TEXT_DISPLAY_NODES = new Set<NodeType>(["environment", "wake-word", "stt", "stream-asr", "web-speech", "vosk", "sherpa", "vibevoice-asr", "translate", "browser-translate-api", "text-aggregate", "text-normalize", "text-filter", "llm-agent", "graph-edit", "model-source", "model", "tts", "tts-model", "sink", "srt-out", "paddle-ocr", "text-diff", "google-doc-live"]);
 
 type SmartLinkOption = {
   id: string;
@@ -316,11 +320,23 @@ function Editor({ initialRoom, local, federationDemo }: { initialRoom?: string; 
   const [joined, setJoined] = useState(!!local); // local mode: no room, runs single-device
   const myDeviceId = useMemo(() => getDeviceId(), []);
   const [myPeerId, setMyPeerId] = useState<string | null>(null);
-  const [present, setPresent] = useState<Record<string, { peerId: string; name: string; role: string; hasMic: boolean; runtime?: string; net?: string }>>({});
+  const [present, setPresent] = useState<Record<string, { peerId: string; name: string; role: string; hasMic?: boolean; runtime?: string; net?: string }>>({});
   const [status, setStatus] = useState("not connected");
   const [paused, setPaused] = useState(!!local); // local demo starts paused (don't grab the mic until asked)
   const [role, setRoleState] = useState<DeviceRole>(() => getRole());
-  const caps = useMemo(() => detectCaps(), []);
+  const [caps, setCaps] = useState<DeviceCaps>({});
+  useEffect(() => {
+    let cancelled = false;
+    void detectCaps().then((detected) => { if (!cancelled) setCaps(detected); });
+    return () => { cancelled = true; };
+  }, []);
+  useEffect(() => {
+    if (!local) return;
+    setPresent((current) => {
+      const mine = current[myDeviceId];
+      return mine ? { ...current, [myDeviceId]: { ...mine, hasMic: caps.hasMic } } : current;
+    });
+  }, [caps.hasMic, local, myDeviceId]);
   const [gpuDebug, setGpuDebug] = useState<{ status: "probing" | "ready" | "unavailable" | "error"; adapter?: string; features?: string; error?: string }>({ status: "probing" });
   const [cameraPermission, setCameraPermission] = useState("unknown");
 
@@ -383,7 +399,7 @@ function Editor({ initialRoom, local, federationDemo }: { initialRoom?: string; 
   const [nodeSearchOpen, setNodeSearchOpen] = useState(false);
   const [smartLinkMenu, setSmartLinkMenu] = useState<null | { x: number; y: number; options: SmartLinkOption[]; placeholder?: string }>(null);
   // Per-node context menu (right-click / long-press): duplicate/replace/remove/visibility.
-  const [nodeMenu, setNodeMenu] = useState<null | { x: number; y: number; nodeId: string }>(null);
+  const [nodeMenu, setNodeMenu] = useState<null | { x: number; y: number; nodeId: string; ids?: string[] }>(null);
   const [controlNodeId, setControlNodeId] = useState<string | null>(null);
   // rgui-owned selection (click / shift-drag box). Mirrored to the canvas and
   // used by Ctrl/Cmd+A and Delete when rgui is the renderer.
@@ -732,21 +748,23 @@ function Editor({ initialRoom, local, federationDemo }: { initialRoom?: string; 
     loadedTypesRef.current = new Set(HEAVY_NODE_TYPES.filter((t) => present.has(t)));
   }, [nodes]);
 
-  function join() {
+  async function join() {
     if (joined || !room.trim()) return;
+    const joinCaps = caps.hasMic == null ? await detectCaps() : caps;
+    if (caps.hasMic == null) setCaps(joinCaps);
     const dn = name.trim() || "device";
     setDeviceName(dn);
     const appr = loadApproved(room.trim());
     setApproved(appr);
-    const sig = new MultiSignalingClient(room.trim(), dn, myDeviceId, role, caps.hasMic, activeTrackers(appr));
+    const sig = new MultiSignalingClient(room.trim(), dn, myDeviceId, role, joinCaps.hasMic, activeTrackers(appr));
     sigRef.current = sig;
     sig.on("open", () => setStatus("connected"));
     sig.on("close", () => setStatus("reconnecting…"));
     sig.on("hello", (m) => {
       setMyPeerId(m.peerId);
       setPresent(() => {
-        const p: Record<string, { peerId: string; name: string; role: string; hasMic: boolean; runtime?: string; net?: string }> = {
-          [myDeviceId]: { peerId: m.peerId, name: dn, role, hasMic: caps.hasMic, runtime: "browser" },
+        const p: Record<string, { peerId: string; name: string; role: string; hasMic?: boolean; runtime?: string; net?: string }> = {
+          [myDeviceId]: { peerId: m.peerId, name: dn, role, hasMic: joinCaps.hasMic, runtime: "browser" },
         };
         for (const peer of m.peers as Peer[]) p[peer.deviceId] = { peerId: peer.peerId, name: peer.name, role: peer.role, hasMic: peer.hasMic, runtime: peer.runtime, net: peer.net };
         return p;
@@ -757,6 +775,7 @@ function Editor({ initialRoom, local, federationDemo }: { initialRoom?: string; 
       // STABLE transport object across reconnects (just swap its mesh) so a
       // running runtime's captured transport keeps delivering frames.
       meshRef.current?.destroy();
+      void warmTurnServers(); // TURN creds warm in parallel; mesh never blocks on them
       const mesh = new PeerMesh(sig, m.peerId, {
         onData: (peer, _label, data) => transportRef.current?.handleData(data, peer),
         onPeerState: (id, st) => {
@@ -1082,6 +1101,84 @@ function Editor({ initialRoom, local, federationDemo }: { initialRoom?: string; 
 
   const onDelete = useCallback((nodeId: string) => removeNodes([nodeId]), [removeNodes]);
 
+  const onGraphCommands = useCallback((editorId: string, commands: GraphCommand[]): string[] => {
+    let workingNodes = [...nodesRef.current];
+    let workingEdges = [...edgesRef.current];
+    const originalIds = new Set(workingNodes.map((node) => node.id));
+    const justAdded: Node[] = [];
+    const results: string[] = [];
+    const resolve = (reference: string) => resolveGraphNodeReference(
+      reference,
+      workingNodes
+        .filter((node) => originalIds.has(node.id))
+        .map((node) => ({ id: node.id, type: (node.data as any).voiceType as NodeType, device: (node.data as any).device ?? null, pos: node.position })),
+      justAdded.map((node) => ({ id: node.id, type: (node.data as any).voiceType as NodeType, device: (node.data as any).device ?? null, pos: node.position })),
+    );
+
+    for (const command of commands) {
+      if (command.op === "add") {
+        const id = command.id ?? `${command.type}-${Math.random().toString(36).slice(2, 8)}`;
+        if (workingNodes.some((node) => node.id === id)) {
+          results.push(`add skipped: node id ${JSON.stringify(id)} already exists`);
+          continue;
+        }
+        const editor = workingNodes.find((node) => node.id === editorId);
+        const offset = justAdded.length * 36;
+        const position = snapWorld(editor ? { x: editor.position.x + 260 + offset, y: editor.position.y + offset } : { x: 80 + offset, y: 80 + offset });
+        const node: Node = {
+          id,
+          type: "voice",
+          position,
+          data: { voiceType: command.type, device: myDeviceId, config: { ...defaultConfigFor(command.type), ...command.config } },
+        };
+        workingNodes.push(node);
+        justAdded.push(node);
+        results.push(`added ${command.type}`);
+        continue;
+      }
+
+      if (command.op === "remove") {
+        const target = resolve(command.id);
+        if ("error" in target) { results.push(`remove skipped: ${target.error}`); continue; }
+        workingNodes = workingNodes.filter((node) => node.id !== target.id);
+        workingEdges = workingEdges.filter((edge) => edge.source !== target.id && edge.target !== target.id);
+        const addedIndex = justAdded.findIndex((node) => node.id === target.id);
+        if (addedIndex >= 0) justAdded.splice(addedIndex, 1);
+        results.push(`removed ${target.id}`);
+        continue;
+      }
+
+      const source = resolve(command.from);
+      if ("error" in source) { results.push(`connect skipped: ${source.error}`); continue; }
+      const target = resolve(command.to);
+      if ("error" in target) { results.push(`connect skipped: ${target.error}`); continue; }
+      const graph = fromRF(workingNodes, workingEdges, versionRef.current);
+      const sourceType = graph.nodes[source.id]?.type;
+      const targetType = graph.nodes[target.id]?.type;
+      if (!sourceType || !targetType) { results.push("connect skipped: endpoint no longer exists"); continue; }
+      const outputs = command.fromPort ? NODE_SPECS[sourceType].outputs.filter((port) => port.id === command.fromPort) : NODE_SPECS[sourceType].outputs;
+      const inputs = command.toPort ? NODE_SPECS[targetType].inputs.filter((port) => port.id === command.toPort) : NODE_SPECS[targetType].inputs;
+      const pair = outputs.flatMap((output) => inputs.map((input) => ({ output, input })))
+        .find(({ output, input }) => canConnect(graph, source.id, output.id, target.id, input.id));
+      if (!pair) {
+        results.push(`connect skipped: no available compatible ports for ${command.from}→${command.to}`);
+        continue;
+      }
+      const id = edgeId({ source: source.id, sourceHandle: pair.output.id, target: target.id, targetHandle: pair.input.id });
+      workingEdges.push({ id, source: source.id, sourceHandle: pair.output.id, target: target.id, targetHandle: pair.input.id });
+      results.push(`connected ${command.from}→${command.to}`);
+    }
+
+    nodesRef.current = workingNodes;
+    edgesRef.current = workingEdges;
+    setNodes(workingNodes);
+    setEdges(workingEdges);
+    broadcast(workingNodes, workingEdges);
+    return results;
+  }, [broadcast, defaultConfigFor, myDeviceId, setEdges, setNodes, snapWorld]);
+  const onGraphCommandsRef = useRef(onGraphCommands);
+  onGraphCommandsRef.current = onGraphCommands;
+
   // Remove a single edge (rgui edge click/right-click, or Delete on a selected edge).
   const removeEdge = useCallback(
     (edgeId: string) => {
@@ -1281,8 +1378,10 @@ function Editor({ initialRoom, local, federationDemo }: { initialRoom?: string; 
     const clean = url.trim();
     if (!/^https?:\/\//i.test(clean)) return addTextNodeAt(clean, worldPos);
     const position = worldPos ? snapWorld(worldPos) : { x: 80 + Math.random() * 120, y: 80 + Math.random() * 120 };
-    const id = `url-${Math.random().toString(36).slice(2, 8)}`;
-    const n: Node = { id, type: "voice", position, data: { voiceType: "url", device: myDeviceId, config: { url: clean } } };
+    // A pasted/dropped Google Docs URL becomes a live doc source, not an iframe.
+    const gdoc = /docs\.google\.com\/document\//.test(clean) && parseGoogleDocId(clean) != null;
+    const id = `${gdoc ? "gdoc" : "url"}-${Math.random().toString(36).slice(2, 8)}`;
+    const n: Node = { id, type: "voice", position, data: { voiceType: gdoc ? "google-doc-live" : "url", device: myDeviceId, config: { url: clean } } };
     const next = [...nodesRef.current, n];
     nodesRef.current = next;
     setNodes(next);
@@ -1428,9 +1527,14 @@ function Editor({ initialRoom, local, federationDemo }: { initialRoom?: string; 
     const mic = `mic-vad-${sfx}`, stt = `stt-${sfx}`, sink = `sink-${sfx}`;
     // Distribute across devices by role (falls back to this device).
     const online = devices.filter((d) => d.online);
-    const pickFor = (t: NodeType): string => {
-      if (t === "mic-vad")
-        return online.find((d) => d.role === "mic" && d.hasMic)?.deviceId ?? (caps.hasMic ? myDeviceId : online.find((d) => d.hasMic)?.deviceId ?? myDeviceId);
+    const pickFor = (t: NodeType): string | null => {
+      if (t === "mic-vad") {
+        const eligible = online.filter((d) => canHostNode(t, d));
+        return eligible.find((d) => d.role === "mic")?.deviceId
+          ?? eligible.find((d) => d.deviceId === myDeviceId)?.deviceId
+          ?? eligible[0]?.deviceId
+          ?? null;
+      }
       if (t === "stt") return online.find((d) => d.role === "model")?.deviceId ?? myDeviceId;
       if (t === "sink") return online.find((d) => d.role === "viewer")?.deviceId ?? myDeviceId;
       return myDeviceId;
@@ -1664,6 +1768,7 @@ function Editor({ initialRoom, local, federationDemo }: { initialRoom?: string; 
       onConfigPatch: (id, patch) => onConfigRef.current?.(id, patch),
       hasPreviewConsumer: (id) => isPreviewShown(id) || (pv?.hasSubscriber(id) ?? false),
       onPipeOut: (id, text) => sigRef.current?.pipe(id, text, "node"), // pipe node input → CLI stdout
+      onGraphCommands: (id, commands) => onGraphCommandsRef.current(id, commands),
       onEdgeBytes: (eid, bytes) => edgeBytesRef.current.set(eid, (edgeBytesRef.current.get(eid) ?? 0) + bytes),
       onSink: (sinkId, tr: TranscriptMsg) => {
         if (!isReadableTranscript(tr.text)) return;
@@ -1951,7 +2056,10 @@ function Editor({ initialRoom, local, federationDemo }: { initialRoom?: string; 
         const sourceType = (source?.data as any)?.voiceType as NodeType | undefined;
         if (sourceType === "environment" && from.port === "env" && to.port === "env") {
           const device = (source?.data as any)?.device as string | undefined;
-          if (device) {
+          const target = nodesRef.current.find((node) => node.id === to.node);
+          const targetType = (target?.data as any)?.voiceType as NodeType | undefined;
+          const targetDevice = devices.find((candidate) => candidate.deviceId === device);
+          if (device && targetType && canHostNode(targetType, targetDevice)) {
             const assigned = nodesRef.current.map((node) => node.id === to.node ? { ...node, data: { ...node.data, device } } : node);
             nodesRef.current = assigned;
             setNodes(assigned);
@@ -1963,8 +2071,18 @@ function Editor({ initialRoom, local, federationDemo }: { initialRoom?: string; 
       },
       // Right-click opens the node actions menu and reveals that node's inline
       // controls (device assignment + per-type settings).
-      onNodeContextMenu: (id, screen) => {
+      onNodeContextMenu: (id, screen, ids) => {
         if (!nodesRef.current.some((n) => n.id === id)) return;
+        // rgui passes the whole selection when the pressed node is part of a
+        // multi-selection (right-click AND touch long-press): one shared menu
+        // with only the actions that apply to every selected node.
+        const all = (ids ?? [id]).filter((x) => nodesRef.current.some((n) => n.id === x));
+        if (all.length > 1) {
+          setSelected(all);
+          setControlNodeId(null);
+          setNodeMenu({ nodeId: id, ids: all, x: screen.x, y: screen.y });
+          return;
+        }
         setSelected([id]);
         setControlNodeId(id);
         setNodeMenu({ nodeId: id, x: screen.x, y: screen.y });
@@ -2032,7 +2150,7 @@ function Editor({ initialRoom, local, federationDemo }: { initialRoom?: string; 
       },
       onCanvasPaste: (world, dt) => void addClipboardNodesAt(dt, world),
     }),
-    [setNodes, setEdges, broadcast, addNode, addTemplate, addClipboardNodesAt, allTemplates, removeEdge, controlNodeId, smartLinkPairs, smartLinkNodeOptions, applySmartLink],
+    [setNodes, setEdges, broadcast, addNode, addTemplate, addClipboardNodesAt, allTemplates, removeEdge, controlNodeId, smartLinkPairs, smartLinkNodeOptions, applySmartLink, devices],
   );
 
   // Edges whose signal lacks a duplicable wire format and crosses devices.
@@ -2230,6 +2348,35 @@ function Editor({ initialRoom, local, federationDemo }: { initialRoom?: string; 
     };
   }, []);
 
+  const groupSelection = useCallback((ids: string[]) => {
+    const selectedIds = ids.filter((id) => nodesRef.current.some((node) => node.id === id));
+    if (selectedIds.length < 2) return;
+    const graph = fromRF(nodesRef.current, edgesRef.current, versionRef.current);
+    const rgNodes = voiceGraphToRgui(graph, { nodeBody }).nodes;
+    const rects = rgNodes.map((node) => {
+      const scale = node.scale ?? 1;
+      const rows = Math.max(node.fields.length, node.inputs.length, node.outputs.length) + (node.bodyRows ?? 0);
+      const minHeight = (26 + 10 + rows * 22 + 10) * scale;
+      return {
+        id: node.id,
+        x: node.x,
+        y: node.y,
+        width: node.w,
+        height: Math.max(minHeight, node.h ?? 0),
+      };
+    });
+    const packed = packSelectionFlush(rects, selectedIds, rguiApiRef.current?.gridStep() ?? 1);
+    const next = nodesRef.current.map((node) => {
+      const position = packed[node.id];
+      return position ? { ...node, position } : node;
+    });
+    nodesRef.current = next;
+    setNodes(next);
+    broadcast(next, edgesRef.current);
+    setSelected(selectedIds);
+    // Ungroup by dragging any child away; rgui splits the pseudo block on drag.
+  }, [broadcast, nodeBody, setNodes]);
+
   const nodeBusy = useCallback((node: { id: string; type: NodeType }) => liveRef.current.getBusy(node.id), []);
   const nodeRemote = useCallback((node: { id: string; type: NodeType }) => {
     if (local) return false;
@@ -2298,7 +2445,7 @@ function Editor({ initialRoom, local, federationDemo }: { initialRoom?: string; 
   }, []);
   // which node-palette / template category is expanded (accordion: one at a time)
   const [openCategory, setOpenCategory] = useState<string | null>(null);
-  const [openTplCategory, setOpenTplCategory] = useState<string | null>(null);
+  const [openTplCategory, setOpenTplCategory] = useState<string | null>("featured");
   const rguiPanels = useMemo<Panel[]>(() => {
     const kindColor = (t: NodeType) => {
       const spec = NODE_SPECS[t];
@@ -2341,6 +2488,8 @@ function Editor({ initialRoom, local, federationDemo }: { initialRoom?: string; 
     // need a native/remote runner (area: "advanced").
     const tplLabel = (tpl: GraphTemplate) => `　${tpl.area === "advanced" ? "⚙ " : ""}${tpl.name}`;
     const tplGroups: { id: string; label: string; templates: GraphTemplate[] }[] = [
+      // ⭐ curated demos first, so the palette opens on the strongest experiences
+      { id: "featured", label: "⭐ Featured", templates: allTemplates.filter((tpl) => tpl.builtin && tpl.featured) },
       ...TEMPLATE_CATEGORIES.map((cat) => ({
         id: cat.id,
         label: cat.label,
@@ -2797,7 +2946,19 @@ function Editor({ initialRoom, local, federationDemo }: { initialRoom?: string; 
           />
         )}
 
-        {nodeMenu && (
+        {nodeMenu && (nodeMenu.ids?.length ?? 0) > 1 && (
+          <MultiNodeMenu
+            x={nodeMenu.x}
+            y={nodeMenu.y}
+            count={nodeMenu.ids!.length}
+            onGroup={() => { groupSelection(nodeMenu.ids!); setNodeMenu(null); }}
+            onDuplicate={() => { for (const nid of nodeMenu.ids!) duplicateNode(nid); setNodeMenu(null); }}
+            onSaveTemplate={() => { saveSelectionAsTemplate(); setNodeMenu(null); }}
+            onRemove={() => { removeNodes(nodeMenu.ids!); setNodeMenu(null); }}
+            onClose={() => setNodeMenu(null)}
+          />
+        )}
+        {nodeMenu && (nodeMenu.ids?.length ?? 0) <= 1 && (
           <NodeMenu
             x={nodeMenu.x}
             y={nodeMenu.y}
@@ -2957,6 +3118,53 @@ function SmartLinkMenu({
         )}
       </div>
     </div>
+  );
+}
+
+// One menu for a whole multi-selection: only actions valid for EVERY selected
+// node (the per-type entries live in the single-node NodeMenu).
+function MultiNodeMenu({
+  x,
+  y,
+  count,
+  onGroup,
+  onDuplicate,
+  onSaveTemplate,
+  onRemove,
+  onClose,
+}: {
+  x: number;
+  y: number;
+  count: number;
+  onGroup: () => void;
+  onDuplicate: () => void;
+  onSaveTemplate: () => void;
+  onRemove: () => void;
+  onClose: () => void;
+}) {
+  const [hover, setHover] = useState<string>("");
+  const left = Math.min(x, (typeof window !== "undefined" ? window.innerWidth : x + 200) - 210);
+  const top = Math.min(y, (typeof window !== "undefined" ? window.innerHeight : y + 160) - 160);
+  const Item = ({ k, label, onClick, color }: { k: string; label: string; onClick: () => void; color?: string }) => (
+    <div
+      onMouseDown={(e) => { e.preventDefault(); onClick(); }}
+      onMouseEnter={() => setHover(k)}
+      style={{ padding: "8px 10px", borderRadius: 5, cursor: "pointer", fontSize: 13, color, background: hover === k ? "#ebf4ff" : "transparent" }}
+    >
+      {label}
+    </div>
+  );
+  return (
+    <>
+      <div onMouseDown={onClose} onTouchStart={onClose} style={{ position: "fixed", inset: 0, zIndex: 29 }} />
+      <div onMouseDown={(e) => e.stopPropagation()} style={{ ...CARD, position: "fixed", left, top, width: 200, padding: 4, zIndex: 30 }}>
+        <div style={{ padding: "4px 10px", fontSize: 11, color: "#a0aec0" }}>{count} nodes selected</div>
+        <Item k="group" label="⧈ Group (snap into stack)" onClick={onGroup} />
+        <Item k="dup" label={`⧉ Duplicate ${count} nodes`} onClick={onDuplicate} />
+        <Item k="tpl" label="★ Save as template" onClick={onSaveTemplate} />
+        <Item k="rm" label={`✕ Remove ${count} nodes`} onClick={onRemove} color="#e53e3e" />
+      </div>
+    </>
   );
 }
 

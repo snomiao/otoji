@@ -22,7 +22,28 @@ fn main() {
         }
         return;
     }
+    // "Quit otoji" means quit until the user opens otoji again: launchd may start
+    // the tray at login (or, with an older KeepAlive agent, after any exit), and
+    // that start finds the marker and exits cleanly. Opening the app by hand
+    // clears it.
+    let marker = quit_marker();
+    let by_launchd = std::env::var("XPC_SERVICE_NAME").as_deref() == Ok("com.snomiao.otoji");
+    if by_launchd && marker.exists() {
+        eprintln!(
+            "otoji-tray: quit by the user earlier; not starting (open otoji.app to start it again)"
+        );
+        return;
+    }
+    if !by_launchd {
+        let _ = std::fs::remove_file(&marker);
+    }
     tray_macos::run();
+}
+
+/// Present while the user has quit the tray (see main).
+#[cfg(target_os = "macos")]
+fn quit_marker() -> std::path::PathBuf {
+    otoji::notes::data_dir().join("tray-quit")
 }
 
 #[cfg(not(target_os = "macos"))]
@@ -42,6 +63,104 @@ extern "C" {}
 
 #[cfg(target_os = "macos")]
 mod tray_macos {
+    mod overlay {
+        include!("tray/overlay.rs");
+    }
+    mod permissions {
+        include!("tray/permissions.rs");
+    }
+    mod graph {
+        include!("tray/graph.rs");
+    }
+
+    /// pgrep/pkill pattern for real `otoji listen` processes: the program
+    /// itself must be `otoji` with `listen` as its first argument, so shells,
+    /// editors or agents that merely mention "otoji listen" don't match.
+    const LISTEN_PROC_PATTERN: &str = "^[^ ]*/?otoji listen( |$)";
+
+    /// Auto-start listening as soon as the microphone is allowed.
+    static AUTO_LISTEN: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+    static HOTKEY_INSTALLED: std::sync::atomic::AtomicBool =
+        std::sync::atomic::AtomicBool::new(false);
+    /// (mic authorized, accessibility granted) at the last menu build.
+    static PERM_STATE: std::sync::atomic::AtomicU8 = std::sync::atomic::AtomicU8::new(u8::MAX);
+    static PERM_POLL: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
+
+    fn perm_state() -> u8 {
+        (permissions::mic_status() == permissions::Mic::Authorized) as u8
+            | ((permissions::accessibility_granted() as u8) << 1)
+    }
+
+    /// Once per second: start listening / install the hotkey the moment the
+    /// user grants access, and refresh the menu's permission rows.
+    fn poll_permissions() {
+        let answered = permissions::mic_answer_pending();
+        if !answered && PERM_POLL.fetch_add(1, Ordering::Relaxed) % 10 != 0 {
+            return;
+        }
+        let state = perm_state();
+        if PERM_STATE.load(Ordering::Acquire) != state {
+            eprintln!(
+                "otoji-tray: permissions mic={:?} accessibility={}",
+                permissions::mic_status(),
+                state & 2 != 0
+            );
+        }
+        let mic_ok = state & 1 != 0;
+        if mic_ok
+            && AUTO_LISTEN.load(Ordering::Acquire)
+            && graph::wants_listen()
+            && !listen_is_running()
+        {
+            AUTO_LISTEN.store(false, Ordering::Release);
+            overlay::start_listen();
+        }
+        if state & 2 != 0 && !HOTKEY_INSTALLED.load(Ordering::Acquire) {
+            unsafe { install_hotkeys() };
+        }
+        let prev = PERM_STATE.swap(state, Ordering::AcqRel);
+        if prev != u8::MAX && prev & 2 == 0 && state & 2 != 0 {
+            permissions::close_guide();
+        }
+        if prev != state {
+            unsafe { rebuild_menu() };
+        }
+    }
+
+    unsafe extern "C" fn action_grant_mic(
+        _this: *mut c_void,
+        _cmd: *mut c_void,
+        _sender: *mut c_void,
+    ) {
+        AUTO_LISTEN.store(true, Ordering::Release);
+        permissions::ensure_mic_interactive();
+    }
+
+    unsafe extern "C" fn action_grant_ax(
+        _this: *mut c_void,
+        _cmd: *mut c_void,
+        _sender: *mut c_void,
+    ) {
+        // Bundled PermissionFlow helper: opens the pane and floats a "drag
+        // otoji here" card beside System Settings. Falls back to the system
+        // prompt + plain deeplink when running outside the .app.
+        if permissions::launch_guide("accessibility") {
+            return;
+        }
+        permissions::prompt_accessibility();
+        let nsurl = msg1_ptr(
+            cls(b"NSURL\0"),
+            sel(b"URLWithString:\0"),
+            nsstring(
+                "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility",
+            ),
+        );
+        msg1_ptr(
+            msg0(cls(b"NSWorkspace\0"), sel(b"sharedWorkspace\0")),
+            sel(b"openURL:\0"),
+            nsurl,
+        );
+    }
     use std::ffi::c_void;
     use std::sync::atomic::{AtomicPtr, Ordering};
 
@@ -220,8 +339,17 @@ mod tray_macos {
                     if let Ok(cfg) =
                         serde_json::from_value::<otoji::config::OtojiConfig>(cfg_val.clone())
                     {
+                        let old_variant = active_stt_variant();
                         otoji::config::save(&cfg);
                         eval_settings_js("window.handleSetConfig()");
+                        // A new STT model only takes effect in a fresh listen.
+                        if active_stt_variant() != old_variant {
+                            eprintln!("otoji-tray: STT model → {}", active_stt_variant());
+                            if overlay::stop_listen() {
+                                overlay::start_listen();
+                            }
+                            rebuild_menu();
+                        }
                     }
                 }
             }
@@ -305,6 +433,18 @@ mod tray_macos {
                 sel(b"userContentController:didReceiveScriptMessage:\0"),
                 handle_settings_message as *const c_void,
                 b"v@:@@\0".as_ptr() as *const _,
+            );
+            class_addMethod(
+                new_cls,
+                sel(b"grantMic:\0"),
+                action_grant_mic as *const c_void,
+                b"v@:@\0".as_ptr() as *const _,
+            );
+            class_addMethod(
+                new_cls,
+                sel(b"grantAx:\0"),
+                action_grant_ax as *const c_void,
+                b"v@:@\0".as_ptr() as *const _,
             );
             objc_registerClassPair(new_cls);
         });
@@ -609,7 +749,7 @@ mod tray_macos {
     /// Returns true if at least one `otoji listen` process is running.
     fn listen_is_running() -> bool {
         std::process::Command::new("pgrep")
-            .args(["-f", "otoji listen"])
+            .args(["-f", LISTEN_PROC_PATTERN])
             .stdout(std::process::Stdio::null())
             .stderr(std::process::Stdio::null())
             .status()
@@ -654,19 +794,80 @@ mod tray_macos {
         (y as i32, m as u32, d as u32)
     }
 
-    /// Click → kill all `otoji listen` processes. CLX will respawn one
-    /// on the next voice trigger.
+    /// Click → stop listening: the tray-owned child, plus any stray
+    /// `otoji listen` started elsewhere.
     unsafe extern "C" fn action_stop_listen(
         _this: *mut c_void,
         _cmd: *mut c_void,
         _sender: *mut c_void,
     ) {
+        if let Some(n) = graph::pipeline().nodes().find(|n| n.kind == "mic") {
+            graph::set_enabled(&n.id.clone(), false);
+        }
+        apply_pipeline();
+        // Also stop any stray `otoji listen` started elsewhere.
         let _ = std::process::Command::new("pkill")
-            .args(["-f", "otoji listen"])
+            .args(["-f", LISTEN_PROC_PATTERN])
             .status();
+        eprintln!("otoji-tray: listen stopped from menu");
+        rebuild_menu();
     }
 
-    /// Click → spawn a bare `otoji listen --plain` if none is running.
+    /// Click on a pipeline row → turn that node's line on or off.
+    unsafe extern "C" fn action_toggle_node(
+        _this: *mut c_void,
+        _cmd: *mut c_void,
+        sender: *mut c_void,
+    ) {
+        let tag: extern "C" fn(*mut c_void, *mut c_void) -> i64 =
+            std::mem::transmute(objc_msgSend as *const ());
+        let i = tag(sender, sel(b"tag\0")) as usize;
+        let id = PIPELINE_ITEMS
+            .lock()
+            .unwrap()
+            .get(i)
+            .map(|(_, id)| id.clone());
+        if let Some(id) = id.filter(|id| !id.is_empty()) {
+            graph::toggle(&id);
+            apply_pipeline();
+            rebuild_menu();
+        }
+    }
+
+    /// Click → open pipeline.otoji in the default text editor.
+    unsafe extern "C" fn action_edit_pipeline(
+        _this: *mut c_void,
+        _cmd: *mut c_void,
+        _sender: *mut c_void,
+    ) {
+        graph::reload();
+        let _ = std::process::Command::new("open")
+            .arg("-t")
+            .arg(graph::path())
+            .spawn();
+    }
+
+    /// LaunchAgent label from scripts/install-launch-agent.sh.
+    const LAUNCH_AGENT_LABEL: &str = "com.snomiao.otoji";
+
+    /// Click → Quit. Leaves the quit marker (so launchd's next start, e.g. at
+    /// login, exits at once) and unloads the agent for this session.
+    unsafe extern "C" fn action_quit(_this: *mut c_void, _cmd: *mut c_void, _sender: *mut c_void) {
+        overlay::stop_listen();
+        let _ = std::fs::write(super::quit_marker(), b"quit from the menu\n");
+        if std::env::var("XPC_SERVICE_NAME").as_deref() == Ok(LAUNCH_AGENT_LABEL) {
+            eprintln!("otoji-tray: quit — unloading LaunchAgent {LAUNCH_AGENT_LABEL}");
+            // bootout SIGTERMs this process; the exit below is the fallback.
+            let _ = std::process::Command::new("launchctl")
+                .arg("bootout")
+                .arg(format!("gui/{}/{LAUNCH_AGENT_LABEL}", libc::getuid()))
+                .status();
+        }
+        std::process::exit(0);
+    }
+
+    /// Click → start a tray-owned `otoji listen --plain` (events feed the
+    /// caption overlay) if none is running.
     unsafe extern "C" fn action_start_listen(
         _this: *mut c_void,
         _cmd: *mut c_void,
@@ -675,12 +876,16 @@ mod tray_macos {
         if listen_is_running() {
             return;
         }
-        let _ = std::process::Command::new("otoji")
-            .args(["listen", "--plain"])
-            .stdin(std::process::Stdio::null())
-            .stdout(std::process::Stdio::null())
-            .stderr(std::process::Stdio::null())
-            .spawn();
+        if let Some(n) = graph::pipeline().nodes().find(|n| n.kind == "mic") {
+            graph::set_enabled(&n.id.clone(), true);
+        }
+        if permissions::mic_status() != permissions::Mic::Authorized {
+            AUTO_LISTEN.store(true, Ordering::Release);
+            permissions::ensure_mic_interactive();
+            return;
+        }
+        apply_pipeline();
+        rebuild_menu();
     }
 
     /// Click → open the most recent note's polished .md (or fall back to
@@ -748,6 +953,24 @@ mod tray_macos {
             );
             class_addMethod(
                 new_cls,
+                sel(b"toggleNode:\0"),
+                action_toggle_node as *const c_void,
+                b"v@:@\0".as_ptr() as *const _,
+            );
+            class_addMethod(
+                new_cls,
+                sel(b"editPipeline:\0"),
+                action_edit_pipeline as *const c_void,
+                b"v@:@\0".as_ptr() as *const _,
+            );
+            class_addMethod(
+                new_cls,
+                sel(b"quitOtoji:\0"),
+                action_quit as *const c_void,
+                b"v@:@\0".as_ptr() as *const _,
+            );
+            class_addMethod(
+                new_cls,
                 sel(b"stopListen:\0"),
                 action_stop_listen as *const c_void,
                 b"v@:@\0".as_ptr() as *const _,
@@ -785,6 +1008,121 @@ mod tray_macos {
     }
 
     /// Build (or rebuild) the status item's menu in place.
+    /// SenseVoice variant `otoji listen` will load: env override, else config,
+    /// else the built-in default (same order as SenseVoiceConfig::from_env).
+    fn active_stt_variant() -> String {
+        std::env::var("OTOJI_SENSEVOICE_VARIANT")
+            .ok()
+            .filter(|s| !s.is_empty())
+            .unwrap_or_else(|| {
+                let v = otoji::config::load().sherpa_model_variant;
+                if v.is_empty() {
+                    otoji::config::DEFAULT_SHERPA_VARIANT.to_string()
+                } else {
+                    v
+                }
+            })
+    }
+
+    /// The pipeline rows of the current menu (retained by the menu) and the
+    /// node id each one toggles ("" = comment row).
+    static PIPELINE_ITEMS: std::sync::Mutex<Vec<(usize, String)>> =
+        std::sync::Mutex::new(Vec::new());
+    static TICKS: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
+
+    /// Monospaced menu title so the pipeline's columns line up.
+    unsafe fn set_mono_title(item: *mut c_void, text: &str) {
+        let font = {
+            let f: extern "C" fn(*mut c_void, *mut c_void, f64, f64) -> *mut c_void =
+                std::mem::transmute(objc_msgSend as *const ());
+            f(
+                cls(b"NSFont\0"),
+                sel(b"monospacedSystemFontOfSize:weight:\0"),
+                12.0,
+                0.0,
+            )
+        };
+        let attrs = {
+            let f: extern "C" fn(
+                *mut c_void,
+                *mut c_void,
+                *mut c_void,
+                *mut c_void,
+            ) -> *mut c_void = std::mem::transmute(objc_msgSend as *const ());
+            f(
+                cls(b"NSDictionary\0"),
+                sel(b"dictionaryWithObject:forKey:\0"),
+                font,
+                nsstring("NSFont"),
+            )
+        };
+        let astr = {
+            let f: extern "C" fn(
+                *mut c_void,
+                *mut c_void,
+                *mut c_void,
+                *mut c_void,
+            ) -> *mut c_void = std::mem::transmute(objc_msgSend as *const ());
+            f(
+                msg0(cls(b"NSAttributedString\0"), sel(b"alloc\0")),
+                sel(b"initWithString:attributes:\0"),
+                nsstring(text),
+                attrs,
+            )
+        };
+        msg1_ptr(item, sel(b"setAttributedTitle:\0"), astr);
+        msg0(astr, sel(b"release\0"));
+    }
+
+    /// Make the listen child match the pipeline (mic + stt lines on/off).
+    fn apply_pipeline() {
+        let want = graph::wants_listen();
+        let running = overlay::is_listening();
+        // VAD settings changed → restart listen so they take effect.
+        if want && running && graph::listen_env() != overlay::listen_env() {
+            eprintln!("otoji-tray: vad settings changed — restarting listen");
+            overlay::stop_listen();
+            overlay::start_listen();
+            return;
+        }
+        if want && !running {
+            if permissions::mic_status() != permissions::Mic::Authorized {
+                AUTO_LISTEN.store(true, Ordering::Release);
+                return;
+            }
+            overlay::start_listen();
+        } else if !want && running {
+            overlay::stop_listen();
+            let _ = std::process::Command::new("pkill")
+                .args(["-f", LISTEN_PROC_PATTERN])
+                .status();
+            overlay::notify("otoji off");
+        }
+    }
+
+    /// Every tick: retitle the pipeline rows in place with live status (the
+    /// timer runs in common modes, so this keeps going while the menu is open).
+    unsafe fn update_pipeline_rows() {
+        let items = PIPELINE_ITEMS.lock().unwrap().clone();
+        if items.is_empty() {
+            return;
+        }
+        let rows = graph::rows(permissions::mic_status() == permissions::Mic::Authorized);
+        if rows.len() != items.len() {
+            rebuild_menu();
+            return;
+        }
+        static LAST: std::sync::Mutex<Vec<String>> = std::sync::Mutex::new(Vec::new());
+        let mut last = LAST.lock().unwrap();
+        last.resize(rows.len(), String::new());
+        for (i, ((item, _), (text, _))) in items.iter().zip(rows).enumerate() {
+            if last[i] != text {
+                set_mono_title(*item as *mut c_void, &text);
+                last[i] = text;
+            }
+        }
+    }
+
     unsafe fn rebuild_menu() {
         let item = STATUS_ITEM.load(Ordering::Acquire);
         if item.is_null() {
@@ -837,6 +1175,84 @@ mod tray_macos {
             msg1_ptr(toggle_item, sel(b"setTarget:\0"), target);
         }
         msg1_ptr(menu, sel(b"addItem:\0"), toggle_item);
+
+        // The pipeline file, one row per line with a live `# <state> …`
+        // status; clicking a node row turns that line on/off.
+        if let Some(err) = graph::error() {
+            let row = init_fn(
+                msg0(menuitem_cls, sel(b"alloc\0")),
+                init_sel,
+                nsstring(&format!(
+                    "⚠️  pipeline.otoji: {} (using the last good version)",
+                    truncate(&err, 60)
+                )),
+                sel(b"editPipeline:\0"),
+                nsstring(""),
+            );
+            if !target.is_null() {
+                msg1_ptr(row, sel(b"setTarget:\0"), target);
+            }
+            msg1_ptr(menu, sel(b"addItem:\0"), row);
+        }
+        let mut pipeline_items = Vec::new();
+        for (text, id) in graph::rows(permissions::mic_status() == permissions::Mic::Authorized) {
+            let action = if id.is_some() {
+                sel(b"toggleNode:\0")
+            } else {
+                std::ptr::null_mut()
+            };
+            let row = init_fn(
+                msg0(menuitem_cls, sel(b"alloc\0")),
+                init_sel,
+                nsstring(""),
+                action,
+                nsstring(""),
+            );
+            set_mono_title(row, &text);
+            if !target.is_null() && id.is_some() {
+                msg1_ptr(row, sel(b"setTarget:\0"), target);
+            }
+            overlay::msg_i64(row, sel(b"setTag:\0"), pipeline_items.len() as i64);
+            msg1_ptr(menu, sel(b"addItem:\0"), row);
+            pipeline_items.push((row as usize, id.unwrap_or_default()));
+        }
+        *PIPELINE_ITEMS.lock().unwrap() = pipeline_items;
+        let edit_item = init_fn(
+            msg0(menuitem_cls, sel(b"alloc\0")),
+            init_sel,
+            nsstring("Edit pipeline…"),
+            sel(b"editPipeline:\0"),
+            nsstring(""),
+        );
+        if !target.is_null() {
+            msg1_ptr(edit_item, sel(b"setTarget:\0"), target);
+        }
+        msg1_ptr(menu, sel(b"addItem:\0"), edit_item);
+
+        // Missing permissions: one clickable row each, gone once granted.
+        let mut perm_rows: Vec<(&str, &[u8])> = Vec::new();
+        if permissions::mic_status() != permissions::Mic::Authorized {
+            perm_rows.push(("⚠️  Allow microphone access…", b"grantMic:\0"));
+        }
+        if !permissions::accessibility_granted() {
+            perm_rows.push((
+                "⚠️  Allow Accessibility for the Fn+/ on/off hotkey…",
+                b"grantAx:\0",
+            ));
+        }
+        for (label, action) in perm_rows {
+            let row = init_fn(
+                msg0(menuitem_cls, sel(b"alloc\0")),
+                init_sel,
+                nsstring(label),
+                sel(action),
+                nsstring(""),
+            );
+            if !target.is_null() {
+                msg1_ptr(row, sel(b"setTarget:\0"), target);
+            }
+            msg1_ptr(menu, sel(b"addItem:\0"), row);
+        }
 
         let sep0 = msg0(menuitem_cls, sel(b"separatorItem\0"));
         msg1_ptr(menu, sel(b"addItem:\0"), sep0);
@@ -963,16 +1379,21 @@ mod tray_macos {
         let sep4 = msg0(menuitem_cls, sel(b"separatorItem\0"));
         msg1_ptr(menu, sel(b"addItem:\0"), sep4);
 
-        // Quit: terminate: on NSApp.
+        // Quit: quitOtoji: (also unloads the LaunchAgent), else terminate: on NSApp.
         let app = msg0(cls(b"NSApplication\0"), sel(b"sharedApplication\0"));
+        let (quit_sel, quit_target): (&[u8], _) = if target.is_null() {
+            (b"terminate:\0", app)
+        } else {
+            (b"quitOtoji:\0", target)
+        };
         let quit_item = init_fn(
             msg0(menuitem_cls, sel(b"alloc\0")),
             init_sel,
             nsstring("Quit otoji"),
-            sel(b"terminate:\0"),
+            sel(quit_sel),
             nsstring("q"),
         );
-        msg1_ptr(quit_item, sel(b"setTarget:\0"), app);
+        msg1_ptr(quit_item, sel(b"setTarget:\0"), quit_target);
         msg1_ptr(menu, sel(b"addItem:\0"), quit_item);
 
         msg1_ptr(item, sel(b"setMenu:\0"), menu);
@@ -1001,6 +1422,20 @@ mod tray_macos {
 
         // Drain any pending model-download progress events.
         drain_download_events();
+
+        if TOGGLE_REQUESTED.swap(false, std::sync::atomic::Ordering::SeqCst) {
+            toggle_otoji();
+        }
+        overlay::tick();
+        overlay::supervise();
+        graph::sample_level();
+        // Saved edits to pipeline.otoji apply live (checked twice a second).
+        if TICKS.fetch_add(1, Ordering::Relaxed) % 5 == 0 && graph::poll_file() {
+            apply_pipeline();
+            unsafe { rebuild_menu() };
+        }
+        unsafe { update_pipeline_rows() };
+        poll_permissions();
 
         let mtime = notes_mtime_secs();
         let prev = LAST_MTIME.load(std::sync::atomic::Ordering::Acquire);
@@ -1177,24 +1612,38 @@ mod tray_macos {
         }
     }
 
-    // ── Global PTT hotkey (hold-to-talk) ─────────────────────────────────────
+    // ── Global hotkeys ───────────────────────────────────────────────────────
     //
-    // A listen-only CGEventTap on flagsChanged watches a single modifier key
-    // (default: Fn/Globe — left-hand reachable and unused by CLX's space+V
-    // binding). Press → SIGUSR1 to every `otoji listen` process (PTT start),
-    // release → SIGUSR2 (PTT end). Requires Accessibility permission.
+    // One CGEventTap (needs Accessibility) serves two things:
+    // - On/off toggle: Fn+/ or Alt+CapsLock starts/stops otoji (listen + mic).
+    //   The `/` keystroke is swallowed so it isn't typed; CapsLock can't be
+    //   (but a CapsLock remapped to F18, as CapsLockX does, is).
+    // - Optional hold-to-talk (config `ptt_hotkey`, default "off"): holding a
+    //   modifier sends SIGUSR1/SIGUSR2 to every `otoji listen` (PTT start/end).
+    // The callback only flips atomics; refresh_tick does the actual toggle so
+    // the tap never stalls keyboard input.
 
-    /// Whether the hotkey modifier is currently held.
+    /// Whether the hold-to-talk modifier is currently held.
     static PTT_HELD: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
-    /// Selected hotkey: flag mask to test in the flagsChanged event.
+    /// Hold-to-talk: flag mask to test in the flagsChanged event (0 = off).
     static PTT_FLAG_MASK: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
-    /// Selected hotkey: virtual keycode the flagsChanged event must carry
+    /// Hold-to-talk: virtual keycode the flagsChanged event must carry
     /// (distinguishes left-Ctrl from right-Ctrl, etc.). u64::MAX = any.
     static PTT_KEYCODE: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(u64::MAX);
+    /// Set by the tap when a toggle combo is pressed; drained by refresh_tick.
+    static TOGGLE_REQUESTED: std::sync::atomic::AtomicBool =
+        std::sync::atomic::AtomicBool::new(false);
+    /// The tap swallowed a Fn+/ keyDown, so swallow its keyUp too.
+    static SLASH_SWALLOWED: std::sync::atomic::AtomicBool =
+        std::sync::atomic::AtomicBool::new(false);
+    /// Same for an Alt+F18 (remapped Caps Lock) keyDown.
+    static F18_SWALLOWED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+    static HOTKEY_TAP: std::sync::atomic::AtomicPtr<c_void> =
+        std::sync::atomic::AtomicPtr::new(std::ptr::null_mut());
 
     fn signal_listen_processes(sig: libc::c_int) {
         let out = std::process::Command::new("pgrep")
-            .args(["-f", "otoji listen"])
+            .args(["-f", LISTEN_PROC_PATTERN])
             .output();
         if let Ok(out) = out {
             for line in String::from_utf8_lossy(&out.stdout).lines() {
@@ -1205,96 +1654,181 @@ mod tray_macos {
         }
     }
 
-    extern "C" fn ptt_tap_callback(
+    /// Fn+/ or Alt+CapsLock → flip the pipeline's mic line (otoji on/off).
+    fn toggle_otoji() {
+        graph::toggle_mic();
+        let on = graph::wants_listen();
+        if on && permissions::mic_status() != permissions::Mic::Authorized {
+            AUTO_LISTEN.store(true, Ordering::Release);
+            unsafe { permissions::ensure_mic_interactive() };
+            return;
+        }
+        apply_pipeline();
+        eprintln!(
+            "otoji-tray: toggled {} by hotkey",
+            if on { "on" } else { "off" }
+        );
+        unsafe { rebuild_menu() };
+    }
+
+    extern "C" fn hotkey_tap_callback(
         _proxy: *mut c_void,
         etype: u32,
         event: *mut c_void,
         _user: *mut c_void,
     ) -> *mut c_void {
+        use std::sync::atomic::Ordering::{Relaxed, SeqCst};
+        const K_CG_EVENT_KEY_DOWN: u32 = 10;
+        const K_CG_EVENT_KEY_UP: u32 = 11;
         const K_CG_EVENT_FLAGS_CHANGED: u32 = 12;
         const K_CG_EVENT_TAP_DISABLED_BY_TIMEOUT: u32 = 0xFFFFFFFE;
+        const K_CG_EVENT_TAP_DISABLED_BY_USER_INPUT: u32 = 0xFFFFFFFF;
         const K_CG_KEYBOARD_EVENT_KEYCODE: u32 = 9;
-        if etype == K_CG_EVENT_TAP_DISABLED_BY_TIMEOUT {
-            // Re-enabled lazily by the next install attempt; nothing to do here
-            // (listen-only taps are rarely disabled, but don't crash if so).
-            return event;
-        }
-        if etype != K_CG_EVENT_FLAGS_CHANGED {
-            return event;
-        }
-        let want_key = PTT_KEYCODE.load(std::sync::atomic::Ordering::Relaxed);
-        if want_key != u64::MAX {
-            let keycode =
-                unsafe { CGEventGetIntegerValueField(event, K_CG_KEYBOARD_EVENT_KEYCODE) } as u64;
-            if keycode != want_key {
-                return event;
+        const K_CG_KEYBOARD_EVENT_AUTOREPEAT: u32 = 8;
+        const FLAG_MASK_ALTERNATE: u64 = 0x80000; // kCGEventFlagMaskAlternate
+        const FLAG_MASK_SECONDARY_FN: u64 = 0x800000;
+        const KEYCODE_SLASH: u64 = 44;
+        const KEYCODE_CAPS_LOCK: u64 = 57;
+        // CapsLockX remaps Caps Lock to F18 (hidutil), so Alt+CapsLock arrives as Alt+F18.
+        const KEYCODE_F18: u64 = 79;
+
+        if etype == K_CG_EVENT_TAP_DISABLED_BY_TIMEOUT
+            || etype == K_CG_EVENT_TAP_DISABLED_BY_USER_INPUT
+        {
+            let tap = HOTKEY_TAP.load(Relaxed);
+            if !tap.is_null() {
+                unsafe { CGEventTapEnable(tap, true) };
             }
+            return event;
         }
-        let mask = PTT_FLAG_MASK.load(std::sync::atomic::Ordering::Relaxed);
-        let held = unsafe { CGEventGetFlags(event) } & mask != 0;
-        if held != PTT_HELD.swap(held, std::sync::atomic::Ordering::SeqCst) {
-            signal_listen_processes(if held { libc::SIGUSR1 } else { libc::SIGUSR2 });
+        let keycode =
+            unsafe { CGEventGetIntegerValueField(event, K_CG_KEYBOARD_EVENT_KEYCODE) } as u64;
+        let flags = unsafe { CGEventGetFlags(event) };
+        match etype {
+            K_CG_EVENT_KEY_DOWN
+                if keycode == KEYCODE_SLASH && flags & FLAG_MASK_SECONDARY_FN != 0 =>
+            {
+                let repeat =
+                    unsafe { CGEventGetIntegerValueField(event, K_CG_KEYBOARD_EVENT_AUTOREPEAT) };
+                if repeat == 0 {
+                    TOGGLE_REQUESTED.store(true, SeqCst);
+                }
+                SLASH_SWALLOWED.store(true, SeqCst);
+                std::ptr::null_mut()
+            }
+            K_CG_EVENT_KEY_UP
+                if keycode == KEYCODE_SLASH && SLASH_SWALLOWED.swap(false, SeqCst) =>
+            {
+                std::ptr::null_mut()
+            }
+            K_CG_EVENT_KEY_DOWN if keycode == KEYCODE_F18 && flags & FLAG_MASK_ALTERNATE != 0 => {
+                let repeat =
+                    unsafe { CGEventGetIntegerValueField(event, K_CG_KEYBOARD_EVENT_AUTOREPEAT) };
+                if repeat == 0 {
+                    TOGGLE_REQUESTED.store(true, SeqCst);
+                }
+                F18_SWALLOWED.store(true, SeqCst);
+                std::ptr::null_mut()
+            }
+            K_CG_EVENT_KEY_UP if keycode == KEYCODE_F18 && F18_SWALLOWED.swap(false, SeqCst) => {
+                std::ptr::null_mut()
+            }
+            K_CG_EVENT_FLAGS_CHANGED => {
+                // CapsLock sends one flagsChanged per press (its flag toggles).
+                if keycode == KEYCODE_CAPS_LOCK && flags & FLAG_MASK_ALTERNATE != 0 {
+                    TOGGLE_REQUESTED.store(true, SeqCst);
+                }
+                let mask = PTT_FLAG_MASK.load(Relaxed);
+                let want_key = PTT_KEYCODE.load(Relaxed);
+                if mask != 0 && (want_key == u64::MAX || keycode == want_key) {
+                    let held = flags & mask != 0;
+                    if held != PTT_HELD.swap(held, SeqCst) {
+                        signal_listen_processes(if held { libc::SIGUSR1 } else { libc::SIGUSR2 });
+                    }
+                }
+                event
+            }
+            _ => event,
         }
-        event
     }
 
-    /// Install the global hotkey tap on the main run loop. No-op when
-    /// `ptt_hotkey` is "off" or unknown, or when Accessibility is not granted.
-    unsafe fn install_ptt_hotkey() {
+    /// Install the global hotkey tap on the main run loop. No-op until
+    /// Accessibility is granted (poll_permissions() retries every second).
+    unsafe fn install_hotkeys() {
         const FLAG_MASK_SECONDARY_FN: u64 = 0x800000; // kCGEventFlagMaskSecondaryFn
         const FLAG_MASK_CONTROL: u64 = 0x40000; // kCGEventFlagMaskControl
         const KEYCODE_FN: u64 = 63;
         const KEYCODE_LEFT_CTRL: u64 = 59;
 
-        let choice = otoji::config::load().ptt_hotkey;
-        let (mask, keycode, label) = match choice.as_str() {
-            "fn" => (FLAG_MASK_SECONDARY_FN, KEYCODE_FN, "Fn/Globe"),
-            "left-ctrl" => (FLAG_MASK_CONTROL, KEYCODE_LEFT_CTRL, "left-Ctrl"),
-            "off" => return,
-            other => {
-                eprintln!("otoji-tray: unknown ptt_hotkey {other:?} — hotkey disabled");
-                return;
-            }
-        };
         if !AXIsProcessTrusted() {
-            eprintln!(
-                "otoji-tray: Accessibility permission not granted — global PTT hotkey ({label}) \
-                 disabled. Enable it in System Settings → Privacy & Security → Accessibility."
-            );
             return;
         }
-        PTT_FLAG_MASK.store(mask, std::sync::atomic::Ordering::Relaxed);
-        PTT_KEYCODE.store(keycode, std::sync::atomic::Ordering::Relaxed);
+        if HOTKEY_INSTALLED.swap(true, std::sync::atomic::Ordering::AcqRel) {
+            return;
+        }
+        let choice = otoji::config::load().ptt_hotkey;
+        let ptt = match choice.as_str() {
+            "fn" => Some((FLAG_MASK_SECONDARY_FN, KEYCODE_FN, "Fn/Globe")),
+            "left-ctrl" => Some((FLAG_MASK_CONTROL, KEYCODE_LEFT_CTRL, "left-Ctrl")),
+            "off" => None,
+            other => {
+                eprintln!("otoji-tray: unknown ptt_hotkey {other:?} — hold-to-talk disabled");
+                None
+            }
+        };
+        if let Some((mask, keycode, _)) = ptt {
+            PTT_FLAG_MASK.store(mask, std::sync::atomic::Ordering::Relaxed);
+            PTT_KEYCODE.store(keycode, std::sync::atomic::Ordering::Relaxed);
+        }
 
         const K_CG_HID_EVENT_TAP: u32 = 0;
         const K_CG_HEAD_INSERT_EVENT_TAP: u32 = 0;
-        const K_CG_EVENT_TAP_OPTION_LISTEN_ONLY: u32 = 1;
-        let mask_flags_changed: u64 = 1 << 12; // CGEventMaskBit(kCGEventFlagsChanged)
+        const K_CG_EVENT_TAP_OPTION_DEFAULT: u32 = 0; // active: may swallow Fn+/
+        let mask: u64 = (1 << 10) | (1 << 11) | (1 << 12); // keyDown | keyUp | flagsChanged
         let tap = CGEventTapCreate(
             K_CG_HID_EVENT_TAP,
             K_CG_HEAD_INSERT_EVENT_TAP,
-            K_CG_EVENT_TAP_OPTION_LISTEN_ONLY,
-            mask_flags_changed,
-            ptt_tap_callback,
+            K_CG_EVENT_TAP_OPTION_DEFAULT,
+            mask,
+            hotkey_tap_callback,
             std::ptr::null_mut(),
         );
         if tap.is_null() {
-            eprintln!("otoji-tray: CGEventTapCreate failed — global PTT hotkey disabled");
+            eprintln!("otoji-tray: CGEventTapCreate failed — global hotkeys disabled");
+            HOTKEY_INSTALLED.store(false, std::sync::atomic::Ordering::Release);
             return;
         }
         let source = CFMachPortCreateRunLoopSource(std::ptr::null_mut(), tap, 0);
         if source.is_null() {
-            eprintln!("otoji-tray: run loop source for PTT hotkey failed");
+            eprintln!("otoji-tray: run loop source for hotkeys failed");
             return;
         }
+        HOTKEY_TAP.store(tap, std::sync::atomic::Ordering::Release);
         CFRunLoopAddSource(CFRunLoopGetMain(), source, kCFRunLoopCommonModes);
         CGEventTapEnable(tap, true);
-        eprintln!("otoji-tray: global PTT hotkey active — hold {label} to talk");
+        eprintln!("otoji-tray: hotkeys active — Fn+/ or Alt+CapsLock toggles otoji on/off");
+        if let Some((_, _, label)) = ptt {
+            eprintln!("otoji-tray: hold {label} to talk");
+        }
     }
 
     pub fn run() {
         // CLX 設定が存在する場合、音声設定を otoji config に移行する (初回起動時のみ)。
+        // Launched as an app (no terminal): send our stderr to <data>/tray.log
+        // so permission / listen problems can be diagnosed afterwards.
+        if unsafe { libc::isatty(2) } == 0 {
+            let path = otoji::notes::data_dir().join("tray.log");
+            let _ = std::fs::create_dir_all(otoji::notes::data_dir());
+            if let Ok(f) = std::fs::File::create(&path) {
+                use std::os::unix::io::IntoRawFd;
+                unsafe { libc::dup2(f.into_raw_fd(), 2) };
+            }
+        }
         maybe_migrate_from_clx();
+        // LLM keys for polish/translate: launchd gives the tray no shell env,
+        // so read <data>/.env (KEY=value lines) when present.
+        let _ = dotenvy::from_path(otoji::notes::data_dir().join(".env"));
+        graph::reload();
 
         unsafe {
             // NSApplication + Accessory activation policy (no Dock icon).
@@ -1349,8 +1883,8 @@ mod tray_macos {
             // (must run on the main thread for WKWebView calls).
             let timer = CFRunLoopTimerCreate(
                 std::ptr::null_mut(),
-                CFAbsoluteTimeGetCurrent() + 0.2,
-                0.2,
+                CFAbsoluteTimeGetCurrent() + 0.1,
+                0.1,
                 0,
                 0,
                 refresh_tick,
@@ -1360,8 +1894,22 @@ mod tray_macos {
                 CFRunLoopAddTimer(CFRunLoopGetMain(), timer, kCFRunLoopCommonModes);
             }
 
-            // Global hold-to-talk hotkey (config `ptt_hotkey`, default Fn/Globe).
-            install_ptt_hotkey();
+            // Global hotkeys: Fn+/ or Alt+CapsLock on/off, optional hold-to-talk.
+            install_hotkeys();
+
+            // Caption overlay + tray-owned listen child. Skipped when another
+            // `otoji listen` already holds the mic (e.g. one spawned by CLX).
+            overlay::init();
+            AUTO_LISTEN.store(
+                !std::env::args().any(|a| a == "--no-listen"),
+                Ordering::Release,
+            );
+            // Ask for what otoji needs with native UI (system dialogs / an
+            // alert that opens the right Settings pane); poll_permissions()
+            // starts listening and the hotkey as soon as access is granted.
+            permissions::ensure_mic();
+            permissions::prompt_accessibility();
+            poll_permissions();
 
             eprintln!(
                 "otoji-tray: installed (pid {}, data {})",

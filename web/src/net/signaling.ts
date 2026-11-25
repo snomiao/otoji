@@ -13,7 +13,7 @@ export interface Peer {
   deviceId: string;
   name: string;
   role: string;
-  hasMic: boolean;
+  hasMic?: boolean;
   // Connection-type badge metadata (advisory). `runtime` is what the peer runs
   // ("browser" for a web tab, "node" for an `otoji node` CLI); `net` is a node
   // peer's link to the relay ("lan"/"wan", "" for browsers). Both optional so
@@ -56,7 +56,7 @@ export class SignalingClient implements Signaling {
     private name: string,
     private deviceId: string = "",
     private role: string = "general",
-    private hasMic: boolean = true,
+    private hasMic?: boolean,
     private base: string = DEFAULT_SIGNAL_BASE,
     // A stable, client-chosen peer id. When set it is reused across every
     // signaling server (so a device has ONE identity across a federated set);
@@ -81,7 +81,7 @@ export class SignalingClient implements Signaling {
     this.closedByUser = false;
     // base is canonical http(s); a wss endpoint lives at the same origin.
     const url =
-      `${toSocketUrl(this.base)}/${encodeURIComponent(this.room)}?name=${encodeURIComponent(this.name)}&deviceId=${encodeURIComponent(this.deviceId)}&role=${encodeURIComponent(this.role)}&hasMic=${this.hasMic ? "1" : "0"}&runtime=browser` +
+      `${toSocketUrl(this.base)}/${encodeURIComponent(this.room)}?name=${encodeURIComponent(this.name)}&deviceId=${encodeURIComponent(this.deviceId)}&role=${encodeURIComponent(this.role)}${this.hasMic == null ? "" : `&hasMic=${this.hasMic ? "1" : "0"}`}&runtime=browser` +
       (this.peerId ? `&peerId=${encodeURIComponent(this.peerId)}` : "");
     const ws = new WebSocket(url);
     this.ws = ws;

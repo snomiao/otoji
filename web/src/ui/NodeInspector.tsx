@@ -16,6 +16,7 @@ import { NEURAL_TTS_MODELS, AUTO_TTS_MODEL, AUTO_TTS_VOICE } from "../providers/
 import { MODEL_TASKS, MODEL_DTYPES, DEFAULT_MODEL_DTYPE } from "../providers/model/transformers-pipeline";
 import { VOSK_MODELS, DEFAULT_VOSK_MODEL } from "../providers/stt/vosk";
 import { DEFAULT_SHERPA_SERVER_URL } from "../providers/stt/sherpa_native";
+import { DEFAULT_GDOC_LIVE_SERVER } from "../providers/text/google-doc";
 import { DEFAULT_VIBEVOICE_MLX_MODEL, DEFAULT_VIBEVOICE_SERVER, DEFAULT_VIBEVOICE_VLLM_MODEL } from "../providers/stt/vibevoice";
 import { DEFAULT_TRANSLATE_PROMPT_TEMPLATE, listWebLlmModels } from "../providers/translate/webllm";
 import { useNodeLive } from "./useNodeLive";
@@ -40,6 +41,7 @@ import { samplesToWavBlob, concatSamples } from "../lib/peaks";
 import { buildSrt } from "../lib/srt";
 import { MonacoText } from "./MonacoText";
 import { EnumOmnibox, SelectOmnibox, type EnumOption } from "./EnumOmnibox";
+import { canHostNode } from "../lib/device-role";
 
 // Node inspector: the config surface for the currently-selected node, replacing
 // the inline controls React Flow's VoiceNode rendered. rgui draws nodes on a
@@ -502,6 +504,7 @@ export function NodeInspector({ node, controls = true, onClose }: { node: Inspec
   );
   const warn = !node.device ? "unassigned" : assigned && !assigned.online ? `● ${assigned.name} offline` : null;
   const warnColor = !node.device ? "#e53e3e" : "#c05621";
+  const micWarning = assigned && !canHostNode(vt, assigned) ? `● ${assigned.name} reports no microphone` : null;
 
   // ---- full-bleed cards: content fills the node rect, no padding ----------
   if (vt === "textarea") {
@@ -1079,12 +1082,20 @@ export function NodeInspector({ node, controls = true, onClose }: { node: Inspec
                 <option value="regex-keep">regex keep lines</option>
                 <option value="regex-drop">regex drop lines</option>
                 <option value="regex-replace">regex replace</option>
+                <option value="wake">🎙 wake word gate</option>
               </SelectOmnibox>
             </label>
             {String(config?.mode ?? "diff-added").startsWith("diff-") && (
               <label style={{ ...row, justifyContent: "flex-start", gap: 6 }}>
                 <input type="checkbox" checked={(config?.stripPrefix as boolean | undefined) ?? false} onChange={(e) => onConfig(id, { stripPrefix: e.target.checked })} />
                 strip +/- prefix
+              </label>
+            )}
+            {config?.mode === "wake" && (
+              <label style={{ display: "block", color: "#718096", marginTop: 6 }}>wake words (comma-sep):
+                <input type="text" defaultValue={(config?.wakeWords as string) ?? "hey otoji, ok otoji, otoji"} placeholder="hey otoji, ok otoji"
+                  onBlur={(e) => onConfig(id, { wakeWords: e.target.value })}
+                  onKeyDown={(e) => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); }} style={{ fontSize: 12, width: "100%", marginTop: 2, boxSizing: "border-box" }} />
               </label>
             )}
             {String(config?.mode ?? "").startsWith("regex-") && (
@@ -1119,6 +1130,34 @@ export function NodeInspector({ node, controls = true, onClose }: { node: Inspec
           </label>
         )}
 
+        {vt === "wake-word" && (
+          <>
+            <label style={row}>source:
+              <SelectOmnibox value={(config?.source as string) ?? "onnx"} onChange={(e) => onConfig(id, { source: e.target.value })} style={sel}>
+                <option value="onnx">openWakeWord (browser)</option>
+                <option value="native">native trigger (otoji kws)</option>
+              </SelectOmnibox>
+            </label>
+            {(config?.source ?? "onnx") === "native" ? (
+              <div style={{ fontSize: 9.5, color: "#a0aec0", marginTop: 2 }}>wire a pipe node fed by <code>otoji kws | otoji node &lt;room&gt;</code> into the trigger port; the mic audio after each wake goes to ASR</div>
+            ) : (
+            <label style={row}>wake model:
+              <input value={(config?.model as string) ?? ""} onChange={(e) => onConfig(id, { model: e.target.value })}
+                placeholder="hey_jarvis_v0.1.onnx" spellCheck={false} style={sel} />
+            </label>
+            )}
+            <label style={row}>threshold:
+              <input type="number" step="0.05" min="0" max="1" value={(config?.threshold as number | undefined) ?? 0.5}
+                onChange={(e) => onConfig(id, { threshold: Number(e.target.value) })} style={sel} />
+            </label>
+            <label style={row}>capture ms:
+              <input type="number" step="500" min="500" value={(config?.captureMs as number | undefined) ?? 3000}
+                onChange={(e) => onConfig(id, { captureMs: Number(e.target.value) })} style={sel} />
+            </label>
+            <div style={{ fontSize: 9.5, color: "#a0aec0", marginTop: 2 }}>real on-device KWS — feed Mic (raw); wake opens the audio port for ASR</div>
+          </>
+        )}
+
         {vt === "stream-asr" && (
           <>
             <label style={row}>models base:
@@ -1136,6 +1175,38 @@ export function NodeInspector({ node, controls = true, onClose }: { node: Inspec
                 placeholder={DEFAULT_SHERPA_SERVER_URL} spellCheck={false} style={sel} />
             </label>
             <div style={{ fontSize: 9.5, color: "#a0aec0", marginTop: 2 }}>run <code>otoji server</code> locally (native sherpa-onnx)</div>
+          </>
+        )}
+
+        {vt === "google-doc-live" && (
+          <>
+            <label style={row}>doc:
+              <input value={(config?.url as string) ?? ""} onChange={(e) => onConfig(id, { url: e.target.value })}
+                placeholder="https://docs.google.com/document/d/..." spellCheck={false} style={sel} />
+            </label>
+            <label style={row}>mode:
+              <SelectOmnibox value={(config?.mode as string) ?? "poll"} onChange={(e) => onConfig(id, { mode: e.target.value })} style={sel}>
+                <option value="poll">poll (Docs API)</option>
+                <option value="live">live (local bridge)</option>
+              </SelectOmnibox>
+            </label>
+            {((config?.mode as string) ?? "poll") === "poll" ? (
+              <>
+                <label style={row}>poll ms:
+                  <input type="number" min={1000} step={500} value={Number(config?.pollMs ?? 3000)}
+                    onChange={(e) => onConfig(id, { pollMs: Number(e.target.value) || 3000 })} style={sel} />
+                </label>
+                <div style={{ fontSize: 9.5, color: "#a0aec0", marginTop: 2 }}>needs Google OAuth Token in settings → keys</div>
+              </>
+            ) : (
+              <>
+                <label style={row}>bridge:
+                  <input value={(config?.serverUrl as string) ?? DEFAULT_GDOC_LIVE_SERVER} onChange={(e) => onConfig(id, { serverUrl: e.target.value })}
+                    placeholder={DEFAULT_GDOC_LIVE_SERVER} spellCheck={false} style={sel} />
+                </label>
+                <div style={{ fontSize: 9.5, color: "#a0aec0", marginTop: 2 }}>run <code>otoji gdoc</code> locally (realtime edits via headless Chrome)</div>
+              </>
+            )}
           </>
         )}
 
@@ -1577,6 +1648,7 @@ export function NodeInspector({ node, controls = true, onClose }: { node: Inspec
 
         {!node.device && <div style={{ color: "#e53e3e", fontSize: 10, marginTop: 4 }}>unassigned</div>}
         {assigned && !assigned.online && <div style={{ color: "#c05621", fontSize: 10, marginTop: 4 }}>● {assigned.name} offline</div>}
+        {micWarning && <div style={{ color: "#c05621", fontSize: 10, marginTop: 4 }}>{micWarning}</div>}
         {/* Live preview (waveform / image / text) is drawn natively by rgui on
             the node body — the inspector holds only the editable controls, plus
             the <video> live feed for camera/screen nodes (see LiveVideo). */}

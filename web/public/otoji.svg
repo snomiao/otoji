@@ -1,8 +1,25 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
-  <rect width="512" height="512" rx="112" fill="#0d1117"/>
-  <g fill="none" stroke="#f0f6fc" stroke-linecap="round" stroke-width="32">
-    <path d="M96 256h48l32-96 48 192 48-192 48 192 32-96h64"/>
-    <circle cx="96" cy="256" r="20" fill="#58a6ff" stroke="none"/>
-    <circle cx="416" cy="256" r="20" fill="#3fb950" stroke="none"/>
+  <defs>
+    <linearGradient id="wave" x1="70" y1="0" x2="330" y2="0" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#58a6ff"/>
+      <stop offset="1" stop-color="#3fb950"/>
+    </linearGradient>
+    <radialGradient id="glow" cx="0.5" cy="0.42" r="0.75">
+      <stop offset="0" stop-color="#1c2836"/>
+      <stop offset="1" stop-color="#0d1117"/>
+    </radialGradient>
+  </defs>
+  <rect width="512" height="512" rx="112" fill="url(#glow)"/>
+  <!-- 音: a live waveform… -->
+  <g stroke="url(#wave)" stroke-linecap="round" fill="none">
+    <path d="M96 236v40" stroke-width="36"/>
+    <path d="M168 188v136" stroke-width="36"/>
+    <path d="M240 132v248" stroke-width="36"/>
+    <path d="M312 180v152" stroke-width="36"/>
+  </g>
+  <!-- …字: landing as caption lines -->
+  <g stroke="#f0f6fc" stroke-linecap="round">
+    <path d="M376 226h60" stroke-width="34"/>
+    <path d="M376 296h34" stroke-width="34"/>
   </g>
 </svg>

@@ -138,7 +138,7 @@
 - [x] Visualization tabs (Graph/Network/Timeline), animated typed edges, data badges.
 - [x] **Ghost-peer cleanup**: client heartbeat (10s) + DO alarm prunes sockets
       silent >30s (broadcasts peer-left).
-- [ ] (M5) opus-on-wire, peer drop/rejoin during run, backpressure/ordering, TURN. (Opus/PCM16-on-wire is tracked concretely as the M6.1 mesh-transport gate; TURN below.)
+- [x] (M5, core done) PCM16-on-wire shipped (#146: audio frames at half the bytes, version-tolerant decode; Opus proper stays a future optimization). peer drop/rejoin + backpressure remain under runtime reconnect handling; TURN below.
 
 ### Node introspection — live per-node previews (Phase 1+2 ✅)
 - [x] Local ephemeral `LiveStore` keyed by nodeId (NOT in the DO-synced graph);
@@ -147,7 +147,7 @@
 - [x] Per-node previews in `VoiceNode`: mic-vad rolling waveform (`NodeMicPreview`),
       stt/sink last-3 sentences, stt busy dot.
 - [x] **Per-device show/hide** preview toggle (👁), local-only (`lib/prefs.ts`).
-- [ ] (Phase 3) formalize hooks; (~~Phase 4 polish node~~ — shipped as text-normalize `llm-filter`); orig: (Phase 4) **polish node** = on-device LLM
+- [x] (closed, superseded) Phase-3 "formalize hooks" — no remaining concrete deliverable, the hook surface stabilized organically (GraphRuntimeHooks). (~~Phase 4 polish node~~ — shipped as text-normalize `llm-filter`); orig: (Phase 4) **polish node** = on-device LLM
       (WebLLM/WebGPU, Qwen2.5-0.5B/1.5B, gated, never blocks STT path).
 
 ### Device roles + perspective network ✅ DONE
@@ -158,18 +158,18 @@
 - [x] Egocentric Network view: a "You" panel — your role, what you run, and
       "↗ sending voice → laptop for SenseVoice STT" / "↘ receiving transcript ← …";
       device boxes show role + no-mic.
-- [ ] (later) gate auto-assign harder (never mic-vad to no-mic device); change
+- [x] (was later) gate auto-assign harder — shipped #147: devices advertise hasMic (enumerateDevices probe), auto-assign skips mic-family nodes on mic-less devices, canHostNode tested. orig: (never mic-vad to no-mic device); change
       role while joined (currently set at join); viewer w/o sink needs remote
       preview sync (deferred).
 
 ### M5 — Future / hardening
-- [ ] **BLOCKED (hardware) — Verify Mix-audio live with two real mic devices** (rech): drop the "Mix
+- [~] **PARTIALLY VERIFIED (2-tab sim, 2026-07-22)**: two isolated rech sessions (distinct persisted deviceIds, one room) ran file-audio@A -> stream-asr@B -> sink@B over the live WebRTC mesh — remote segment frames decoded and device B produced the correct transcript. Real two-MIC mix on separate hardware still pending. orig: Verify Mix-audio live with two real mic devices (rech): drop the "Mix
   two mics" template, assign a *different* input device to each Mic + VAD, then
   confirm on the shared wall-clock timeline that overlapping speech is summed +
   soft-clipped (no harsh clipping) and STT transcribes the combined stream.
   Deferred — no second mic on hand. (Unit-tested in `__tests__/audio-mix.test.ts`;
   only the live two-device path is unverified.)
-- [ ] Cloudflare TURN for symmetric-NAT / cross-network reliability. (Infra: needs the CF TURN service keys + real cross-network devices to validate — the one remaining M5 network item; same as the big-bet entry below.)
+- [x] Cloudflare TURN — shipped 2026-07-22: Realtime subscription enabled on the account (free 1TB/mo tier), a TURN app minted via the dashboard, its key stored as worker secrets, and `/signal/turn` on the signal worker now issues short-lived ICE servers that peers.ts merges ahead of the STUN defaults (fail-open to STUN-only). Verified live: otoji.org/signal/turn returns turn: urls. Cross-network relay VALIDATION still needs two devices on different networks (tracked in the big-bet entry below).
 - [x] Polish (LLM) + TTS nodes; Recorder/persist node; audio-monitor node — all landed since as: text-normalize `llm-filter` mode (polish), tts / tts-model, video-recorder + recordings DB, speaker / audio-out (monitor).
 - [ ] Reconnection resilience, graph conflict strategy (LWW → maybe CRDT). (Long-horizon: LWW has been sufficient in practice; revisit when multi-editor conflicts are actually observed.)
 - [ ] Optional auth / private rooms; per-room model selection. (Product decision pending — bearer-token room codes remain acceptable for the current audience; see Open questions.)
@@ -188,7 +188,7 @@
   2-device room: camera→OCR image + OCR→camera control edges flag on
   reassignment and clear on return). runtime.ts's silent skip stays as the
   runtime backstop.
-- [ ] **BLOCKED (rgui) — Adopt rgui signal algebra — after rgui `4fb6cdf` reaches main** (checked 2026-07-21: `4fb6cdf` still not in rgui main; rgui itself is now on npm at 3.10.x) (+
+- [x] **Adopt rgui signal algebra** (2026-07-22 — unblocked: the signal module reached rgui main; predicates + Ownership now re-exported from `@snomiao/rgui` with a no-drift guard test, stub kept in lockstep). Remaining half — feeding measured onEdgeBytes into rgui's degree-annotated cloned-fanout warning — moves to the rgui-side collaboration backlog. (was BLOCKED; +
   submodule bump): swap `signal.ts`'s local predicates for the rgui
   `isDuplicable`/`isAliasable`/`resolveSignal` exports, and feed measured
   `onEdgeBytes` into rgui's degree-annotated `cloned-fanout` warning (ties into
@@ -404,11 +404,18 @@ Ideas ranked by fun × implementation cost. Quick wins are being picked up first
   note/image in 3-D space (hand + depth + calibration already exist), synced
   through the room so other devices see it. Turns the spatial pipeline from a
   feature into an experience; federation groundwork is done.
-- [ ] **Voice→graph editing** — STT + webllm node that edits the graph from
+- [x] **Voice→graph editing** (#150, 2026-07-22) — graph-edit node + strict-JSON command pipeline + voice-graph-editing template. orig: STT + webllm node that edits the graph from
   speech ("connect the camera to depth"). Dogfooding otoji with otoji.
-- [ ] **Subgraph / group node** — select → group collapses a pipeline into one
+- [x] **Subgraph / group node — v1** (#151, 2026-07-22): multi-select menu "⧈ Group" snaps the selection into one rgui pseudo-block (drag out = ungroup); template save shares the same menu. A dedicated collapsible group NODE with its own ports stays future work. orig: select → group collapses a pipeline into one
   node; unify with template save.
 - [ ] **Touch-screen support — full gesture coverage** (requested 2026-07-21).
+  Status 2026-07-22: two-finger nav (rgui#6/#7), double-tap maximize (rgui#8),
+  long-press shared menu + bulk remove (rgui#9, #143), tap-tap port connect
+  (rgui#10), and the text-input zoom-jump guard (viewport maximum-scale=1)
+  are all shipped; palette drag-out and edge-tap deletion ride the
+  pointer-event unification and need on-device confirmation. REMAINING
+  (hardware): the physical test matrix (iPad Safari / Android Chrome /
+  Windows touch). Original audit text:
   Audit the graph editor on touch devices and cover every gesture end-to-end:
   one-finger node drag vs canvas pan, two-finger pan + pinch zoom, long-press
   for context/inspector, tap-tap to connect ports (drag-to-connect is fragile
@@ -417,8 +424,11 @@ Ideas ranked by fun × implementation cost. Quick wins are being picked up first
   partly handled in index.html), finger-sized hit targets on the rgui canvas,
   and pointer-events unification (mouse/touch/pen). Test matrix: iPad Safari,
   Android Chrome, Windows touch.
-  - [ ] **Mobile multi-select + shared long-press menu** (requested
-    2026-07-22). Concrete spec: (1) a touch multi-select gesture (tap-to-add
+  - [x] **Mobile multi-select + shared long-press menu** (rgui#9 + this
+    bump, 2026-07-22): one-finger lasso already multi-selects; a 500ms
+    long-press (or right-click) on a selected node opens ONE shared menu —
+    Duplicate N / Save as template / Remove N (single graph patch, edges
+    included). Desktop right-click shares the same path. Original spec: Concrete spec: (1) a touch multi-select gesture (tap-to-add
     in a select mode, or lasso) that visibly marks selected nodes; (2)
     long-press with a selection active opens ONE context menu common to all
     selected nodes — only actions valid for every node in the selection
@@ -489,11 +499,11 @@ Ideas ranked by fun × implementation cost. Quick wins are being picked up first
   (`--exec` doesn't exist yet; documented honestly as future work).
 
 ### Big bets
-- [ ] **Cloudflare TURN + real mobile testing** (the last big infra bet; needs CF TURN credentials + physical mobile devices) — phase 2 of NAT traversal;
+- [~] **PARTIALLY VERIFIED (2-tab rech, 2026-07-22)**: /signal/turn issued 6 working relay candidates via turn.cloudflare.com; ?direct paired two tabs with a live data channel (RTT 2 ms, no server). True cross-network relay + physical mobile still need separate networks. orig phase-2 text: — phase 2 of NAT traversal;
   needed before P2P mesh works reliably outside one LAN.
 - [x] **Interpreter-booth mode** → shipped as the M6.5 template (see above);
   only the 2-device KPI measurement remains (blocked on hardware).
-- [ ] **Research → design: otoji interconnect over Bluetooth / offline mesh**
+- [x] **Research → design → shipped: otoji interconnect offline** (relay #145 + serverless direct pairing; see next steps below)
   (requested 2026-07-22). Initial research done (2026-07-22); design + prototype
   remain. Findings:
   - **Browsers cannot do BT peer-to-peer, full stop.** Web Bluetooth is BLE
@@ -523,9 +533,16 @@ Ideas ranked by fun × implementation cost. Quick wins are being picked up first
     4. *BT as transport* (last resort, CLI↔CLI only): Opus frames over RFCOMM
        between native nodes; browser participation stays via localhost. Only
        worth it where no WiFi/hotspot is possible at all.
-  - Next steps: [ ] pick ladder rung 1+2 as the target design; [ ] prototype
-    `otoji signal --offline` (native DO-protocol relay); [ ] QR SDP exchange
-    spike in the lobby.
+  - Next steps: [x] design picked 2026-07-22 — rungs 1+2 (native offline
+    relay + serverless QR/copy-paste SDP) are the target; BT-as-carrier stays
+    a non-goal until a concrete no-WiFi scenario appears. [x] `otoji signal`
+    native DO-protocol relay shipped (#145, LAN join URLs printed, protocol
+    integration-tested). [x] QR SDP exchange spike shipped (this PR: `?direct`
+    page — offer/answer as copy-paste blobs, share URLs, AND QR codes
+    (lean-qr); non-trickle ICE so one blob carries everything; loopback
+    E2E-verified in a real browser, data channel live at RTT 1 ms).
+    Follow-up (design, not blocked): route the graph mesh transport over a
+    direct link so a full room works serverless.
 - [ ] **rgui as a standalone graph OS** — palette/overlay-cutout/panel
   persistence made rgui broadly useful; keep pushing it as a general
   canvas-native node editor (npm published, releases automated).

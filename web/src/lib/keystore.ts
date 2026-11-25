@@ -75,8 +75,12 @@ export class KeyStore {
   }
 }
 
+let memoryFallback: KeyStore | null = null;
+
 export function browserKeyStore(): KeyStore {
-  return new KeyStore(globalThis.localStorage);
+  const ls = (globalThis as { localStorage?: Storage }).localStorage;
+  // Non-browser contexts (tests, workers) get a process-wide in-memory store.
+  return ls ? new KeyStore(ls) : (memoryFallback ??= new KeyStore(new MemoryStorage()));
 }
 
 export class MemoryStorage implements Storage {

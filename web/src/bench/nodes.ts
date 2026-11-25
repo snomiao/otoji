@@ -51,6 +51,7 @@ const SKIP: Partial<Record<NodeType, string>> = {
   "qwen-image": "requires an external Qwen Image runner URL",
   "video-recorder": "uses MediaRecorder and wall-clock recording duration",
   "video-clip": "needs an IndexedDB/video blob fixture",
+  "google-doc-live": "requires a Google OAuth token or a local otoji gdoc bridge",
 };
 
 function percentile(xs: number[], p: number): number {

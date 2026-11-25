@@ -103,6 +103,12 @@ status, and [`docs/`](./docs/README.md) for the deeper architecture/benchmark no
 
 ## Develop
 
+Browser consumers can pin one checkout containing `packages/meeting-transcript`,
+`packages/voiceprint-web`, `packages/transcript-glossary` and
+`packages/private-word-audio`. Their individual tests and builds cover each SDK;
+`bun test test/browser-sdks.test.ts` checks that all four remain available together
+and bundle for a browser. The application owns accounts, providers and assets.
+
 ```bash
 # Web app
 cd web && bun install && bun run dev        # http://localhost:5173

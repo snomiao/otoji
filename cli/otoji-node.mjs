@@ -21,6 +21,12 @@
 import { createInterface } from "node:readline";
 
 const args = process.argv.slice(2);
+if (args[0] === "gdoc") {
+  // `otoji gdoc` — realtime Google Docs bridge (see otoji-gdoc.mjs).
+  const { gdocServe } = await import("./otoji-gdoc.mjs");
+  await gdocServe(args.slice(1));
+  process.exit(0);
+}
 const debug = args.includes("-d") || args.includes("--debug");
 let pos = args.filter((a) => !a.startsWith("-"));
 if (pos[0] === "node") pos = pos.slice(1); // allow `otoji node <...>` (leading subcommand)

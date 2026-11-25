@@ -40,6 +40,8 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use tokio::sync::mpsc;
 
+mod signal_relay;
+
 #[derive(Parser)]
 #[command(
     name = "otoji",
@@ -154,6 +156,37 @@ enum Cmd {
         #[arg(long, default_value_t = 40)]
         frame_ms: u32,
     },
+    /// Always-on wake word (keyword spotting) via sherpa-onnx — cheap enough
+    /// to run all day. Emits {"type":"wake",...} JSON lines on stdout, so it
+    /// pipes into `otoji node <room>` to wake a graph agent. Auto-downloads the
+    /// Chinese wenetspeech KWS model; default keyword is 小克小克.
+    #[command(alias = "wake")]
+    Kws {
+        /// Input device — substring or index (see `otoji devices`).
+        device: Option<String>,
+        /// Model dir. Omit to auto-download the wenetspeech KWS model.
+        #[arg(long)]
+        model: Option<String>,
+        /// A sherpa keyword line (space-separated tokens + `@phrase`).
+        /// Default wakes on 小克小克: `x iǎo k è x iǎo k è @小克小克`.
+        #[arg(long)]
+        keyword: Option<String>,
+        /// A full sherpa keywords file (overrides --keyword).
+        #[arg(long)]
+        keywords_file: Option<String>,
+        /// Detection threshold (higher = fewer false wakes).
+        #[arg(long, default_value_t = 0.25)]
+        threshold: f32,
+        /// Min ms between repeat detections of the same keyword.
+        #[arg(long, default_value_t = 1500)]
+        cooldown_ms: u64,
+        /// Frame size in milliseconds.
+        #[arg(long, default_value_t = 40)]
+        frame_ms: u32,
+        /// Read this WAV instead of the mic (for testing).
+        #[arg(long)]
+        wav: Option<PathBuf>,
+    },
     /// Replay a 16kHz mono PCM file as if it were live mic input.
     File {
         path: PathBuf,
@@ -187,6 +220,16 @@ enum Cmd {
         /// Bind address (default: `127.0.0.1:8080`).
         #[arg(long, default_value = "127.0.0.1:8080")]
         addr: String,
+    },
+    /// Run the in-memory otoji signaling relay for offline/LAN rooms.
+    /// Room presence and graph state are lost when the process exits.
+    Signal {
+        /// TCP port to listen on.
+        #[arg(long, default_value_t = 8090)]
+        port: u16,
+        /// Interface address to bind (use 0.0.0.0 for LAN access).
+        #[arg(long, default_value = "0.0.0.0")]
+        host: String,
     },
     /// One-shot transcribe a WAV or PCM file. Prints a single JSON line
     /// `{"text": "..."}` to stdout and exits — designed for CI, batch
@@ -506,6 +549,12 @@ fn maybe_rebuild_and_reexec() {
         Err(_) => return,
     };
 
+    // Never rebuild inside an app bundle: writing into it breaks the code
+    // signature, and with it the bundle's Microphone/Accessibility grants.
+    if exe.to_string_lossy().contains(".app/Contents/") {
+        return;
+    }
+
     let exe_mtime = match exe.metadata().and_then(|m| m.modified()) {
         Ok(t) => t,
         Err(_) => return,
@@ -748,7 +797,30 @@ async fn main() -> Result<()> {
         }
         Cmd::Devices => run_devices().await,
         Cmd::Mic { device, frame_ms } => run_mic(device, frame_ms).await,
+        Cmd::Kws {
+            device,
+            model,
+            keyword,
+            keywords_file,
+            threshold,
+            cooldown_ms,
+            frame_ms,
+            wav,
+        } => {
+            otoji::kws::run(otoji::kws::KwsOptions {
+                device,
+                frame_ms,
+                model_dir: model.unwrap_or_default(),
+                keywords_file: keywords_file.unwrap_or_default(),
+                keyword_line: keyword,
+                threshold,
+                cooldown_ms,
+                wav,
+            })
+            .await
+        }
         Cmd::Server { addr } => run_server(addr).await,
+        Cmd::Signal { port, host } => signal_relay::run(&host, port).await,
         Cmd::Transcribe {
             path,
             model,
@@ -1406,6 +1478,12 @@ fn resolve_polisher(name: &str) -> Option<Arc<dyn Polisher>> {
 /// Synthesize `text` via `tts` and play back via `afplay` (macOS).
 async fn speak_via_afplay(tts: Arc<dyn TtsProvider>, text: &str) {
     if text.is_empty() {
+        return;
+    }
+    // Hard kill-switch: OTOJI_STT_ONLY=1 forbids any audio output, even when a
+    // caller passed --ptt-tts (otoji-tray always sets it).
+    if std::env::var("OTOJI_STT_ONLY").is_ok_and(|v| v == "1") {
+        eprintln!("[otoji] OTOJI_STT_ONLY=1 — skipping TTS playback");
         return;
     }
     use bytes::BytesMut;

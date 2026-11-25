@@ -9,6 +9,7 @@ import { fileStore } from "./file-store";
 import { sttRecognize, warmSenseVoice } from "../providers/stt/sensevoice";
 import { SENSEVOICE_MODELS } from "../providers/stt/sensevoice-models";
 import { createZipformerStream, zipformerModelFromSource, zipformerPathsFromBase, type ZipformerStream } from "../providers/stt/zipformer";
+import { CaptureBuffer, createWakeStream, wakePathsFromConfig, warmWake, type WakeStream } from "../providers/audio/openwakeword";
 import { webllmTranslate } from "../providers/translate/webllm";
 import { browserTranslate } from "../providers/translate/browser-translator";
 import { DEFAULT_TRANSLATE_LANG, DEFAULT_TRANSLATE_MODEL, langNameToCode } from "../providers/translate/translate-config";
@@ -36,6 +37,9 @@ import type { SttLevel } from "../providers/types";
 import { buildControlFrame, buildImageFrame, buildModelFrame, buildSegmentFrame, buildSpatialFrame, buildTranscriptFrame, frameToMessage, type EdgeFrame } from "./frames";
 import { videoClipsDB, type VideoClip } from "../lib/video-clips-db";
 import { modelSourceToText, resolveModelSource, type ModelRuntime, type ModelSourceMsg } from "../providers/model/model-source";
+import { parseGraphCommands, type GraphCommand } from "./graph-commands";
+import { DEFAULT_GDOC_LIVE_SERVER, fetchGoogleDoc, parseGoogleDocId } from "../providers/text/google-doc";
+import { browserKeyStore } from "../lib/keystore";
 
 const DEFAULT_LLM_AGENT_MODEL = "Xenova/flan-t5-small";
 const DEFAULT_LLM_AGENT_TEXT_GENERATION_MODEL = "onnx-community/gemma-3-1b-it-ONNX";
@@ -101,10 +105,44 @@ function normalizeTranscriptText(text: string, mode: TextNormalizeMode = "ocr-st
   return { text: out.join("\n").trim(), keys };
 }
 
-type TextFilterMode = "diff-added" | "diff-removed" | "regex-keep" | "regex-drop" | "regex-replace";
+type TextFilterMode = "diff-added" | "diff-removed" | "regex-keep" | "regex-drop" | "regex-replace" | "wake";
+
+/** Split a wake-word config ("hey otoji, ok otoji") into normalized phrases. */
+export function parseWakeWords(raw: unknown): string[] {
+  return String(raw ?? "hey otoji, okay otoji, ok otoji, otoji")
+    .split(/[,\n]/)
+    .map((w) => w.trim().toLowerCase())
+    .filter(Boolean);
+}
+
+/**
+ * Wake-word gate: if `text` begins with (or contains, when floaty) a wake
+ * phrase, return the COMMAND that follows it (wake phrase stripped); otherwise
+ * "" so downstream (an LLM) never fires. Case/punctuation-insensitive; a bare
+ * wake word with no command yields "" too. Exported for tests.
+ */
+export function extractWakeCommand(text: string, wakeWords: string[]): string {
+  const norm = text.toLowerCase().replace(/[.,!?;:]/g, " ").replace(/\s+/g, " ").trim();
+  for (const w of wakeWords) {
+    const i = norm.indexOf(w);
+    if (i < 0) continue;
+    // require the wake phrase at a word boundary near the start (first ~3 words)
+    const before = norm.slice(0, i).trim();
+    if (before.split(" ").filter(Boolean).length > 2) continue;
+    // map the normalized cut point back onto the original text length-wise:
+    // recut the ORIGINAL at the same word offset so casing/accents survive
+    const wakeWordCount = before ? before.split(" ").length : 0;
+    const totalWake = wakeWordCount + w.split(" ").length;
+    const origWords = text.split(/\s+/);
+    const command = origWords.slice(totalWake).join(" ").replace(/^[\s,.:;!?-]+/, "").trim();
+    return command;
+  }
+  return "";
+}
 
 function filterTranscriptText(text: string, cfg: Record<string, unknown>): string {
   const mode = ((cfg.mode as string | undefined) ?? "diff-added") as TextFilterMode;
+  if (mode === "wake") return extractWakeCommand(text, parseWakeWords(cfg.wakeWords));
   const lines = text.split("\n");
   const strip = (cfg.stripPrefix as boolean | undefined) ?? false;
   if (mode === "diff-added") return lines.filter((l) => l.startsWith("+")).map((l) => strip ? l.slice(1) : l).join("\n").trim();
@@ -214,6 +252,7 @@ export interface RuntimeHooks {
   // this node's preview — keeps a lazy vision node running for cross-device viewers.
   hasPreviewConsumer?: (nodeId: string) => boolean;
   onSink?: (nodeId: string, tr: TranscriptMsg) => void;
+  onGraphCommands?: (nodeId: string, commands: GraphCommand[]) => string[];
   onAudio?: (nodeId: string, audio: SegmentMsg) => void; // raw audio collected at audio-out
   onVideoClip?: (nodeId: string, clip: VideoClip) => void; // encoded video+audio collected at video-recorder
   onPipeOut?: (nodeId: string, text: string) => void; // pipe node input -> external CLI stdout
@@ -342,7 +381,7 @@ export class GraphRuntime {
     if (!frame) return;
     const ok = self.transport.send(owner, frame);
     if (ok) {
-      const bytes = (frame.samplesB64?.length ?? 0) + (frame.imageDataUrl?.length ?? 0) + (frame.text?.length ?? 0) + (frame.spatial ? JSON.stringify(frame.spatial).length : 0) + 80;
+      const bytes = (frame.samplesPcm16B64?.length ?? frame.samplesB64?.length ?? 0) + (frame.imageDataUrl?.length ?? 0) + (frame.text?.length ?? 0) + (frame.spatial ? JSON.stringify(frame.spatial).length : 0) + 80;
       this.hooks.onEdgeBytes?.(`${nodeId}:${port}->${target.node}:${target.port}`, bytes);
     }
   }
@@ -450,6 +489,15 @@ export class GraphRuntime {
           warmOcr(b).catch((e) => this.hooks.onError?.(e instanceof Error ? e : new Error(String(e)))),
         ),
       );
+    }
+
+    // Wake-word models (openWakeWord) — tiny, preload so the first "hey …" isn't slow.
+    const wakePaths = Object.values(this.graph.nodes)
+      .filter((n) => n.type === "wake-word" && this.isLocal(n.id) && n.config?.source !== "native")
+      .map((n) => wakePathsFromConfig({ model: n.config?.model as string | undefined, base: n.config?.modelsBase as string | undefined }));
+    if (wakePaths.length) {
+      this.hooks.onStatus?.("loading wake-word model…");
+      await Promise.all(wakePaths.map((wp) => warmWake(wp).catch((e) => this.hooks.onError?.(e instanceof Error ? e : new Error(String(e))))));
     }
 
     // Vision models — preload weights now per node task. Non-fatal.
@@ -834,6 +882,74 @@ export class GraphRuntime {
           try { rec.start(); } catch (e) { this.hooks.onError?.(e instanceof Error ? e : new Error(String(e))); }
         },
         stop: () => { stopped = true; try { rec?.stop(); } catch { /* ignore */ } },
+      };
+    }
+
+    if (type === "wake-word") {
+      const cfg = this.graph.nodes[id]?.config ?? {};
+      const captureMs = typeof cfg.captureMs === "number" ? (cfg.captureMs as number) : 3000;
+      const emitCommand = (samples: Float32Array) =>
+        this.emit(id, "audio", { samples, sampleRate: MIC_VAD_SR, durationMs: (samples.length / MIC_VAD_SR) * 1000, ts: Date.now() } as SegmentMsg);
+
+      // native source: no model runs here — an external KWS (otoji kws → a pipe
+      // node → this node's `trigger` port) fires the wake, and we hand the next
+      // captureMs of `in` audio to the ASR. Cheapest possible browser side.
+      if (cfg.source === "native") {
+        const cap = new CaptureBuffer(captureMs);
+        return {
+          input: (port, msg) => {
+            if (port === "trigger") {
+              const tr = msg as TranscriptMsg;
+              if (tr.text?.trim()) {
+                this.hooks.onRecognized?.(id, `\u2728 wake (native) · ${tr.text.trim().slice(0, 20)}`);
+                this.emit(id, "wake", { pulse: true, ts: Date.now() } as ControlMsg);
+                cap.start();
+              }
+              return;
+            }
+            const seg = msg as SegmentMsg;
+            if (seg.samples?.length) {
+              const captured = cap.push(seg.samples);
+              if (captured) emitCommand(captured);
+            }
+          },
+        };
+      }
+
+      const paths = wakePathsFromConfig({ model: cfg.model as string | undefined, base: cfg.modelsBase as string | undefined });
+      const threshold = typeof cfg.threshold === "number" ? (cfg.threshold as number) : 0.5;
+      const cap = new CaptureBuffer(captureMs);
+      let stream: WakeStream | null = null;
+      return {
+        start: async () => {
+          stream = createWakeStream({
+            paths,
+            threshold,
+            captureMs,
+            onScore: (score) => { if (score >= threshold * 0.6) this.hooks.onLevel?.(id, { rms: score, active: score >= threshold }); },
+            onWake: (score) => {
+              this.hooks.onRecognized?.(id, `\u2728 wake · ${score.toFixed(2)}`);
+              this.emit(id, "wake", { pulse: true, ts: Date.now() } as ControlMsg);
+            },
+            onCommandAudio: emitCommand,
+            onError: (e) => this.hooks.onError?.(e),
+          });
+        },
+        input: (port, msg) => {
+          if (port === "trigger") {
+            // an external trigger can also fire capture even in onnx mode
+            const tr = msg as TranscriptMsg;
+            if (tr.text?.trim()) { this.emit(id, "wake", { pulse: true, ts: Date.now() } as ControlMsg); cap.start(); }
+            return;
+          }
+          const seg = msg as SegmentMsg;
+          if (seg.samples?.length) {
+            stream?.accept(seg.samples);
+            const captured = cap.push(seg.samples);
+            if (captured) emitCommand(captured);
+          }
+        },
+        stop: async () => { stream?.free(); stream = null; },
       };
     }
 
@@ -1272,6 +1388,74 @@ export class GraphRuntime {
           this.hooks.onRecognized?.(id, text);
           this.emit(id, "out", { text, audio: empty } as TranscriptMsg);
         },
+      };
+    }
+
+    if (type === "google-doc-live") {
+      // Google Docs source. Poll mode hits the Docs API from the browser and
+      // re-emits when revisionId moves; live mode subscribes to a local
+      // `otoji gdoc` bridge (SSE) that pushes text on every remote edit
+      // (~2s behind the collaborator's keystroke). Emits the full document
+      // text — wire through text-diff downstream for change-only output.
+      const cfg = this.graph.nodes[id]?.config ?? {};
+      const docId = parseGoogleDocId(cfg.url as string | undefined);
+      const live = (cfg.mode as string | undefined) === "live";
+      const pollMs = Math.max(1000, Number(cfg.pollMs ?? 3000) || 3000);
+      const serverUrl = (cfg.serverUrl as string | undefined)?.trim() || DEFAULT_GDOC_LIVE_SERVER;
+      const empty = () => ({ samples: new Float32Array(0), sampleRate: MIC_VAD_SR, durationMs: 0 });
+      let current = "";
+      let revision: string | undefined;
+      let timer: ReturnType<typeof setInterval> | null = null;
+      let es: EventSource | null = null;
+      let warned = false;
+      const replace = (text: string) => {
+        const next = text.replace(/\s+$/, "");
+        if (!next || next === current) return;
+        current = next;
+        this.hooks.onRecognized?.(id, next);
+        this.emit(id, "out", { text: next, audio: empty() } as TranscriptMsg);
+      };
+      const poll = async () => {
+        const token = browserKeyStore().get("GOOGLE_OAUTH_TOKEN")?.trim();
+        if (!token) throw new Error("google-doc-live: set Google OAuth Token in settings, or switch the node to live mode");
+        const doc = await fetchGoogleDoc(docId!, token);
+        if (doc.revisionId && doc.revisionId === revision) return;
+        revision = doc.revisionId;
+        replace(doc.text);
+      };
+      return {
+        start: async () => {
+          if (!docId) {
+            this.hooks.onError?.(new Error("google-doc-live: paste a Google Docs URL in the node config"));
+            return;
+          }
+          if (live) {
+            es = new EventSource(`${serverUrl}?doc=${encodeURIComponent(docId)}`);
+            es.onmessage = (ev) => {
+              try {
+                const m = JSON.parse(ev.data) as { text?: string; error?: string };
+                if (m.error) this.hooks.onError?.(new Error(`google-doc-live: ${m.error}`));
+                else if (typeof m.text === "string") replace(m.text);
+              } catch { /* ignore malformed frames */ }
+            };
+            // EventSource retries forever on its own; report only the first drop.
+            es.onerror = () => {
+              if (warned) return;
+              warned = true;
+              this.hooks.onError?.(new Error(`google-doc-live: bridge unreachable at ${serverUrl}. Start it with:  otoji gdoc`));
+            };
+          } else {
+            try { await poll(); } catch (e) { this.hooks.onError?.(e instanceof Error ? e : new Error(String(e))); }
+            timer = setInterval(() => { poll().catch(() => { /* transient; retried next tick */ }); }, pollMs);
+          }
+        },
+        stop: () => {
+          if (timer != null) clearInterval(timer);
+          timer = null;
+          es?.close();
+          es = null;
+        },
+        replay: () => { if (current) this.emit(id, "out", { text: current, audio: empty() } as TranscriptMsg); },
       };
     }
 
@@ -2033,6 +2217,19 @@ export class GraphRuntime {
           processTranscript(transcript);
         },
         stop: () => q.drain(),
+      };
+    }
+
+    if (type === "graph-edit") {
+      const empty = { samples: new Float32Array(0), sampleRate: MIC_VAD_SR, durationMs: 0 };
+      return {
+        input: (_port, msg) => {
+          const parsed = parseGraphCommands((msg as TranscriptMsg).text ?? "");
+          const results = "error" in parsed ? [`error: ${parsed.error}`] : this.hooks.onGraphCommands?.(id, parsed) ?? ["error: graph editing is unavailable"];
+          const text = results.length ? results.join(" · ") : "no graph commands";
+          this.hooks.onRecognized?.(id, text);
+          this.emit(id, "out", { text, audio: empty } as TranscriptMsg);
+        },
       };
     }
 

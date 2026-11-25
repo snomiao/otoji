@@ -132,7 +132,7 @@ function categoryOf(type: NodeType): RgNodeCategory {
 }
 
 const DEFAULT_W = 200;
-const TEXT_PREVIEW_TYPES = new Set<NodeType>(["environment", "stt", "web-speech", "vosk", "sherpa", "vibevoice-asr", "translate", "browser-translate-api", "text-aggregate", "text-normalize", "text-filter", "llm-agent", "model", "tts", "tts-model", "sink", "srt-out", "paddle-ocr", "text-diff"]);
+const TEXT_PREVIEW_TYPES = new Set<NodeType>(["environment", "stt", "web-speech", "vosk", "sherpa", "vibevoice-asr", "translate", "browser-translate-api", "text-aggregate", "text-normalize", "text-filter", "llm-agent", "model", "tts", "tts-model", "sink", "srt-out", "paddle-ocr", "text-diff", "google-doc-live"]);
 
 // Mirrors of rgui's grip clamps (grip.ts MIN_SCALE/MAX_SCALE, graph.ts
 // NODE_MIN_W). setGraph does NOT validate geometry — these invariants are only

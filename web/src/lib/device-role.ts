@@ -34,9 +34,23 @@ export function setRole(r: DeviceRole): void {
 }
 
 export interface DeviceCaps {
-  hasMic: boolean;
+  hasMic?: boolean;
 }
 
-export function detectCaps(): DeviceCaps {
-  return { hasMic: typeof navigator !== "undefined" && !!navigator.mediaDevices?.getUserMedia };
+const MIC_NODE_TYPES = new Set(["mic-vad", "mic-raw", "web-speech"]);
+
+/** Whether an auto-assignment may place this node type on a device. */
+export function canHostNode(nodeType: string, deviceCaps?: DeviceCaps | null): boolean {
+  return !MIC_NODE_TYPES.has(nodeType) || deviceCaps?.hasMic !== false;
+}
+
+export async function detectCaps(): Promise<DeviceCaps> {
+  if (typeof navigator === "undefined" || !navigator.mediaDevices?.enumerateDevices) return {};
+  try {
+    const devices = await navigator.mediaDevices.enumerateDevices();
+    return { hasMic: devices.some((device) => device.kind === "audioinput") };
+  } catch {
+    // Capability is advisory. Stay permissive when enumeration is unavailable.
+    return {};
+  }
 }

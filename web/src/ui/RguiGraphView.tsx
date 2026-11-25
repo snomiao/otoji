@@ -24,7 +24,7 @@ export interface RguiHandlers {
   /** left-click a node (screen = canvas-relative px) */
   onNodeClick?: (nodeId: string, screen: { x: number; y: number }) => void;
   /** right-click a node */
-  onNodeContextMenu?: (nodeId: string, screen: { x: number; y: number }) => void;
+  onNodeContextMenu?: (nodeId: string, screen: { x: number; y: number }, nodeIds?: string[]) => void;
   /** something dropped on the canvas at a world position (palette / file / template) */
   onCanvasDrop?: (world: { x: number; y: number }, dataTransfer: DataTransfer) => void;
   /** clipboard data pasted into the canvas at a world position */
@@ -56,6 +56,8 @@ export interface RguiApi {
   setView: (view: ViewTransform) => void;
   /** snap a world position to the current readable grid (for tidy drops) */
   snapWorld: (pos: { x: number; y: number }) => { x: number; y: number };
+  /** current minor readable-grid step in world units */
+  gridStep: () => number;
   /** snap ALL nodes to the main grid (tidy a freshly generated/expanded graph) */
   snapGraph: (opts?: { silent?: boolean }) => void;
   /** rgui-owned workflow layout; host persists through normal move/resize callbacks. */
@@ -439,7 +441,7 @@ async function createViewer(
     isValidConnection: (from, to) => hRef.current?.isValidConnection?.(from, to) ?? true,
     onConnect: (from, to) => hRef.current?.onConnect?.(from, to),
     onNodeClick: (id, screen) => hRef.current?.onNodeClick?.(id, screen),
-    onNodeContextMenu: (id, screen) => hRef.current?.onNodeContextMenu?.(id, screen),
+    onNodeContextMenu: (id, screen, ids) => hRef.current?.onNodeContextMenu?.(id, screen, ids),
     onSelectionChange: (ids) => hRef.current?.onSelectionChange?.(ids),
     onEdgeClick: (edge, screen) => hRef.current?.onEdgeClick?.(edge, screen),
     onEdgeContextMenu: (edge, screen) => hRef.current?.onEdgeContextMenu?.(edge, screen),
@@ -520,6 +522,10 @@ function makeApi(viewer: Awaited<ReturnType<typeof createViewer>>, canvas: HTMLC
       const r = viewer.rule;
       const step = gridLevels(viewer.view.k, r.minGridPx, r.radix)[1]!.step;
       return { x: snap(pos.x, step), y: snap(pos.y, step) };
+    },
+    gridStep: () => {
+      const r = viewer.rule;
+      return gridLevels(viewer.view.k, r.minGridPx, r.radix)[1]!.step;
     },
     rotation3: () => viewer.rotation3,
     setRotation3: (target, opts) => viewer.setRotation3(target, opts),

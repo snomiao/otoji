@@ -30,3 +30,4 @@ web/dist/
 web/dist-extension/
 web/dist-userscript/
 web/node_modules/
+.rechrome/

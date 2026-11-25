@@ -5,6 +5,8 @@ import { MeshPanel } from "./ui/MeshPanel";
 import { GraphEditor } from "./ui/GraphEditor";
 import { Lobby } from "./ui/Lobby";
 import { isRoomCode } from "./lib/roomcode";
+import { InstallPrompt } from "./ui/InstallPrompt";
+import { DirectConnect } from "./ui/DirectConnect";
 
 if (import.meta.env.DEV) void import("./bench/zipformer-bench");
 
@@ -13,7 +15,10 @@ const params = new URLSearchParams(location.search);
 const path = location.pathname.replace(/^\/+/, "");
 
 let view: React.ReactNode;
-if (params.has("mesh")) {
+if (params.has("direct")) {
+  // Serverless WebRTC pairing spike (copy-paste / link / QR SDP exchange).
+  view = <DirectConnect />;
+} else if (params.has("mesh")) {
   view = <MeshPanel />;
 } else if (params.has("local")) {
   // Single-device "try it" editor (no room/signaling), preloaded with a demo.
@@ -34,4 +39,10 @@ if (params.has("mesh")) {
   view = <Lobby />;
 }
 
-if (el) createRoot(el).render(<React.StrictMode>{view}</React.StrictMode>);
+if (el)
+  createRoot(el).render(
+    <React.StrictMode>
+      {view}
+      <InstallPrompt />
+    </React.StrictMode>,
+  );

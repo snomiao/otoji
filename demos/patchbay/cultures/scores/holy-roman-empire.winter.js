@@ -1,0 +1,30 @@
+// Es ist ein Ros entsprungen in Michael Praetorius's four-part setting (Musae Sioniae VI, 1609; public domain), sung at the midnight Mass of Christmas by boys and men with a consort of viols doubling the inner parts, in a cold Rhineland church while the wind blows outside.
+SCORES["holy-roman-empire:winter"] = {
+  about: "Es ist ein Ros entsprungen, the Rhineland Christmas song of a rose blooming in the cold of winter at midnight, in Praetorius's setting: two verses, boys on the tune and men on the bass, viols on the alto and tenor",
+  heard: "midnight Mass at Christmas in a stone church on the Rhine in a hard frost: the bell has just struck twelve, the wind is loud against the windows, the singers' breath shows in the candlelight; a small choir of boys and men stands by the rood screen with three viols, singing in the slow, even pulse of the time, at the high church pitch (Chorton) of the organs then",
+  refs: [
+    { title: "Praetorius: Es ist ein Ros entsprungen (The Voice of the Viol)", who: "Voices of Music, Molly Netter, soprano, with viols", url: "https://www.youtube.com/watch?v=5rqfFcifI6M" },
+    { title: "Es ist ein Ros entsprungen, Praetorius setting (score)", who: "Michael Praetorius, Musae Sioniae VI (1609), via Wikipedia's engraving", url: "https://en.wikipedia.org/wiki/Es_ist_ein_Ros_entsprungen" },
+  ],
+  measured: "Voices of Music: the tune's top note sounds as C#5, i.e. the F-major setting sits a semitone up (the high Chorton, about A=466), so ours is in F#; the quarter note about 0.65–0.7 s (≈88 bpm), steady, phrase ends held; range C#2–D#5; vibrato under 5 c, no glides; bright upper strings (energy 500–2000 Hz, brightness ~1060 Hz); a church tail (rt60 measured ~6.8 s, likely an overestimate). All four parts are Praetorius's notes (soprano and bass sung with the 1599 Speyer words, two verses; alto and tenor on viols, the outer parts doubled by a treble and bass viol, colla parte as the period did). Ours keeps the notes, key, tempo and space; it differs in that the voices are synthetic formant voices, the viols are cleaner than gut strings, and there is no rubato at the cadences. Our render measured: tempo 89, tonic F#, range C2–C5, brightness 1070 Hz (record 1060) after cutting the highs the wind and consonants add; but our 1–2 kHz band is 12 dB weaker than the viols and soprano on the record (their bright, reedy upper partials), and \"ich\" is sung \"isch\", as in the Rhineland, because the voice cannot read ç",
+  text: `
+. clock        88 4/4
+. arrange@song mitternacht:3bars vers1:17bars vers2:17bars
+. key          major F#
+
+. caption@c1   "Es ist ein Ros entsprungen / aus einer Wurzel zart … / mitten im kalten Winter, / wohl zu der halben Nacht." ?song.2
+. caption@c2   "Das Röslein, das ich meine, / davon Jesaia sagt … / hat sie ein Kind geboren / wohl zu der halben Nacht." ?song.3
+. wind@frost   0.18 gust=0.07Hz ?song.1-3
+. bell@glocke  oct=3 grid=4 vol=0.6 "1 - - 1 - - 1 - - 1 - -" ?song.1
+. chant@knaben voice=boy voices=4 oct=4 grid=8 human=0.3 vib=0.008 breath=0.06 dyn="mf mf mf mf mf f mf mf mf mf mp mp mf mf mf mf mp" ipa="ɛs ɪst aɪn roːs ɛnt ʃprʊ ŋən aʊs aɪ nɐ vʊr tsəl tsaːrt viː ʊns diː al tən zʊ ŋən fɔn jɛ sə kaːm diː aːrt ʊnt hat aɪn blyːm laɪn braxt mɪ tən ɪm kal tən vɪn tɐ voːl tsuː deːr hal bən naxt das røːs laɪn das ɪʃ maɪ nə da fɔn je za ja zaːkt hat ʊns gə braxt a laɪ nə ma riː diː raɪ nə maːkt aʊs gɔ təs eːv gəm raːt hat ziː aɪn kɪnt gə boː rən voːl tsuː deːr hal bən naxt" "5 - - - 5 - 5 - 6 - 5 - 5 - - - 3 - - - 4 - - - 3 - 2 - - - 1 - - - 7, - 1 - - - 5 - - - 5 - 5 - 6 - 5 - 5 - - - 3 - - - 4 - - - 3 - 2 - - - 1 - - - 7, - 1 - - - 0 0 3 - 2 - 7, - 1 - 6, - 5, - - - 0 0 5 - 5 - 5 - 6 - 5 - 5 - - - 3 - - - 4 - - - 3 - 2 - - - 1 - - - 7, - 1 - - -" ?song.2-3
+. chant@maenner voice=men voices=3 oct=2 grid=8 human=0.3 vib=0.008 breath=0.06 dyn="mf mf mf mf mf f mf mf mf mf mp mp mf mf mf mf mp" ipa="ɛs ɪst aɪn roːs ɛnt ʃprʊ ŋən aʊs aɪ nɐ vʊr tsəl tsaːrt viː ʊns diː al tən zʊ ŋən fɔn jɛ sə kaːm diː aːrt ʊnt hat aɪn blyːm laɪn braxt mɪ tən ɪm kal tən vɪn tɐ voːl tsuː deːr hal bən naxt das røːs laɪn das ɪʃ maɪ nə da fɔn je za ja zaːkt hat ʊns gə braxt a laɪ nə ma riː diː raɪ nə maːkt aʊs gɔ təs eːv gəm raːt hat ziː aɪn kɪnt gə boː rən voːl tsuː deːr hal bən naxt" "1' - - - 1' - 1' - 4' - 1' - 5 - - - 6 - - - 4 - - - 1' - 7 - 6 - - - 5 - - - 1 - - - 1' - - - 1' - 1' - 4' - 1' - 5 - - - 6 - - - 4 - - - 1' - 7 - 6 - - - 5 - - - 1 - - - 0 0 1' - 2' - 3' - 1' - 2' - 5 - - - 0 0 5 - 7 - 1' - 4 - 1' - 5 - - - 6 - - - 2 - - - 3 - 4 - 5 - - - 5 - - - 1 - - -" ?song.2-3
+. strings@diskantgambe oct=4 grid=8 human=0.3 vol=0.45 body=viol "5 - - - 5 - 5 - 6 - 5 - 5 - - - 3 - - - 4 - - - 3 - 2 - - - 1 - - - 7, - 1 - - - 5 - - - 5 - 5 - 6 - 5 - 5 - - - 3 - - - 4 - - - 3 - 2 - - - 1 - - - 7, - 1 - - - 0 0 3 - 2 - 7, - 1 - 6, - 5, - - - 0 0 5 - 5 - 5 - 6 - 5 - 5 - - - 3 - - - 4 - - - 3 - 2 - - - 1 - - - 7, - 1 - - -" ?song.2-3
+. strings@altgambe oct=4 grid=8 human=0.3 vol=0.3 body=viol "3 - - - 3 - 1 - 1 - 1 - 7, - - - 6, - - - 6, - - - 5, - - - 6, - - 3, 5, - - - 5, - - - 3 - - - 3 - 1 - 1 - 1 - 7, - - - 6, - - - 6, - - - 5, - - - 6, - - 3, 5, - - - 5, - - - 0 0 1 - 6, - 5, - 5, - #4, - 5, 6, 7, - 0 0 7, - 2 - 1 - 1 - 1 - 7, - - - 6, - - - 6, - - - 1 - 6, - 7, - 1 - 2 - 5, - 5, - - -" ?song.2-3
+. strings@tenorgambe oct=3 grid=8 human=0.3 vol=0.5 body=viol "5 - - - 5 - 3 - 4 - 3 - 2 - - - 1 - - - 1 - - - 3 - 5 - 4 - 3 - - - 2 - 3 - - - 5 - - - 5 - 3 - 4 - 3 - 2 - - - 1 - - - 1 - - - 3 - 5 - 4 - 3 - - - 2 - 3 - - - 0 0 5 - 4 - 3 - 3 - 2 - 2 - - - 0 0 2 - 2 - 3 - 4 - 3 - 2 - - - #1 - - - 2 - - - 5 - 4 - 3 - - - 2 - - - 3 - - -" ?song.2-3
+. strings@bassgambe oct=2 grid=8 human=0.3 vol=0.5 body=viol "1' - - - 1' - 1' - 4' - 1' - 5 - - - 6 - - - 4 - - - 1' - 7 - 6 - - - 5 - - - 1 - - - 1' - - - 1' - 1' - 4' - 1' - 5 - - - 6 - - - 4 - - - 1' - 7 - 6 - - - 5 - - - 1 - - - 0 0 1' - 2' - 3' - 1' - 2' - 5 - - - 0 0 5 - 7 - 1' - 4 - 1' - 5 - - - 6 - - - 2 - - - 3 - 4 - 5 - - - 5 - - - 1 - - -" ?song.2-3
+
+*> space       church size=1.3 wet=0.42
+>  eq          low=0 mid=1 high=-8
+>  speaker     0.5
+`,
+};

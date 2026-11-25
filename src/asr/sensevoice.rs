@@ -189,6 +189,8 @@ enum WorkerEvt {
     },
     Status(String),
     Error(String),
+    Decode(u64),
+    Vad(bool),
     Closed,
     PttPartial {
         text: String,
@@ -283,6 +285,8 @@ impl AsrProvider for SenseVoice {
                         audio: Some(audio),
                     },
                     WorkerEvt::Status(message) => AsrEvent::Status { message },
+                    WorkerEvt::Decode(ms) => AsrEvent::Decode { ms },
+                    WorkerEvt::Vad(speech) => AsrEvent::Vad { speech },
                     WorkerEvt::Error(message) => AsrEvent::Error { message },
                     WorkerEvt::PttPartial { text } => AsrEvent::PttPartial { text },
                     WorkerEvt::PttFinal { text, audio, lang } => {
@@ -510,6 +514,8 @@ fn worker_main(
 
     let silence_samples_needed = (cfg.vad_silence_ms as usize) * SAMPLE_RATE as usize / 1000;
     let mut silence_run: usize = 0;
+    // Reported speech state (hysteresis: 300 ms of silence ends speech).
+    let mut vad_speaking = false;
 
     fn rms(samples: &[f32]) -> f32 {
         if samples.is_empty() {
@@ -523,9 +529,11 @@ fn worker_main(
         if audio.len() < min_samples {
             return None;
         }
+        let started = std::time::Instant::now();
         let stream = recognizer.create_stream();
         stream.accept_waveform(SAMPLE_RATE as i32, audio);
         recognizer.decode(&stream);
+        let _ = out_tx.send(WorkerEvt::Decode(started.elapsed().as_millis() as u64));
         let raw = stream.get_result()?.text;
         // Language extraction now happens via DECODED_LANG thread-local so
         // callers can read it without mutable borrow conflicts.
@@ -729,6 +737,15 @@ fn worker_main(
                         let _ = out_tx.send(WorkerEvt::Status(format!(
                             "vad: noise_floor={noise_floor:.5}, threshold={threshold:.5}"
                         )));
+                        // Every calibration block was exactly zero: the OS is
+                        // feeding digital silence (on macOS, a missing or stale
+                        // Microphone grant). A quiet-but-live mic never does.
+                        if calibration_rms.is_empty() {
+                            let _ = out_tx.send(WorkerEvt::Status(
+                                "mic: all-zero samples (digital silence) — check Microphone permission"
+                                    .into(),
+                            ));
+                        }
                         calibration_rms = Vec::new();
                         calibrated = true;
                     }
@@ -763,6 +780,11 @@ fn worker_main(
                     silence_run = 0;
                 } else {
                     silence_run += block.len();
+                }
+                let speaking = silence_run < SAMPLE_RATE as usize * 3 / 10;
+                if speaking != vad_speaking {
+                    vad_speaking = speaking;
+                    let _ = out_tx.send(WorkerEvt::Vad(speaking));
                 }
 
                 // Trim front if buf exceeds max (keep context, discard old).
