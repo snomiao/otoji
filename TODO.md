@@ -14,6 +14,19 @@
 > recorder and the voice model on *different devices* and chain them in the same
 > graph — e.g. **phone captures mic → laptop runs SenseVoice → transcript sink**.
 
+## Humming, beatbox and notation backlog
+
+- [ ] **Humming / beatbox → MIDI and bidirectional notation.** Evaluate Basic
+  Pitch for hummed melody and a separate beatbox-to-drum-event path; retain the
+  original audio and timing. Define MIDI/event interchange with OTOJI so captured
+  performances can become editable notation, and notation can drive synthesis.
+  This is an OTOJI library capability, with Lianki as a consumer rather than a
+  second implementation. Status: queued, not implemented or validated. Recording,
+  external model calls and releases require their normal explicit approvals.
+  Lianki's development task overview should show this dependency and the rest
+  of this backlog, linking here as the canonical source instead of maintaining
+  another independently edited checklist.
+
 ## Decisions (locked 2026-06-27)
 
 | Area | Decision |
