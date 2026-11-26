@@ -189,6 +189,11 @@ pub fn on_vad(speech: bool) {
     });
 }
 
+/// Whether the listen child's VAD currently hears speech.
+pub fn vad_speech() -> bool {
+    with(|s| s.vad_speech)
+}
+
 /// `3s`, `1.5s`, `300ms` or a bare number of ms → milliseconds.
 fn parse_ms(v: &str) -> Option<u64> {
     if let Some(n) = v.strip_suffix("ms") {

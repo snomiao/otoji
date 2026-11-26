@@ -31,6 +31,7 @@ use otoji::tts::{
     elevenlabs::{ElevenLabsTts, ElevenLabsTtsConfig},
     gemini::{GeminiTts, GeminiTtsConfig},
     iflytek_tts::{IflytekTts, IflytekTtsConfig},
+    native::NativeTts,
     openai::{OpenAiTts, OpenAiTtsConfig},
     piper::{PiperTts, PiperTtsConfig},
     TtsProvider,
@@ -253,7 +254,7 @@ enum Cmd {
         text: String,
         /// TTS provider. `auto` picks the best available: piper if a model
         /// is on disk, otherwise the first env-key match (openai → 11labs
-        /// → gemini).
+        /// → gemini), then macOS `say` rendered to a file.
         #[arg(long, value_enum, default_value_t = TtsKind::Auto)]
         provider: TtsKind,
         /// Write to file instead of stdout (for backward compat with old
@@ -284,7 +285,7 @@ enum Cmd {
 
 #[derive(clap::ValueEnum, Clone, Debug)]
 enum TtsKind {
-    /// Pick automatically: piper > openai > elevenlabs > gemini.
+    /// Pick automatically: piper > openai > elevenlabs > gemini > native.
     Auto,
     /// Local Piper VITS via sherpa-onnx (default when model present).
     Piper,
@@ -299,6 +300,9 @@ enum TtsKind {
     /// Cloudflare Workers AI TTS (MeloTTS). Edge inference at Tokyo PoP.
     /// Needs CLOUDFLARE_ACCOUNT_ID + CLOUDFLARE_API_TOKEN.
     Cloudflare,
+    /// macOS `say`, rendered to a file — free, offline, macOS only.
+    /// Voice via OTOJI_NATIVE_TTS_VOICE.
+    Native,
 }
 
 fn resolve_tts(kind: TtsKind) -> Result<Arc<dyn TtsProvider>> {
@@ -342,6 +346,12 @@ fn resolve_tts(kind: TtsKind) -> Result<Arc<dyn TtsProvider>> {
             .or_else(try_openai)
             .or_else(try_eleven)
             .or_else(try_gemini)
+            // Last, free and offline (errors off macOS, keeping the hint below).
+            .or_else(|| {
+                NativeTts::from_env()
+                    .ok()
+                    .map(|p| Arc::new(p) as Arc<dyn TtsProvider>)
+            })
             .ok_or_else(|| {
                 anyhow::anyhow!(
                     "no TTS provider available. Either install a Piper model:\n  \
@@ -350,6 +360,7 @@ fn resolve_tts(kind: TtsKind) -> Result<Arc<dyn TtsProvider>> {
                      or set one of OPENAI_API_KEY / ELEVENLABS_API_KEY / GEMINI_API_KEY"
                 )
             }),
+        TtsKind::Native => Ok(Arc::new(NativeTts::from_env().context("native tts")?)),
         TtsKind::Piper => {
             let cfg = PiperTtsConfig::from_env();
             Ok(Arc::new(PiperTts::create(cfg).context("piper init")?))
@@ -1234,12 +1245,18 @@ async fn drive_plain<P: AsrProvider + 'static>(
             "gemini" => TtsKind::Gemini,
             "iflytek" => TtsKind::Iflytek,
             "cloudflare" | "cf" => TtsKind::Cloudflare,
+            "native" | "say" => TtsKind::Native,
             other => {
                 eprintln!("[otoji] unknown --ptt-tts value: {other:?}");
                 return None;
             }
         };
-        resolve_tts(kind).ok()
+        // `--ptt-tts auto` plays what it synthesizes. With nothing configured
+        // it has always stayed silent; the native fallback must not change that.
+        let explicit = !matches!(kind, TtsKind::Auto);
+        resolve_tts(kind)
+            .ok()
+            .filter(|p| explicit || p.name() != "native")
     });
     if polisher.is_some() {
         eprintln!(
