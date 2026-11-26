@@ -56,4 +56,8 @@ jobs:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           workingDirectory: web
+          # wrangler is a devDependency in web/package.json, so `bun install`
+          # above already put the lockfile-pinned version in node_modules and
+          # the action uses it instead of running its own `bun i wrangler`
+          # (which intermittently died on "Fail extracting tarball").
           command: pages deploy dist --project-name=otoji --branch=main
